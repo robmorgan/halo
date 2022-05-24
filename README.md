@@ -61,6 +61,20 @@ No programmer. No editor. Halo is only a playback engine. You do the programming
 
  * OLA
 
+## Usage
+
+Start OLAD in debug mode in another terminal window:
+
+```bash
+$ olad -l 3
+```
+
+Then start Halo:
+
+```bash
+$ ./halo
+```
+
 ## References
 
  * https://opensource.com/article/17/5/open-source-lighting
