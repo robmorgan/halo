@@ -67,6 +67,7 @@ Start OLAD in debug mode in another terminal window:
 
 ```bash
 $ olad -l 3
+$ open <YOUR_IP_ADDRESS:9090>
 ```
 
 Then start Halo:
