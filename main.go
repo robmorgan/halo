@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/nickysemenza/gola"
 	"github.com/robmorgan/halo/cuelist"
+	"github.com/robmorgan/halo/effect"
 	"github.com/robmorgan/halo/fixture"
 )
 
@@ -37,20 +39,21 @@ func main() {
 	}
 
 	// initialize all fixtures
-	config.Fixtures = map[string]interface{}{
-		"center_left_par": &fixture.Fixture{
-			Id:      1,
-			Address: 138,
-			Mode:    8,
-			Channels: map[int]fixture.FixtureChannel{
-				1: {
-					Type:       "Intensity",
-					Address:    1,
-					Resolution: 1,
-				},
-			},
+	fg := fixture.NewFixtureGroup()
+	par1 := fixture.NewFixture(1, 138, 8, map[int]fixture.FixtureChannel{
+		1: {
+			Type:       "Intensity",
+			Address:    1,
+			Resolution: 1,
 		},
-	}
+		2: {
+			Type:       "Red",
+			Address:    2,
+			Resolution: 1,
+		},
+	})
+	fg.AddFixture("left_middle_par", par1)
+	config.PatchedFixtures = fg
 
 	// Prepare some sequences
 	//move := NewSequence()
@@ -71,6 +74,12 @@ func main() {
 		// TODO - add group effects (like random PAR sparkle)
 	})
 
+	par, err := config.PatchedFixtures.GetFixture("left_middle_par")
+	if err != nil {
+		panic(fmt.Sprintf("could not get fixture: %s", err))
+	}
+	par.SetColor(0)
+
 	// start render loop
 	// TODO - move to lighting engine
 	tick := time.Tick(40 * time.Millisecond)
@@ -87,7 +96,32 @@ func main() {
 			// Turn on the Right PAR
 			values[138] = 255
 			//values[141] = byte(dVal)
-			values[141] = 255
+			//values[141] = 255
+
+			par, err := config.PatchedFixtures.GetFixture("left_middle_par")
+			if err != nil {
+				panic(fmt.Sprintf("could not get fixture: %s", err))
+			}
+
+			// lets make a color pulsing effect
+			target := 1.0
+			effect := effect.NewEffect("InQuart", 1000)
+			log.Println(fmt.Sprintf("calc val: %.2f", float64(par.GetColor()+1)/255))
+			newVal := effect.Update(float64((par.GetColor()+1))/255, target)
+			par.SetColor(int(newVal * 255))
+
+			//t := ease.InQuart(float64(i) / 255)
+			//	dVal := int(t * 255)
+
+			// check all fixtures that need to update and render them
+			for idx, fixture := range config.PatchedFixtures.Fixtures {
+				if fixture.NeedsUpdate() {
+					fmt.Printf("Fixture (%s) needs an update: %v\n", idx, fixture)
+
+					// prepare DMX packet
+					values[fixture.Address+1] = byte(par.GetColor())
+				}
+			}
 
 			if status, err := client.SendDmx(1, values); err != nil {
 				log.Printf("SendDmx: 1: %v", err)

@@ -25,14 +25,42 @@ type Fixture struct {
 	// The DMX starting address
 	Address int
 
+	// The number of channels the fixture uses
+	Mode int
+
 	// The fixture channels
 	Channels map[int]FixtureChannel
 
-	// The number of channels the fixture uses
-	Mode int
+	// The current fixture color
+	Color int
+
+	// Does the renderer need to update the fixture
+	needsUpdate bool
 }
 
-// Go plays the next cue
+// Create a new Fixture object with reasonable defaults for real usage.
+func NewFixture(id int, address int, mode int, channels map[int]FixtureChannel) *Fixture {
+	return &Fixture{
+		Id:       id,
+		Address:  address,
+		Mode:     mode,
+		Channels: channels,
+	}
+}
+
 func (f *Fixture) GetChannelCount() int {
 	return len(f.Channels)
+}
+
+func (f *Fixture) SetColor(color int) {
+	f.Color = color
+	f.needsUpdate = true
+}
+
+func (f *Fixture) GetColor() int {
+	return f.Color
+}
+
+func (f *Fixture) NeedsUpdate() bool {
+	return f.needsUpdate
 }

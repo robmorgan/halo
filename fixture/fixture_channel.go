@@ -5,5 +5,7 @@ type FixtureChannel struct {
 	Type       string
 	Address    int
 	Resolution int
-	Value      int
+
+	// Halo stores all fixture values as float64 so the value can be between 0 and 1.
+	Value float64
 }
