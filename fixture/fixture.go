@@ -4,8 +4,8 @@ package fixture
 type Interface interface {
 	NeedsUpdate() bool
 
-	// Reset is called to reset the state of the fixture.
-	Reset() error
+	// Clear is called to reset the state of the fixture.
+	Clear() error
 
 	// Stop is called when the fixture should halt any in-flight actions.
 	Stop() error
@@ -50,6 +50,14 @@ func NewFixture(id int, address int, mode int, channels map[int]FixtureChannel) 
 
 func (f *Fixture) GetChannelCount() int {
 	return len(f.Channels)
+}
+
+func (f *Fixture) SetIntensity(intensity float64) {
+	f.needsUpdate = true
+}
+
+func (f *Fixture) GetIntensity() float64 {
+
 }
 
 func (f *Fixture) SetColor(color int) {
