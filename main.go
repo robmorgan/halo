@@ -19,6 +19,10 @@ const (
 )
 
 func main() {
+	// initialize the logger
+	logger := GetProjectLogger()
+
+	logger.Info("Connecting to OLA...")
 	client, err := gola.New("localhost:9010")
 	if err != nil {
 		panic("could not create client")
