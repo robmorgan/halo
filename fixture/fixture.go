@@ -29,7 +29,7 @@ type Fixture struct {
 	Mode int
 
 	// The fixture channels
-	Channels map[int]FixtureChannel
+	Channels map[int]Channel
 
 	// The current fixture color
 	Color int
@@ -39,7 +39,7 @@ type Fixture struct {
 }
 
 // Create a new Fixture object with reasonable defaults for real usage.
-func NewFixture(id int, address int, mode int, channels map[int]FixtureChannel) *Fixture {
+func NewFixture(id int, address int, mode int, channels map[int]Channel) *Fixture {
 	return &Fixture{
 		Id:       id,
 		Address:  address,
@@ -57,7 +57,7 @@ func (f *Fixture) SetIntensity(intensity float64) {
 }
 
 func (f *Fixture) GetIntensity() float64 {
-
+	return 0.0
 }
 
 func (f *Fixture) SetColor(color int) {

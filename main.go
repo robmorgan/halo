@@ -39,8 +39,8 @@ func main() {
 	}
 
 	// initialize all fixtures
-	fg := fixture.NewFixtureGroup()
-	par1 := fixture.NewFixture(1, 138, 8, map[int]fixture.FixtureChannel{
+	fg := fixture.NewGroup()
+	par1 := fixture.NewFixture(1, 138, 8, map[int]fixture.Channel{
 		1: {
 			Type:       "Intensity",
 			Address:    1,

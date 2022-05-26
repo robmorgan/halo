@@ -1,7 +1,7 @@
 package fixture
 
-// FixtureChannel represents a channel on the fixture
-type FixtureChannel struct {
+// Channel represents a channel on the fixture
+type Channel struct {
 	Type       string
 	Address    int
 	Resolution int
