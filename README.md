@@ -6,6 +6,8 @@ TUI-based lighting console.
 
 Halo is a lighting console built for the console.
 
+Halo is designed for shows without a lighting operating where playback should happen automatically in sync with the music.
+
 ## Concepts
 
 No programmer. No editor. Halo is only a playback engine. You do the programming in code using HScript.
