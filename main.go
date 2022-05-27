@@ -8,6 +8,7 @@ import (
 	"github.com/nickysemenza/gola"
 	"github.com/robmorgan/halo/cuelist"
 	"github.com/robmorgan/halo/effect"
+	"github.com/robmorgan/halo/engine"
 	"github.com/robmorgan/halo/fixture"
 )
 
@@ -46,12 +47,12 @@ func main() {
 	fg := fixture.NewGroup()
 	par1 := fixture.NewFixture(1, 138, 8, map[int]fixture.Channel{
 		1: {
-			Type:       "Intensity",
+			Type:       fixture.TypeIntensity,
 			Address:    1,
 			Resolution: 1,
 		},
 		2: {
-			Type:       "Red",
+			Type:       fixture.TypeColorRed,
 			Address:    2,
 			Resolution: 1,
 		},
@@ -82,65 +83,74 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("could not get fixture: %s", err))
 	}
-	par.SetColor(0)
+	par.SetIntensity(1.0)
+	par.SetColor(0.0)
 
 	// start render loop
-	// TODO - move to lighting engine
-	tick := time.Tick(40 * time.Millisecond)
+	//tick := time.Tick(40 * time.Millisecond)
+	gl := engine.New(40*time.Millisecond, func(delta float64) {
+		log.Println("tick:", delta)
+		values := make([]byte, 512, 512)
 
-	for {
-		select {
-		case <-tick:
-			values := make([]byte, 512, 512)
-			//t := ease.InQuart(float64(i) / 255)
-			//	dVal := int(t * 255)
+		//t := ease.InQuart(float64(i) / 255)
+		//	dVal := int(t * 255)
 
-			//values[119] = 255
+		//values[119] = 255
 
-			// Turn on the Right PAR
-			values[138] = 255
-			//values[141] = byte(dVal)
-			//values[141] = 255
+		// Turn on the Right PAR
+		//values[138] = 255
 
-			par, err := config.PatchedFixtures.GetFixture("left_middle_par")
-			if err != nil {
-				panic(fmt.Sprintf("could not get fixture: %s", err))
-			}
+		//values[141] = byte(dVal)
+		//values[141] = 255
 
-			// lets make a color pulsing effect
-			target := 1.0
-			effect := effect.NewEffect("InQuart", 1000)
-			log.Println(fmt.Sprintf("calc val: %.2f", float64(par.GetColor()+1)/255))
-			newVal := effect.Update(float64((par.GetColor()+1))/255, target)
-			par.SetColor(int(newVal * 255))
-
-			//t := ease.InQuart(float64(i) / 255)
-			//	dVal := int(t * 255)
-
-			// check all fixtures that need to update and render them
-			for idx, fixture := range config.PatchedFixtures.Fixtures {
-				if fixture.NeedsUpdate() {
-					fmt.Printf("Fixture (%s) needs an update: %v\n", idx, fixture)
-
-					// prepare DMX packet
-					values[fixture.Address+1] = byte(par.GetColor())
-				}
-			}
-
-			if status, err := client.SendDmx(1, values); err != nil {
-				log.Printf("SendDmx: 1: %v", err)
-			} else {
-				log.Printf("SendDmx: 1: %v", status)
-			}
-
-			// // get DMX on universe 1
-			// if x, err := client.GetDmx(1); err != nil {
-			// 	log.Printf("GetDmx: 1: %v", err)
-			// } else {
-			// 	log.Printf("GetDmx: 1: %v", x.Data)
-			// }
+		par, err := config.PatchedFixtures.GetFixture("left_middle_par")
+		if err != nil {
+			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
-	}
+
+		// lets make a color pulsing effect
+		target := 1.0
+		effect := effect.NewEffect("InQuart", 1000)
+
+		// TODO - do better error handling
+		parColor, _ := par.GetColor()
+		log.Println(fmt.Sprintf("PAR val: %.2f", parColor))
+		newColorVal := effect.Update(delta, target)
+		log.Println(fmt.Sprintf("calc val: %.2f", newColorVal))
+		par.SetColor(newColorVal)
+
+		//t := ease.InQuart(float64(i) / 255)
+		//	dVal := int(t * 255)
+
+		// check all fixtures that need to update and render them
+		for idx, fixture := range config.PatchedFixtures.Fixtures {
+			if fixture.NeedsUpdate() {
+				fmt.Printf("Fixture (%s) needs an update: %v\n", idx, fixture)
+
+				// prepare DMX packet
+				sendColor, _ := par.GetColor()
+				values[fixture.Address+1] = byte(uint8(sendColor) * 255)
+			}
+		}
+
+		if status, err := client.SendDmx(1, values); err != nil {
+			log.Printf("SendDmx: 1: %v", err)
+		} else {
+			log.Printf("SendDmx: 1: %v", status)
+		}
+
+		// // get DMX on universe 1
+		// if x, err := client.GetDmx(1); err != nil {
+		// 	log.Printf("GetDmx: 1: %v", err)
+		// } else {
+		// 	log.Printf("GetDmx: 1: %v", x.Data)
+		// }
+	})
+
+	gl.Start()
+
+	// Stop Game Loop:
+	// gl.Stop()
 
 	// get DMX on universe 1
 	if x, err := client.GetDmx(1); err != nil {
@@ -151,4 +161,7 @@ func main() {
 
 	// PAR 115
 	// PAR 139
+	// Don't stop main goroutine
+	for {
+	}
 }
