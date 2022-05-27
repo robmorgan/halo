@@ -1,5 +1,7 @@
 package fixture
 
+import "fmt"
+
 // Interface represents the set of methods required for a complete lighting fixture.
 type Interface interface {
 	NeedsUpdate() bool
@@ -31,9 +33,6 @@ type Fixture struct {
 	// The fixture channels
 	Channels map[int]Channel
 
-	// The current fixture color
-	Color int
-
 	// Does the renderer need to update the fixture
 	needsUpdate bool
 }
@@ -52,7 +51,39 @@ func (f *Fixture) GetChannelCount() int {
 	return len(f.Channels)
 }
 
+func (f *Fixture) GetChannel(chType string) (Channel, error) {
+	// try to find the correct channel type
+	for key, ch := range f.Channels {
+		fmt.Println("Key:", key, "=>", "Channel:", ch)
+		if ch.Type == chType {
+			return ch, nil
+		}
+	}
+
+	// couldn't find the relevant channel
+	return *&Channel{}, fmt.Errorf("could not find fixture channel of type: %s", chType)
+}
+
+func (f *Fixture) SetValue(chType string, value Value) error {
+	ch, err := f.GetChannel(chType)
+	if err != nil {
+		return err
+	}
+	ch.SetValue(value)
+	return nil
+}
+
+func (f *Fixture) GetValue(chType string) (Value, error) {
+	ch, err := f.GetChannel(chType)
+	if err != nil {
+		return 0.0, err
+	}
+
+	return ch.Value, nil
+}
+
 func (f *Fixture) SetIntensity(intensity float64) {
+	f.SetValue(TypeIntensity, Value(intensity))
 	f.needsUpdate = true
 }
 
@@ -60,13 +91,17 @@ func (f *Fixture) GetIntensity() float64 {
 	return 0.0
 }
 
-func (f *Fixture) SetColor(color int) {
-	f.Color = color
+func (f *Fixture) SetColor(color float64) {
+	f.SetValue(TypeColorRed, Value(color))
 	f.needsUpdate = true
 }
 
-func (f *Fixture) GetColor() int {
-	return f.Color
+func (f *Fixture) GetColor() (Value, error) {
+	ch, err := f.GetChannel(TypeColorRed)
+	if err != nil {
+		return 0.0, err
+	}
+	return ch.Value, nil
 }
 
 func (f *Fixture) NeedsUpdate() bool {
