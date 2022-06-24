@@ -31,14 +31,14 @@ type Fixture struct {
 	Mode int
 
 	// The fixture channels
-	Channels map[int]Channel
+	Channels map[int]*Channel
 
 	// Does the renderer need to update the fixture
 	needsUpdate bool
 }
 
 // Create a new Fixture object with reasonable defaults for real usage.
-func NewFixture(id int, address int, mode int, channels map[int]Channel) *Fixture {
+func NewFixture(id int, address int, mode int, channels map[int]*Channel) *Fixture {
 	return &Fixture{
 		Id:       id,
 		Address:  address,
@@ -51,20 +51,19 @@ func (f *Fixture) GetChannelCount() int {
 	return len(f.Channels)
 }
 
-func (f *Fixture) GetChannel(chType string) (Channel, error) {
+func (f *Fixture) GetChannel(chType string) (*Channel, error) {
 	// try to find the correct channel type
-	for key, ch := range f.Channels {
-		fmt.Println("Key:", key, "=>", "Channel:", ch)
+	for _, ch := range f.Channels {
 		if ch.Type == chType {
 			return ch, nil
 		}
 	}
 
 	// couldn't find the relevant channel
-	return *&Channel{}, fmt.Errorf("could not find fixture channel of type: %s", chType)
+	return nil, fmt.Errorf("could not find fixture channel of type: %s", chType)
 }
 
-func (f *Fixture) SetValue(chType string, value Value) error {
+func (f *Fixture) SetValue(chType string, value float64) error {
 	ch, err := f.GetChannel(chType)
 	if err != nil {
 		return err
@@ -73,35 +72,43 @@ func (f *Fixture) SetValue(chType string, value Value) error {
 	return nil
 }
 
-func (f *Fixture) GetValue(chType string) (Value, error) {
+func (f *Fixture) GetValue(chType string) (float64, error) {
 	ch, err := f.GetChannel(chType)
 	if err != nil {
 		return 0.0, err
 	}
 
-	return ch.Value, nil
+	return ch.GetValue(), nil
 }
 
 func (f *Fixture) SetIntensity(intensity float64) {
-	f.SetValue(TypeIntensity, Value(intensity))
+	f.SetValue(TypeIntensity, intensity)
 	f.needsUpdate = true
 }
 
-func (f *Fixture) GetIntensity() float64 {
-	return 0.0
+func (f *Fixture) GetIntensity() (float64, error) {
+	ch, err := f.GetChannel(TypeIntensity)
+	if err != nil {
+		return 0.0, err
+	}
+	return ch.GetValue(), nil
 }
 
-func (f *Fixture) SetColor(color float64) {
-	f.SetValue(TypeColorRed, Value(color))
+func (f *Fixture) SetColor(color float64) error {
+	err := f.SetValue(TypeColorRed, color)
+	if err != nil {
+		return err
+	}
 	f.needsUpdate = true
+	return nil
 }
 
-func (f *Fixture) GetColor() (Value, error) {
+func (f *Fixture) GetColor() (float64, error) {
 	ch, err := f.GetChannel(TypeColorRed)
 	if err != nil {
 		return 0.0, err
 	}
-	return ch.Value, nil
+	return ch.GetValue(), nil
 }
 
 func (f *Fixture) NeedsUpdate() bool {
