@@ -114,3 +114,7 @@ func (f *Fixture) GetColor() (float64, error) {
 func (f *Fixture) NeedsUpdate() bool {
 	return f.needsUpdate
 }
+
+func (f *Fixture) HasUpdated() {
+	f.needsUpdate = false
+}

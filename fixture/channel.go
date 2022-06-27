@@ -1,7 +1,5 @@
 package fixture
 
-import "fmt"
-
 const (
 	TypeIntensity  = "type:intensity"
 	TypeColorRed   = "type:color:red"
