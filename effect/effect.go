@@ -2,6 +2,7 @@ package effect
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/fogleman/ease"
@@ -29,11 +30,14 @@ type Effect struct {
 
 	Duration float64
 
+	Target float64
+
 	// Animation speed multiplier
 	Speed float64
 
-	loop   bool // Whether the effect loops
-	paused bool // Whether the effect is paused
+	loop   bool    // Whether the effect loops
+	paused bool    // Whether the effect is paused
+	value  float64 // current value
 }
 
 // NewEffect creates and returns a pointer to a new Effect object of type t for the specified time.
@@ -41,6 +45,7 @@ func NewEffect(easingFunc ease.Function, duration float64, speed float64) *Effec
 	return &Effect{
 		EasingFunc: easingFunc,
 		Time:       0.000001,
+		Target:     1.0,
 		Duration:   duration,
 		Speed:      speed,
 	}
@@ -48,13 +53,14 @@ func NewEffect(easingFunc ease.Function, duration float64, speed float64) *Effec
 
 func (e *Effect) Update(deltaTime float64, value float64) float64 {
 	if e.paused {
-		return value
+		return e.value
 	}
 
 	e.Time = e.Time + deltaTime*e.Speed
 
 	// get the next value from the easing function
-	newVal := e.EasingFunc(e.Time)
+	// At the moment we bound because the duration + speed can produce some really funky values
+	e.value = math.Max(0.0, math.Min(e.Target, e.EasingFunc(e.Time)))
 
 	// check if input is greater than the maximum
 	if e.Time > e.Duration {
@@ -65,13 +71,13 @@ func (e *Effect) Update(deltaTime float64, value float64) float64 {
 			fmt.Printf("reducing time\n")
 			e.Time = e.Duration - 0.000001
 			e.paused = true
-			newVal = 1.0 // TODO - we don't support e.Target yet
+			e.value = 1.0 // TODO - we don't support e.Target yet
 		}
 	}
 
-	//fmt.Printf("time=%.7f deltaTime=%.7f speed=%.7f value=%.7f newValue=%.7f\n", e.Time, deltaTime, e.Speed, value, newVal)
+	fmt.Printf("time=%.7f deltaTime=%.7f duration=%.7f speed=%.7f value=%.7f newValue=%.7f\n", e.Time, deltaTime, e.Duration, e.Speed, value, e.value)
 
-	return newVal
+	return e.value
 }
 
 // TODO - work on property animation: https://developer.android.com/reference/android/animation/ObjectAnimator
