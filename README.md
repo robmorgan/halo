@@ -8,6 +8,13 @@ Halo is a lighting console built for the console.
 
 Halo is designed for shows without a lighting operating where playback should happen automatically in sync with the music.
 
+## Features
+
+ * Control multiple groups of lights
+ * Control lights
+ * Lights running in different times
+ * Nature isn't one fade. It's lots of things coming and going.
+
 ## Concepts
 
 No programmer. No editor. Halo is only a playback engine. You do the programming in code using HScript.
