@@ -20,10 +20,7 @@ type Channel struct {
 }
 
 func (c *Channel) SetValue(value float64) {
-	fmt.Printf("setting ch value to: %.7f\n", value)
 	c.Value = value
-	fmt.Printf("resettt ch value to: %.7f\n", c.Value)
-	fmt.Printf("checj ch value to: %.7f\n", c.GetValue())
 }
 
 func (c *Channel) GetValue() float64 {
