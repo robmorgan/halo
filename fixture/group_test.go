@@ -40,7 +40,7 @@ func TestMerge(t *testing.T) {
 
 	fix1 := NewFixture(1, 1, 8, nil)
 	fix2 := NewFixture(2, 10, 8, nil)
-	fix3 := NewFixture(3, 10, 8, nil)
+	fix3 := NewFixture(3, 20, 8, nil)
 
 	// add the fixtures to three separate groups
 	fg1 := NewGroup()
@@ -49,6 +49,11 @@ func TestMerge(t *testing.T) {
 	fg1.AddFixture("fix1", fix1)
 	fg2.AddFixture("fix2", fix2)
 	fg3.AddFixture("fix2", fix3) // name collision (will replace)
+
+	// set some values
+	fix1.SetIntensity(0.3)
+	fix2.SetIntensity(0.6)
+	fix3.SetIntensity(0.8)
 
 	// merge them over the first group
 	fg := fg1.Merge(fg2, fg3)
@@ -60,4 +65,8 @@ func TestMerge(t *testing.T) {
 	fix, err := fg.GetFixture("fix2")
 	require.NoError(t, err)
 	require.Equal(t, 3, fix.Id)
+	require.Equal(t, 20, fix.Address)
+	intensity, _ := fix.GetIntensity()
+	require.Equal(t, 0.8, intensity)
+	require.True(t, fix.NeedsUpdate())
 }
