@@ -82,22 +82,24 @@ func main() {
 		//values[141] = byte(dVal)
 		//values[141] = 255
 
-		par1, err := config.PatchedFixtures.FrontPars.GetFixture("right_middle_par")
+		par1, err := config.PatchedFixtures.Root.GetFixture("right_middle_par")
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
 
-		par2, err := config.PatchedFixtures.FrontPars.GetFixture("left_middle_par")
+		par2, err := config.PatchedFixtures.Root.GetFixture("left_middle_par")
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
 
-		par3, err := config.PatchedFixtures.UplightPars.GetFixture("left_uplight_par")
+		par3, err := config.PatchedFixtures.Root.GetFixture("left_uplight_par")
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
 
-		par4, err := config.PatchedFixtures.UplightPars.GetFixture("right_uplight_par")
+		par4, err := config.PatchedFixtures.Root.GetFixture("right_uplight_par")
+
+		log.Println(fmt.Printf("PAR4 Fix Addr: %p\n", par4))
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
@@ -135,6 +137,8 @@ func main() {
 
 		// check all fixtures that need to update and render them
 		for idx, fixture := range config.PatchedFixtures.Root.Fixtures {
+			log.Println(fmt.Printf("Fix Addr: %p\n", fixture))
+
 			if fixture.NeedsUpdate() {
 				fmt.Printf("Fixture (%s) needs an update: %v\n", idx, fixture)
 

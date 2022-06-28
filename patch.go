@@ -17,7 +17,8 @@ type PatchedFixtures struct {
 }
 
 func PatchFixtures() *PatchedFixtures {
-
+	// For some reason we can't seem to access the same fixture reference in another struct so just reference the root
+	// for now.
 	rootFg := fixture.NewGroup()
 	frontPars := patchFrontPars()
 	uplightPars := patchUplightPars()
