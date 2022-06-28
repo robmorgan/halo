@@ -8,6 +8,16 @@ Halo is a lighting console built for the console.
 
 Halo is designed for shows without a lighting operating where playback should happen automatically in sync with the music.
 
+## Sunsetting Halo
+
+I'm discontinuing this project for now, for the following reasons:
+
+ * I really want DJSL lights to sync to the music.
+ * It will be really hard to do this in Halo using only OSC cues.
+ * You really need MIDI or LTC (like other consoles) to do this properly so events fire right on cue.
+ * Sending OSC commands every split second may likely get out of sync.
+ * You don't want to invest months of time building a tracking lighting console that runs concurrent animations.
+
 ## Features
 
  * Control multiple groups of lights
