@@ -1,14 +1,13 @@
 package main
 
 import (
-	"github.com/robmorgan/halo/fixture"
 	"github.com/sirupsen/logrus"
 )
 
 // HaloConfig represents options that configure the global behavior of the program
 type HaloConfig struct {
 	// PatchedFixtures stores all of the patched fixtures in a fixture group
-	PatchedFixtures *fixture.Group
+	PatchedFixtures *PatchedFixtures
 
 	// Project logger
 	Logger *logrus.Logger
@@ -19,6 +18,6 @@ func NewHaloConfig() (*HaloConfig, error) {
 	// TODO - support passing in a config file one day
 
 	return &HaloConfig{
-		PatchedFixtures: fixture.NewGroup(),
+		PatchedFixtures: PatchFixtures(),
 	}, nil
 }

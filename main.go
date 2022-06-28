@@ -10,7 +10,6 @@ import (
 	"github.com/robmorgan/halo/cuelist"
 	"github.com/robmorgan/halo/effect"
 	"github.com/robmorgan/halo/engine"
-	"github.com/robmorgan/halo/fixture"
 )
 
 const (
@@ -44,75 +43,6 @@ func main() {
 		panic("error creating config")
 	}
 
-	log.Println("Init fixtures")
-
-	// initialize all fixtures
-	fg := fixture.NewGroup()
-
-	// left middle par
-	// For some reason the DMX address we are using at the moment is really -1 to what the actual
-	// fixture address is
-	par1 := fixture.NewFixture(1, 114, 8, map[int]*fixture.Channel{
-		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
-		},
-		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
-		},
-	})
-	fg.AddFixture("left_middle_par", par1)
-
-	// right middle par
-	par2 := fixture.NewFixture(2, 138, 8, map[int]*fixture.Channel{
-		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
-		},
-		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
-		},
-	})
-	fg.AddFixture("right_middle_par", par2)
-
-	// left uplight par (A.123 -> 122)
-	par3 := fixture.NewFixture(3, 122, 8, map[int]*fixture.Channel{
-		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
-		},
-		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
-		},
-	})
-	fg.AddFixture("left_uplight_par", par3)
-
-	// right uplight par (A.131 -> 130)
-	par4 := fixture.NewFixture(3, 130, 8, map[int]*fixture.Channel{
-		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
-		},
-		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
-		},
-	})
-	fg.AddFixture("right_uplight_par", par4)
-
-	config.PatchedFixtures = fg
-
 	// Prepare some sequences
 	//move := NewSequence()
 	// there should be a SetPosition
@@ -131,12 +61,6 @@ func main() {
 
 		// TODO - add group effects (like random PAR sparkle)
 	})
-
-	// Cheat a bit by setting intensity
-	par1.SetIntensity(1.0)
-	par2.SetIntensity(1.0)
-	par3.SetIntensity(1.0)
-	par4.SetIntensity(1.0)
 
 	// start render loop
 	log.Println("Starting render loop")
@@ -158,22 +82,22 @@ func main() {
 		//values[141] = byte(dVal)
 		//values[141] = 255
 
-		par1, err := config.PatchedFixtures.GetFixture("right_middle_par")
+		par1, err := config.PatchedFixtures.FrontPars.GetFixture("right_middle_par")
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
 
-		par2, err := config.PatchedFixtures.GetFixture("left_middle_par")
+		par2, err := config.PatchedFixtures.FrontPars.GetFixture("left_middle_par")
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
 
-		par3, err := config.PatchedFixtures.GetFixture("left_uplight_par")
+		par3, err := config.PatchedFixtures.UplightPars.GetFixture("left_uplight_par")
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
 
-		par4, err := config.PatchedFixtures.GetFixture("right_uplight_par")
+		par4, err := config.PatchedFixtures.UplightPars.GetFixture("right_uplight_par")
 		if err != nil {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
@@ -210,7 +134,7 @@ func main() {
 		//	dVal := int(t * 255)
 
 		// check all fixtures that need to update and render them
-		for idx, fixture := range config.PatchedFixtures.Fixtures {
+		for idx, fixture := range config.PatchedFixtures.Root.Fixtures {
 			if fixture.NeedsUpdate() {
 				fmt.Printf("Fixture (%s) needs an update: %v\n", idx, fixture)
 
@@ -240,7 +164,7 @@ func main() {
 
 		// TODO - we are currently sleeping because olad complains that there is "No buffer space available".
 		// Somehow we'll need to make sure our updates are "real-time" enough, but don't overwhelm the process.
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 	})
 
 	gl.Start()
