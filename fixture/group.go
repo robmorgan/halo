@@ -2,6 +2,8 @@ package fixture
 
 import (
 	"fmt"
+
+	"golang.org/x/exp/maps"
 )
 
 type Group struct {
@@ -46,16 +48,11 @@ func (fg *Group) HasFixtures() bool {
 
 // Merge the specified fixture groups into this one and return it
 func (fg *Group) Merge(groups ...*Group) *Group {
-	out := fg.Fixtures
-
 	for _, group := range groups {
 		// The fixture group only stores fixtures at the moment, so this is all we need to copy.
-		for key, value := range group.Fixtures {
-			out[key] = value
-		}
+		maps.Copy(fg.Fixtures, group.Fixtures)
 	}
 
-	fg.Fixtures = out
 	return fg
 }
 

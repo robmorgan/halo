@@ -40,7 +40,13 @@ func TestMerge(t *testing.T) {
 
 	fix1 := NewFixture(1, 1, 8, nil)
 	fix2 := NewFixture(2, 10, 8, nil)
-	fix3 := NewFixture(3, 20, 8, nil)
+	fix3 := NewFixture(3, 20, 8, map[int]*Channel{
+		1: {
+			Type:       TypeIntensity,
+			Address:    1,
+			Resolution: 1,
+		},
+	})
 
 	// add the fixtures to three separate groups
 	fg1 := NewGroup()
