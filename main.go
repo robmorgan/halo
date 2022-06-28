@@ -10,6 +10,7 @@ import (
 	"github.com/robmorgan/halo/cuelist"
 	"github.com/robmorgan/halo/effect"
 	"github.com/robmorgan/halo/engine"
+	"github.com/robmorgan/halo/logger"
 )
 
 const (
@@ -21,7 +22,7 @@ const (
 
 func main() {
 	// initialize the logger
-	logger := GetProjectLogger()
+	logger := logger.GetProjectLogger()
 
 	logger.Info("Connecting to OLA...")
 	client, err := gola.New("localhost:9010")

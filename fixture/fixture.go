@@ -1,6 +1,10 @@
 package fixture
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/robmorgan/halo/logger"
+)
 
 // Interface represents the set of methods required for a complete lighting fixture.
 type Interface interface {
@@ -72,13 +76,16 @@ func (f *Fixture) SetValue(chType string, value float64) error {
 	return nil
 }
 
-func (f *Fixture) GetValue(chType string) (float64, error) {
+func (f *Fixture) GetValue(chType string) float64 {
 	ch, err := f.GetChannel(chType)
+	// Swallow the error but make sure to log it.
 	if err != nil {
-		return 0.0, err
+		logger := logger.GetProjectLogger()
+		logger.Debugf("Could not find the channel type: %s on fixture id: %s", chType, f.Id)
+		return 0.0
 	}
 
-	return ch.GetValue(), nil
+	return ch.GetValue()
 }
 
 func (f *Fixture) SetIntensity(intensity float64) {
@@ -86,12 +93,8 @@ func (f *Fixture) SetIntensity(intensity float64) {
 	f.needsUpdate = true
 }
 
-func (f *Fixture) GetIntensity() (float64, error) {
-	ch, err := f.GetChannel(TypeIntensity)
-	if err != nil {
-		return 0.0, err
-	}
-	return ch.GetValue(), nil
+func (f *Fixture) GetIntensity() float64 {
+	return f.GetValue(TypeIntensity)
 }
 
 func (f *Fixture) SetColor(color float64) error {
