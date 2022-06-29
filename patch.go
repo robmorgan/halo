@@ -47,14 +47,20 @@ func patchFrontPars() *fixture.Group {
 	// fixture address is
 	par1 := fixture.NewFixture(1, 114, 8, map[int]*fixture.Channel{
 		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
+			Type:    fixture.TypeIntensity,
+			Address: 1,
 		},
 		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
+			Type:    fixture.TypeColorRed,
+			Address: 2,
+		},
+		3: {
+			Type:    fixture.TypeColorGreen,
+			Address: 3,
+		},
+		4: {
+			Type:    fixture.TypeColorBlue,
+			Address: 4,
 		},
 	})
 	fg.AddFixture("left_middle_par", par1)
@@ -62,14 +68,20 @@ func patchFrontPars() *fixture.Group {
 	// right middle par
 	par2 := fixture.NewFixture(2, 138, 8, map[int]*fixture.Channel{
 		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
+			Type:    fixture.TypeIntensity,
+			Address: 1,
 		},
 		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
+			Type:    fixture.TypeColorRed,
+			Address: 2,
+		},
+		3: {
+			Type:    fixture.TypeColorGreen,
+			Address: 3,
+		},
+		4: {
+			Type:    fixture.TypeColorBlue,
+			Address: 4,
 		},
 	})
 	fg.AddFixture("right_middle_par", par2)
@@ -87,14 +99,20 @@ func patchUplightPars() *fixture.Group {
 	// left uplight par (A.123 -> 122)
 	par3 := fixture.NewFixture(3, 122, 8, map[int]*fixture.Channel{
 		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
+			Type:    fixture.TypeIntensity,
+			Address: 1,
 		},
 		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
+			Type:    fixture.TypeColorRed,
+			Address: 2,
+		},
+		3: {
+			Type:    fixture.TypeColorGreen,
+			Address: 3,
+		},
+		4: {
+			Type:    fixture.TypeColorBlue,
+			Address: 4,
 		},
 	})
 	fg.AddFixture("left_uplight_par", par3)
@@ -102,14 +120,20 @@ func patchUplightPars() *fixture.Group {
 	// right uplight par (A.131 -> 130)
 	par4 := fixture.NewFixture(3, 130, 8, map[int]*fixture.Channel{
 		1: {
-			Type:       fixture.TypeIntensity,
-			Address:    1,
-			Resolution: 1,
+			Type:    fixture.TypeIntensity,
+			Address: 1,
 		},
 		2: {
-			Type:       fixture.TypeColorRed,
-			Address:    2,
-			Resolution: 1,
+			Type:    fixture.TypeColorRed,
+			Address: 2,
+		},
+		3: {
+			Type:    fixture.TypeColorGreen,
+			Address: 3,
+		},
+		4: {
+			Type:    fixture.TypeColorBlue,
+			Address: 4,
 		},
 	})
 	fg.AddFixture("right_uplight_par", par4)

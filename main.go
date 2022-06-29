@@ -10,6 +10,7 @@ import (
 	"github.com/robmorgan/halo/cuelist"
 	"github.com/robmorgan/halo/effect"
 	"github.com/robmorgan/halo/engine"
+	"github.com/robmorgan/halo/fixture"
 	"github.com/robmorgan/halo/logger"
 )
 
@@ -105,51 +106,65 @@ func main() {
 			panic(fmt.Sprintf("could not get fixture: %s", err))
 		}
 
-		// TODO - do better error handling
-		parColor, err := par1.GetColor()
-		if err != nil {
-			panic(fmt.Sprintf("could not get color: %s", err))
-		}
+		// set some nice colors
+		par1.SetColorFromHex("#0000FF")
+		par2.SetColorFromHex("#0000FF")
+		par3.SetColorFromHex("#FF0000")
+		par4.SetColorFromHex("#FF0000")
 
-		newColorVal := fx1.Update(delta, float64(parColor))
-		log.Println(fmt.Sprintf("PAR oldVal=%.7f newVal=%.7f", parColor, newColorVal))
-		par1.SetColor(newColorVal)
-		par2.SetColor(newColorVal)
+		// update front pars
+		parIntensity := par1.GetIntensity()
+
+		newIntensityVal := fx1.Update(delta, float64(parIntensity))
+		log.Println(fmt.Sprintf("PAR oldVal=%.7f newVal=%.7f", parIntensity, newIntensityVal))
+		par1.SetIntensity(newIntensityVal)
+		par2.SetIntensity(newIntensityVal)
 		if err != nil {
-			panic(fmt.Sprintf("could not set color: %s", err))
+			panic(fmt.Sprintf("could not set intensity: %s", err))
 		}
 
 		// update uplighting pars
-		parColor2, err := par3.GetColor()
-		if err != nil {
-			panic(fmt.Sprintf("could not get color: %s", err))
-		}
+		parIntensity2 := par3.GetIntensity()
 
-		newColorVal2 := fx2.Update(delta, float64(parColor2))
-		log.Println(fmt.Sprintf("PAR3 oldVal=%.7f newVal=%.7f", parColor2, newColorVal2))
-		par3.SetColor(newColorVal2)
-		par4.SetColor(newColorVal2)
+		newIntensityVal2 := fx2.Update(delta, float64(parIntensity2))
+		log.Println(fmt.Sprintf("PAR3 oldVal=%.7f newVal=%.7f", parIntensity2, newIntensityVal2))
+		par3.SetIntensity(newIntensityVal2)
+		par4.SetIntensity(newIntensityVal2)
 		if err != nil {
-			panic(fmt.Sprintf("could not set color: %s", err))
+			panic(fmt.Sprintf("could not set intensity: %s", err))
 		}
-
-		//t := ease.InQuart(float64(i) / 255)
-		//	dVal := int(t * 255)
 
 		// check all fixtures that need to update and render them
-		for idx, fixture := range config.PatchedFixtures.Root.Fixtures {
-			log.Println(fmt.Printf("Fix Addr: %p\n", fixture))
+		for idx, f := range config.PatchedFixtures.Root.Fixtures {
+			log.Println(fmt.Printf("Fix Addr: %p\n", f))
 
-			if fixture.NeedsUpdate() {
-				fmt.Printf("Fixture (%s) needs an update: %v\n", idx, fixture)
+			if f.NeedsUpdate() {
+				fmt.Printf("Fixture (%s) needs an update: %v\n", idx, f)
 
 				// prepare DMX packet
-				sendColor, _ := fixture.GetColor()
-				values[fixture.Address+1] = byte(uint8(sendColor * 255))
-				values[fixture.Address] = 255 // let intensity be full
+				//sendColor, _ := fixture.GetColor()
+				//values[fixture.Address+1] = byte(uint8(sendColor * 255))
+				//values[fixture.Address] = 255 // let intensity be full
+				//fixture.Bytes()
+
+				// Loop over all of the channels
+				for _, ch := range f.Channels {
+					idx := f.Address + ch.Address - 1
+					switch ch.Type {
+					case fixture.TypeIntensity:
+						//values[ch.Address] = 255
+						values[idx] = byte(uint8(f.GetIntensity() * 255))
+					case fixture.TypeColorRed:
+						values[idx] = byte(uint8(f.Color.R * 255))
+					case fixture.TypeColorGreen:
+						values[idx] = byte(uint8(f.Color.G * 255))
+					case fixture.TypeColorBlue:
+						values[idx] = byte(uint8(f.Color.B * 255))
+					}
+				}
 
 				// we've updated
-				fixture.HasUpdated()
+				f.HasUpdated()
 			}
 		}
 
@@ -169,7 +184,8 @@ func main() {
 
 		// TODO - we are currently sleeping because olad complains that there is "No buffer space available".
 		// Somehow we'll need to make sure our updates are "real-time" enough, but don't overwhelm the process.
-		time.Sleep(1000 * time.Millisecond)
+		//time.Sleep(1000 * time.Millisecond)
+		time.Sleep(40 * time.Millisecond)
 	})
 
 	gl.Start()

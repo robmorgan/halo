@@ -3,6 +3,7 @@ package fixture
 import (
 	"fmt"
 
+	"github.com/lucasb-eyer/go-colorful"
 	"github.com/robmorgan/halo/logger"
 )
 
@@ -36,6 +37,14 @@ type Fixture struct {
 
 	// The fixture channels
 	Channels map[int]*Channel
+
+	/// State
+
+	// Intensity
+	// TODO - set directly on the fixture here
+
+	// Color
+	Color colorful.Color
 
 	// Does the renderer need to update the fixture
 	needsUpdate bool
@@ -112,6 +121,16 @@ func (f *Fixture) GetColor() (float64, error) {
 		return 0.0, err
 	}
 	return ch.GetValue(), nil
+}
+
+func (f *Fixture) SetColorFromHex(s string) {
+	c, err := colorful.Hex(s)
+	if err != nil {
+		logger := logger.GetProjectLogger()
+		logger.Debugf("error getting RGB from string: %s, %v", s, err)
+	}
+	f.Color = c
+	// TODO - you probably need to map the RGB color to each of the fixture channels
 }
 
 func (f *Fixture) NeedsUpdate() bool {
