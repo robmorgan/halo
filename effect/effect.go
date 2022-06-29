@@ -58,6 +58,10 @@ func (e *Effect) Update(deltaTime float64, value float64) float64 {
 
 	e.Time = e.Time + deltaTime*e.Speed
 
+	// TODO - you probably want to port these equations which work on current time and duration
+	// it will be easier to see the effect progress over time. Here is a good example of equations
+	// to port: https://github.com/node-dmx/dmx/blob/master/easing.js.
+
 	// get the next value from the easing function
 	// At the moment we bound because the duration + speed can produce some really funky values
 	e.value = math.Max(0.0, math.Min(e.Target, e.EasingFunc(e.Time)))
