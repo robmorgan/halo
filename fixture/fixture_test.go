@@ -25,16 +25,11 @@ func TestNewFixture(t *testing.T) {
 
 	// set some values
 	fix.SetIntensity(0.5)
-	fix.SetColor(0.8)
+	fix.SetColorFromHex("#FF00FF")
 
-	intensity, err := fix.GetIntensity()
-	require.NoError(t, err)
-
-	color, err := fix.GetColor()
-	require.NoError(t, err)
-
-	assert.Equal(t, 0.5, intensity)
-	assert.Equal(t, 0.8, color)
+	color := fix.GetColor()
+	assert.Equal(t, 0.5, fix.GetIntensity())
+	assert.Equal(t, "#ff00ff", color.Hex())
 }
 
 func TestNeedsUpdate(t *testing.T) {

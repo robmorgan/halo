@@ -155,11 +155,11 @@ func main() {
 						//values[ch.Address] = 255
 						values[idx] = byte(uint8(f.GetIntensity() * 255))
 					case fixture.TypeColorRed:
-						values[idx] = byte(uint8(f.Color.R * 255))
+						values[idx] = byte(uint8(f.GetColor().R * 255))
 					case fixture.TypeColorGreen:
-						values[idx] = byte(uint8(f.Color.G * 255))
+						values[idx] = byte(uint8(f.GetColor().G * 255))
 					case fixture.TypeColorBlue:
-						values[idx] = byte(uint8(f.Color.B * 255))
+						values[idx] = byte(uint8(f.GetColor().B * 255))
 					}
 				}
 

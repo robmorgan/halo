@@ -41,10 +41,10 @@ type Fixture struct {
 	/// State
 
 	// Intensity
-	// TODO - set directly on the fixture here
+	intensity float64
 
 	// Color
-	Color colorful.Color
+	color colorful.Color
 
 	// Does the renderer need to update the fixture
 	needsUpdate bool
@@ -76,51 +76,22 @@ func (f *Fixture) GetChannel(chType string) (*Channel, error) {
 	return nil, fmt.Errorf("could not find fixture channel of type: %s", chType)
 }
 
-func (f *Fixture) SetValue(chType string, value float64) error {
-	ch, err := f.GetChannel(chType)
-	if err != nil {
-		return err
-	}
-	ch.SetValue(value)
-	return nil
-}
-
-func (f *Fixture) GetValue(chType string) float64 {
-	ch, err := f.GetChannel(chType)
-	// Swallow the error but make sure to log it.
-	if err != nil {
-		logger := logger.GetProjectLogger()
-		logger.Debugf("Could not find the channel type: %s on fixture id: %s", chType, f.Id)
-		return 0.0
-	}
-
-	return ch.GetValue()
-}
-
 func (f *Fixture) SetIntensity(intensity float64) {
-	f.SetValue(TypeIntensity, intensity)
+	f.intensity = intensity
 	f.needsUpdate = true
 }
 
 func (f *Fixture) GetIntensity() float64 {
-	return f.GetValue(TypeIntensity)
+	return f.intensity
 }
 
-func (f *Fixture) SetColor(color float64) error {
-	err := f.SetValue(TypeColorRed, color)
-	if err != nil {
-		return err
-	}
+func (f *Fixture) SetColor(c colorful.Color) {
+	f.color = c
 	f.needsUpdate = true
-	return nil
 }
 
-func (f *Fixture) GetColor() (float64, error) {
-	ch, err := f.GetChannel(TypeColorRed)
-	if err != nil {
-		return 0.0, err
-	}
-	return ch.GetValue(), nil
+func (f *Fixture) GetColor() colorful.Color {
+	return f.color
 }
 
 func (f *Fixture) SetColorFromHex(s string) {
@@ -129,8 +100,7 @@ func (f *Fixture) SetColorFromHex(s string) {
 		logger := logger.GetProjectLogger()
 		logger.Debugf("error getting RGB from string: %s, %v", s, err)
 	}
-	f.Color = c
-	// TODO - you probably need to map the RGB color to each of the fixture channels
+	f.color = c
 }
 
 func (f *Fixture) NeedsUpdate() bool {

@@ -31,8 +31,7 @@ func TestFixtureInMultipleGroups(t *testing.T) {
 	// check its correct in the other fixture group
 	par, err := fg2.GetFixture("left_par")
 	require.NoError(t, err)
-	intensity, _ := par.GetIntensity()
-	require.Equal(t, 0.65, intensity)
+	require.Equal(t, 0.65, par.GetIntensity())
 }
 
 func TestMerge(t *testing.T) {
@@ -72,7 +71,6 @@ func TestMerge(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, fix.Id)
 	require.Equal(t, 20, fix.Address)
-	intensity, _ := fix.GetIntensity()
-	require.Equal(t, 0.8, intensity)
+	require.Equal(t, 0.8, fix.GetIntensity())
 	require.True(t, fix.NeedsUpdate())
 }
