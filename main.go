@@ -150,12 +150,14 @@ func main() {
 				//values[fixture.Address] = 255 // let intensity be full
 				//fixture.Bytes()
 
+				// get the profile.
+				profile := config.FixtureProfiles[f.Profile]
+
 				// Loop over all of the channels
-				for _, ch := range f.Channels {
-					idx := f.Address + ch.Address - 1
-					switch ch.Type {
+				for chIdx, chType := range profile.Channels {
+					idx := f.Address + chIdx - 1
+					switch chType {
 					case fixture.TypeIntensity:
-						//values[ch.Address] = 255
 						values[idx] = byte(uint8(f.GetIntensity() * 255))
 					case fixture.TypeColorRed:
 						values[idx] = byte(uint8(f.GetColor().R * 255))

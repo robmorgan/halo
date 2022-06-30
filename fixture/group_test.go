@@ -9,13 +9,7 @@ import (
 func TestFixtureInMultipleGroups(t *testing.T) {
 	t.Parallel()
 
-	fix := NewFixture(1, 138, 8, map[int]*Channel{
-		1: {
-			Type:       TypeIntensity,
-			Address:    1,
-			Resolution: 1,
-		},
-	})
+	fix := NewFixture(1, 138, 8, "test")
 
 	// add the fixture to two fixture groups
 	fg1 := NewGroup()
@@ -37,15 +31,9 @@ func TestFixtureInMultipleGroups(t *testing.T) {
 func TestMerge(t *testing.T) {
 	t.Parallel()
 
-	fix1 := NewFixture(1, 1, 8, nil)
-	fix2 := NewFixture(2, 10, 8, nil)
-	fix3 := NewFixture(3, 20, 8, map[int]*Channel{
-		1: {
-			Type:       TypeIntensity,
-			Address:    1,
-			Resolution: 1,
-		},
-	})
+	fix1 := NewFixture(1, 1, 8, "")
+	fix2 := NewFixture(2, 10, 8, "")
+	fix3 := NewFixture(3, 20, 8, "")
 
 	// add the fixtures to three separate groups
 	fg1 := NewGroup()

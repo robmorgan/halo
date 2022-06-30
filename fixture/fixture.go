@@ -1,8 +1,6 @@
 package fixture
 
 import (
-	"fmt"
-
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/robmorgan/halo/logger"
 )
@@ -35,8 +33,8 @@ type Fixture struct {
 	// The number of channels the fixture uses
 	Mode int
 
-	// The fixture channels
-	Channels map[int]*Channel
+	// The fixture profile to use
+	Profile string
 
 	/// State
 
@@ -51,29 +49,13 @@ type Fixture struct {
 }
 
 // Create a new Fixture object with reasonable defaults for real usage.
-func NewFixture(id int, address int, mode int, channels map[int]*Channel) *Fixture {
+func NewFixture(id int, address int, mode int, profile string) *Fixture {
 	return &Fixture{
-		Id:       id,
-		Address:  address,
-		Mode:     mode,
-		Channels: channels,
+		Id:      id,
+		Address: address,
+		Mode:    mode,
+		Profile: profile,
 	}
-}
-
-func (f *Fixture) GetChannelCount() int {
-	return len(f.Channels)
-}
-
-func (f *Fixture) GetChannel(chType string) (*Channel, error) {
-	// try to find the correct channel type
-	for _, ch := range f.Channels {
-		if ch.Type == chType {
-			return ch, nil
-		}
-	}
-
-	// couldn't find the relevant channel
-	return nil, fmt.Errorf("could not find fixture channel of type: %s", chType)
 }
 
 func (f *Fixture) SetIntensity(intensity float64) {

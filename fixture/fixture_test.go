@@ -10,18 +10,7 @@ import (
 func TestNewFixture(t *testing.T) {
 	t.Parallel()
 
-	fix := NewFixture(1, 138, 8, map[int]*Channel{
-		1: {
-			Type:       TypeIntensity,
-			Address:    1,
-			Resolution: 1,
-		},
-		2: {
-			Type:       TypeColorRed,
-			Address:    2,
-			Resolution: 1,
-		},
-	})
+	fix := NewFixture(1, 138, 8, "test")
 
 	// set some values
 	fix.SetIntensity(0.5)
@@ -35,7 +24,7 @@ func TestNewFixture(t *testing.T) {
 func TestNeedsUpdate(t *testing.T) {
 	t.Parallel()
 
-	fix := NewFixture(1, 1, 1, nil)
+	fix := NewFixture(1, 1, 1, "")
 
 	// set a value
 	fix.SetIntensity(1.0)
