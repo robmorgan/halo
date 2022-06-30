@@ -1,6 +1,8 @@
 package cuelist
 
-import "time"
+import (
+	"time"
+)
 
 // I've borrowed heavily from: http://www.stagelightingprimer.com/index.html?slfs-control.html&2
 
@@ -16,7 +18,7 @@ type Cue struct {
 	FadeTime time.Time
 
 	// The (optional) length of time (in seconds, after pressing the "Go" button) after which a cue parameter will begin its fade.
-	WaitTime time.Time
+	WaitTime time.Duration
 
 	// Follow/Hang: Frequently, you will want a cue to start automatically after the previous cue has begun or has
 	// completed. Putting a follow time on a cue causes it to trigger the next cue at the specified interval after
@@ -26,9 +28,15 @@ type Cue struct {
 
 	// A blocking cue prevents level changes from tracking through it and successive cues.
 	Block bool
+
+	startedAt  time.Time
+	finishedAt time.Time
+
+	cueInitializerFunc func()
 }
 
-func NewCue(cueName string, cueInitializer func()) {
-	// TODO - log debug that a cue was created with cueName
-	cueInitializer()
+// Go plays the next cue
+func (c *Cue) Go() bool {
+	c.cueInitializerFunc()
+	return true
 }

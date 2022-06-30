@@ -53,8 +53,11 @@ func main() {
 	// there could also be an optional bounding box for a movement effect.
 	// The CueList engine handles fades between looks
 
+	// Create a cue list
+	cl := cuelist.NewCueList("DJSL2022")
+
 	// Create a new cue
-	cuelist.NewCue("drop", func() {
+	cl.NewCue("cue1", func() {
 		// TODO - turn on some fixtures
 
 		// TODO - position them
