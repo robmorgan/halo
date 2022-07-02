@@ -159,8 +159,8 @@ func (clm *Master) ProcessFrameAction(cfa *FrameAction, wg *sync.WaitGroup) {
 	logger.WithFields(logrus.Fields{"duration": cfa.NewState.Duration, "now_ms": now, "fixture": cfa.FixtureName}).
 		Infof("ProcessFrameAction (color=%v)", cfa.NewState.RGB.TermString())
 
-	if l := clm.GetFixtureManager().GetByName(cfa.FixtureName); l != nil {
-		go l.SetState(clm.FixtureManager, cfa.NewState)
+	if f := clm.GetFixtureManager().GetByName(cfa.FixtureName); f != nil {
+		go f.SetState(clm.FixtureManager, cfa.NewState)
 	} else {
 		logger.Errorf("Cannot find fixture by name: %s\n", cfa.FixtureName)
 	}
