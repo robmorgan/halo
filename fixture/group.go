@@ -7,29 +7,29 @@ import (
 )
 
 type Group struct {
-	Fixtures map[string]*Fixture
+	Fixtures map[string]Fixture
 }
 
 // Create a new FixtureGroup object with reasonable defaults for real usage.
-func NewGroup() *Group {
-	return &Group{
-		Fixtures: make(map[string]*Fixture),
+func NewGroup() Group {
+	return Group{
+		Fixtures: make(map[string]Fixture),
 	}
 }
 
-func (fg *Group) GetFixture(id string) (*Fixture, error) {
+func (fg *Group) GetFixture(id string) (Fixture, error) {
 	if fixture, found := fg.Fixtures[id]; found {
 		return fixture, nil
 	} else {
-		return nil, fmt.Errorf("the fixture group does not contain a fixture with the id: %s", id)
+		return Fixture{}, fmt.Errorf("the fixture group does not contain a fixture with the id: %s", id)
 	}
 }
 
-func (fg *Group) SetFixtures(fixtures map[string]*Fixture) {
+func (fg *Group) SetFixtures(fixtures map[string]Fixture) {
 	fg.Fixtures = fixtures
 }
 
-func (fg *Group) AddFixture(id string, fixture *Fixture) {
+func (fg *Group) AddFixture(id string, fixture Fixture) {
 	fg.Fixtures[id] = fixture
 }
 
@@ -47,7 +47,7 @@ func (fg *Group) HasFixtures() bool {
 }
 
 // Merge the specified fixture groups into this one and return it
-func (fg *Group) Merge(groups ...*Group) *Group {
+func (fg *Group) Merge(groups ...Group) *Group {
 	for _, group := range groups {
 		// The fixture group only stores fixtures at the moment, so this is all we need to copy.
 		maps.Copy(fg.Fixtures, group.Fixtures)

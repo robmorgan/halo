@@ -6,6 +6,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFixture(t *testing.T) {
+	t.Parallel()
+
+	fix := NewFixture(1, 138, 8, "test")
+	fg1 := NewGroup()
+	fg1.AddFixture("fix1", fix)
+
+	// set a value
+	fix1, err := fg1.GetFixture("fix1")
+	require.NoError(t, err)
+	fix1.SetIntensity(0.65)
+
+	require.NoError(t, err)
+	require.Equal(t, 0.65, fix1.GetIntensity())
+}
+
 func TestFixtureInMultipleGroups(t *testing.T) {
 	t.Parallel()
 
@@ -23,7 +39,7 @@ func TestFixtureInMultipleGroups(t *testing.T) {
 	fix1.SetIntensity(0.65)
 
 	// check its correct in the other fixture group
-	par, err := fg2.GetFixture("left_par")
+	par, err := fg1.GetFixture("fix1")
 	require.NoError(t, err)
 	require.Equal(t, 0.65, par.GetIntensity())
 }

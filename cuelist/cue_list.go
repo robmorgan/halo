@@ -1,17 +1,50 @@
 package cuelist
 
-import "github.com/robmorgan/halo/logger"
+import (
+	"sync"
+
+	"github.com/robmorgan/halo/logger"
+	"github.com/sirupsen/logrus"
+)
 
 // CueList stores a list of cues and can play them back
 type CueList struct {
-	Name string
+	Priority int
+	Name     string
 
 	// tracking
-	State State
+	//State State
 
-	Cues []*Cue
-	// TODO - make CueList thread safe one day.
-	// lock   sync.Mutex
+	Cues          []Cue
+	ProcessedCues []Cue
+	ActiveCue     *Cue
+
+	lock sync.Mutex
+}
+
+func (cl *CueList) deQueueNextCue() *Cue {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+	if len(cl.Cues) > 0 {
+		x := cl.Cues[0]
+		cl.Cues = cl.Cues[1:]
+		return &x
+	}
+	return nil
+}
+
+// EnQueueCue puts a cue on the queue
+// it also assigns the cue (and subcomponents) an ID
+func (clm *Master) EnQueueCue(c Cue, cl *CueList) *Cue {
+	cl.lock.Lock()
+	defer cl.lock.Unlock()
+	clm.AddIDsRecursively(&c)
+
+	logger := logger.GetProjectLogger()
+	logger.WithFields(logrus.Fields{"cue_id": c.ID, "stack_name": cl.Name}).Info("enqueued!")
+
+	cl.Cues = append(cl.Cues, c)
+	return &c
 }
 
 func NewCueList(cueListName string) *CueList {
@@ -19,8 +52,9 @@ func NewCueList(cueListName string) *CueList {
 	logger.Debugf("Cue list created with name: %s", cueListName)
 
 	return &CueList{
-		Name: cueListName,
-		Cues: make([]*Cue, 0),
+		Name:          cueListName,
+		Cues:          make([]Cue, 0),
+		ProcessedCues: make([]Cue, 0),
 	}
 }
 
@@ -32,7 +66,7 @@ func (cl *CueList) NewCue(cueName string, cueInitializer func()) {
 	logger := logger.GetProjectLogger()
 	logger.Debugf("Cue created with name: %s", cueName)
 
-	cue := &Cue{
+	cue := Cue{
 		cueInitializerFunc: cueInitializer,
 	}
 	cl.Cues = append(cl.Cues, cue)
@@ -46,13 +80,4 @@ func (cl *CueList) Go() bool {
 // Render is called each time a new frame is requested
 func (cl *CueList) Render() {
 
-}
-
-// State is the basic properties of the cuelist
-type State struct {
-	CurrentPercent float64
-	CurrentBytes   float64
-	SecondsSince   float64
-	SecondsLeft    float64
-	KBsPerSecond   float64
 }

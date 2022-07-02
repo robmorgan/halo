@@ -1,19 +1,32 @@
 package fixture
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/lucasb-eyer/go-colorful"
+	"github.com/robmorgan/halo/config"
 	"github.com/robmorgan/halo/logger"
+	"github.com/robmorgan/halo/profile"
+	"github.com/robmorgan/halo/utils"
+	"github.com/sirupsen/logrus"
 )
+
+// We are hard-coding this value for now, but it should be moved to config in the future.
+var tickIntervalFadeInterpolation = time.Millisecond * 30
 
 // Interface represents the set of methods required for a complete lighting fixture.
 type Interface interface {
-	NeedsUpdate() bool
-
 	// Clear is called to reset the state of the fixture.
-	Clear() error
+	//Clear() error
 
 	// Stop is called when the fixture should halt any in-flight actions.
-	Stop() error
+	//Stop() error
+
+	GetName() string
+	GetID() string
+	SetState(Manager, TargetState)
+	NeedsUpdate() bool
 }
 
 // MovingFixture is an optional interface that allows a fixture to enable pan/tilt functionality.
@@ -27,8 +40,13 @@ type Fixture struct {
 	// Internal ID
 	Id int
 
+	Name string
+
 	// The DMX starting address
 	Address int
+
+	// The DMX universe
+	Universe int
 
 	// The number of channels the fixture uses
 	Mode int
@@ -48,14 +66,104 @@ type Fixture struct {
 	needsUpdate bool
 }
 
+// TargetState represents the state of a light, is source of truth
+type TargetState struct {
+	// On   bool
+	State
+	Duration time.Duration // time to transition to the new state
+}
+
+// ToState converts a TargetState to a State
+func (t *TargetState) ToState() State {
+	return State{RGB: t.RGB}
+}
+
+func (t *TargetState) String() string {
+	return fmt.Sprintf("Duration: %s, RGB: %s", t.Duration, t.RGB.TermString())
+}
+
+//State represents the current state of the light
+type State struct {
+	RGB utils.RGB
+}
+
 // Create a new Fixture object with reasonable defaults for real usage.
-func NewFixture(id int, address int, mode int, profile string) *Fixture {
-	return &Fixture{
+func NewFixture(id int, address int, mode int, profile string) Fixture {
+	return Fixture{
 		Id:      id,
 		Address: address,
 		Mode:    mode,
 		Profile: profile,
 	}
+}
+
+// GetName returns the light's name.
+func (f *Fixture) GetName() string {
+	return f.Name
+}
+
+// GetID returns the a unique id: dmx address info + profile mame
+func (f *Fixture) GetID() string {
+	return fmt.Sprintf("u:%d-a:%d-p:%s", f.Universe, f.Address, f.Profile)
+}
+
+func (f *Fixture) getChannelIDForAttributes(attrs ...string) (ids []int) {
+	profileMap := config.GetHaloConfig().FixtureProfiles
+	profile, ok := profileMap[f.Profile]
+	ids = make([]int, len(attrs))
+	if ok {
+		for x, attr := range attrs {
+			channelIndex := getChannelIndexForAttribute(&profile, attr) //1 indexed
+			ids[x] = f.Address + channelIndex - 1
+		}
+		return
+	}
+	logger := logger.GetProjectLogger()
+	logger.WithFields(logrus.Fields{"fixture": f.Name}).Warn("could not find DMX profile")
+	return
+}
+
+func getChannelIndexForAttribute(p *profile.Profile, attrName string) int {
+	id, ok := p.Channels[attrName]
+	if ok {
+		return id
+	}
+	return 0
+}
+
+// SetState updates the fixture's state.
+// TODO: other properties? on/off?
+func (f *Fixture) SetState(manager Manager, target TargetState) {
+	currentState := manager.GetState(f.Name)
+	numSteps := int(target.Duration / tickIntervalFadeInterpolation)
+
+	logger := logger.GetProjectLogger()
+	logger.Printf("dmx fade [%s] to [%s] over %d steps", currentState.RGB.TermString(), target.String(), numSteps)
+
+	for x := 0; x < numSteps; x++ {
+		interpolated := currentState.RGB.GetInterpolatedFade(target.RGB, x, numSteps)
+		//keep state updated:
+		f.blindlySetRGBToStateAndDMX(manager, interpolated)
+
+		time.Sleep(tickIntervalFadeInterpolation)
+	}
+
+	f.blindlySetRGBToStateAndDMX(manager, target.RGB)
+	manager.SetState(f.Name, target.ToState())
+
+}
+
+//for a given color, blindly set the r,g, and b channels to that color, and update the state to reflect
+func (f *Fixture) blindlySetRGBToStateAndDMX(manager Manager, color utils.RGB) {
+	rgbChannelIds := f.getChannelIDForAttributes(profile.ChannelTypeRed, profile.ChannelTypeGreen, profile.ChannelTypeBlue)
+	rVal, gVal, bVal := color.AsComponents()
+
+	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: rgbChannelIds[0], value: rVal},
+		dmxOperation{universe: f.Universe, channel: rgbChannelIds[1], value: gVal},
+		dmxOperation{universe: f.Universe, channel: rgbChannelIds[2], value: bVal})
+
+	manager.SetState(f.Name, State{RGB: color})
+
 }
 
 func (f *Fixture) SetIntensity(intensity float64) {

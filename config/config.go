@@ -1,9 +1,15 @@
-package main
+package config
 
 import (
-	"github.com/robmorgan/halo/fixture"
+	"github.com/robmorgan/halo/profile"
 	"github.com/sirupsen/logrus"
 )
+
+// GetHaloConfig returns the current configuration
+func GetHaloConfig() HaloConfig {
+	val, _ := NewHaloConfig()
+	return val
+}
 
 // HaloConfig represents options that configure the global behavior of the program
 type HaloConfig struct {
@@ -11,33 +17,33 @@ type HaloConfig struct {
 	Logger *logrus.Logger
 
 	// The fixture profiles
-	FixtureProfiles map[string]fixture.Profile
+	FixtureProfiles map[string]profile.Profile
 
 	// PatchedFixtures stores all of the patched fixtures in a custom struct
-	PatchedFixtures *PatchedFixtures
+	PatchedFixtures []PatchedFixture
 }
 
 // Create a new HaloConfig object with reasonable defaults for real usage
-func NewHaloConfig() (*HaloConfig, error) {
+func NewHaloConfig() (HaloConfig, error) {
 	// TODO - support passing in a config file one day
 
 	profiles := initializeFixtureProfiles()
 
-	return &HaloConfig{
+	return HaloConfig{
 		FixtureProfiles: profiles,
 		PatchedFixtures: PatchFixtures(),
 	}, nil
 }
 
-func initializeFixtureProfiles() map[string]fixture.Profile {
-	out := map[string]fixture.Profile{
+func initializeFixtureProfiles() map[string]profile.Profile {
+	out := map[string]profile.Profile{
 		"shehds-par": {
 			Name: "Shehds PAR",
-			Channels: map[int]string{
-				1: fixture.TypeIntensity,
-				2: fixture.TypeColorRed,
-				3: fixture.TypeColorGreen,
-				4: fixture.TypeColorBlue,
+			Channels: map[string]int{
+				profile.ChannelTypeIntensity: 1,
+				profile.ChannelTypeRed:       2,
+				profile.ChannelTypeGreen:     3,
+				profile.ChannelTypeBlue:      4,
 			},
 		},
 	}
