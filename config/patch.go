@@ -22,14 +22,14 @@ func patchFrontPars() []PatchedFixture {
 		// left middle par
 		PatchedFixture{
 			Name:     "left_middle_par",
-			Address:  114,
+			Address:  115,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
 		// right middle par
 		PatchedFixture{
 			Name:     "right_middle_par",
-			Address:  138,
+			Address:  139,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},

@@ -155,12 +155,14 @@ func (f *Fixture) SetState(manager Manager, target TargetState) {
 
 //for a given color, blindly set the r,g, and b channels to that color, and update the state to reflect
 func (f *Fixture) blindlySetRGBToStateAndDMX(manager Manager, color utils.RGB) {
-	rgbChannelIds := f.getChannelIDForAttributes(profile.ChannelTypeRed, profile.ChannelTypeGreen, profile.ChannelTypeBlue)
+	rgbChannelIds := f.getChannelIDForAttributes(profile.ChannelTypeIntensity, profile.ChannelTypeRed, profile.ChannelTypeGreen, profile.ChannelTypeBlue)
+	intVal := 200
 	rVal, gVal, bVal := color.AsComponents()
 
-	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: rgbChannelIds[0], value: rVal},
-		dmxOperation{universe: f.Universe, channel: rgbChannelIds[1], value: gVal},
-		dmxOperation{universe: f.Universe, channel: rgbChannelIds[2], value: bVal})
+	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: rgbChannelIds[0], value: intVal},
+		dmxOperation{universe: f.Universe, channel: rgbChannelIds[1], value: rVal},
+		dmxOperation{universe: f.Universe, channel: rgbChannelIds[2], value: gVal},
+		dmxOperation{universe: f.Universe, channel: rgbChannelIds[3], value: bVal})
 
 	manager.SetState(f.Name, State{RGB: color})
 
