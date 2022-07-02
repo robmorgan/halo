@@ -1,6 +1,7 @@
 package cuelist
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -12,14 +13,14 @@ import (
 
 // MasterManager is an interface
 type MasterManager interface {
-	ProcessCueList(cl *CueList, wg *sync.WaitGroup)
+	ProcessCueList(ctx context.Context, cl *CueList, wg *sync.WaitGroup)
 	ProcessCue(c *Cue, wg *sync.WaitGroup)
 	ProcessFrame(cf *Frame, wg *sync.WaitGroup)
 	ProcessFrameAction(cfa *FrameAction, wg *sync.WaitGroup)
 	EnQueueCue(c Cue, cl *CueList) *Cue
 	AddIDsRecursively(c *Cue)
 	GetDefaultCueList() *CueList
-	ProcessForever(wg *sync.WaitGroup)
+	ProcessForever(ctx context.Context, wg *sync.WaitGroup)
 	GetFixtureManager() fixture.Manager
 }
 
@@ -60,10 +61,14 @@ func (clm *Master) GetDefaultCueList() *CueList {
 }
 
 // ProcessForever runs all the cuelists
-func (clm *Master) ProcessForever(wg *sync.WaitGroup) {
-	for x := range clm.CueLists {
+func (clm *Master) ProcessForever(ctx context.Context, wg *sync.WaitGroup) {
+	logger := logger.GetProjectLogger()
+	logger.Info("Processing cue lists...")
+	for i := range clm.CueLists {
+		logger.Info("goty cue lists...")
 		wg.Add(1)
-		go clm.ProcessCueList(&clm.CueLists[x], wg)
+		go clm.ProcessCueList(ctx, &clm.CueLists[i], wg)
+		logger.Info("past goty cue lists...")
 	}
 }
 
@@ -73,21 +78,22 @@ func (clm *Master) GetFixtureManager() fixture.Manager {
 }
 
 // ProcessCueList processes cue lists
-func (clm *Master) ProcessCueList(cl *CueList, wg *sync.WaitGroup) {
+func (clm *Master) ProcessCueList(ctx context.Context, cl *CueList, wg *sync.WaitGroup) {
 	// TODO - hardcoded for now
 	cueBackOff := time.Millisecond * 25
 	defer wg.Done()
 
-	t := time.NewTimer(cueBackOff)
-	defer t.Stop()
 	logger := logger.GetProjectLogger()
 	logger.Printf("ProcessCueList started at %v, name=%v", time.Now(), cl.Name)
 
+	t := time.NewTimer(cueBackOff)
+	defer t.Stop()
+
 	for {
 		select {
-		// case <-ctx.Done():
-		// 	log.Printf("ProcessCueList shutdown, name=%v", cs.Name)
-		// 	return //ctx.Err()
+		case <-ctx.Done():
+			logger.Printf("ProcessCueList shutdown, name=%v", cl.Name)
+			return //ctx.Err()
 		case <-t.C:
 			if nextCue := cl.deQueueNextCue(); nextCue != nil {
 				cl.ActiveCue = nextCue
@@ -112,14 +118,16 @@ func (clm *Master) ProcessCueList(cl *CueList, wg *sync.WaitGroup) {
 			}
 		}
 	}
+
 }
 
 // ProcessCue processes cue
 func (clm *Master) ProcessCue(c *Cue, wg *sync.WaitGroup) {
 	defer wg.Done()
-	logger := logger.GetProjectLogger()
 
+	logger := logger.GetProjectLogger()
 	logger.WithFields(logrus.Fields{"cue_id": c.ID, "cue_name": c.Name}).Info("ProcessCue")
+
 	wg.Add(len(c.Frames))
 	for _, eachFrame := range c.Frames {
 		clm.ProcessFrame(&eachFrame, wg)

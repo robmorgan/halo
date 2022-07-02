@@ -1,6 +1,7 @@
 package fixture
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -63,7 +64,7 @@ type OLAClient interface {
 }
 
 // SendDMXWorker sends OLA the current dmxState across all universes
-func SendDMXWorker(client OLAClient, tick time.Duration, manager Manager, wg *sync.WaitGroup) error {
+func SendDMXWorker(ctx context.Context, client OLAClient, tick time.Duration, manager Manager, wg *sync.WaitGroup) error {
 	defer wg.Done()
 	defer client.Close()
 
@@ -73,9 +74,9 @@ func SendDMXWorker(client OLAClient, tick time.Duration, manager Manager, wg *sy
 
 	for {
 		select {
-		// case <-ctx.Done():
-		// 	log.Println("SendDMXWorker shutdown")
-		// 	return ctx.Err()
+		case <-ctx.Done():
+			log.Println("SendDMXWorker shutdown")
+			return ctx.Err()
 		case <-t.C:
 			for k, v := range manager.GetDMXState().universes {
 				client.SendDmx(k, v)
