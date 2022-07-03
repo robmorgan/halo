@@ -10,19 +10,19 @@ import (
 	"github.com/robmorgan/halo/logger"
 )
 
-//RGB holds RGB values (0-255, although they can be negative in the case of a delta)
+// RGB holds RGB values (0-255, although they can be negative in the case of a delta)
 type RGB struct {
 	R int `json:"r"`
 	G int `json:"g"`
 	B int `json:"b"`
 }
 
-//IsBlack determines if a color is black
+// IsBlack determines if a color is black
 func (c *RGB) IsBlack() bool {
 	return *c == GetRGBFromString("black")
 }
 
-//GetInterpolatedFade returns fade from one color to another.
+// GetInterpolatedFade returns fade from one color to another.
 func (c *RGB) GetInterpolatedFade(target RGB, step, numSteps int) RGB {
 	c1 := c.AsColorful()
 	c2 := target.AsColorful()
@@ -34,12 +34,12 @@ func (c *RGB) GetInterpolatedFade(target RGB, step, numSteps int) RGB {
 	return GetRGBFromColorful(c1.BlendHcl(c2, progress).Clamped())
 }
 
-//AsColorful turns a colorful.Color into an RGB
+// AsColorful turns a colorful.Color into an RGB
 func (c *RGB) AsColorful() colorful.Color {
 	return colorful.Color{R: float64(c.R) / 255, G: float64(c.G) / 255, B: float64(c.B) / 255}
 }
 
-//GetRGBFromColorful turns a colorful.Color struct into an RGB one
+// GetRGBFromColorful turns a colorful.Color struct into an RGB one
 func GetRGBFromColorful(c colorful.Color) RGB {
 	return RGB{
 		R: int(c.R * 255),
@@ -48,13 +48,13 @@ func GetRGBFromColorful(c colorful.Color) RGB {
 	}
 }
 
-//ToHex converts a color to hex
+// ToHex converts a color to hex
 func (c *RGB) ToHex() string {
 	return c.AsColorful().Hex()
 }
 
-//GetRGBFromString turns a string into an RGB color
-//The input can either be hex (#00FF00) or a string (green)
+// GetRGBFromString turns a string into an RGB color
+// The input can either be hex (#00FF00) or a string (green)
 func GetRGBFromString(s string) RGB {
 	if strings.HasPrefix(s, "#") {
 		//parse hex
@@ -67,7 +67,7 @@ func GetRGBFromString(s string) RGB {
 		return GetRGBFromColorful(c)
 	}
 
-	//fallback to string matching
+	// fallback to string matching
 	switch s {
 	case "red":
 		return RGB{R: 255}
@@ -85,18 +85,18 @@ func GetRGBFromString(s string) RGB {
 
 }
 
-//AsComponents returns the seperate r, g, b
+// AsComponents returns the seperate r, g, b
 func (c *RGB) AsComponents() (int, int, int) {
 	return c.R, c.G, c.B
 }
 
-//TermString returns a ANSI-color formatted r/g/b string
+// TermString returns a ANSI-color formatted r/g/b string
 func (c *RGB) TermString() string {
 	rgbstr := fmt.Sprintf("%d,%d,%d", c.R, c.G, c.B)
 	return string(rgbterm.Bytes([]byte("█"+rgbstr+"█"), uint8(c.R), uint8(c.G), uint8(c.B), 0, 0, 0))
 }
 
-//GetXyy returns the RGB color in xyy color space
+// GetXyy returns the RGB color in xyy color space
 func (c *RGB) GetXyy() (x, y, Yout float64) {
 	//OLD:  x, y, _ := colorful.Xyz()
 	return colorful.XyzToXyy(colorful.LinearRgbToXyz(c.AsColorful().LinearRgb()))
