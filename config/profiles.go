@@ -13,7 +13,53 @@ func initializeFixtureProfiles() map[string]profile.Profile {
 				profile.ChannelTypeBlue:      4,
 			},
 		},
+		"shehds-led-spot-60w": {
+			Name: "Shehds LED Spot 60W",
+			// 10 channel mode
+			Channels: map[string]int{
+				profile.ChannelTypePan:            1,
+				profile.ChannelTypeTilt:           2,
+				profile.ChannelTypeColor:          3,
+				profile.ChannelTypeGobo:           4,
+				profile.ChannelTypeStrobe:         5,
+				profile.ChannelTypeIntensity:      6,
+				profile.ChannelTypeMotorSpeed:     7,
+				profile.ChannelTypeFunctionSelect: 8,
+				profile.ChannelTypeReset:          9,
+			},
+		},
+		"shehds-led-wash-7x18w-rgbwa-uv": {
+			Name: "Shehds LED Wash 7x18W RGBWA+UV",
+			// 10 channel mode
+			Channels: map[string]int{
+				profile.ChannelTypePan:       1,
+				profile.ChannelTypeTilt:      2,
+				profile.ChannelTypeIntensity: 3,
+				profile.ChannelTypeRed:       4,
+				profile.ChannelTypeGreen:     5,
+				profile.ChannelTypeBlue:      6,
+				profile.ChannelTypeWhite:     7,
+				profile.ChannelTypeAmber:     8,
+				profile.ChannelTypeUV:        9,
+				profile.ChannelTypeUnknown:   10, // TODO - I think this is XY speed?  Check the manual
+			},
+		},
 		"shehds-led-bar-beam-8x12w": {
+			Name: "Shehds LED Bar Beam 8x12W RGBW",
+			// 38 channel mode
+			Channels: map[string]int{
+				profile.ChannelTypeTilt:           1,
+				profile.ChannelTypeTiltSpeed:      2,
+				profile.ChannelTypeFunctionSelect: 3,
+				profile.ChannelTypeFunctionSpeed:  4,
+				profile.ChannelTypeIntensity:      5,
+				profile.ChannelTypeRed:            6,
+				profile.ChannelTypeGreen:          7,
+				profile.ChannelTypeBlue:           8,
+				profile.ChannelTypeWhite:          9,
+			},
+		},
+		"shehds-led-bar-beam-8x12w-38ch": {
 			Name: "Shehds LED Bar Beam 8x12W RGBW",
 			// 38 channel mode
 			Channels: map[string]int{
@@ -71,22 +117,6 @@ func initializeFixtureProfiles() map[string]profile.Profile {
 				profile.ChannelTypeGreen + "8": 36,
 				profile.ChannelTypeBlue + "8":  37,
 				profile.ChannelTypeWhite + "8": 38,
-			},
-		},
-		"shehds-led-wash-7x18w-rgbwa-uv": {
-			Name: "Shehds LED Wash 7x18W RGBWA+UV",
-			// 10 channel mode
-			Channels: map[string]int{
-				profile.ChannelTypePan:       1,
-				profile.ChannelTypeTilt:      2,
-				profile.ChannelTypeIntensity: 3,
-				profile.ChannelTypeRed:       4,
-				profile.ChannelTypeGreen:     5,
-				profile.ChannelTypeBlue:      6,
-				profile.ChannelTypeWhite:     7,
-				profile.ChannelTypeAmber:     8,
-				profile.ChannelTypeUV:        9,
-				profile.ChannelTypeUnknown:   10, // TODO - I think this is XY speed?  Check the manual
 			},
 		},
 	}

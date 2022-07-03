@@ -14,6 +14,7 @@ func PatchFixtures() []PatchedFixture {
 	s = append(s, patchFrontPars()...)
 	s = append(s, patchUplightPars()...)
 	s = append(s, patchBeamBars()...)
+	s = append(s, patchSpotLights()...)
 	s = append(s, patchWashLights()...)
 
 	return s
@@ -70,6 +71,23 @@ func patchBeamBars() []PatchedFixture {
 			Address:  57,
 			Universe: 1,
 			Profile:  "shehds-led-bar-beam-8x12w",
+		},
+	}
+}
+
+func patchSpotLights() []PatchedFixture {
+	return []PatchedFixture{
+		PatchedFixture{
+			Name:     "left_spot",
+			Address:  20,
+			Universe: 1,
+			Profile:  "shehds-led-spot-60w",
+		},
+		PatchedFixture{
+			Name:     "right_spot",
+			Address:  31,
+			Universe: 1,
+			Profile:  "shehds-led-spot-60w",
 		},
 	}
 }
