@@ -14,6 +14,7 @@ func PatchFixtures() []PatchedFixture {
 	s = append(s, patchFrontPars()...)
 	s = append(s, patchUplightPars()...)
 	s = append(s, patchBeamBars()...)
+	s = append(s, patchWashLights()...)
 
 	return s
 }
@@ -69,6 +70,23 @@ func patchBeamBars() []PatchedFixture {
 			Address:  57,
 			Universe: 1,
 			Profile:  "shehds-led-bar-beam-8x12w",
+		},
+	}
+}
+
+func patchWashLights() []PatchedFixture {
+	return []PatchedFixture{
+		PatchedFixture{
+			Name:     "left_wash",
+			Address:  20,
+			Universe: 1,
+			Profile:  "shehds-led-wash-7x18w-rgbwa-uv",
+		},
+		PatchedFixture{
+			Name:     "right_wash",
+			Address:  31,
+			Universe: 1,
+			Profile:  "shehds-led-wash-7x18w-rgbwa-uv",
 		},
 	}
 }

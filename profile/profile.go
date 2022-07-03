@@ -6,12 +6,19 @@ const (
 	ChannelTypeGreen     = "channel:type:green"
 	ChannelTypeBlue      = "channel:type:blue"
 	ChannelTypeWhite     = "channel:type:white"
+	ChannelTypeAmber     = "channel:type:amber"
+	ChannelTypeUV        = "channel:type:uv"
+
+	ChannelTypePan  = "channel:type:pan"
+	ChannelTypeTilt = "channel:type:tilt"
 
 	ChannelTypeMotorPosition = "channel:type:motor:position"
 	ChannelTypeMotorSpeed    = "channel:type:motor:speed"
 
 	ChannelTypeFunctionSelect = "channel:type:function:select"
 	ChannelTypeFunctionSpeed  = "channel:type:function:speed"
+
+	ChannelTypeUnknown = "channel:type:unknown"
 )
 
 // Profile holds info for a fixture profile including the channel and capability mappings.
