@@ -2,15 +2,19 @@ package profile
 
 const (
 	ChannelTypeIntensity = "channel:type:intensity"
-	ChannelTypeRed       = "channel:type:red"
-	ChannelTypeGreen     = "channel:type:green"
-	ChannelTypeBlue      = "channel:type:blue"
-	ChannelTypeWhite     = "channel:type:white"
-	ChannelTypeAmber     = "channel:type:amber"
-	ChannelTypeUV        = "channel:type:uv"
+	ChannelTypeStrobe    = "channel:type:strobe"
 
-	ChannelTypePan  = "channel:type:pan"
-	ChannelTypeTilt = "channel:type:tilt"
+	ChannelTypeRed   = "channel:type:red"
+	ChannelTypeGreen = "channel:type:green"
+	ChannelTypeBlue  = "channel:type:blue"
+	ChannelTypeWhite = "channel:type:white"
+	ChannelTypeAmber = "channel:type:amber"
+	ChannelTypeUV    = "channel:type:uv"
+
+	ChannelTypePan       = "channel:type:pan"
+	ChannelTypePanSpeed  = "channel:type:panspeed"
+	ChannelTypeTilt      = "channel:type:tilt"
+	ChannelTypeTiltSpeed = "channel:type:tiltspeed"
 
 	ChannelTypeMotorPosition = "channel:type:motor:position"
 	ChannelTypeMotorSpeed    = "channel:type:motor:speed"
