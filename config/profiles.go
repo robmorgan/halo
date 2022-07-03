@@ -15,17 +15,62 @@ func initializeFixtureProfiles() map[string]profile.Profile {
 		},
 		"shehds-led-bar-beam-8x12w": {
 			Name: "Shehds LED Bar Beam 8x12W RGBW",
-			// 9 channel mode
+			// 38 channel mode
 			Channels: map[string]int{
-				profile.ChannelTypeMotorPosition:  1,
-				profile.ChannelTypeMotorSpeed:     2,
+				profile.ChannelTypeTilt:           1,
+				profile.ChannelTypeTiltSpeed:      2,
 				profile.ChannelTypeFunctionSelect: 3,
 				profile.ChannelTypeFunctionSpeed:  4,
 				profile.ChannelTypeIntensity:      5,
-				profile.ChannelTypeRed:            6,
-				profile.ChannelTypeGreen:          7,
-				profile.ChannelTypeBlue:           8,
-				profile.ChannelTypeWhite:          9,
+				profile.ChannelTypeStrobe:         6,
+
+				// light 1
+				profile.ChannelTypeRed + "1":   7,
+				profile.ChannelTypeGreen + "1": 8,
+				profile.ChannelTypeBlue + "1":  9,
+				profile.ChannelTypeWhite + "1": 10,
+
+				// light 2
+				profile.ChannelTypeRed + "2":   11,
+				profile.ChannelTypeGreen + "2": 12,
+				profile.ChannelTypeBlue + "2":  13,
+				profile.ChannelTypeWhite + "2": 14,
+
+				// light 3
+				profile.ChannelTypeRed + "3":   15,
+				profile.ChannelTypeGreen + "3": 16,
+				profile.ChannelTypeBlue + "3":  17,
+				profile.ChannelTypeWhite + "3": 18,
+
+				// light 4
+				profile.ChannelTypeRed + "4":   19,
+				profile.ChannelTypeGreen + "4": 20,
+				profile.ChannelTypeBlue + "4":  21,
+				profile.ChannelTypeWhite + "4": 22,
+
+				// light 5
+				profile.ChannelTypeRed + "5":   23,
+				profile.ChannelTypeGreen + "5": 24,
+				profile.ChannelTypeBlue + "5":  25,
+				profile.ChannelTypeWhite + "5": 26,
+
+				// light 6
+				profile.ChannelTypeRed + "6":   27,
+				profile.ChannelTypeGreen + "6": 28,
+				profile.ChannelTypeBlue + "6":  29,
+				profile.ChannelTypeWhite + "6": 30,
+
+				// light 7
+				profile.ChannelTypeRed + "7":   31,
+				profile.ChannelTypeGreen + "7": 32,
+				profile.ChannelTypeBlue + "7":  33,
+				profile.ChannelTypeWhite + "7": 34,
+
+				// light 8
+				profile.ChannelTypeRed + "8":   35,
+				profile.ChannelTypeGreen + "8": 36,
+				profile.ChannelTypeBlue + "8":  37,
+				profile.ChannelTypeWhite + "8": 38,
 			},
 		},
 		"shehds-led-wash-7x18w-rgbwa-uv": {
