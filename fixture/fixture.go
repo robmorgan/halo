@@ -155,17 +155,21 @@ func (f *Fixture) SetState(manager Manager, target TargetState) {
 
 	for x := 0; x < numSteps; x++ {
 		intVal := utils.GetDimmerFadeValue(target.Intensity, x, numSteps)
+		panVal := utils.GetDimmerFadeValue(target.Pan, x, numSteps)
+		tiltVal := utils.GetDimmerFadeValue(target.Tilt, x, numSteps)
 		interpolated := currentState.RGB.GetInterpolatedFade(target.RGB, x, numSteps)
 
 		// keep state updated
 		f.setIntensityToStateAndDMX(manager, intVal)
 		f.blindlySetRGBToStateAndDMX(manager, interpolated)
+		f.setPositionToStateAndDMX(manager, panVal, tiltVal)
 
 		time.Sleep(tickIntervalFadeInterpolation)
 	}
 
 	f.setIntensityToStateAndDMX(manager, target.Intensity)
 	f.blindlySetRGBToStateAndDMX(manager, target.RGB)
+	f.setPositionToStateAndDMX(manager, target.Pan, target.Tilt)
 	manager.SetState(f.Name, target.ToState())
 
 }
@@ -175,16 +179,21 @@ func (f *Fixture) setIntensityToStateAndDMX(manager Manager, value int) {
 	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: intChannelID[0], value: value})
 }
 
+func (f *Fixture) setPositionToStateAndDMX(manager Manager, pan int, tilt int) {
+	channelIDs := f.getChannelIDForAttributes(profile.ChannelTypePan, profile.ChannelTypeTilt)
+
+	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: channelIDs[0], value: pan},
+		dmxOperation{universe: f.Universe, channel: channelIDs[1], value: tilt})
+}
+
 // for a given color, blindly set the r,g, and b channels to that color, and update the state to reflect
 func (f *Fixture) blindlySetRGBToStateAndDMX(manager Manager, color utils.RGB) {
-	rgbChannelIds := f.getChannelIDForAttributes(profile.ChannelTypeIntensity, profile.ChannelTypeRed, profile.ChannelTypeGreen, profile.ChannelTypeBlue)
-	intVal := 200
+	rgbChannelIds := f.getChannelIDForAttributes(profile.ChannelTypeRed, profile.ChannelTypeGreen, profile.ChannelTypeBlue)
 	rVal, gVal, bVal := color.AsComponents()
 
-	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: rgbChannelIds[0], value: intVal},
-		dmxOperation{universe: f.Universe, channel: rgbChannelIds[1], value: rVal},
-		dmxOperation{universe: f.Universe, channel: rgbChannelIds[2], value: gVal},
-		dmxOperation{universe: f.Universe, channel: rgbChannelIds[3], value: bVal})
+	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: rgbChannelIds[0], value: rVal},
+		dmxOperation{universe: f.Universe, channel: rgbChannelIds[1], value: gVal},
+		dmxOperation{universe: f.Universe, channel: rgbChannelIds[2], value: bVal})
 
 	manager.SetState(f.Name, State{RGB: color})
 
