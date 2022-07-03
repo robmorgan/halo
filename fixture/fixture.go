@@ -29,8 +29,8 @@ type Interface interface {
 	NeedsUpdate() bool
 }
 
-// MovingFixture is an optional interface that allows a fixture to enable pan/tilt functionality.
-type MovingFixture interface {
+// MovingFixtureInterface is an optional interface that allows a fixture to enable pan/tilt functionality.
+type MovingFixtureInterface interface {
 	SetPan() error
 	SetTilt() error
 }
@@ -66,7 +66,7 @@ type Fixture struct {
 	needsUpdate bool
 }
 
-// TargetState represents the state of a light, is source of truth
+// TargetState represents the state of a fixture, is source of truth
 type TargetState struct {
 	// On   bool
 	State
@@ -75,16 +75,29 @@ type TargetState struct {
 
 // ToState converts a TargetState to a State
 func (t *TargetState) ToState() State {
-	return State{RGB: t.RGB}
+	return State{
+		Intensity: t.Intensity,
+		RGB:       t.RGB,
+		Pan:       t.Pan,
+		Tilt:      t.Tilt,
+	}
 }
 
 func (t *TargetState) String() string {
-	return fmt.Sprintf("Duration: %s, RGB: %s", t.Duration, t.RGB.TermString())
+	return fmt.Sprintf("Duration: %s, Intensity: %d, RGB: %s, Pan: %d, Tilt: %d", t.Duration, t.Intensity, t.RGB.TermString(), t.Pan, t.Tilt)
 }
 
-//State represents the current state of the light
+// State represents the current state of the fixture
 type State struct {
+	// intensity
+	Intensity int
+
+	// color
 	RGB utils.RGB
+
+	// Movement
+	Pan  int
+	Tilt int
 }
 
 // Create a new Fixture object with reasonable defaults for real usage.
@@ -141,19 +154,28 @@ func (f *Fixture) SetState(manager Manager, target TargetState) {
 	logger.Printf("dmx fade [%s] to [%s] over %d steps", currentState.RGB.TermString(), target.String(), numSteps)
 
 	for x := 0; x < numSteps; x++ {
+		intVal := utils.GetDimmerFadeValue(target.Intensity, x, numSteps)
 		interpolated := currentState.RGB.GetInterpolatedFade(target.RGB, x, numSteps)
-		//keep state updated:
+
+		// keep state updated
+		f.setIntensityToStateAndDMX(manager, intVal)
 		f.blindlySetRGBToStateAndDMX(manager, interpolated)
 
 		time.Sleep(tickIntervalFadeInterpolation)
 	}
 
+	f.setIntensityToStateAndDMX(manager, target.Intensity)
 	f.blindlySetRGBToStateAndDMX(manager, target.RGB)
 	manager.SetState(f.Name, target.ToState())
 
 }
 
-//for a given color, blindly set the r,g, and b channels to that color, and update the state to reflect
+func (f *Fixture) setIntensityToStateAndDMX(manager Manager, value int) {
+	intChannelID := f.getChannelIDForAttributes(profile.ChannelTypeIntensity)
+	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: intChannelID[0], value: value})
+}
+
+// for a given color, blindly set the r,g, and b channels to that color, and update the state to reflect
 func (f *Fixture) blindlySetRGBToStateAndDMX(manager Manager, color utils.RGB) {
 	rgbChannelIds := f.getChannelIDForAttributes(profile.ChannelTypeIntensity, profile.ChannelTypeRed, profile.ChannelTypeGreen, profile.ChannelTypeBlue)
 	intVal := 200
