@@ -65,10 +65,8 @@ func (clm *Master) ProcessForever(ctx context.Context, wg *sync.WaitGroup) {
 	logger := logger.GetProjectLogger()
 	logger.Info("Processing cue lists...")
 	for i := range clm.CueLists {
-		logger.Info("goty cue lists...")
 		wg.Add(1)
 		go clm.ProcessCueList(ctx, &clm.CueLists[i], wg)
-		logger.Info("past goty cue lists...")
 	}
 }
 
