@@ -11,9 +11,10 @@ func initializeFixtureProfiles() map[string]profile.Profile {
 				profile.ChannelTypeRed:            2,
 				profile.ChannelTypeGreen:          3,
 				profile.ChannelTypeBlue:           4,
-				profile.ChannelTypeStrobe:         5,
-				profile.ChannelTypeFunctionSelect: 6,
-				profile.ChannelTypeUnknown:        7,
+				profile.ChannelTypeWhite:          5,
+				profile.ChannelTypeStrobe:         6,
+				profile.ChannelTypeFunctionSelect: 7,
+				profile.ChannelTypeUnknown:        8,
 			},
 		},
 		"shehds-led-spot-60w": {
