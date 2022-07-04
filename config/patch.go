@@ -11,7 +11,8 @@ type PatchedFixture struct {
 func PatchFixtures() []PatchedFixture {
 	s := make([]PatchedFixture, 0)
 
-	s = append(s, patchFrontPars()...)
+	s = append(s, patchFrontMiddlePars()...)
+	s = append(s, patchFrontTopPars()...)
 	s = append(s, patchUplightPars()...)
 	s = append(s, patchBeamBars()...)
 	s = append(s, patchSpotLights()...)
@@ -20,7 +21,7 @@ func PatchFixtures() []PatchedFixture {
 	return s
 }
 
-func patchFrontPars() []PatchedFixture {
+func patchFrontMiddlePars() []PatchedFixture {
 	return []PatchedFixture{
 		// left middle par
 		PatchedFixture{
@@ -33,6 +34,25 @@ func patchFrontPars() []PatchedFixture {
 		PatchedFixture{
 			Name:     "right_middle_par",
 			Address:  139,
+			Universe: 1,
+			Profile:  "shehds-par",
+		},
+	}
+}
+
+func patchFrontTopPars() []PatchedFixture {
+	return []PatchedFixture{
+		// left top par
+		PatchedFixture{
+			Name:     "left_top_par",
+			Address:  67,
+			Universe: 1,
+			Profile:  "shehds-par",
+		},
+		// right top par
+		PatchedFixture{
+			Name:     "right_top_par",
+			Address:  76,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},

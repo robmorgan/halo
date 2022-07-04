@@ -7,10 +7,13 @@ func initializeFixtureProfiles() map[string]profile.Profile {
 		"shehds-par": {
 			Name: "Shehds LED Flat PAR 12x3W RGBW",
 			Channels: map[string]int{
-				profile.ChannelTypeIntensity: 1,
-				profile.ChannelTypeRed:       2,
-				profile.ChannelTypeGreen:     3,
-				profile.ChannelTypeBlue:      4,
+				profile.ChannelTypeIntensity:      1,
+				profile.ChannelTypeRed:            2,
+				profile.ChannelTypeGreen:          3,
+				profile.ChannelTypeBlue:           4,
+				profile.ChannelTypeStrobe:         5,
+				profile.ChannelTypeFunctionSelect: 6,
+				profile.ChannelTypeUnknown:        7,
 			},
 		},
 		"shehds-led-spot-60w": {
