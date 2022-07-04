@@ -93,7 +93,8 @@ type State struct {
 	Intensity int
 
 	// color
-	RGB utils.RGB
+	RGB    utils.RGB
+	Strobe int
 
 	// Movement
 	Pan  int
@@ -161,6 +162,7 @@ func (f *Fixture) SetState(manager Manager, target TargetState) {
 
 		// keep state updated
 		f.setIntensityToStateAndDMX(manager, intVal)
+		f.setStrobeToStateAndDMX(manager, target.Strobe)
 		f.blindlySetRGBToStateAndDMX(manager, interpolated)
 		f.setPositionToStateAndDMX(manager, panVal, tiltVal)
 
@@ -177,6 +179,11 @@ func (f *Fixture) SetState(manager Manager, target TargetState) {
 func (f *Fixture) setIntensityToStateAndDMX(manager Manager, value int) {
 	intChannelID := f.getChannelIDForAttributes(profile.ChannelTypeIntensity)
 	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: intChannelID[0], value: value})
+}
+
+func (f *Fixture) setStrobeToStateAndDMX(manager Manager, value int) {
+	strobeChannelID := f.getChannelIDForAttributes(profile.ChannelTypeStrobe)
+	manager.SetDMXState(dmxOperation{universe: f.Universe, channel: strobeChannelID[0], value: value})
 }
 
 func (f *Fixture) setPositionToStateAndDMX(manager Manager, pan int, tilt int) {
