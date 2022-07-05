@@ -72,7 +72,7 @@ func (c *Cue) Go() bool {
 	return true
 }
 
-// GetDuration returns the sum of frame in a cue
+// GetDuration returns the sum of frames in a cue
 func (c *Cue) GetDuration() time.Duration {
 	totalDuration := time.Duration(0)
 	for _, frame := range c.Frames {
