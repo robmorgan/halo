@@ -73,7 +73,10 @@ func Run(ctx context.Context) {
 	// cycle middle pars
 	stateA := fixture.State{Intensity: 200, RGB: utils.GetRGBFromString("#FFD700")}
 	stateB := fixture.State{Intensity: 0, RGB: utils.GetRGBFromString("#FFD700")}
-	c, err = cycleFixtureStates([]string{"left_middle_par", "right_middle_par"}, stateA, stateB, "16s", 25)
+	//tickInterval := time.Millisecond * 60000 / 130
+	tickInterval := time.Millisecond * 30
+	//tickInterval := utils.BPMToMilliseconds(130)
+	c, err = cycleFixtureStates([]string{"left_middle_par", "right_middle_par"}, stateA, stateB, "16s", tickInterval, 35)
 	if err != nil {
 		logger.Fatalf("error processing cue. err='%v'", err)
 	}
@@ -119,6 +122,12 @@ func Run(ctx context.Context) {
 		logger.Fatalf("error processing cue. err='%v'", err)
 	}
 	master.EnQueueCue(*c, cuelist)
+
+	// play audio
+	go playAudio(LoveSensationAudioFile)
+
+	// Hack: wait for the first beat (beat starts at 1s 21.28ms)
+	time.Sleep(time.Millisecond * 1021)
 
 	// process cues forever
 	logger.Info("Processing cues forever...")
