@@ -26,14 +26,14 @@ func patchFrontMiddlePars() []PatchedFixture {
 		// left middle par
 		PatchedFixture{
 			Name:     "left_middle_par",
-			Address:  115,
+			Address:  1,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
 		// right middle par
 		PatchedFixture{
 			Name:     "right_middle_par",
-			Address:  139,
+			Address:  9,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
@@ -45,14 +45,14 @@ func patchFrontTopPars() []PatchedFixture {
 		// left top par
 		PatchedFixture{
 			Name:     "left_top_par",
-			Address:  67,
+			Address:  17,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
 		// right top par
 		PatchedFixture{
 			Name:     "right_top_par",
-			Address:  76,
+			Address:  25,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
@@ -61,17 +61,15 @@ func patchFrontTopPars() []PatchedFixture {
 
 func patchUplightPars() []PatchedFixture {
 	return []PatchedFixture{
-		// left uplight par (A.123 -> 122)
 		PatchedFixture{
 			Name:     "left_uplight_par",
-			Address:  122,
+			Address:  33,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
-		// right uplight par (A.131 -> 130)
 		PatchedFixture{
 			Name:     "right_uplight_par",
-			Address:  130,
+			Address:  41,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
@@ -82,13 +80,13 @@ func patchBeamBars() []PatchedFixture {
 	return []PatchedFixture{
 		PatchedFixture{
 			Name:     "left_beam_bar",
-			Address:  163,
+			Address:  105,
 			Universe: 1,
 			Profile:  "shehds-led-bar-beam-8x12w",
 		},
 		PatchedFixture{
 			Name:     "right_beam_bar",
-			Address:  57,
+			Address:  114,
 			Universe: 1,
 			Profile:  "shehds-led-bar-beam-8x12w",
 		},
@@ -99,13 +97,13 @@ func patchSpotLights() []PatchedFixture {
 	return []PatchedFixture{
 		PatchedFixture{
 			Name:     "left_spot",
-			Address:  20,
+			Address:  137,
 			Universe: 1,
 			Profile:  "shehds-led-spot-60w",
 		},
 		PatchedFixture{
 			Name:     "right_spot",
-			Address:  31,
+			Address:  137,
 			Universe: 1,
 			Profile:  "shehds-led-spot-60w",
 		},
@@ -116,13 +114,13 @@ func patchWashLights() []PatchedFixture {
 	return []PatchedFixture{
 		PatchedFixture{
 			Name:     "left_wash",
-			Address:  20,
+			Address:  55,
 			Universe: 1,
 			Profile:  "shehds-led-wash-7x18w-rgbwa-uv",
 		},
 		PatchedFixture{
 			Name:     "right_wash",
-			Address:  31,
+			Address:  65,
 			Universe: 1,
 			Profile:  "shehds-led-wash-7x18w-rgbwa-uv",
 		},
