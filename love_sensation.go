@@ -8,6 +8,8 @@ import (
 	"github.com/robmorgan/halo/utils"
 )
 
+const LoveSensationAudioFile = "/Users/robbym/Dropbox/DJ Stuff/DJSLSummer2022/Music/15742477_Love Sensation_(Eddie Thoneick's Sensation Radio Mix).wav"
+
 // Cue #2: Middle PARs off, Strobe top PARs
 func getLoveSensationCue2() *cuelist.Cue {
 	cue := cuelist.Cue{}
@@ -30,8 +32,9 @@ func getLoveSensationCue2() *cuelist.Cue {
 			action.FixtureName = fixtureList[y]
 			action.NewState = fixture.TargetState{
 				// Set White Property
-				State:    fixture.State{Intensity: 100, Strobe: 210, RGB: utils.GetRGBFromString("#FFFFFF")},
-				Duration: frameDuration,
+				State:        fixture.State{Intensity: 100, Strobe: 210, RGB: utils.GetRGBFromString("#FFFFFF")},
+				Duration:     frameDuration,
+				TickInterval: fixture.TickIntervalFadeInterpolation,
 			}
 			frame.Actions = append(frame.Actions, action)
 		}
