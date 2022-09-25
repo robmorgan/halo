@@ -39,11 +39,6 @@ No programmer. No editor. Halo is only a playback engine. You do the programming
  * Scene: A programmed look you have set up the lights to display.
  * Venue: Constrain movers and custom presets. (could skip this)
 
-## TODO
-
- - [ ] you could make a float16 property to map a value over two DMX channels. Might help to fine-tune moving heads and create smoother looks? e.g: 180+16
- - [ ] You could convert your system to run off percentages. e.g: 0.0 - 1.0. Floats. so things are basically percentage based.
-
 ## Fixture Profiles
 
  * Float
