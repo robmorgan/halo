@@ -19,7 +19,7 @@ func getLoveSensationCue2() *cuelist.Cue {
 	cue.Frames = append(cue.Frames, getFrameToClearFixtures(offFixtures, time.Millisecond*30))
 
 	// strobe fixtures
-	fixtureList := []string{"left_top_par", "right_top_par"}
+	fixtureList := []string{"left_top_par", "right_top_par", "left_middle_par", "right_middle_par", "left_bottom_par", "right_bottom_par"}
 	duration := time.Second * 5
 	numFrames := 1
 
@@ -32,9 +32,9 @@ func getLoveSensationCue2() *cuelist.Cue {
 			action.FixtureName = fixtureList[y]
 			action.NewState = fixture.TargetState{
 				// Set White Property
-				State:        fixture.State{Intensity: 100, Strobe: 210, RGB: utils.GetRGBFromString("#FFFFFF")},
-				Duration:     frameDuration,
-				TickInterval: fixture.TickIntervalFadeInterpolation,
+				State:    fixture.State{Intensity: 100, Strobe: 210, RGB: utils.GetRGBFromString("#FFFFFF")},
+				Duration: frameDuration,
+				//TickInterval: fixture.TickIntervalFadeInterpolation,
 			}
 			frame.Actions = append(frame.Actions, action)
 		}
