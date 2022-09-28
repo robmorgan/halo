@@ -11,33 +11,16 @@ type PatchedFixture struct {
 func PatchFixtures() []PatchedFixture {
 	s := make([]PatchedFixture, 0)
 
-	s = append(s, patchFrontMiddlePars()...)
 	s = append(s, patchFrontTopPars()...)
+	s = append(s, patchFrontMiddlePars()...)
+	s = append(s, patchFrontBottomPars()...)
 	s = append(s, patchUplightPars()...)
 	s = append(s, patchBeamBars()...)
-	s = append(s, patchSpotLights()...)
-	s = append(s, patchWashLights()...)
+	// s = append(s, patchSmokeMachines()...)
+	//s = append(s, patchSpotLights()...)
+	//s = append(s, patchWashLights()...)
 
 	return s
-}
-
-func patchFrontMiddlePars() []PatchedFixture {
-	return []PatchedFixture{
-		// left middle par
-		PatchedFixture{
-			Name:     "left_middle_par",
-			Address:  1,
-			Universe: 1,
-			Profile:  "shehds-par",
-		},
-		// right middle par
-		PatchedFixture{
-			Name:     "right_middle_par",
-			Address:  9,
-			Universe: 1,
-			Profile:  "shehds-par",
-		},
-	}
 }
 
 func patchFrontTopPars() []PatchedFixture {
@@ -45,7 +28,7 @@ func patchFrontTopPars() []PatchedFixture {
 		// left top par
 		PatchedFixture{
 			Name:     "left_top_par",
-			Address:  17,
+			Address:  1,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
@@ -59,17 +42,55 @@ func patchFrontTopPars() []PatchedFixture {
 	}
 }
 
+func patchFrontMiddlePars() []PatchedFixture {
+	return []PatchedFixture{
+		// left middle par
+		PatchedFixture{
+			Name:     "left_middle_par",
+			Address:  9,
+			Universe: 1,
+			Profile:  "shehds-par",
+		},
+		// right middle par
+		PatchedFixture{
+			Name:     "right_middle_par",
+			Address:  33,
+			Universe: 1,
+			Profile:  "shehds-par",
+		},
+	}
+}
+
+func patchFrontBottomPars() []PatchedFixture {
+	return []PatchedFixture{
+		// left middle par
+		PatchedFixture{
+			Name:     "left_bottom_par",
+			Address:  17,
+			Universe: 1,
+			Profile:  "shehds-par",
+		},
+		// right middle par
+		PatchedFixture{
+			Name:     "right_bottom_par",
+			Address:  41,
+			Universe: 1,
+			Profile:  "shehds-par",
+		},
+	}
+}
+
 func patchUplightPars() []PatchedFixture {
 	return []PatchedFixture{
 		PatchedFixture{
 			Name:     "left_uplight_par",
-			Address:  33,
+			Address:  49,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
 		PatchedFixture{
 			Name:     "right_uplight_par",
-			Address:  41,
+			Address:  57,
 			Universe: 1,
 			Profile:  "shehds-par",
 		},
