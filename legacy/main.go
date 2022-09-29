@@ -53,6 +53,9 @@ func Run(ctx context.Context) {
 		logger.Fatalf("error initializing fixture manager. err='%v'", err)
 	}
 
+	// define a few convience fixture groups
+	totemPARs := []string{"left_top_par", "left_middle_par", "left_bottom_par", "right_top_par", "right_middle_par", "right_bottom_par"}
+
 	// init cue master
 	logger.Info("Initializing cue list master...")
 	master := cuelist.InitializeMaster(clock.RealClock{}, fm)
@@ -77,6 +80,13 @@ func Run(ctx context.Context) {
 	//tickInterval := time.Millisecond * 30
 	//tickInterval := utils.BPMToMilliseconds(130)
 	c, err = cycleFixtureStates([]string{"left_middle_par", "right_middle_par"}, stateA, stateB, "16s", 35)
+	if err != nil {
+		logger.Fatalf("error processing cue. err='%v'", err)
+	}
+	master.EnQueueCue(*c, cuelist)
+
+	// Play all Totem PARs at once
+	c, err = flashPARs(totemPARs, stateA, "1s", 10)
 	if err != nil {
 		logger.Fatalf("error processing cue. err='%v'", err)
 	}
