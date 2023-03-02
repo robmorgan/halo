@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	rand.Seed(time.Now().Unix())
+	rand.Seed(time.Now().UTC().UnixNano())
 
 	if err := tea.NewProgram(newModel()).Start(); err != nil {
 		fmt.Println("Error running program:", err)
@@ -19,7 +19,7 @@ func main() {
 }
 
 // func main() {
-// 	rand.Seed(time.Now().UTC().UnixNano())
+//
 
 // 	p := tea.NewProgram(model{
 // 		sub:     make(chan struct{}),

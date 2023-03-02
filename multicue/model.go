@@ -20,7 +20,7 @@ type model struct {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(processCue(m.cueMaster.cues[m.cueMaster.index]), m.spinner.Tick)
+	return tea.Batch(m.processNextCue(), m.spinner.Tick)
 }
 
 func newModel() model {
@@ -42,7 +42,7 @@ func newModel() model {
 	}
 
 	// enqueue cues
-	cm.cues = getCues()
+	cm.pendingCues = getCues()
 
 	return model{
 		bpm:       130,

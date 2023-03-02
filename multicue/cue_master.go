@@ -16,11 +16,10 @@ const MaxActiveCues = 5
 
 type CueMaster struct {
 	index          int
-	cues           []Cue
+	pendingCues    []Cue
 	activeCues     []Cue
 	activeProgress []progress.Model // we reuse a pool of progress bars for active cues
 	processedCues  []Cue
-	cuesProcessed  int // how many cues we've processed
 
 	// actions
 	// effects
