@@ -19,7 +19,7 @@ var (
 func (m model) View() string {
 	var s string
 
-	s += fmt.Sprintf("Total cues: %d\nBPM: %d\n\n%s Cues processed: %d\n\n", len(m.cues), m.bpm, m.spinner.View(), m.cuesProcessed)
+	s += fmt.Sprintf("Total cues: %d\nBPM: %d\n\n%s Cues processed: %d\n\n", len(m.cueMaster.cues), m.bpm, m.spinner.View(), m.cueMaster.cuesProcessed)
 
 	s += helpStyle.Render("(G)o ([,]) BPM +/-\n\nPress ctrl+c to exit\n")
 

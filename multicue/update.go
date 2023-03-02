@@ -27,10 +27,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case enQueueCueMsg:
-		// we've recieved a new cue to process
+		// we've received a new cue to process
 		return m, processCue(msg.cue)
 	case cueProcessedMsg:
-		m.cuesProcessed++ // record external activity
+		m.cueMaster.cuesProcessed++ // record external activity
 		//return m, waitForActivity(m.sub) // wait for next event
 		return m, nil
 	case spinner.TickMsg:
