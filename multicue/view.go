@@ -17,15 +17,13 @@ var (
 // TODO - render a progress bar for each cue.
 // TODO - show active cue count
 func (m model) View() string {
-	totalCues := len(m.cueMaster.pendingCues)
-
 	var s string
-	s += fmt.Sprintf("Total cues: %d\n%s Cues processed: %d\n\nBPM: %d\n\n", totalCues, m.spinner.View(), len(m.cueMaster.processedCues), m.bpm)
+	s += fmt.Sprintf("Pending cues: %d\n%s Cues processed: %d\n\nBPM: %d\n\n", len(m.cueMaster.pendingCues), m.spinner.View(), len(m.cueMaster.processedCues), m.bpm)
 	s += fmt.Sprintf("Active Cue Count: %d\n\n", len(m.cueMaster.activeCues))
 
 	// render progress bars for all active cues
 	for i, _ := range m.cueMaster.activeCues {
-		s += m.cueMaster.activeProgress[i].View()
+		s += m.activeProgress[i].ViewAs(m.progress)
 	}
 
 	s += helpStyle.Render("(G)o ([,]) BPM +/-\n\nPress ctrl+c to exit\n")

@@ -19,6 +19,22 @@ type Cue struct {
 	// for transitions in focus, intensity (up and/or down), and color, as well as for individual channels. Time (or
 	// delay) applied to individual channels is called, "discrete" timing.
 	FadeTime time.Duration
+
+	progress float64
+}
+
+// GetDuration returns the sum of frames in a cue
+// func (c *Cue) GetDuration() time.Duration {
+// 	totalDuration := time.Duration(0)
+// 	for _, frame := range c.Frames {
+// 		totalDuration += frame.GetDuration()
+// 	}
+// 	return totalDuration
+// }
+
+func (c *Cue) Progress() float64 {
+	c.progress += 0.1
+	return c.progress
 }
 
 func getCues() []Cue {

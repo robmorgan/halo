@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type cueProcessedMsg Cue
+type cueProcessedMsg string
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -17,6 +17,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.bpm--
 		case "]":
 			m.bpm++
+		case "g":
+			// pop the next cue off the stack
+			var nextCue Cue
+			nextCue, m.cueMaster.pendingCues = m.cueMaster.pendingCues[0], m.cueMaster.pendingCues[1:]
+			m.cueMaster.activeCues = append(m.cueMaster.activeCues, nextCue)
 		case "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
@@ -25,6 +30,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//return m, waitForActivity(m.sub) // wait for next event
 		// TODO - process the next cue
 		return m, nil
+	case tickMsg:
+		//if m.progress.Percent() == 1.0 {
+		//	return m, tea.Quit
+		//}
+
+		// Note that you can also use progress.Model.SetPercent to set the
+		// percentage value explicitly, too.
+		//cmd := m.progress.IncrPercent(0.25)
+		//for i, _ := range m.cueMaster.activeCues {
+		// TODO - get the next frame from all active cues
+		//p := m.activeProgress[i]
+		//p.IncrPercent(0.25)
+		//fmt.Println("foo")
+
+		//}
+		m.progress += 0.1
+		return m, tickCmd()
+
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)

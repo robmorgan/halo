@@ -9,6 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var p *tea.Program
+
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
