@@ -7,6 +7,10 @@ var cues = []Cue{
 		name:     "Cue 1",
 		FadeTime: time.Second * 10,
 	},
+	{
+		name:     "Cue 2",
+		FadeTime: time.Second * 5,
+	},
 }
 
 type Cue struct {
@@ -20,6 +24,9 @@ type Cue struct {
 	// delay) applied to individual channels is called, "discrete" timing.
 	FadeTime time.Duration
 
+	Fixtures []string
+	Effect   string // the target effect to apply to the fixtures
+
 	progress float64
 }
 
@@ -31,6 +38,10 @@ type Cue struct {
 // 	}
 // 	return totalDuration
 // }
+
+func (c *Cue) RenderFrame() {
+
+}
 
 func (c *Cue) Progress() float64 {
 	c.progress += 0.1

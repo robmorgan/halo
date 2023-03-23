@@ -39,12 +39,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// percentage value explicitly, too.
 		//cmd := m.progress.IncrPercent(0.25)
 		//for i, _ := range m.cueMaster.activeCues {
-		// TODO - get the next frame from all active cues
+
 		//p := m.activeProgress[i]
 		//p.IncrPercent(0.25)
 		//fmt.Println("foo")
 
 		//}
+		// TODO - get the next frame from all active cues
+		// tell all active cues to render the next frame
+		for _, cue := range m.cueMaster.activeCues {
+			cue.RenderFrame()
+		}
+
 		m.progress += 0.1
 		return m, tickCmd()
 
