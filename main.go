@@ -39,7 +39,7 @@ func Run(ctx context.Context) {
 
 	wg := sync.WaitGroup{}
 
-	// initiailze the global config
+	// initialize the global config
 	logger.Info("Initializing config...")
 	config, err := config.NewHaloConfig()
 	if err != nil {
