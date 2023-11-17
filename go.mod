@@ -24,6 +24,7 @@ require (
 	github.com/faiface/beep v1.1.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/hajimehoshi/oto v0.7.1 // indirect
+	github.com/hypebeast/go-osc v0.0.0-20220308234300-cec5a8a1e5f5 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
