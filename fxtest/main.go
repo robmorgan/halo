@@ -12,7 +12,7 @@ func main() {
 
 	//startTime := time.Now()
 
-	go startBeat(120) // Start beat for 120 BPM
+	go startBeat(60) // Start beat for 120 BPM
 
 	for { // sleep indefinitely
 	}
@@ -38,7 +38,7 @@ func startBeat(bpm int) {
 
 		// TODO Send the DMX packet with updated values
 		// For now we simply output the value to the console
-		fmt.Printf("current value: %f\n", value)
+		fmt.Printf("beat interval=%d, current value: %f\n", beatInterval, value)
 	}
 
 }
