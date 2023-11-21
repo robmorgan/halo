@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nickysemenza/gola"
 )
 
 var p *tea.Program
@@ -14,7 +15,14 @@ var p *tea.Program
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
-	if err := tea.NewProgram(newModel()).Start(); err != nil {
+	// Init gola client
+	client, err := gola.New("localhost:9010")
+	if err != nil {
+		panic("could not create client")
+	}
+	defer client.Close()
+
+	if err := tea.NewProgram(newModel(client)).Start(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}

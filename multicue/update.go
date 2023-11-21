@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -47,8 +48,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//}
 		// TODO - get the next frame from all active cues
 		// tell all active cues to render the next frame
+		var effectVal int
 		for _, cue := range m.cueMaster.activeCues {
-			cue.RenderFrame()
+			//t := msg.(time.Time)
+			t := time.Time(msg)
+			effectVal = cue.RenderFrame(t)
+
+			// 	newModel, cmd := m.progress.Update(msg)
+			// if newModel, ok := newModel.(progress.Model); ok {
+			// 	m.progress = newModel
+			// }
+		}
+
+		// prepare next dmx packet
+		values := make([]byte, 512)
+
+		// Turn on the Right PAR
+		values[0] = byte(effectVal) // intensity
+		values[1] = 255             // red
+
+		// Turn on the Left PAR
+		values[8] = byte(effectVal) // intensity
+		values[9] = 255             // red
+
+		values[32] = byte(effectVal) // intensity
+		values[33] = 255             // red
+
+		// send the packet
+		if _, err := m.client.SendDmx(1, values); err != nil {
+			tea.Printf("SendDmx: 1: %v", err)
 		}
 
 		m.progress += 0.1
@@ -84,4 +112,9 @@ func (m model) processNextCue() tea.Cmd {
 
 func removeIndex(s []int, index int) []int {
 	return append(s[:index], s[index+1:]...)
+}
+
+func clamp(t, min, max float64) float64 {
+	min, max = math.Min(min, max), math.Max(min, max)
+	return math.Max(math.Min(t, max), min)
 }

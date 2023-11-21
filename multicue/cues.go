@@ -1,15 +1,21 @@
 package main
 
-import "time"
+import (
+	"time"
+)
 
 var cues = []Cue{
 	{
-		name:     "Cue 1",
-		FadeTime: time.Second * 10,
+		name:        "Cue 1",
+		FadeTime:    time.Second * 10,
+		Effect:      NewSawToothEffect(FPS(44)),
+		effectValue: 0.1,
 	},
 	{
-		name:     "Cue 2",
-		FadeTime: time.Second * 5,
+		name:        "Cue 2",
+		FadeTime:    time.Second * 5,
+		Effect:      NewSineWaveEffect(FPS(44)),
+		effectValue: 0.1,
 	},
 }
 
@@ -25,9 +31,10 @@ type Cue struct {
 	FadeTime time.Duration
 
 	Fixtures []string
-	Effect   string // the target effect to apply to the fixtures
+	Effect   Effect // the target effect to apply to the fixtures
 
-	progress float64
+	progress    float64
+	effectValue float64
 }
 
 // GetDuration returns the sum of frames in a cue
@@ -39,7 +46,20 @@ type Cue struct {
 // 	return totalDuration
 // }
 
-func (c *Cue) RenderFrame() {
+// TODO - this should be an update method and not return an individual effect value
+// We need to ensure it can update a bunch of fixture values at the same time
+func (c *Cue) RenderFrame(t time.Time) int {
+	// process all active effects
+	c.effectValue = c.Effect.Update(t)
+	return int(c.effectValue * 255)
+
+	//out := byte(int(clamp(effectVal, 0, 255)))
+
+	// t := ease.InQuart(c.effectValue)
+	// c.effectValue += t
+
+	// dVal := int(t * 255)
+	//return dVal
 
 }
 
