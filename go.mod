@@ -1,6 +1,6 @@
 module github.com/robmorgan/halo
 
-go 1.18
+go 1.21
 
 require (
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776

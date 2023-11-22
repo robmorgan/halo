@@ -1,4 +1,4 @@
-package main
+package effect
 
 import (
 	"math"
@@ -50,11 +50,96 @@ func FPS(n int) float64 {
 	return (time.Second / time.Duration(n)).Seconds()
 }
 
-// Effect interface defines the interfaces that should be implemented by an effect.
-type Effect interface {
-	// Type returns the type of the container runtime.
-	//Type() RuntimeType
+// Effect interface defines the methods that should be implemented by an effect.
+type Interface interface {
+	GetFixtureNames() []string
+	GetFixtureAttrs() []string
 	Update(t time.Time) float64
+}
+
+type Effect struct {
+	// FixtureNames is a list of fixtures to apply the effect to.
+	FixtureNames []string
+
+	// FixtureAttrs is a list of fixture attributes to apply the effect to.
+	FixtureAttrs []string
+
+	// Oscillator determines which oscillator to use in order to apply the effect.
+	Oscillator Oscillator
+
+	// Wave is an effect offset that determines how many times to apply an oscillator.
+	Wave int
+
+	// Step is an effect offset that determines how many fixtures to apply the effect to at a time.
+	Step int
+
+	StartTime time.Time
+
+	min float64
+	max float64
+
+	loop   bool    // Whether the effect loops
+	paused bool    // Whether the effect is paused
+	value  float64 // current value
+}
+
+type Oscillator struct {
+	Swing      int
+	Speed      int
+	Multiplier int
+
+	// swing or amplitude is the amount of oscillation to be applied to the effect.
+	amplitude float64
+	frequency float64
+	//phase     float64
+	period float64
+	time   float64
+
+	// ShapeFn determines the shape of the waveform.
+	ShapeFn ShapeFn
+}
+
+type ShapeFn func(float64, float64) float64
+
+func NewSawToothOsc() Oscillator {
+	osc := Oscillator{}
+	osc.period = 1.0
+	// Set the frequency of the sine wave (in Hz)
+	osc.frequency = 0.5 // 0.5 Hz for a slow effect
+	osc.ShapeFn = sawtoothFunc
+	return osc
+}
+
+func NewSineWaveOsc() Oscillator {
+	osc := Oscillator{}
+	osc.period = 1.0
+	// Set the frequency of the sine wave (in Hz)
+	osc.frequency = 0.5 // 0.5 Hz for a slow effect
+	osc.ShapeFn = sineWaveFunc
+	return osc
+}
+
+func (e Effect) GetFixtureNames() []string {
+	return e.FixtureNames
+}
+
+func (e Effect) GetFixtureAttrs() []string {
+	return e.FixtureAttrs
+}
+
+func (e Effect) Update(t time.Time) float64 {
+	//val := 2.0*(phase*(1.0/tau)) - 1.0
+	//val := 2.0*(value*(1.0/TWO_PI)) - 1.0
+	//return val
+
+	// Calculate the oscillator value at time t
+	value := e.Oscillator.ShapeFn(t.Sub(e.StartTime).Seconds(), e.Oscillator.frequency)
+
+	// TODO - clamp the value to the min and max values
+
+	// Calculate the sawtooth value at time t
+	//value := sawtooth(t.Sub(ste.startTime).Seconds())
+	return value
 }
 
 type BaseEffect struct {
@@ -133,34 +218,15 @@ func SawToothWave(v, min, max, period, offset float64) float64 {
 
 // The sawtooth curve can be used to modulate the intensity or other parameters of the light.
 // Calculate the value of the sawtooth wave at each beat.
-func sawtooth(t float64) float64 {
-	return 2 * (t/math.Pi - math.Floor(0.5+t/math.Pi))
+func sawtoothFunc(t float64, frequency float64) float64 {
+	return 2 * (t/math.Pi - math.Floor(frequency+t/math.Pi))
 }
 
-func sineWave(t float64, frequency float64) float64 {
+func sineWaveFunc(t float64, frequency float64) float64 {
 	// Sine wave formula: A * sin(2πft + φ)
 	// A = amplitude, f = frequency, t = time, φ = phase shift
 	// Here, we assume amplitude=1 and phase shift=0 for simplicity
 	return math.Sin(2 * math.Pi * frequency * t)
-}
-
-func (ste SawToothEffect) Update(t time.Time) float64 {
-	//val := 2.0*(phase*(1.0/tau)) - 1.0
-	//val := 2.0*(value*(1.0/TWO_PI)) - 1.0
-	//return val
-
-	// Calculate the sawtooth value at time t
-	value := sawtooth(t.Sub(ste.startTime).Seconds())
-	return value
-}
-
-func (swe SineWaveEffect) Update(t time.Time) float64 {
-	// Set the frequency of the sine wave (in Hz)
-	frequency := 0.5 // 0.5 Hz for a slow effect
-
-	// Calculate the sine wave value
-	value := sineWave(t.Sub(swe.startTime).Seconds(), frequency)
-	return clamp(value, 0.0, 1.0)
 }
 
 // func (ste SawToothEffect) Update(value float64) float64 {
@@ -223,3 +289,8 @@ func (swe SineWaveEffect) Update(t time.Time) float64 {
 // 	//     if (phase < 0) { phase += TWO_PI; }
 // 	//     return 2 * (phase / TWO_PI) * amplitude + min;
 // }
+
+func clamp(t, minVal, maxVal float64) float64 {
+	minVal, maxVal = min(minVal, maxVal), max(minVal, maxVal)
+	return max(min(t, maxVal), minVal)
+}

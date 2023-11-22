@@ -1,28 +1,54 @@
 package main
 
 import (
+	"log/slog"
 	"time"
+
+	"github.com/robmorgan/halo/fixture"
+	"github.com/robmorgan/halo/multicue/effect"
+	"github.com/robmorgan/halo/profile"
+	"github.com/robmorgan/halo/utils"
 )
 
 var cues = []Cue{
 	{
-		name:        "Cue 1",
-		FadeTime:    time.Second * 10,
-		Effect:      NewSawToothEffect(FPS(44)),
-		effectValue: 0.1,
+		Name:     "Cue 1",
+		FadeTime: time.Second * 5,
+		Actions: []CueAction{
+			{
+				FixtureNames: []string{"left_top_par", "right_top_par"},
+				Effects: []effect.Effect{
+					{
+						FixtureNames: []string{"left_top_par", "right_top_par"},
+						FixtureAttrs: []string{profile.ChannelTypeIntensity},
+						StartTime:    time.Now(),
+						Oscillator:   effect.NewSawToothOsc(),
+					},
+				},
+			},
+		},
 	},
 	{
-		name:        "Cue 2",
-		FadeTime:    time.Second * 5,
-		Effect:      NewSineWaveEffect(FPS(44)),
-		effectValue: 0.1,
+		Name:     "Cue 2 - Cycle PARs",
+		FadeTime: time.Second * 10,
+		Actions: []CueAction{
+			{
+				FixtureNames: []string{"left_top_par", "right_top_par"},
+				Effects: []effect.Effect{
+					{
+						FixtureNames: []string{"left_top_par", "right_top_par"},
+						FixtureAttrs: []string{profile.ChannelTypeIntensity},
+						StartTime:    time.Now(),
+						Oscillator:   effect.NewSineWaveOsc(),
+					},
+				},
+			},
+		},
 	},
 }
 
 type Cue struct {
-	name string
-	// actions
-	// effects
+	Name string
 
 	// A cue's "time" is a measure of how long it takes the cue to complete, once it has been executed. Depending upon
 	// the console, time(s), entered in minutes and seconds, can be entered for the cue as a whole or, individually,
@@ -30,11 +56,17 @@ type Cue struct {
 	// delay) applied to individual channels is called, "discrete" timing.
 	FadeTime time.Duration
 
-	Fixtures []string
-	Effect   Effect // the target effect to apply to the fixtures
+	Actions []CueAction
 
-	progress    float64
-	effectValue float64
+	progress float64
+}
+
+// CueAction is an action within a Cue to be executed simultaneously.
+type CueAction struct {
+	ID           int64
+	FixtureNames []string            // list of fixtures to apply the action to
+	NewState     fixture.TargetState // desired base target state for the fixtures
+	Effects      []effect.Effect     // the target effects to apply
 }
 
 // GetDuration returns the sum of frames in a cue
@@ -48,19 +80,43 @@ type Cue struct {
 
 // TODO - this should be an update method and not return an individual effect value
 // We need to ensure it can update a bunch of fixture values at the same time
-func (c *Cue) RenderFrame(t time.Time) int {
-	// process all active effects
-	c.effectValue = c.Effect.Update(t)
-	return int(c.effectValue * 255)
+func (c *Cue) RenderFrame(fixtureManager fixture.Manager, t time.Time) {
 
-	//out := byte(int(clamp(effectVal, 0, 255)))
+	// TODO - snapshot the current metronome state
 
-	// t := ease.InQuart(c.effectValue)
-	// c.effectValue += t
+	// render all cue actions
+	for _, action := range c.Actions {
+		// process all active effects
+		//action.effectValue = action.Effect.Update(t)
+		//return int(action.effectValue * 255)
+		for _, effect := range action.Effects {
+			effectVal := effect.Update(t)
 
-	// dVal := int(t * 255)
-	//return dVal
+			// you might need to clamp here
+			clampVal := int(clamp(effectVal*255.0, 0.0, 255.0))
 
+			// get a list of fixtures and attributes that are affected by this effect
+			fixtureNames := effect.GetFixtureNames()
+			//fixtureAttrs := effect.GetFixtureAttrs()
+
+			// compute the new state
+			newState := fixture.TargetState{
+				// Set Red Property
+				State: fixture.State{Intensity: clampVal, Strobe: 0, RGB: utils.GetRGBFromString("#FF0000")},
+				//Duration: frameDuration,
+				//TickInterval: fixture.TickIntervalFadeInterpolation,
+			}
+
+			// update the fixture states
+			for _, fixtureName := range fixtureNames {
+				if f := fixtureManager.GetByName(fixtureName); f != nil {
+					go f.SetState(fixtureManager, newState)
+				} else {
+					slog.Error("Cannot find fixture by name", "name", fixtureName)
+				}
+			}
+		}
+	}
 }
 
 func (c *Cue) Progress() float64 {

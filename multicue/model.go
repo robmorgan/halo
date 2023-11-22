@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -8,7 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nickysemenza/gola"
+
 	"github.com/robmorgan/halo/config"
+	"github.com/robmorgan/halo/fixture"
 )
 
 type model struct {
@@ -18,12 +21,10 @@ type model struct {
 	activeProgress []progress.Model // we reuse a pool of progress bars for active cues
 	progress       float64
 	cueMaster      CueMaster
+	fixtureManager fixture.Manager
 	quitting       bool
 	client         *gola.Client
 	config         config.HaloConfig
-
-	// TODO - properties to implement
-	// FixtureManager
 }
 
 func newModel(client *gola.Client) model {
@@ -51,6 +52,12 @@ func newModel(client *gola.Client) model {
 	// Init the CueMaster
 	cm := CueMaster{}
 
+	// Init the Fixture Manager
+	fm, err := fixture.NewManager(config)
+	if err != nil {
+		panic(fmt.Sprintf("cannot initialize the fixture manager. err='%v'", err))
+	}
+
 	// Enqueue Cues
 	cues := getCues()
 	cm.pendingCues = cues
@@ -60,6 +67,7 @@ func newModel(client *gola.Client) model {
 		client:         client,
 		config:         config,
 		cueMaster:      cm,
+		fixtureManager: fm,
 		spinner:        s,
 		activeProgress: pp,
 	}

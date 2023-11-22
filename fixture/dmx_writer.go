@@ -47,6 +47,10 @@ func (s *DMXState) initializeUniverse(universe int) {
 	}
 }
 
+func (s *DMXState) GetUniverses() map[int][]byte {
+	return s.universes
+}
+
 // GetDMXState returns the current dmx state
 func (m *StateManager) GetDMXState() *DMXState {
 	return &m.dmxState
