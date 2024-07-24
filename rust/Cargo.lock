@@ -12,6 +12,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "artnet_protocol"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "536b2b9cae7ceb995cb11db1d5ec39b1eb305c557e36da01ea32de0c723920be"
+dependencies = [
+ "bitflags",
+ "byteorder",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.69.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -113,6 +123,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 name = "halo"
 version = "0.1.0"
 dependencies = [
+ "artnet_protocol",
  "rosc",
  "rusty_link",
 ]

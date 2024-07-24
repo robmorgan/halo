@@ -8,5 +8,6 @@ repository = "https://github.com/robmorgan/halo"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+artnet_protocol = "0.4.2"
 rosc = "0.10.1"
 rusty_link = "0.4.2"
