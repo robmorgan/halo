@@ -54,16 +54,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// tell all active cues to render the next frame
 		// TODO - should we sort based on cue priority here? Smallest first?
-		for _, cue := range m.cueMaster.activeCues {
-			//t := msg.(time.Time)
-			t := time.Time(msg)
-			cue.RenderFrame(m.fixtureManager, t)
 
-			// 	newModel, cmd := m.progress.Update(msg)
-			// if newModel, ok := newModel.(progress.Model); ok {
-			// 	m.progress = newModel
-			// }
-		}
+		// tell the cue master to render the next frame
+		m.cueMaster.RenderFrame(m.fixtureManager, time.Time(msg))
+
+		// for _, cue := range m.cueMaster.activeCues {
+		// 	//t := msg.(time.Time)
+		// 	t := time.Time(msg)
+		// 	cue.RenderFrame(m.fixtureManager, t)
+
+		// 	// 	newModel, cmd := m.progress.Update(msg)
+		// 	// if newModel, ok := newModel.(progress.Model); ok {
+		// 	// 	m.progress = newModel
+		// 	// }
+		// }
 
 		// prepare next dmx packet
 		//		values := make([]byte, 512)
@@ -88,8 +92,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// if _, err := m.client.SendDmx(1, values); err != nil {
 		// 	tea.Printf("SendDmx: 1: %v", err)
 		// }
-
 		m.progress += 0.1
+		m.framesSent++
 		return m, tickCmd()
 
 	case spinner.TickMsg:

@@ -25,6 +25,7 @@ type model struct {
 	quitting       bool
 	client         *gola.Client
 	config         config.HaloConfig
+	framesSent     int
 }
 
 func newModel(client *gola.Client) model {
@@ -70,6 +71,7 @@ func newModel(client *gola.Client) model {
 		fixtureManager: fm,
 		spinner:        s,
 		activeProgress: pp,
+		framesSent:     0,
 	}
 }
 

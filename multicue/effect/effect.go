@@ -3,6 +3,8 @@ package effect
 import (
 	"math"
 	"time"
+
+	"github.com/robmorgan/halo/rhythm"
 )
 
 // g.sawtoothWave = function (v, min, max, period, offset) {
@@ -67,13 +69,19 @@ type Effect struct {
 	// Oscillator determines which oscillator to use in order to apply the effect.
 	Oscillator Oscillator
 
-	// Wave is an effect offset that determines how many times to apply an oscillator.
-	Wave int
+	// WaveOffset is an effect offset that determines how many times to apply an oscillator.
+	WaveOffset int
 
-	// Step is an effect offset that determines how many fixtures to apply the effect to at a time.
-	Step int
+	// StepOffset is an effect offset that determines how many fixtures to apply the effect to at a time.
+	StepOffset int
+	stepIndex  int
+	stepCount  int
+	stepTime   time.Time
 
 	StartTime time.Time
+
+	// targetFixtureNames is a list of the current fixture names that the effect is being applied to.
+	targetFixtureNames []string
 
 	min float64
 	max float64
@@ -119,21 +127,119 @@ func NewSineWaveOsc() Oscillator {
 	return osc
 }
 
+// NewEffect creates a new effect with the given parameters.
+func NewEffect(fixtureNames []string, fixtureAttrs []string, stepOffset int, oscillator Oscillator) *Effect {
+	return &Effect{
+		FixtureNames:       fixtureNames,
+		FixtureAttrs:       fixtureAttrs,
+		targetFixtureNames: fixtureNames,
+		StartTime:          time.Now(),
+		StepOffset:         stepOffset,
+		Oscillator:         oscillator,
+	}
+}
+
+// GetFixtureNames returns the list of fixture names to apply the effect to.
 func (e Effect) GetFixtureNames() []string {
 	return e.FixtureNames
 }
+
+func (e *Effect) recalculateTargetFixtureNames(currentTime time.Time) {
+	// First check if any step or wave offsets are being used and return if not
+	if e.StepOffset == 0 || len(e.FixtureNames) == e.StepOffset {
+		return
+	}
+
+	// Check if it's time to move to the next fixture
+	// TODO - calculate the effect length based off the metronome values
+	if currentTime.Sub(e.stepTime) > time.Duration(e.StepOffset)*time.Millisecond {
+		e.stepIndex++
+		e.stepTime = currentTime
+	}
+
+	targetFixtureNames := make([]string, 0)
+	// TODO - this will cause an out of range panic if e.Step is greater than the number of fixture names.
+	// We need to clamp or do some magic foo here to prevent this.
+	for i := e.stepIndex; i < e.StepOffset+1; i++ {
+		targetFixtureNames = append(targetFixtureNames, e.FixtureNames[i])
+	}
+	e.targetFixtureNames = targetFixtureNames
+
+	// if we've reached the end of available fixtures, go back to the start
+	if e.stepIndex >= len(e.FixtureNames) {
+		e.stepIndex = 0
+	}
+}
+
+// GetTargetFixtureNames returns the list of fixture names to apply the effect to. If the Wave or Step values are set,
+// then this might return a subset of the fixture names.
+func (e Effect) GetTargetFixtureNames() []string {
+	return e.targetFixtureNames
+}
+
+// fNames := make([]string, 0)
+// for _, fixtureName := range e.FixtureNames {
+// }
+// fixtureIndex := e.GetFixtureIndex()
+
+// if effect.Step == 0 || len(fixtureNames) == effect.Step {
+// 	for _, fixtureName := range fixtureNames {
+// 		if f := fixtureManager.GetByName(fixtureName); f != nil {
+// 			go f.SetState(fixtureManager, newState)
+// 		} else {
+// 			slog.Error("Cannot find fixture by name", "name", fixtureName)
+// 		}
+// 	}
+// } else {
+// 	// Otherwise apply the new state using the step offset value.
+// 	// TODO - we only support 1 fixture at a time at the moment using this logic.
+// 	stepIndex := effect.GetStepIndex()
+// 	fixtureName := fixtureNames[stepIndex]
+// 	if f := fixtureManager.GetByName(fixtureName); f != nil {
+// 		go f.SetState(fixtureManager, newState)
+// 	} else {
+// 		slog.Error("Cannot find fixture by name", "name", fixtureName)
+// 	}
+
+// 	// increment the step index or reset it if necessary
+// 	if len(fixtureNames) == stepIndex+1 {
+// 		effect.SetStepIndex(0)
+// 	} else {
+// 		effect.SetStepIndex(stepIndex + 1)
+// 	}
+// }
+// }
 
 func (e Effect) GetFixtureAttrs() []string {
 	return e.FixtureAttrs
 }
 
-func (e Effect) Update(t time.Time) float64 {
+func (e *Effect) GetStepIndex() int {
+	return e.stepIndex
+}
+
+func (e *Effect) SetStepIndex(idx int) {
+	e.stepIndex = idx
+}
+
+func (e Effect) Update(snapshot rhythm.Snapshot) float64 {
 	//val := 2.0*(phase*(1.0/tau)) - 1.0
 	//val := 2.0*(value*(1.0/TWO_PI)) - 1.0
 	//return val
 
+	snapshot.In
+
+	t := currentTime.Sub(e.StartTime).Seconds()
+
+	// Check if it's time to move to the next fixture
+	e.recalculateTargetFixtureNames(currentTime)
+	// // TODO - might need to calculate the effect time better
+	// if currentTime.Sub(e.StartTime) > time.Duration(e.StepOffset)*time.Millisecond {
+
+	// }
+
 	// Calculate the oscillator value at time t
-	value := e.Oscillator.ShapeFn(t.Sub(e.StartTime).Seconds(), e.Oscillator.frequency)
+	value := e.Oscillator.ShapeFn(t, e.Oscillator.frequency)
 
 	// TODO - clamp the value to the min and max values
 

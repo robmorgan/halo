@@ -7,6 +7,7 @@ import (
 	"github.com/robmorgan/halo/fixture"
 	"github.com/robmorgan/halo/multicue/effect"
 	"github.com/robmorgan/halo/profile"
+	"github.com/robmorgan/halo/rhythm"
 	"github.com/robmorgan/halo/utils"
 )
 
@@ -17,13 +18,8 @@ var cues = []Cue{
 		Actions: []CueAction{
 			{
 				FixtureNames: []string{"left_top_par", "right_top_par"},
-				Effects: []effect.Effect{
-					{
-						FixtureNames: []string{"left_top_par", "right_top_par"},
-						FixtureAttrs: []string{profile.ChannelTypeIntensity},
-						StartTime:    time.Now(),
-						Oscillator:   effect.NewSawToothOsc(),
-					},
+				Effects: []*effect.Effect{
+					effect.NewEffect([]string{"left_top_par", "right_top_par"}, []string{profile.ChannelTypeIntensity}, 0, effect.NewSawToothOsc()),
 				},
 			},
 		},
@@ -34,13 +30,8 @@ var cues = []Cue{
 		Actions: []CueAction{
 			{
 				FixtureNames: []string{"left_top_par", "right_top_par"},
-				Effects: []effect.Effect{
-					{
-						FixtureNames: []string{"left_top_par", "right_top_par"},
-						FixtureAttrs: []string{profile.ChannelTypeIntensity},
-						StartTime:    time.Now(),
-						Oscillator:   effect.NewSineWaveOsc(),
-					},
+				Effects: []*effect.Effect{
+					effect.NewEffect([]string{"left_top_par", "right_top_par"}, []string{profile.ChannelTypeIntensity}, 1, effect.NewSineWaveOsc()),
 				},
 			},
 		},
@@ -66,7 +57,7 @@ type CueAction struct {
 	ID           int64
 	FixtureNames []string            // list of fixtures to apply the action to
 	NewState     fixture.TargetState // desired base target state for the fixtures
-	Effects      []effect.Effect     // the target effects to apply
+	Effects      []*effect.Effect    // the target effects to apply
 }
 
 // GetDuration returns the sum of frames in a cue
@@ -80,7 +71,7 @@ type CueAction struct {
 
 // TODO - this should be an update method and not return an individual effect value
 // We need to ensure it can update a bunch of fixture values at the same time
-func (c *Cue) RenderFrame(fixtureManager fixture.Manager, t time.Time) {
+func (c *Cue) RenderFrame(fixtureManager fixture.Manager, snapshot rhythm.Snapshot) {
 
 	// TODO - snapshot the current metronome state
 
@@ -90,14 +81,10 @@ func (c *Cue) RenderFrame(fixtureManager fixture.Manager, t time.Time) {
 		//action.effectValue = action.Effect.Update(t)
 		//return int(action.effectValue * 255)
 		for _, effect := range action.Effects {
-			effectVal := effect.Update(t)
+			effectVal := effect.Update(snapshot)
 
 			// you might need to clamp here
 			clampVal := int(clamp(effectVal*255.0, 0.0, 255.0))
-
-			// get a list of fixtures and attributes that are affected by this effect
-			fixtureNames := effect.GetFixtureNames()
-			//fixtureAttrs := effect.GetFixtureAttrs()
 
 			// compute the new state
 			newState := fixture.TargetState{
@@ -107,7 +94,17 @@ func (c *Cue) RenderFrame(fixtureManager fixture.Manager, t time.Time) {
 				//TickInterval: fixture.TickIntervalFadeInterpolation,
 			}
 
-			// update the fixture states
+			// ------------------------------
+			// Apply effect offsets (if any)
+			// ------------------------------
+
+			// TODO - because this is only applying one animation frame at a time.
+			// some higher level thing will need to track whether an effect has finished a cycle, before advancing to the next one.
+			// otherwise all its doing at the moment is swapping values on every tick between all the fixtures.
+			// there we probably need to move the step logic up one level.
+			//effect.ShouldSwitchFixture()
+
+			fixtureNames := effect.GetTargetFixtureNames()
 			for _, fixtureName := range fixtureNames {
 				if f := fixtureManager.GetByName(fixtureName); f != nil {
 					go f.SetState(fixtureManager, newState)
@@ -115,6 +112,35 @@ func (c *Cue) RenderFrame(fixtureManager fixture.Manager, t time.Time) {
 					slog.Error("Cannot find fixture by name", "name", fixtureName)
 				}
 			}
+
+			// If the step offset is 0 or equal to the total number of fixtures, then apply the new state to all target
+			// fixtures
+			// if effect.Step == 0 || len(fixtureNames) == effect.Step {
+			// 	for _, fixtureName := range fixtureNames {
+			// 		if f := fixtureManager.GetByName(fixtureName); f != nil {
+			// 			go f.SetState(fixtureManager, newState)
+			// 		} else {
+			// 			slog.Error("Cannot find fixture by name", "name", fixtureName)
+			// 		}
+			// 	}
+			// } else {
+			// 	// Otherwise apply the new state using the step offset value.
+			// 	// TODO - we only support 1 fixture at a time at the moment using this logic.
+			// 	stepIndex := effect.GetStepIndex()
+			// 	fixtureName := fixtureNames[stepIndex]
+			// 	if f := fixtureManager.GetByName(fixtureName); f != nil {
+			// 		go f.SetState(fixtureManager, newState)
+			// 	} else {
+			// 		slog.Error("Cannot find fixture by name", "name", fixtureName)
+			// 	}
+
+			// 	// increment the step index or reset it if necessary
+			// 	if len(fixtureNames) == stepIndex+1 {
+			// 		effect.SetStepIndex(0)
+			// 	} else {
+			// 		effect.SetStepIndex(stepIndex + 1)
+			// 	}
+			// }
 		}
 	}
 }

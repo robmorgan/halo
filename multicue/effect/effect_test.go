@@ -1,28 +1,46 @@
 package effect
 
 import (
-	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/robmorgan/halo/profile"
 )
 
-func TestSineWaveEffect(t *testing.T) {
+func TestEffectStepOffset(t *testing.T) {
 	t.Parallel()
-	// 44fps
-	ticks := 88
-	deltaTime := FPS(44)
 
-	newVal := 0.0
-	swe := NewSineWaveEffect(deltaTime)
+	sineEffectWithOffset := NewEffect([]string{"left_top_par", "right_top_par"}, []string{profile.ChannelTypeIntensity}, 1, NewSineWaveOsc())
 
-	for i := 0; i < ticks; i++ {
-		tn := time.Now()
-		newVal = swe.Update(tn)
-		newVal = clamp(newVal, 0.0, 255.0)
-		fmt.Printf("tick %d: %v\n", i, newVal*255)
-		time.Sleep(25 * time.Millisecond)
-	}
+	// The effect should initially apply to all fixtures
+	assert.Equal(t, []string{"left_top_par", "right_top_par"}, sineEffectWithOffset.GetTargetFixtureNames())
+
+	currentTime := time.Now()
+	sineEffectWithOffset.Update(currentTime)
+
+	// The effect should only apply to the first fixture after the first tick
+	assert.Equal(t, []string{"left_top_par"}, sineEffectWithOffset.GetTargetFixtureNames())
 }
+
+// func TestSineWaveEffect(t *testing.T) {
+// 	t.Parallel()
+// 	// 44fps
+// 	ticks := 88
+// 	deltaTime := FPS(44)
+
+// 	newVal := 0.0
+// 	swe := NewSineWaveEffect(deltaTime)
+
+// 	for i := 0; i < ticks; i++ {
+// 		tn := time.Now()
+// 		newVal = swe.Update(tn)
+// 		newVal = clamp(newVal, 0.0, 255.0)
+// 		fmt.Printf("tick %d: %v\n", i, newVal*255)
+// 		time.Sleep(25 * time.Millisecond)
+// 	}
+// }
 
 // func TestSawToothWave(t *testing.T) {
 // 	t.Parallel()

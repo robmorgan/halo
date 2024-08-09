@@ -1,5 +1,12 @@
 package main
 
+import (
+	"time"
+
+	"github.com/robmorgan/halo/fixture"
+	"github.com/robmorgan/halo/rhythm"
+)
+
 // ProcessCueList(ctx context.Context, cl *CueList, wg *sync.WaitGroup)
 // ProcessCue(c *Cue, wg *sync.WaitGroup)
 // ProcessFrame(cf *Frame, wg *sync.WaitGroup)
@@ -14,16 +21,48 @@ const MaxActiveCues = 5
 
 type CueMaster struct {
 	index         int
+	metronome     *rhythm.Metronome
 	pendingCues   []Cue
 	activeCues    []Cue
 	processedCues []Cue
 
-	// actions
 	// effects
+	//activeEffects []effect.Player
 }
 
-func (cm *CueMaster) ProcessCueList() {
+func NewCueMaster() *CueMaster {
+	return &CueMaster{
+		index:         0,
+		metronome:     rhythm.NewMetronome(),
+		pendingCues:   make([]Cue, 0),
+		activeCues:    make([]Cue, 0),
+		processedCues: make([]Cue, 0),
+	}
+}
 
+// RenderFrame renders the next frame for all active cues
+func (cm *CueMaster) RenderFrame(fm fixture.Manager, currentTime time.Time) {
+	// Create a new metronome snapshot to align all effects
+	snapshot := cm.metronome.GetSnapshot()
+
+	// First, loop over all active effects and see if any of them need to end
+	// activeEffects := make([]effect.Player, 0)
+	// for _, effect := range cm.activeEffects {
+	// 	if effect.IsActive() {
+	// 		activeEffects =
+	// 	}
+	// }
+
+	for _, cue := range cm.activeCues {
+		cue.RenderFrame(fm, snapshot)
+	}
+
+	// TODO - we probably want logic like this later to ensure we are accurately maintaining the render loop.
+	// It will be really important if the average frame render time is exceeding 25ms.
+	//ended := time.Now()
+	//duration := ended.Sub(snapshot.Instant
+	//sleepTime := time.Duration(math.Max(1, float64(show.RefreshInterval-duration))))
+	//time.Sleep(sleepTime)
 }
 
 // ProcessForever processes all of the cues

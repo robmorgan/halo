@@ -20,6 +20,7 @@ func (m model) View() string {
 	var s string
 	s += fmt.Sprintf("Pending cues: %d\n%s Cues processed: %d\n\nBPM: %d\n\n", len(m.cueMaster.pendingCues), m.spinner.View(), len(m.cueMaster.processedCues), m.bpm)
 	s += fmt.Sprintf("Active Cue Count: %d\n\n", len(m.cueMaster.activeCues))
+	s += fmt.Sprintf("Frames Sent: %d\n\n", m.framesSent)
 
 	// render progress bars for all active cues
 	for i, _ := range m.cueMaster.activeCues {
