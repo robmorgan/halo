@@ -13,7 +13,7 @@ const TOTAL_CHANNELS: usize = FIXTURES * CHANNELS_PER_FIXTURE;
 
 struct Cue {
     duration: f64,
-    effect: fn(f64, usize) -> u8,
+    effect: fn(f64, f64, usize) -> u8,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -104,10 +104,13 @@ fn generate_effect(beat_time: f64, cue_start_time: f64, cue: &Cue) -> Vec<u8> {
     for fixture in 0..FIXTURES {
         //let start_channel = fixture_index * 8; // Assuming 8 channels per fixture
         let start_channel = fixture * CHANNELS_PER_FIXTURE;
+        let phase_offset = (fixture as f64) * PI / 2.0; // Different phase for each fixture
 
         // Set the effect value on the first channel
-        let effect_value = calculate_effect_value(beat_time, cue_start_time);
-        dmx_data[start_channel] = effect_value;
+        // let effect_value = calculate_effect_value(beat_time, cue_start_time);
+        // dmx_data[start_channel] = effect_value;
+
+        dmx_data[start_channel] = (cue.effect)(beat_time, cue_time + phase_offset, start_channel);
 
         // Set hard-coded values for the rest of the channels
         dmx_data[start_channel + 1] = 255; // Example: Full intensity
@@ -125,20 +128,27 @@ fn calculate_effect_value(beat_time: f64, cue_start_time: f64) -> u8 {
     (normalized_value * 255.0) as u8
 }
 
-fn sine_wave_effect(time: f64, _channel: usize) -> u8 {
-    ((time.sin() * 0.5 + 0.5) * 255.0) as u8
+fn beat_intensity(beat_time: f64) -> f64 {
+    let beat_fraction = beat_time.fract();
+    (1.0 - beat_fraction * 2.0).abs() // Creates a triangle wave that peaks on each beat
 }
 
-fn square_wave_effect(time: f64, _channel: usize) -> u8 {
-    if time.sin() > 0.0 {
-        255
-    } else {
-        0
-    }
+fn sine_wave_effect(beat_time: f64, time: f64, _channel: usize) -> u8 {
+    let base_value = (time.sin() * 0.5 + 0.5) * 255.0;
+    let intensity = beat_intensity(beat_time);
+    (base_value * intensity) as u8
 }
 
-fn sawtooth_wave_effect(time: f64, _channel: usize) -> u8 {
-    ((time % 1.0) * 255.0) as u8
+fn square_wave_effect(beat_time: f64, time: f64, _channel: usize) -> u8 {
+    let base_value = if time.sin() > 0.0 { 255.0 } else { 0.0 };
+    let intensity = beat_intensity(beat_time);
+    (base_value * intensity) as u8
+}
+
+fn sawtooth_wave_effect(beat_time: f64, time: f64, _channel: usize) -> u8 {
+    let base_value = (time % 1.0) * 255.0;
+    let intensity = beat_intensity(beat_time);
+    (base_value * intensity) as u8
 }
 
 fn send_dmx_data(
