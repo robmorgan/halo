@@ -10,6 +10,8 @@ use std::time::Duration;
 const FIXTURES: usize = 4;
 const CHANNELS_PER_FIXTURE: usize = 8; // SHEHDS PAR Fixtures
 const TOTAL_CHANNELS: usize = FIXTURES * CHANNELS_PER_FIXTURE;
+const TARGET_FREQUENCY: f64 = 44.0; // 44Hz
+const TARGET_DURATION: Duration = Duration::from_micros((1_000_000.0 / TARGET_FREQUENCY) as u64);
 
 struct Cue {
     duration: f64,
@@ -54,8 +56,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cue_start_time = 0.0;
     let mut bpm = 0.0;
     let mut frames_sent = 0;
+    let start_time = Instant::now();
 
     loop {
+        let loop_start = Instant::now();
+
         link.capture_app_session_state(&mut state);
         let beat_time = state.beat_at_time(link.clock_micros(), 0.0);
 
@@ -81,7 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //     println!("Advanced to cue {}", current_cue + 1);
         // }
 
-        std::thread::sleep(Duration::from_millis(33)); // ~30 fps
+        let processing_time = loop_start.elapsed();
+        if processing_time < TARGET_DURATION {
+            std::thread::sleep(TARGET_DURATION - processing_time);
+        }
     }
 }
 
