@@ -55,9 +55,10 @@ enum ChannelType {
 #[derive(Clone, Debug)]
 struct Effect {
     name: String,
-    apply: fn(u16, f64, f64, f64) -> f64,
+    apply: fn(u16, f64, f64, f64, u32) -> f64, // Added beat_count parameter
     min: u16,
     max: u16,
+    beats_per_cycle: u32, // New field for beat synchronization
 }
 
 #[derive(Clone, Debug)]
@@ -143,10 +144,7 @@ impl Fixture {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let link = AblLink::new(120.0);
-    link.enable(false);
-
-    let mut state = SessionState::new();
-    link.capture_app_session_state(&mut state);
+    let mut session_state = SessionState::new();
     link.enable(true);
 
     //let socket = std::net::UdpSocket::bind("0.0.0.0:0")?;
@@ -356,22 +354,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let effects = vec![
         Effect {
-            name: "Sine Wave".to_string(),
-            apply: sine_wave_effect,
+            name: "Beat-Synced Sine Wave".to_string(),
+            apply: beat_synced_sine_wave_effect,
             min: 0,
             max: 65535,
+            beats_per_cycle: 1, // One full cycle every 4 beats
         },
         Effect {
-            name: "Square Wave".to_string(),
-            apply: square_wave_effect,
+            name: "Beat-Synced Square Wave".to_string(),
+            apply: beat_synced_square_wave_effect,
             min: 0,
             max: 65535,
+            beats_per_cycle: 2, // One full cycle every 2 beats
         },
         Effect {
-            name: "Sawtooth Wave".to_string(),
-            apply: sawtooth_wave_effect,
+            name: "Beat-Synced Sawtooth Wave".to_string(),
+            apply: beat_synced_sawtooth_wave_effect,
             min: 0,
             max: 65535,
+            beats_per_cycle: 8, // One full cycle every 8 beats
         },
     ];
 
@@ -400,14 +401,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 value: 35000,
             },
             StaticValue {
-                fixture_name: "LED Bar 1".to_string(),
+                fixture_name: "PAR Fixture 1".to_string(),
                 channel_name: "Red".to_string(),
-                value: 255,
+                value: 35000,
             },
             StaticValue {
-                fixture_name: "LED Bar 2".to_string(),
-                channel_name: "Blue".to_string(),
-                value: 255,
+                fixture_name: "PAR Fixture 2".to_string(),
+                channel_name: "RED".to_string(),
+                value: 35000,
             },
         ],
         chases: vec![
@@ -417,12 +418,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ChaseStep {
                         duration: 5.0,
                         effect_mappings: vec![EffectMapping {
-                            effect: Effect {
-                                name: "Tilt Down".to_string(),
-                                apply: linear_effect,
-                                min: 32768, // 50%
-                                max: 65535, // 100%
-                            },
+                            effect: effects[0].clone(), // Beat-Synced Sine Wave,
                             fixture_names: vec![
                                 "Moving Head 1".to_string(),
                                 "Moving Head 2".to_string(),
@@ -446,12 +442,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ChaseStep {
                         duration: 5.0,
                         effect_mappings: vec![EffectMapping {
-                            effect: Effect {
-                                name: "Tilt Up".to_string(),
-                                apply: linear_effect,
-                                min: 32768, // 50%
-                                max: 0,     // 0%
-                            },
+                            effect: effects[0].clone(), // Beat-Synced Sine Wave,
                             fixture_names: vec![
                                 "Moving Head 1".to_string(),
                                 "Moving Head 2".to_string(),
@@ -476,29 +467,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 loop_count: None, // Infinite loop
             },
             Chase {
-                name: "LED Bar Chase".to_string(),
+                name: "PAR Chase".to_string(),
                 steps: vec![ChaseStep {
-                    duration: 10.0, // Matches the total duration of the Moving Head Chase
+                    duration: 30.0, // Matches the total duration of the Moving Head Chase
                     effect_mappings: vec![EffectMapping {
-                        effect: Effect {
-                            name: "Pan".to_string(),
-                            apply: sine_wave_effect,
-                            min: 0,
-                            max: 65535,
-                        },
-                        fixture_names: vec!["LED Bar 1".to_string(), "LED Bar 2".to_string()],
-                        channel_types: vec![ChannelType::Pan],
+                        effect: effects[1].clone(), // Beat-Synced Square Wave,
+                        fixture_names: vec![
+                            "PAR Fixture 1".to_string(),
+                            "PAR Fixture 2".to_string(),
+                        ],
+                        channel_types: vec![ChannelType::Dimmer],
                         distribution: EffectDistribution::All,
                     }],
                     static_values: vec![
                         StaticValue {
-                            fixture_name: "LED Bar 1".to_string(),
-                            channel_name: "Dimmer".to_string(),
+                            fixture_name: "PAR Fixture 1".to_string(),
+                            channel_name: "Red".to_string(),
                             value: 65535,
                         },
                         StaticValue {
-                            fixture_name: "LED Bar 2".to_string(),
-                            channel_name: "Dimmer".to_string(),
+                            fixture_name: "PAR Fixture 2".to_string(),
+                            channel_name: "Red".to_string(),
                             value: 65535,
                         },
                     ],
@@ -541,8 +530,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         accumulated_time += delta;
         cue_time += delta;
 
-        link.capture_app_session_state(&mut state);
-        let beat_time = state.beat_at_time(link.clock_micros(), 0.0);
+        link.capture_app_session_state(&mut session_state);
+        let beat_time = session_state.beat_at_time(link.clock_micros(), 0.0);
+        let tempo = session_state.tempo();
 
         if cue_time >= cues[current_cue].duration {
             cue_time = 0.0; // Reset cue time but don't change the cue
@@ -562,7 +552,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //     delta,
         // );
 
-        apply_cue(&mut fixtures, &cues[current_cue], accumulated_time);
+        //        apply_cue(&mut fixtures, &cues[current_cue], accumulated_time);
+        apply_cue(&mut fixtures, &cues[current_cue], beat_time, tempo);
 
         let dmx_data = generate_dmx_data(&fixtures);
         send_dmx_data(&socket, broadcast_addr, dmx_data)?;
@@ -573,15 +564,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Display status information
-        bpm = state.tempo();
-
         display_status(
             &link,
-            bpm,
+            tempo,
             frames_sent,
             &cues[current_cue].name,
             accumulated_time,
             cue_time,
+            beat_time,
         );
 
         let frame_time = now.elapsed().as_secs_f64();
@@ -603,7 +593,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 //     }
 // }
 
-fn apply_cue(fixtures: &mut [Fixture], cue: &Cue, total_time: f64) {
+fn apply_cue(fixtures: &mut [Fixture], cue: &Cue, beat_time: f64, tempo: f64) {
     // Apply cue-level static values
     for static_value in &cue.static_values {
         if let Some(fixture) = fixtures
@@ -616,22 +606,30 @@ fn apply_cue(fixtures: &mut [Fixture], cue: &Cue, total_time: f64) {
 
     // Apply chases
     for chase in &cue.chases {
-        let chase_duration: f64 = chase.steps.iter().map(|step| step.duration).sum();
-        let chase_time = total_time % chase_duration;
-        let mut accumulated_time = 0.0;
+        let chase_duration_beats: f64 = chase.steps.iter().map(|step| step.duration).sum();
+        let chase_beat_time = beat_time % chase_duration_beats;
+        let mut accumulated_beats = 0.0;
 
         for step in &chase.steps {
-            if chase_time >= accumulated_time && chase_time < accumulated_time + step.duration {
-                let step_time = chase_time - accumulated_time;
-                apply_chase_step(fixtures, step, total_time, step_time);
+            if chase_beat_time >= accumulated_beats
+                && chase_beat_time < accumulated_beats + step.duration
+            {
+                let step_beat_time = chase_beat_time - accumulated_beats;
+                apply_chase_step(fixtures, step, beat_time, step_beat_time, tempo);
                 break;
             }
-            accumulated_time += step.duration;
+            accumulated_beats += step.duration;
         }
     }
 }
 
-fn apply_chase_step(fixtures: &mut [Fixture], step: &ChaseStep, total_time: f64, step_time: f64) {
+fn apply_chase_step(
+    fixtures: &mut [Fixture],
+    step: &ChaseStep,
+    beat_time: f64,
+    step_beat_time: f64,
+    tempo: f64,
+) {
     // Apply static values
     for static_value in &step.static_values {
         if let Some(fixture) = fixtures
@@ -666,27 +664,60 @@ fn apply_chase_step(fixtures: &mut [Fixture], step: &ChaseStep, total_time: f64,
                             EffectDistribution::Wave(phase) => i as f64 * phase,
                             _ => 0.0,
                         };
-                        let progress = step_time / step.duration;
+                        let progress = step_beat_time / step.duration;
+                        let beat_count = beat_time.floor() as u32;
                         let effect_value = (mapping.effect.apply)(
                             channel.value,
-                            total_time + phase_offset,
+                            beat_time + phase_offset,
                             progress,
-                            TARGET_DELTA,
+                            tempo,
+                            beat_count,
                         );
-                        // let constrained_value =
-                        //     (effect_value * (mapping.effect.max - mapping.effect.min) as f64
-                        //         + mapping.effect.min as f64) as u16;
-
-                        let range = mapping.effect.max.saturating_sub(mapping.effect.min) as f64;
                         let constrained_value =
-                            (effect_value * range + mapping.effect.min as f64) as u16;
-
+                            (effect_value * (mapping.effect.max - mapping.effect.min) as f64
+                                + mapping.effect.min as f64) as u16;
                         channel.value = constrained_value;
                     }
                 }
             }
         }
     }
+}
+
+fn beat_synced_sine_wave_effect(
+    _current: u16,
+    beat_time: f64,
+    _progress: f64,
+    _tempo: f64,
+    beat_count: u32,
+) -> f64 {
+    let phase = (beat_count % 4) as f64 / 4.0; // 4 beats per cycle
+    ((beat_time + phase) * std::f64::consts::PI * 2.0).sin() * 0.5 + 0.5
+}
+
+fn beat_synced_square_wave_effect(
+    _current: u16,
+    _beat_time: f64,
+    _progress: f64,
+    _tempo: f64,
+    beat_count: u32,
+) -> f64 {
+    if beat_count % 2 == 0 {
+        1.0
+    } else {
+        0.0
+    } // Change every 2 beats
+}
+
+fn beat_synced_sawtooth_wave_effect(
+    _current: u16,
+    beat_time: f64,
+    _progress: f64,
+    _tempo: f64,
+    beat_count: u32,
+) -> f64 {
+    let phase = (beat_count % 8) as f64 / 8.0; // 8 beats per cycle
+    (beat_time + phase) % 1.0
 }
 
 fn linear_effect(_current: u16, _time: f64, progress: f64, _delta: f64) -> f64 {
@@ -767,14 +798,15 @@ fn display_status(
     current_cue: &str,
     elapsed: f64,
     cue_time: f64,
+    beat_time: f64,
 ) {
     //let bpm = state.tempo();
     let num_peers = link.num_peers();
 
     print!("\r"); // Move cursor to the beginning of the line
     print!(
-        "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Elapsed: {:6.2}s | Cue Time: {:6.2}s | FPS: {:5.2}",
-        frames_sent, bpm, num_peers, current_cue, elapsed, cue_time, frames_sent as f64 / elapsed
+        "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Elapsed: {:6.2}s | Cue Time: {:6.2}s | Beat: {:6.2} | FPS: {:5.2}",
+        frames_sent, bpm, num_peers, current_cue, elapsed, cue_time, beat_time, frames_sent as f64 / elapsed
     );
     stdout().flush().unwrap();
 }
