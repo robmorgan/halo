@@ -7,41 +7,19 @@
     {
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/v3",
-      "name": "Cargo launch",
-      "cargo": {
-        "args": ["build", "--lib", "v3"]
-      },
-      "args": []
-    },
-    {
-      "type": "lldb",
-      "request": "launch",
       "name": "Debug halo v3",
-      "relativePathBase": "${workspaceFolder}/v3",
-      "cwd": "${workspaceFolder}/v3",
+      "cwd": "${workspaceFolder}",
       "cargo": {
-        "args": ["build", "--bin=v3", "--package=v3"],
+        "args": ["build", "--bin=halo", "--package=halo"],
         "filter": {
-          "name": "v3",
+          "name": "halo",
           "kind": "bin"
         }
       },
       "args": [],
-
       "env": {
         "RUST_BACKTRACE": "1"
       },
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Launch halov3-simple",
-      "type": "lldb",
-      "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/v3",
-      "env": {},
-      "args": [],
       "console": "integratedTerminal"
     },
     {
