@@ -65,8 +65,10 @@ fn main() {
                 println!("Recv poll {:?}", poll);
             }
             ArtCommand::PollReply(reply) => {
+                println!("Reply {:?}", reply);
+
                 // This is an ArtNet node on the network. We can send commands to it like this:
-                //art_net_controller.send_data(vec![0xff; 512]);
+                art_net_controller.send_data(vec![0xff; 512]);
 
                 let command = ArtCommand::Output(Output {
                     // length: dmx.len() as u16,

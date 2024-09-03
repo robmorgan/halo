@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.86"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
+
+[[package]]
 name = "artnet_protocol"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -123,9 +129,11 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 name = "halo"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "artnet_protocol",
  "rosc",
  "rusty_link",
+ "serde",
 ]
 
 [[package]]
@@ -308,6 +316,26 @@ checksum = "a768bcaa192ccbdbb469a7653837bacadf326dea94d4c56e0fe9166eafc119b2"
 dependencies = [
  "bindgen",
  "cmake",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.204"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc76f558e0cbb2a839d37354c575f1dc3fdc6546b5be373ba43d95f231bf7c12"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.204"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0cd7e117be63d3c3678776753929474f3b04a43a080c744d6b0ae2a8c28e222"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
