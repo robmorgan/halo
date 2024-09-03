@@ -5,6 +5,46 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/v3",
+      "name": "Cargo launch",
+      "cargo": {
+        "args": ["build", "--lib", "v3"]
+      },
+      "args": []
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug halo v3",
+      "relativePathBase": "${workspaceFolder}/v3",
+      "cwd": "${workspaceFolder}/v3",
+      "cargo": {
+        "args": ["build", "--bin=v3", "--package=v3"],
+        "filter": {
+          "name": "v3",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Launch halov3-simple",
+      "type": "lldb",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/v3",
+      "env": {},
+      "args": [],
+      "console": "integratedTerminal"
+    },
+    {
       "name": "Launch multicue",
       "type": "go",
       "request": "launch",
@@ -12,17 +52,17 @@
       "program": "${workspaceFolder}/multicue",
       "env": {},
       "args": [],
-      "console": "integratedTerminal",
-  },
-  {
-    "name": "Launch oscproxy",
-    "type": "go",
-    "request": "launch",
-    "mode": "debug",
-    "program": "${workspaceFolder}/oscproxy",
-    "env": {},
-    "args": ["8766"],
-    "console": "integratedTerminal",
-  },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Launch oscproxy",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/oscproxy",
+      "env": {},
+      "args": ["8766"],
+      "console": "integratedTerminal"
+    }
   ]
 }
