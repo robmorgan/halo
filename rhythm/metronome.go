@@ -7,12 +7,19 @@ import (
 )
 
 // Metronome struct represents the Metronome in Go
+// Originally based on https://github.com/Deep-Symmetry/electro/blob/main/src/main/java/org/deepsymmetry/electro/Metronome.java#L449
 type Metronome struct {
 	mu            sync.Mutex
 	startTime     time.Time
 	tempo         float64
 	beatsPerBar   int
 	barsPerPhrase int
+}
+
+func (m *Metronome) GetSnapshot(addedDuration time.Duration) *MetronomeSnapshot {
+	// Implement the logic to create a snapshot
+	//return Snapshot{Instant: time.Now().Add(addedDuration)}
+	return NewMetronomeSnapshotWithInstant(time.Now().Add(addedDuration))
 }
 
 // NewMetronome creates a new Metronome with default values
