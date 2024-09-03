@@ -1,6 +1,7 @@
 use artnet_protocol::{ArtCommand, Output};
 use rusty_link::{AblLink, SessionState};
 use std::error::Error;
+use std::f64::consts::PI;
 use std::io::{self, stdout, Read, Write};
 use std::net::SocketAddr;
 use std::net::{ToSocketAddrs, UdpSocket};
@@ -51,14 +52,46 @@ enum ChannelType {
     Other(String),
 }
 
+// Assuming we have access to these from our rhythm engine
+struct RhythmState {
+    beat_phase: f64,   // 0.0 to 1.0, resets each beat
+    bar_phase: f64,    // 0.0 to 1.0, resets each bar
+    phrase_phase: f64, // 0.0 to 1.0, resets each phrase
+    beats_per_bar: u32,
+    bars_per_phrase: u32,
+}
+
+#[derive(Clone, Debug)]
+enum Interval {
+    Beat,
+    Bar,
+    Phrase,
+}
+
+#[derive(Clone, Debug)]
+struct EffectParams {
+    interval: Interval,
+    interval_ratio: f64,
+    phase: f64,
+}
+
+impl Default for EffectParams {
+    fn default() -> Self {
+        EffectParams {
+            interval: Interval::Beat,
+            interval_ratio: 1.0,
+            phase: 0.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Effect {
     name: String,
-    apply: fn(u16, f64, f64, f64, u32) -> f64, // Added beat_count parameter
-    //apply: fn(f64, f64) -> f64, // Changed to take progress and phase
+    apply: fn(f64) -> f64, // Takes a phase (0.0 to 1.0) and returns a value (0.0 to 1.0)
     min: u16,
     max: u16,
-    beats_per_cycle: u32, // New field for beat synchronization
+    params: EffectParams,
 }
 
 #[derive(Clone, Debug)]
@@ -133,6 +166,17 @@ impl Fixture {
         }
         values
     }
+}
+
+fn update_rhythm_state(beat_time: f64, tempo: f64, rhythm_state: &mut RhythmState) {
+    // Calculate phases
+    rhythm_state.beat_phase = beat_time.fract();
+    rhythm_state.bar_phase = (beat_time / rhythm_state.beats_per_bar as f64).fract();
+    rhythm_state.phrase_phase =
+        (beat_time / (rhythm_state.beats_per_bar * rhythm_state.bars_per_phrase) as f64).fract();
+
+    // Optionally update beats_per_bar and bars_per_phrase if needed
+    // This could be based on user input or a predefined configuration
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -357,27 +401,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ];
 
+    let mut rhythm_state = RhythmState {
+        beat_phase: 0.0,
+        bar_phase: 0.0,
+        phrase_phase: 0.0,
+        beats_per_bar: 4,   // Default to 4/4 time
+        bars_per_phrase: 4, // Default 4-bar phrase
+    };
+
     let effects = vec![
         Effect {
-            name: "Beat-Synced Sine Wave".to_string(),
-            apply: beat_synced_sine_wave_effect,
-            min: 32767,
-            max: 65535,
-            beats_per_cycle: 1, // One full cycle every 4 beats
-        },
-        Effect {
-            name: "Beat-Synced Square Wave".to_string(),
-            apply: beat_synced_square_wave_effect,
+            name: "Beat-synced Sine".to_string(),
+            apply: sine_effect,
             min: 0,
             max: 65535,
-            beats_per_cycle: 2, // One full cycle every 2 beats
+            params: EffectParams {
+                interval: Interval::Beat,
+                interval_ratio: 1.0, // Twice as fast
+                phase: 0.25,         // Quarter phase offset
+            },
         },
         Effect {
-            name: "Beat-Synced Sawtooth Wave".to_string(),
-            apply: beat_synced_sawtooth_wave_effect,
-            min: 32767,
+            name: "Bar-synced Square".to_string(),
+            apply: square_effect,
+            min: 0,
             max: 65535,
-            beats_per_cycle: 8, // One full cycle every 8 beats
+            params: EffectParams {
+                interval: Interval::Bar,
+                ..Default::default()
+            },
+        },
+        Effect {
+            name: "Phrase-synced Sawtooth".to_string(),
+            apply: sawtooth_effect,
+            min: 0,
+            max: 65535,
+            params: EffectParams {
+                interval: Interval::Phrase,
+                interval_ratio: 0.5, // Twice as fast
+                phase: 0.25,         // Quarter phase offset
+            },
         },
     ];
 
@@ -530,18 +593,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         Cue {
             name: "Alternating PAR Chase".to_string(),
-            duration: 10.0,
+            duration: 16.0,
             static_values: vec![
                 // Set both PARs to full intensity on the Dimmer channel
                 StaticValue {
                     fixture_name: "PAR Fixture 1".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 0,
+                    value: 65535,
                 },
                 StaticValue {
                     fixture_name: "PAR Fixture 2".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 0,
+                    value: 65535,
                 },
                 // Set both PARs to white
                 StaticValue {
@@ -621,6 +684,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let beat_time = session_state.beat_at_time(link.clock_micros(), 0.0);
         let tempo = session_state.tempo();
 
+        update_rhythm_state(beat_time, tempo, &mut rhythm_state);
+
         if cue_time >= cues[current_cue].duration {
             cue_time = 0.0; // Reset cue time but don't change the cue
         }
@@ -640,7 +705,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // );
 
         //        apply_cue(&mut fixtures, &cues[current_cue], accumulated_time);
-        apply_cue(&mut fixtures, &cues[current_cue], beat_time, tempo);
+        //apply_cue(&mut fixtures, &cues[current_cue], beat_time, tempo);
+        //apply_chase_step(&mut fixtures, &current_step, &rhythm_state);
+
+        // Apply effects
+        for chase in &cues[current_cue].chases {
+            for step in &chase.steps {
+                apply_chase_step(&mut fixtures, step, &rhythm_state);
+            }
+        }
 
         let dmx_data = generate_dmx_data(&fixtures);
         send_dmx_data(&socket, broadcast_addr, dmx_data)?;
@@ -668,100 +741,135 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn apply_cue(fixtures: &mut [Fixture], cue: &Cue, beat_time: f64, tempo: f64) {
-    // Apply cue-level static values
-    for static_value in &cue.static_values {
-        if let Some(fixture) = fixtures
-            .iter_mut()
-            .find(|f| f.name == static_value.fixture_name)
-        {
-            fixture.set_channel_value(&static_value.channel_name, static_value.value);
-        }
-    }
+// fn apply_cue(fixtures: &mut [Fixture], cue: &Cue, beat_time: f64, tempo: f64) {
+//     // Apply cue-level static values
+//     for static_value in &cue.static_values {
+//         if let Some(fixture) = fixtures
+//             .iter_mut()
+//             .find(|f| f.name == static_value.fixture_name)
+//         {
+//             fixture.set_channel_value(&static_value.channel_name, static_value.value);
+//         }
+//     }
 
-    // Apply chases
-    for chase in &cue.chases {
-        let chase_duration_beats: f64 = chase.steps.iter().map(|step| step.duration).sum();
-        let chase_beat_time = beat_time % chase_duration_beats;
-        let mut accumulated_beats = 0.0;
+//     // Apply chases
+//     for chase in &cue.chases {
+//         let chase_duration_beats: f64 = chase.steps.iter().map(|step| step.duration).sum();
+//         let chase_beat_time = beat_time % chase_duration_beats;
+//         let mut accumulated_beats = 0.0;
 
-        // TODO - will this only apply one step per loop?
-        for step in &chase.steps {
-            if chase_beat_time >= accumulated_beats
-                && chase_beat_time < accumulated_beats + step.duration
-            {
-                let step_beat_time = chase_beat_time - accumulated_beats;
-                apply_chase_step(fixtures, step, beat_time, step_beat_time, tempo);
-                break;
-            }
-            accumulated_beats += step.duration;
-        }
-    }
+//         // TODO - will this only apply one step per loop?
+//         for step in &chase.steps {
+//             if chase_beat_time >= accumulated_beats
+//                 && chase_beat_time < accumulated_beats + step.duration
+//             {
+//                 let step_beat_time = chase_beat_time - accumulated_beats;
+//                 apply_chase_step(fixtures, step, beat_time, step_beat_time, tempo);
+//                 break;
+//             }
+//             accumulated_beats += step.duration;
+//         }
+//     }
+// }
+
+const SMOOTHING_FACTOR: f64 = 0.1; // Adjust this value to control transition speed (0.0 to 1.0)
+
+fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u16 {
+    let phase = get_effect_phase(rhythm, &effect.params);
+    let target_value = (effect.apply)(phase);
+    let target_dmx = (target_value * (effect.max - effect.min) as f64 + effect.min as f64) as f64;
+
+    // Smooth transition
+    let current_dmx = current_value as f64;
+    let new_dmx = current_dmx + (target_dmx - current_dmx) * SMOOTHING_FACTOR;
+
+    println!(
+        "Effect: {}, Phase: {:.2}, Value: {}\n",
+        effect.name, phase, new_dmx
+    );
+
+    new_dmx.round() as u16
 }
 
-fn apply_chase_step(
-    fixtures: &mut [Fixture],
-    step: &ChaseStep,
-    beat_time: f64,
-    step_beat_time: f64,
-    tempo: f64,
-) {
-    // Apply static values
+fn apply_chase_step(fixtures: &mut [Fixture], step: &ChaseStep, rhythm: &RhythmState) {
+    // Apply static values first
     for static_value in &step.static_values {
         if let Some(fixture) = fixtures
             .iter_mut()
             .find(|f| f.name == static_value.fixture_name)
         {
-            fixture.set_channel_value(&static_value.channel_name, static_value.value);
+            if let Some(channel) = fixture
+                .channels
+                .iter_mut()
+                .find(|c| c.name == static_value.channel_name)
+            {
+                // Smooth transition for static values as well
+                let current_value = channel.value as f64;
+                let target_value = static_value.value as f64;
+                channel.value = (current_value + (target_value - current_value) * SMOOTHING_FACTOR)
+                    .round() as u16;
+            }
         }
     }
 
-    // Apply effect mappings
+    // Then apply effect mappings
     for mapping in &step.effect_mappings {
         let mut affected_fixtures: Vec<&mut Fixture> = fixtures
             .iter_mut()
             .filter(|f| mapping.fixture_names.contains(&f.name))
             .collect();
 
-        let beat_count = beat_time.floor() as u32;
-
         for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
-            let should_apply = match mapping.distribution {
-                EffectDistribution::All => true,
-                // TODO - it might just be this and we can ignore beat count.
-                EffectDistribution::Step(step) => i % step == 0,
-                //EffectDistribution::Step(step) => (beat_count as usize + i) % step == 0,
-                EffectDistribution::Wave(_) => true,
-            };
-
             for channel_type in &mapping.channel_types {
                 if let Some(channel) = fixture.channels.iter_mut().find(|c| {
                     std::mem::discriminant(&c.channel_type) == std::mem::discriminant(channel_type)
                 }) {
-                    if should_apply {
-                        let phase_offset = match mapping.distribution {
-                            EffectDistribution::Wave(phase) => i as f64 * phase,
-                            _ => 0.0,
-                        };
-                        let progress = step_beat_time / step.duration;
-                        let effect_value = (mapping.effect.apply)(
-                            channel.value,
-                            beat_time + phase_offset,
-                            progress,
-                            tempo,
-                            beat_count,
-                        );
-                        let constrained_value =
-                            (effect_value * (mapping.effect.max - mapping.effect.min) as f64
-                                + mapping.effect.min as f64) as u16;
-                        channel.value = constrained_value;
-                    } else {
-                        channel.value = mapping.effect.min;
+                    let mut effect_params = mapping.effect.params.clone();
+
+                    // Apply distribution adjustments
+                    match mapping.distribution {
+                        EffectDistribution::All => {}
+                        EffectDistribution::Step(step) => {
+                            if i % step != 0 {
+                                continue;
+                            }
+                        }
+                        EffectDistribution::Wave(phase_offset) => {
+                            effect_params.phase += phase_offset * i as f64;
+                        }
                     }
+
+                    channel.value = apply_effect(&mapping.effect, rhythm, channel.value);
                 }
             }
         }
     }
+}
+
+fn get_effect_phase(rhythm: &RhythmState, params: &EffectParams) -> f64 {
+    let base_phase = match params.interval {
+        Interval::Beat => rhythm.beat_phase,
+        Interval::Bar => rhythm.bar_phase,
+        Interval::Phrase => rhythm.phrase_phase,
+    };
+
+    (base_phase * params.interval_ratio + params.phase) % 1.0
+}
+
+fn sine_effect(phase: f64) -> f64 {
+    (phase * 2.0 * PI).sin() * 0.5 + 0.5
+}
+
+fn square_effect(phase: f64) -> f64 {
+    if phase < 0.5 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+fn sawtooth_effect(phase: f64) -> f64 {
+    phase
 }
 
 fn smooth_sine_effect(progress: f64, phase: f64) -> f64 {
