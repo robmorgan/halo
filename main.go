@@ -39,7 +39,7 @@ func Run(ctx context.Context) {
 
 	wg := sync.WaitGroup{}
 
-	// initiailze the global config
+	// initialize the global config
 	logger.Info("Initializing config...")
 	config, err := config.NewHaloConfig()
 	if err != nil {
@@ -74,9 +74,9 @@ func Run(ctx context.Context) {
 	stateA := fixture.State{Intensity: 200, RGB: utils.GetRGBFromString("#FFD700")}
 	stateB := fixture.State{Intensity: 0, RGB: utils.GetRGBFromString("#FFD700")}
 	//tickInterval := time.Millisecond * 60000 / 130
-	tickInterval := time.Millisecond * 30
+	//tickInterval := time.Millisecond * 30
 	//tickInterval := utils.BPMToMilliseconds(130)
-	c, err = cycleFixtureStates([]string{"left_middle_par", "right_middle_par"}, stateA, stateB, "16s", tickInterval, 35)
+	c, err = cycleFixtureStates([]string{"left_middle_par", "right_middle_par"}, stateA, stateB, "16s", 35)
 	if err != nil {
 		logger.Fatalf("error processing cue. err='%v'", err)
 	}
