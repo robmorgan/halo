@@ -1,8 +1,0 @@
-[package]
-name = "halo"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-rusty_link = "0.4.3"
-artnet_protocol = "0.4.2"
