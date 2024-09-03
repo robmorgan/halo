@@ -28,6 +28,41 @@ func clearFixtures(fixtureList []string, duration time.Duration) *cuelist.Cue {
 	return &cue
 }
 
+func flashPARs(fixtureList []string, state fixture.State, timeDuration string, numFrames int) (*cuelist.Cue, error) {
+	cue := cuelist.Cue{}
+	duration, err := time.ParseDuration(timeDuration)
+	if err != nil {
+		return nil, err
+	}
+
+	var fixtureIndex int = 0
+	for x := 0; x < numFrames; x++ {
+		frame := cuelist.Frame{}
+		frameDuration := duration / time.Duration(numFrames)
+
+		for y := 0; y < len(fixtureList); y++ {
+			action := cuelist.FrameAction{}
+			action.FixtureName = fixtureList[y]
+
+			action.NewState = fixture.TargetState{
+				State:    state,
+				Duration: frameDuration,
+			}
+
+			frame.Actions = append(frame.Actions, action)
+		}
+
+		fixtureIndex++
+		if fixtureIndex > len(fixtureList)-1 {
+			fixtureIndex = 0
+		}
+
+		cue.Frames = append(cue.Frames, frame)
+	}
+
+	return &cue, nil
+}
+
 // The number of frames has to be greater than equal to the size of the fixture list.
 func cycleFixtureStates(fixtureList []string, stateA fixture.State, stateB fixture.State, timeDuration string, numFrames int) (*cuelist.Cue, error) {
 	cue := cuelist.Cue{}
