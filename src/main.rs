@@ -1,6 +1,5 @@
-use artnet_protocol::{ArtCommand, Output, PortAddress};
+use artnet_protocol::{ArtCommand, Output};
 use rusty_link::{AblLink, SessionState};
-use std::collections::HashMap;
 use std::error::Error;
 use std::io::{self, stdout, Read, Write};
 use std::net::SocketAddr;
@@ -13,7 +12,7 @@ use std::time::Instant;
 const FIXTURES: usize = 4;
 const CHANNELS_PER_FIXTURE: usize = 8; // SHEHDS PAR Fixtures
 const TOTAL_CHANNELS: usize = FIXTURES * CHANNELS_PER_FIXTURE;
-const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec
+const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
 
 struct Fixture {
@@ -56,6 +55,7 @@ enum ChannelType {
 struct Effect {
     name: String,
     apply: fn(u16, f64, f64, f64, u32) -> f64, // Added beat_count parameter
+    //apply: fn(f64, f64) -> f64, // Changed to take progress and phase
     min: u16,
     max: u16,
     beats_per_cycle: u32, // New field for beat synchronization
@@ -105,13 +105,6 @@ struct Cue {
     static_values: Vec<StaticValue>,
     chases: Vec<Chase>,
 }
-
-// struct Cue {
-//     name: String,
-//     duration: f64,
-//     effect_mappings: Vec<EffectMapping>,
-//     static_values: Vec<StaticValue>,
-// }
 
 impl Fixture {
     fn new(name: &str, channels: Vec<Channel>, start_address: u16) -> Self {
@@ -368,7 +361,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Effect {
             name: "Beat-Synced Sine Wave".to_string(),
             apply: beat_synced_sine_wave_effect,
-            min: 0,
+            min: 32767,
             max: 65535,
             beats_per_cycle: 1, // One full cycle every 4 beats
         },
@@ -382,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Effect {
             name: "Beat-Synced Sawtooth Wave".to_string(),
             apply: beat_synced_sawtooth_wave_effect,
-            min: 0,
+            min: 32767,
             max: 65535,
             beats_per_cycle: 8, // One full cycle every 8 beats
         },
@@ -566,9 +559,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 name: "PAR Alternating Chase".to_string(),
                 steps: vec![
                     ChaseStep {
-                        duration: 1.0, // Duration of 2 beats
+                        duration: 8.0, // Duration of 2 beats
                         effect_mappings: vec![EffectMapping {
-                            effect: effects[1].clone(),
+                            effect: effects[0].clone(),
                             fixture_names: vec!["PAR Fixture 1".to_string()],
                             channel_types: vec![ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
@@ -576,9 +569,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         static_values: vec![], // Remove static values from the chase step
                     },
                     ChaseStep {
-                        duration: 1.0, // Duration of 2 beats
+                        duration: 8.0, // Duration of 2 beats
                         effect_mappings: vec![EffectMapping {
-                            effect: effects[1].clone(),
+                            effect: effects[0].clone(),
                             fixture_names: vec!["PAR Fixture 2".to_string()],
                             channel_types: vec![ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
@@ -771,6 +764,10 @@ fn apply_chase_step(
     }
 }
 
+fn smooth_sine_effect(progress: f64, phase: f64) -> f64 {
+    ((progress * std::f64::consts::PI * 2.0 + phase).sin() * 0.5 + 0.5).powi(2)
+}
+
 fn beat_synced_sine_wave_effect(
     _current: u16,
     beat_time: f64,
@@ -812,7 +809,7 @@ fn linear_effect(_current: u16, _time: f64, progress: f64, _delta: f64) -> f64 {
 }
 
 fn sine_wave_effect(_current: u16, time: f64, _progress: f64, _delta: f64) -> f64 {
-    (time.sin() * 0.5 + 0.5)
+    time.sin() * 0.5 + 0.5
 }
 
 fn square_wave_effect(_current: u16, time: f64, _cue_time: f64, _delta: f64) -> f64 {
@@ -871,11 +868,6 @@ fn send_dmx_data(
     let bytes = command.write_to_buffer().unwrap();
     socket.send_to(&bytes, broadcast_addr)?;
     Ok(())
-}
-
-fn key_pressed() -> io::Result<bool> {
-    let mut buffer = [0; 1];
-    Ok(io::stdin().read(&mut buffer)? > 0)
 }
 
 fn display_status(
