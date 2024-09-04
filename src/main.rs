@@ -1,3 +1,5 @@
+mod artnet;
+
 use artnet_protocol::{ArtCommand, Output};
 use rusty_link::{AblLink, SessionState};
 use std::error::Error;
@@ -184,16 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut session_state = SessionState::new();
     link.enable(true);
 
-    //let socket = std::net::UdpSocket::bind("0.0.0.0:0")?;
-    let socket = UdpSocket::bind((String::from("0.0.0.0"), 6455))?;
-    //let target_addr = "192.168.1.100:6454"; // Replace with your Art-Net node's IP and port
-
-    let broadcast_addr = ("255.255.255.255", 6454)
-        .to_socket_addrs()
-        .unwrap()
-        .next()
-        .unwrap();
-    socket.set_broadcast(true).unwrap();
+    let artnet_controller = artnet::ArtNet::new(artnet::ArtNetMode::Broadcast).unwrap();
 
     let mut fixtures = vec![
         Fixture::new(
@@ -437,9 +430,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             min: 0,
             max: 65535,
             params: EffectParams {
-                interval: Interval::Phrase,
-                interval_ratio: 0.5, // Twice as fast
-                phase: 0.25,         // Quarter phase offset
+                interval: Interval::Beat,
+                interval_ratio: 1.0, // Twice as fast
+                phase: 0.0,          // Quarter phase offset
             },
         },
     ];
@@ -593,7 +586,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         Cue {
             name: "Alternating PAR Chase".to_string(),
-            duration: 16.0,
+            duration: 10.0,
             static_values: vec![
                 // Set both PARs to full intensity on the Dimmer channel
                 StaticValue {
@@ -622,9 +615,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 name: "PAR Alternating Chase".to_string(),
                 steps: vec![
                     ChaseStep {
-                        duration: 8.0, // Duration of 2 beats
+                        duration: 5.0, // Duration of 2 beats
                         effect_mappings: vec![EffectMapping {
-                            effect: effects[0].clone(),
+                            effect: effects[2].clone(),
                             fixture_names: vec!["PAR Fixture 1".to_string()],
                             channel_types: vec![ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
@@ -632,9 +625,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         static_values: vec![], // Remove static values from the chase step
                     },
                     ChaseStep {
-                        duration: 8.0, // Duration of 2 beats
+                        duration: 5.0, // Duration of 2 beats
                         effect_mappings: vec![EffectMapping {
-                            effect: effects[0].clone(),
+                            effect: effects[2].clone(),
                             fixture_names: vec!["PAR Fixture 2".to_string()],
                             channel_types: vec![ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
@@ -716,7 +709,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let dmx_data = generate_dmx_data(&fixtures);
-        send_dmx_data(&socket, broadcast_addr, dmx_data)?;
+        //        send_dmx_data(&socket, broadcast_addr, dmx_data)?;
+
+        //artnet_controller.send_dmx_data(dmx_data);
+        artnet_controller.send_data(dmx_data);
+
         frames_sent += 1;
 
         if beat_time - cue_start_time >= cues[current_cue].duration {
@@ -772,7 +769,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 //     }
 // }
 
-const SMOOTHING_FACTOR: f64 = 0.1; // Adjust this value to control transition speed (0.0 to 1.0)
+//const SMOOTHING_FACTOR: f64 = 0.1; // Adjust this value to control transition speed (0.0 to 1.0)
 
 fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u16 {
     let phase = get_effect_phase(rhythm, &effect.params);
@@ -781,11 +778,13 @@ fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u1
 
     // Smooth transition
     let current_dmx = current_value as f64;
-    let new_dmx = current_dmx + (target_dmx - current_dmx) * SMOOTHING_FACTOR;
+    let new_dmx = current_dmx + (target_dmx - current_dmx);
 
     println!(
-        "Effect: {}, Phase: {:.2}, Value: {}\n",
-        effect.name, phase, new_dmx
+        "\nEffect: {}, Phase: {:.2}, Value: {}\n",
+        effect.name,
+        phase,
+        new_dmx / 255.0
     );
 
     new_dmx.round() as u16
@@ -806,8 +805,7 @@ fn apply_chase_step(fixtures: &mut [Fixture], step: &ChaseStep, rhythm: &RhythmS
                 // Smooth transition for static values as well
                 let current_value = channel.value as f64;
                 let target_value = static_value.value as f64;
-                channel.value = (current_value + (target_value - current_value) * SMOOTHING_FACTOR)
-                    .round() as u16;
+                channel.value = (current_value + (target_value - current_value)).round() as u16;
             }
         }
     }
@@ -956,26 +954,6 @@ fn generate_dmx_data(fixtures: &[Fixture]) -> Vec<u8> {
         dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
     }
     dmx_data
-}
-
-fn send_dmx_data(
-    //socket: &std::net::UdpSocket,
-    socket: &UdpSocket,
-    //target_addr: &str,
-    broadcast_addr: SocketAddr,
-    dmx_data: Vec<u8>,
-) -> Result<(), Box<dyn Error>> {
-    let command = ArtCommand::Output(Output {
-        // length: dmx.len() as u16,
-        //data: dmx.into(),
-        //port_address: PortAddress::try_from(0).unwrap(),
-        data: dmx_data.into(),
-        ..Output::default()
-    });
-
-    let bytes = command.write_to_buffer().unwrap();
-    socket.send_to(&bytes, broadcast_addr)?;
-    Ok(())
 }
 
 fn display_status(

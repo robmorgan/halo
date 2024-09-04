@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 rusty_link = "0.4.3"
 artnet_protocol = "0.4.2"
+anyhow = "1.0.86"
+log = "0.4.22"
