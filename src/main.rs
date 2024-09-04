@@ -1,12 +1,10 @@
+mod ableton_link;
 mod artnet;
+mod fixture;
 
-use artnet_protocol::{ArtCommand, Output};
-use rusty_link::{AblLink, SessionState};
-use std::error::Error;
+use ableton_link::State;
 use std::f64::consts::PI;
 use std::io::{self, stdout, Read, Write};
-use std::net::SocketAddr;
-use std::net::{ToSocketAddrs, UdpSocket};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -17,42 +15,6 @@ const CHANNELS_PER_FIXTURE: usize = 8; // SHEHDS PAR Fixtures
 const TOTAL_CHANNELS: usize = FIXTURES * CHANNELS_PER_FIXTURE;
 const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
-
-struct Fixture {
-    name: String,
-    channels: Vec<Channel>,
-    start_address: u16,
-}
-
-#[derive(Clone, Debug)]
-struct FixtureGroup {
-    name: String,
-    fixture_names: Vec<String>,
-}
-
-#[derive(Clone, Debug)]
-struct Channel {
-    name: String,
-    channel_type: ChannelType,
-    is_16bit: bool,
-    value: u16, // Using u16 to accommodate 16-bit channels
-}
-
-#[derive(Clone, Debug)]
-enum ChannelType {
-    Dimmer,
-    Color,
-    Gobo,
-    Red,
-    Green,
-    Blue,
-    White,
-    Strobe,
-    Pan,
-    Tilt,
-    TiltSpeed,
-    Other(String),
-}
 
 // Assuming we have access to these from our rhythm engine
 struct RhythmState {
@@ -109,7 +71,7 @@ enum EffectDistribution {
 struct EffectMapping {
     effect: Effect,
     fixture_names: Vec<String>,
-    channel_types: Vec<ChannelType>,
+    channel_types: Vec<fixture::ChannelType>,
     distribution: EffectDistribution,
 }
 
@@ -141,35 +103,6 @@ struct Cue {
     chases: Vec<Chase>,
 }
 
-impl Fixture {
-    fn new(name: &str, channels: Vec<Channel>, start_address: u16) -> Self {
-        Fixture {
-            name: name.to_string(),
-            channels,
-            start_address,
-        }
-    }
-
-    fn set_channel_value(&mut self, channel_name: &str, value: u16) {
-        if let Some(channel) = self.channels.iter_mut().find(|c| c.name == channel_name) {
-            channel.value = value;
-        }
-    }
-
-    fn get_dmx_values(&self) -> Vec<u8> {
-        let mut values = Vec::new();
-        for channel in &self.channels {
-            if channel.is_16bit {
-                values.push((channel.value >> 8) as u8);
-                values.push((channel.value & 0xFF) as u8);
-            } else {
-                values.push(channel.value as u8);
-            }
-        }
-        values
-    }
-}
-
 fn update_rhythm_state(beat_time: f64, tempo: f64, rhythm_state: &mut RhythmState) {
     // Calculate phases
     rhythm_state.beat_phase = beat_time.fract();
@@ -182,217 +115,23 @@ fn update_rhythm_state(beat_time: f64, tempo: f64, rhythm_state: &mut RhythmStat
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let link = AblLink::new(120.0);
-    let mut session_state = SessionState::new();
-    link.enable(true);
+    let mut link = ableton_link::State::new(128.0);
+    link.link.enable(true);
 
     let artnet_controller = artnet::ArtNet::new(artnet::ArtNetMode::Broadcast).unwrap();
 
-    let mut fixtures = vec![
-        Fixture::new(
-            "PAR Fixture 1",
-            vec![
-                Channel {
-                    name: "Dimmer".to_string(),
-                    channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Red".to_string(),
-                    channel_type: ChannelType::Red,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Green".to_string(),
-                    channel_type: ChannelType::Green,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Blue".to_string(),
-                    channel_type: ChannelType::Blue,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "White".to_string(),
-                    channel_type: ChannelType::White,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Strobe".to_string(),
-                    channel_type: ChannelType::Strobe,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Program".to_string(),
-                    channel_type: ChannelType::Other("Program".to_string()),
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Function".to_string(),
-                    channel_type: ChannelType::Other("Function".to_string()),
-                    is_16bit: false,
-                    value: 0,
-                },
-            ],
-            1,
-        ),
-        Fixture::new(
-            "PAR Fixture 2",
-            vec![
-                Channel {
-                    name: "Dimmer".to_string(),
-                    channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Red".to_string(),
-                    channel_type: ChannelType::Red,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Green".to_string(),
-                    channel_type: ChannelType::Green,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Blue".to_string(),
-                    channel_type: ChannelType::Blue,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "White".to_string(),
-                    channel_type: ChannelType::White,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Strobe".to_string(),
-                    channel_type: ChannelType::Strobe,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Program".to_string(),
-                    channel_type: ChannelType::Other("Program".to_string()),
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Function".to_string(),
-                    channel_type: ChannelType::Other("Function".to_string()),
-                    is_16bit: false,
-                    value: 0,
-                },
-            ],
-            9,
-        ),
-        Fixture::new(
-            "Moving Head 1",
-            vec![
-                Channel {
-                    name: "Pan".to_string(),
-                    channel_type: ChannelType::Pan,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Tilt".to_string(),
-                    channel_type: ChannelType::Tilt,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Color".to_string(),
-                    channel_type: ChannelType::Color,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Gobo".to_string(),
-                    channel_type: ChannelType::Gobo,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Strobe".to_string(),
-                    channel_type: ChannelType::Strobe,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Dimmer".to_string(),
-                    channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
-                    value: 0,
-                },
-            ],
-            169,
-        ),
-        Fixture::new(
-            "Moving Head 2",
-            vec![
-                Channel {
-                    name: "Pan".to_string(),
-                    channel_type: ChannelType::Pan,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Tilt".to_string(),
-                    channel_type: ChannelType::Tilt,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Color".to_string(),
-                    channel_type: ChannelType::Color,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Gobo".to_string(),
-                    channel_type: ChannelType::Gobo,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Strobe".to_string(),
-                    channel_type: ChannelType::Strobe,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Dimmer".to_string(),
-                    channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
-                    value: 0,
-                },
-            ],
-            178,
-        ),
-    ];
+    let mut fixtures = fixture::create_fixtures();
 
-    let fixture_groups = vec![
-        FixtureGroup {
-            name: "Moving Heads".to_string(),
-            fixture_names: vec!["Moving Head 1".to_string(), "Moving Head 2".to_string()],
-        },
-        FixtureGroup {
-            name: "PARs".to_string(),
-            fixture_names: vec!["PAR Fixture 1".to_string(), "PAR Fixture 2".to_string()],
-        },
-    ];
+    // let fixture_groups = vec![
+    //     fixture::Group {
+    //         name: "Moving Heads".to_string(),
+    //         fixture_names: vec!["Moving Head 1".to_string(), "Moving Head 2".to_string()],
+    //     },
+    //     fixture::Group {
+    //         name: "PARs".to_string(),
+    //         fixture_names: vec!["PAR Fixture 1".to_string(), "PAR Fixture 2".to_string()],
+    //     },
+    // ];
 
     let mut rhythm_state = RhythmState {
         beat_phase: 0.0,
@@ -485,7 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "Moving Head 1".to_string(),
                                     "Moving Head 2".to_string(),
                                 ],
-                                channel_types: vec![ChannelType::Tilt],
+                                channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -509,7 +248,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "Moving Head 1".to_string(),
                                     "Moving Head 2".to_string(),
                                 ],
-                                channel_types: vec![ChannelType::Tilt],
+                                channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -539,7 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "PAR Fixture 1".to_string(),
                                     "PAR Fixture 2".to_string(),
                                 ],
-                                channel_types: vec![ChannelType::Dimmer],
+                                channel_types: vec![fixture::ChannelType::Dimmer],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -563,7 +302,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     "PAR Fixture 1".to_string(),
                                     "PAR Fixture 2".to_string(),
                                 ],
-                                channel_types: vec![ChannelType::Dimmer],
+                                channel_types: vec![fixture::ChannelType::Dimmer],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -619,7 +358,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         effect_mappings: vec![EffectMapping {
                             effect: effects[2].clone(),
                             fixture_names: vec!["PAR Fixture 1".to_string()],
-                            channel_types: vec![ChannelType::Dimmer],
+                            channel_types: vec![fixture::ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
                         }],
                         static_values: vec![], // Remove static values from the chase step
@@ -629,7 +368,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         effect_mappings: vec![EffectMapping {
                             effect: effects[2].clone(),
                             fixture_names: vec!["PAR Fixture 2".to_string()],
-                            channel_types: vec![ChannelType::Dimmer],
+                            channel_types: vec![fixture::ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
                         }],
                         static_values: vec![], // Remove static values from the chase step
@@ -673,9 +412,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         accumulated_time += delta;
         cue_time += delta;
 
-        link.capture_app_session_state(&mut session_state);
-        let beat_time = session_state.beat_at_time(link.clock_micros(), 0.0);
-        let tempo = session_state.tempo();
+        link.capture_app_state();
+        let time = link.link.clock_micros();
+        let beat_time = link.session_state.beat_at_time(time, link.quantum);
+        let tempo = link.session_state.tempo();
 
         update_rhythm_state(beat_time, tempo, &mut rhythm_state);
 
@@ -723,7 +463,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Display status information
         display_status(
             &link,
-            tempo,
             frames_sent,
             &cues[current_cue].name,
             accumulated_time,
@@ -790,7 +529,7 @@ fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u1
     new_dmx.round() as u16
 }
 
-fn apply_chase_step(fixtures: &mut [Fixture], step: &ChaseStep, rhythm: &RhythmState) {
+fn apply_chase_step(fixtures: &mut [fixture::Fixture], step: &ChaseStep, rhythm: &RhythmState) {
     // Apply static values first
     for static_value in &step.static_values {
         if let Some(fixture) = fixtures
@@ -812,7 +551,7 @@ fn apply_chase_step(fixtures: &mut [Fixture], step: &ChaseStep, rhythm: &RhythmS
 
     // Then apply effect mappings
     for mapping in &step.effect_mappings {
-        let mut affected_fixtures: Vec<&mut Fixture> = fixtures
+        let mut affected_fixtures: Vec<&mut fixture::Fixture> = fixtures
             .iter_mut()
             .filter(|f| mapping.fixture_names.contains(&f.name))
             .collect();
@@ -941,7 +680,7 @@ fn beat_intensity(beat_time: f64) -> f64 {
     (1.0 - beat_fraction * 2.0).abs() // Creates a triangle wave that peaks on each beat
 }
 
-fn generate_dmx_data(fixtures: &[Fixture]) -> Vec<u8> {
+fn generate_dmx_data(fixtures: &[fixture::Fixture]) -> Vec<u8> {
     let mut dmx_data = vec![0; 512]; // Full DMX universe
     for fixture in fixtures {
         // let start = (fixture.start_address - 1) as usize;
@@ -957,16 +696,15 @@ fn generate_dmx_data(fixtures: &[Fixture]) -> Vec<u8> {
 }
 
 fn display_status(
-    link: &AblLink,
-    bpm: f64,
+    link: &State,
     frames_sent: u64,
     current_cue: &str,
     elapsed: f64,
     cue_time: f64,
     beat_time: f64,
 ) {
-    //let bpm = state.tempo();
-    let num_peers = link.num_peers();
+    let bpm = link.session_state.tempo();
+    let num_peers = link.link.num_peers();
 
     print!("\r"); // Move cursor to the beginning of the line
     print!(
