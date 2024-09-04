@@ -208,7 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 StaticValue {
                     fixture_name: "PAR Fixture 2".to_string(),
-                    channel_name: "RED".to_string(),
+                    channel_name: "Red".to_string(),
                     value: 35000,
                 },
             ],
@@ -352,26 +352,68 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
             chases: vec![Chase {
                 name: "PAR Alternating Chase".to_string(),
+                // steps: vec![
+                //     ChaseStep {
+                //         duration: 5.0, // Duration of 2 beats
+                //         effect_mappings: vec![EffectMapping {
+                //             effect: effects[2].clone(),
+                //             fixture_names: vec!["PAR Fixture 1".to_string()],
+                //             channel_types: vec![fixture::ChannelType::Dimmer],
+                //             distribution: EffectDistribution::All,
+                //         }],
+                //         static_values: vec![], // Remove static values from the chase step
+                //     },
+                //     ChaseStep {
+                //         duration: 5.0, // Duration of 2 beats
+                //         effect_mappings: vec![EffectMapping {
+                //             effect: effects[2].clone(),
+                //             fixture_names: vec!["PAR Fixture 2".to_string()],
+                //             channel_types: vec![fixture::ChannelType::Dimmer],
+                //             distribution: EffectDistribution::All,
+                //         }],
+                //         static_values: vec![], // Remove static values from the chase step
+                //     },
+                // ],
                 steps: vec![
                     ChaseStep {
-                        duration: 5.0, // Duration of 2 beats
+                        duration: 1.0, // Duration of 1 beat
                         effect_mappings: vec![EffectMapping {
-                            effect: effects[2].clone(),
+                            effect: Effect {
+                                name: "Sawtooth Fade".to_string(),
+                                apply: sawtooth_effect,
+                                min: 0,
+                                max: 255,
+                                params: EffectParams {
+                                    interval: Interval::Beat,
+                                    interval_ratio: 1.0,
+                                    phase: 0.0,
+                                },
+                            },
                             fixture_names: vec!["PAR Fixture 1".to_string()],
                             channel_types: vec![fixture::ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
                         }],
-                        static_values: vec![], // Remove static values from the chase step
+                        static_values: vec![],
                     },
                     ChaseStep {
-                        duration: 5.0, // Duration of 2 beats
+                        duration: 1.0, // Duration of 1 beat
                         effect_mappings: vec![EffectMapping {
-                            effect: effects[2].clone(),
+                            effect: Effect {
+                                name: "Sawtooth Fade".to_string(),
+                                apply: sawtooth_effect,
+                                min: 0,
+                                max: 255,
+                                params: EffectParams {
+                                    interval: Interval::Beat,
+                                    interval_ratio: 1.0,
+                                    phase: 0.0,
+                                },
+                            },
                             fixture_names: vec!["PAR Fixture 2".to_string()],
                             channel_types: vec![fixture::ChannelType::Dimmer],
                             distribution: EffectDistribution::All,
                         }],
-                        static_values: vec![], // Remove static values from the chase step
+                        static_values: vec![],
                     },
                 ],
                 loop_count: None, // Infinite loop
@@ -392,13 +434,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut current_cue = 0;
-    let mut frames_sent = 0;
-    let mut accumulated_time = 0.0;
     let mut cue_time = 0.0;
     let mut last_update = Instant::now();
 
     let mut cue_start_time = 0.0;
-    let mut bpm = 0.0;
     let mut frames_sent = 0;
     let start_time = Instant::now();
     let mut accumulated_time = 0.0;
@@ -441,6 +480,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         //apply_cue(&mut fixtures, &cues[current_cue], beat_time, tempo);
         //apply_chase_step(&mut fixtures, &current_step, &rhythm_state);
 
+        // Apply Cue Static Values
+        for static_value in &cues[current_cue].static_values {
+            if let Some(fixture) = fixtures
+                .iter_mut()
+                .find(|f| f.name == static_value.fixture_name)
+            {
+                fixture.set_channel_value(&static_value.channel_name, static_value.value);
+            }
+        }
+
         // Apply effects
         for chase in &cues[current_cue].chases {
             for step in &chase.steps {
@@ -449,9 +498,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let dmx_data = generate_dmx_data(&fixtures);
-        //        send_dmx_data(&socket, broadcast_addr, dmx_data)?;
-
-        //artnet_controller.send_dmx_data(dmx_data);
         artnet_controller.send_data(dmx_data);
 
         frames_sent += 1;
@@ -519,12 +565,12 @@ fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u1
     let current_dmx = current_value as f64;
     let new_dmx = current_dmx + (target_dmx - current_dmx);
 
-    println!(
-        "\nEffect: {}, Phase: {:.2}, Value: {}\n",
-        effect.name,
-        phase,
-        new_dmx / 255.0
-    );
+    // println!(
+    //     "\nEffect: {}, Phase: {:.2}, Value: {}\n",
+    //     effect.name,
+    //     phase,
+    //     new_dmx / 255.0
+    // );
 
     new_dmx.round() as u16
 }
