@@ -84,14 +84,14 @@ impl LightingConsole {
         });
 
         let mut frames_sent = 0;
-        let mut elapsed_time = 0.0;
+        let mut elapsed_time = Duration::new(0, 0);
         let mut last_update = Instant::now();
         let mut cue_time = 0.0;
 
         // Render loop
         loop {
             let frame_start = Instant::now();
-            elapsed_time = frame_start.duration_since(last_update).as_secs_f64();
+            elapsed_time += frame_start.duration_since(last_update);
             last_update = frame_start;
 
             // check for keyboard input
@@ -263,13 +263,8 @@ impl LightingConsole {
     fn generate_dmx_data(&self) -> Vec<u8> {
         let mut dmx_data = vec![0; 512]; // Full DMX universe
         for fixture in &self.fixtures {
-            // let start = (fixture.start_address - 1) as usize;
-            // let end = start + fixture.channels.len();
-            // dmx_data[start..end].copy_from_slice(&fixture.get_dmx_values());
-
             let start_channel = (fixture.start_address - 1) as usize;
             let end_channel = (start_channel + fixture.channels.len()).min(dmx_data.len());
-            let slice_length = end_channel - start_channel;
             dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
         }
         dmx_data
@@ -279,17 +274,18 @@ impl LightingConsole {
         &self,
         frames_sent: u64,
         current_cue: &str,
-        elapsed: f64,
+        elapsed: Duration,
         cue_time: f64,
         beat_time: f64,
     ) {
         let bpm = self.link_state.session_state.tempo();
         let num_peers = self.link_state.link.num_peers();
+        let elapsed_secs = elapsed.as_secs_f64();
 
         print!("\r"); // Move cursor to the beginning of the line
         print!(
-            "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Elapsed: {:6.2}s | Cue Time: {:6.2}s | Beat: {:6.2} | FPS: {:5.2}",
-            frames_sent, bpm, num_peers, current_cue, elapsed, cue_time, beat_time, frames_sent as f64 / elapsed
+            "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Elapsed: {} | Cue Time: {:6.2}s | Beat: {:6.2} | FPS: {:5.2}",
+            frames_sent, bpm, num_peers, current_cue, format_duration(elapsed), cue_time, beat_time, frames_sent as f64 / elapsed_secs
         );
         stdout().flush().unwrap();
     }
@@ -312,4 +308,17 @@ fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u1
     // );
 
     new_dmx.round() as u16
+}
+
+fn format_duration(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+    let milliseconds = duration.subsec_millis();
+
+    format!(
+        "{:02}:{:02}:{:02}:{:03}",
+        hours, minutes, seconds, milliseconds
+    )
 }
