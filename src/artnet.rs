@@ -68,10 +68,10 @@ impl ArtNet {
         }
     }
 
-    pub fn send_data(&self, dmx: Vec<u8>) {
+    pub fn send_data(&self, universe: u8, dmx: Vec<u8>) {
         let command = ArtCommand::Output(Output {
             // length: dmx.len() as u16,
-            //data: dmx.into(),
+            port_address: universe.into(),
             data: dmx.into(),
             ..Output::default()
         });
