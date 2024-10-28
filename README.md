@@ -1,29 +1,35 @@
-# ⭕️ Halo: ShowControl for DJSL
+<p align="center">
+  <img width="350" height="350" src="/_docs/halo_logo.png">
+</p>
 
-I wanted to perform a live show powered by Ableton.
-
-TUI-based lighting console.
-
-Halo is a lighting console built for the console.
-
-Halo is designed for shows without a lighting operating where playback should happen automatically in sync with the music.
-
-## Sunsetting Halo
-
-I'm discontinuing this project for now, for the following reasons:
-
- * I really want DJSL lights to sync to the music.
- * It will be really hard to do this in Halo using only OSC cues.
- * You really need MIDI or LTC (like other consoles) to do this properly so events fire right on cue.
- * Sending OSC commands every split second may likely get out of sync.
- * You don't want to invest months of time building a tracking lighting console that runs concurrent animations.
+Halo is a real-time lighting console built for the console. It's lighting engine supports beat synchronized effects
+using Ableton Link and SMPTE Timecode.
 
 ## Features
 
- * Control multiple groups of lights
- * Control lights
- * Lights running in different times
- * Nature isn't one fade. It's lots of things coming and going.
+ * Control multiple groups of fixtures.
+ * Synchronize with an Ableton Link session.
+
+## Requirements
+
+* Network interface for Art-Net output
+* Ableton Link compatible device/software (optional)
+
+## Usage
+
+```bash
+cargo run --release
+```
+
+## Getting Started
+
+Halo doesn't use a programmer, editor or GUI. It is essentially only a playback engine. You define shows ahead of time
+using the show file format.
+
+## Planned Features
+
+- [ ] LTC/SMPTE Timecode
+- [ ] Show file live reloading
 
 ## Concepts
 
@@ -65,31 +71,6 @@ No programmer. No editor. Halo is only a playback engine. You do the programming
      * Go
      * Jump to Cue
 
-## Milestones
-
-1. **Milestone 1:** Playback scenes and sequences.
-2. **Milestone 2:** Surfaces for input and output. Ableton Link.
-3. **Milestone 3:** Venues. Camera Fixtures (for helping record in Capture)
-
-## Requirements
-
- * OLA
-
-## Usage
-
-Start OLAD in debug mode in another terminal window:
-
-```bash
-$ olad -l 3
-$ open <YOUR_IP_ADDRESS:9090>
-```
-
-Then start Halo:
-
-```bash
-$ ./halo
-```
-
 ## References
 
  * https://opensource.com/article/17/5/open-source-lighting
@@ -97,10 +78,3 @@ $ ./halo
  * https://corylulu.github.io/VDocs/NodeIODMX.html?itm=174
  * https://github.com/node-dmx/dmx
  * https://github.com/qmsk/dmx
-
-## Libraries
-
- * https://github.com/google/gousb: For reading/writing MIDI control surfaces.
- * https://github.com/trimmer-io/go-timecode
- * https://github.com/gomidi/midi
- * https://github.com/fogleman/ease: Easing Functions
