@@ -2,7 +2,7 @@
   <img width="350" height="350" src="/_docs/halo_logo.png">
 </p>
 
-Halo is a real-time lighting console built for the console. It's lighting engine supports beat synchronized effects
+⭕️ Halo is a real-time lighting console built for the console. It's lighting engine supports beat synchronized effects
 using Ableton Link and SMPTE Timecode.
 
 ## Features
