@@ -4,11 +4,12 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::ableton_link::ClockState;
 use crate::artnet::{self, ArtNet, ArtNetMode};
 use crate::cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use crate::effect::{Effect, EffectParams};
 use crate::fixture::{Channel, ChannelType, Fixture};
-use crate::rhythm::{Interval, RhythmState};
+use crate::rhythm::RhythmState;
 use crate::{ableton_link, effect};
 
 const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
@@ -22,7 +23,7 @@ pub struct LightingConsole {
     dmx_output: artnet::ArtNet,
     cues: Vec<Cue>,
     current_cue: usize,
-    current_chase_step: usize,
+    show_start_time: Instant,
     rhythm_state: RhythmState,
 }
 
@@ -30,7 +31,6 @@ impl LightingConsole {
     pub fn new(bpm: f64) -> Result<Self, anyhow::Error> {
         let link_state = ableton_link::State::new(bpm);
         link_state.link.enable(true);
-
         let dmx_output = ArtNet::new(ArtNetMode::Broadcast)?;
 
         Ok(LightingConsole {
@@ -38,7 +38,7 @@ impl LightingConsole {
             fixtures: Vec::new(),
             cues: Vec::new(),
             current_cue: 0,
-            current_chase_step: 0,
+            show_start_time: Instant::now(),
             link_state: link_state,
             dmx_output: dmx_output,
             rhythm_state: RhythmState {
@@ -84,14 +84,14 @@ impl LightingConsole {
         });
 
         let mut frames_sent = 0;
-        let mut elapsed_time = Duration::new(0, 0);
         let mut last_update = Instant::now();
-        let mut cue_time = 0.0;
+        let mut cue_time = 0.0; // TODO - I think cue time needs to be Instant::now()
 
         // Render loop
         loop {
             let frame_start = Instant::now();
-            elapsed_time += frame_start.duration_since(last_update);
+            let elapsed_time = last_update.elapsed(); // TODO - rename to delta time?
+                                                      //let elapsed_time = frame_start.duration_since(last_update);
             last_update = frame_start;
 
             // check for keyboard input
@@ -101,7 +101,11 @@ impl LightingConsole {
                 println!("Advanced to cue: {}", self.cues[self.current_cue].name);
             }
 
-            self.update();
+            self.link_state.capture_app_state();
+            self.link_state.link.enable_start_stop_sync(true);
+            self.link_state.commit_app_state();
+
+            self.update(elapsed_time);
             self.render();
 
             frames_sent += 1;
@@ -117,10 +121,12 @@ impl LightingConsole {
             }
 
             // Display status information
+            let clock = &self.link_state.get_clock_state();
             self.display_status(
+                clock,
                 frames_sent,
                 &self.cues[self.current_cue].name,
-                elapsed_time,
+                self.show_start_time.elapsed(),
                 cue_time,
                 self.rhythm_state.beat_phase,
             );
@@ -132,120 +138,99 @@ impl LightingConsole {
         }
     }
 
-    pub fn update(&mut self) {
-        // Update effects based on beat_time
-        // This is where you'd implement your effect calculations
-        self.link_state.capture_app_state();
-        let time = self.link_state.link.clock_micros();
-        let beat_time = self
-            .link_state
-            .session_state
-            .beat_at_time(time, self.link_state.quantum);
+    pub fn update(&mut self, elapsed: Duration) {
+        let clock = self.link_state.get_clock_state();
+        let beat_time = clock.beats;
 
         self.tempo = self.link_state.session_state.tempo();
         self.update_rhythm_state(beat_time);
 
-        // Apply effects
-        for chase in self.cues[self.current_cue].chases.clone() {
-            for step in chase.steps {
-                self.apply_chase_step(&step);
+        if let Some(current_cue) = self.cues.get_mut(self.current_cue) {
+            // Apply cue-level static values first
+            for static_value in &current_cue.static_values {
+                if let Some(fixture) = self
+                    .fixtures
+                    .iter_mut()
+                    .find(|f| f.name == static_value.fixture_name)
+                {
+                    fixture.set_channel_value(&static_value.channel_name, static_value.value);
+                }
+            }
+
+            for chase in &mut current_cue.chases {
+                chase.update(elapsed);
+
+                // Apply chase-level static values
+                for static_value in chase.get_current_static_values() {
+                    if let Some(fixture) = self
+                        .fixtures
+                        .iter_mut()
+                        .find(|f| f.name == static_value.fixture_name)
+                    {
+                        if let Some(channel) = fixture
+                            .channels
+                            .iter_mut()
+                            .find(|c| c.name == static_value.channel_name)
+                        {
+                            // Smooth transition for static values as well
+                            let current_value = channel.value as f64;
+                            let target_value = static_value.value as f64;
+                            channel.value =
+                                (current_value + (target_value - current_value)).round() as u16;
+                        }
+                    }
+                }
+
+                // Apply chase-level effect mappings
+                for mapping in chase.get_current_effect_mappings() {
+                    let mut affected_fixtures: Vec<&mut Fixture> = self
+                        .fixtures
+                        .iter_mut()
+                        .filter(|f| mapping.fixture_names.contains(&f.name))
+                        .collect();
+
+                    for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
+                        for channel_type in &mapping.channel_types {
+                            if let Some(channel) = fixture.channels.iter_mut().find(|c| {
+                                std::mem::discriminant(&c.channel_type)
+                                    == std::mem::discriminant(channel_type)
+                            }) {
+                                let mut effect_params = mapping.effect.params.clone();
+
+                                // Apply distribution adjustments
+                                match mapping.distribution {
+                                    EffectDistribution::All => {}
+                                    EffectDistribution::Step(step) => {
+                                        if i % step != 0 {
+                                            continue;
+                                        }
+                                    }
+                                    EffectDistribution::Wave(phase_offset) => {
+                                        effect_params.phase += phase_offset * i as f64;
+                                    }
+                                }
+
+                                channel.value = apply_effect(
+                                    &mapping.effect,
+                                    &self.rhythm_state,
+                                    channel.value,
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Apply chase-level steps
+                // TODO - implement
+                // We probably need to determine the current chase step and apply the corresponding step values
             }
         }
     }
 
     pub fn render(&self) {
-        // let mut dmx_data = vec![0u8; 512]; // Single universe
-
-        // // Apply fixture data to DMX buffer
-        // for fixture in &self.fixtures {
-        //     for (i, &channel) in fixture.channels.iter().enumerate() {
-        //         dmx_data[channel as usize] = i as u8; // Placeholder value
-        //     }
-        // }
-
-        // // Send DMX data
-        // self.dmx_output.send(1, &dmx_data);
-
+        // Send DMX data
         let dmx_data = self.generate_dmx_data();
-        self.dmx_output.send_data(dmx_data);
-    }
-
-    // TODO - we might be able to push these down into a cuemaster at some point
-    // pub fn apply_cue(
-    //     &self,
-    //     fixtures: &mut [Fixture],
-    //     step: &ChaseStep,
-    //     rhythm: &RhythmState,
-    // ) {
-    //     // Apply cue-level static values
-    //     for static_value in &self.cues[self.current_cue].static_values {
-    //         if let Some(fixture) = fixtures
-    //             .iter_mut()
-    //             .find(|f| f.name == static_value.fixture_name)
-    //         {
-    //             fixture.set_channel_value(&static_value.channel_name, static_value.value);
-    //         }
-    //     }
-
-    //     // Apply the current chase step if any
-    // }
-
-    pub fn apply_chase_step(&mut self, step: &ChaseStep) {
-        // Apply static values first
-        for static_value in &step.static_values {
-            if let Some(fixture) = self
-                .fixtures
-                .iter_mut()
-                .find(|f| f.name == static_value.fixture_name)
-            {
-                if let Some(channel) = fixture
-                    .channels
-                    .iter_mut()
-                    .find(|c| c.name == static_value.channel_name)
-                {
-                    // Smooth transition for static values as well
-                    let current_value = channel.value as f64;
-                    let target_value = static_value.value as f64;
-                    channel.value = (current_value + (target_value - current_value)).round() as u16;
-                }
-            }
-        }
-
-        // Then apply effect mappings
-        for mapping in &step.effect_mappings {
-            let mut affected_fixtures: Vec<&mut Fixture> = self
-                .fixtures
-                .iter_mut()
-                .filter(|f| mapping.fixture_names.contains(&f.name))
-                .collect();
-
-            for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
-                for channel_type in &mapping.channel_types {
-                    if let Some(channel) = fixture.channels.iter_mut().find(|c| {
-                        std::mem::discriminant(&c.channel_type)
-                            == std::mem::discriminant(channel_type)
-                    }) {
-                        let mut effect_params = mapping.effect.params.clone();
-
-                        // Apply distribution adjustments
-                        match mapping.distribution {
-                            EffectDistribution::All => {}
-                            EffectDistribution::Step(step) => {
-                                if i % step != 0 {
-                                    continue;
-                                }
-                            }
-                            EffectDistribution::Wave(phase_offset) => {
-                                effect_params.phase += phase_offset * i as f64;
-                            }
-                        }
-
-                        channel.value =
-                            apply_effect(&mapping.effect, &self.rhythm_state, channel.value);
-                    }
-                }
-            }
-        }
+        self.dmx_output.send_data(1, dmx_data);
     }
 
     fn update_rhythm_state(&mut self, beat_time: f64) {
@@ -261,7 +246,8 @@ impl LightingConsole {
     }
 
     fn generate_dmx_data(&self) -> Vec<u8> {
-        let mut dmx_data = vec![0; 512]; // Full DMX universe
+        // Only render a single universe for now
+        let mut dmx_data = vec![0; 512];
         for fixture in &self.fixtures {
             let start_channel = (fixture.start_address - 1) as usize;
             let end_channel = (start_channel + fixture.channels.len()).min(dmx_data.len());
@@ -272,14 +258,15 @@ impl LightingConsole {
 
     fn display_status(
         &self,
+        clock: &ClockState,
         frames_sent: u64,
         current_cue: &str,
         elapsed: Duration,
         cue_time: f64,
         beat_time: f64,
     ) {
-        let bpm = self.link_state.session_state.tempo();
-        let num_peers = self.link_state.link.num_peers();
+        let bpm = clock.tempo;
+        let num_peers = clock.num_peers;
         let elapsed_secs = elapsed.as_secs_f64();
 
         print!("\r"); // Move cursor to the beginning of the line
@@ -299,13 +286,6 @@ fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u1
     // Smooth transition
     let current_dmx = current_value as f64;
     let new_dmx = current_dmx + (target_dmx - current_dmx);
-
-    // println!(
-    //     "\nEffect: {}, Phase: {:.2}, Value: {}\n",
-    //     effect.name,
-    //     phase,
-    //     new_dmx / 255.0
-    // );
 
     new_dmx.round() as u16
 }
