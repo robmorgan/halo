@@ -24,7 +24,7 @@ pub struct Chase {
     pub steps: Vec<ChaseStep>,
     pub current_step: usize, // TODO - current step should probably be stored by the player/cue master/console
     pub current_step_elapsed: f64,
-    // TODO - renable this is we want to make it beat driven
+    // TODO - reenable this is we want to make it beat driven
     pub accumulated_beats: f64,
     pub last_step_change: Instant,
     pub loop_count: Option<usize>, // None for infinite loop
