@@ -23,8 +23,8 @@ cargo run --release
 
 ## Getting Started
 
-Halo doesn't use a programmer, editor or GUI. It is essentially only a playback engine. You define shows ahead of time
-using the show file format.
+Halo doesn't use a programmer, editor or GUI. It is only a playback engine. You define shows ahead of time using the
+show file format. At the moment this is done purely in code.
 
 ## Planned Features
 
