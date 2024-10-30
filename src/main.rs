@@ -1,5 +1,6 @@
 mod ableton_link;
 mod artnet;
+mod color;
 mod console;
 mod cue;
 mod effect;
@@ -64,6 +65,8 @@ fn main() -> Result<(), anyhow::Error> {
     let cues = vec![
         Cue {
             name: "Complex Chase with Static Values".to_string(),
+            fade_in_time: Duration::from_secs(0),
+            fade_out_time: Duration::from_secs(5),
             duration: 10.0,
             static_values: vec![
                 StaticValue {
@@ -178,17 +181,21 @@ fn main() -> Result<(), anyhow::Error> {
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
-                                StaticValue {
-                                    fixture_name: "PAR Fixture 1".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 65535,
-                                },
-                                StaticValue {
-                                    fixture_name: "PAR Fixture 2".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 0,
-                                },
-                            ],
+                                // StaticValue::from_hex_color("PAR Fixture 1".to_string(), "#FF0000").as_slice(),
+                                StaticValue::from_hex_color("PAR Fixture 1".to_string(), "#FFFFFF")
+                                    .as_slice(),
+                                // StaticValue {
+                                //     fixture_name: "PAR Fixture 1".to_string(),
+                                //     channel_name: "Red".to_string(),
+                                //     value: 65535,
+                                // },
+                                // StaticValue {
+                                //     fixture_name: "PAR Fixture 2".to_string(),
+                                //     channel_name: "Red".to_string(),
+                                //     value: 0,
+                                // },
+                            ]
+                            .concat(),
                         },
                         ChaseStep {
                             //duration: 5.0, // Matches the total duration of the Moving Head Chase
@@ -222,6 +229,8 @@ fn main() -> Result<(), anyhow::Error> {
         },
         Cue {
             name: "Alternating PAR Chase".to_string(),
+            fade_in_time: Duration::from_secs(0),
+            fade_out_time: Duration::from_secs(0),
             duration: 10.0,
             //duration: Duration::new(10, 0),
             static_values: vec![

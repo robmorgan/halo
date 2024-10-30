@@ -16,15 +16,26 @@ const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
 const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 
+pub struct PlaybackState {
+    pub cue_index: usize,
+    pub cue_time: f64,
+    pub beat_time: f64,
+    pub elapsed_time: Duration,
+    pub frames_sent: u64,
+    pub current_cue: usize,
+    pub show_start_time: Instant,
+}
+
 pub struct LightingConsole {
     tempo: f64,
     fixtures: Vec<Fixture>,
     link_state: ableton_link::State,
     dmx_output: artnet::ArtNet,
     cues: Vec<Cue>,
-    current_cue: usize,
-    show_start_time: Instant,
+    //current_cue: usize,
+    //show_start_time: Instant,
     rhythm_state: RhythmState,
+    playback_state: PlaybackState,
 }
 
 impl LightingConsole {
@@ -37,10 +48,19 @@ impl LightingConsole {
             tempo: bpm,
             fixtures: Vec::new(),
             cues: Vec::new(),
-            current_cue: 0,
-            show_start_time: Instant::now(),
+            //current_cue: 0,
+            //show_start_time: Instant::now(),
             link_state: link_state,
             dmx_output: dmx_output,
+            playback_state: PlaybackState {
+                cue_index: 0,
+                cue_time: 0.0,
+                beat_time: 0.0,
+                elapsed_time: Duration::from_secs(0),
+                frames_sent: 0,
+                current_cue: 0,
+                show_start_time: Instant::now(),
+            },
             rhythm_state: RhythmState {
                 beat_phase: 0.0,
                 bar_phase: 0.0,
@@ -96,9 +116,14 @@ impl LightingConsole {
 
             // check for keyboard input
             if rx.try_recv().is_ok() {
-                self.current_cue = (self.current_cue + 1) % self.cues.len();
+                //self.current_cue = (self.current_cue + 1) % self.cues.len();
+                self.playback_state.current_cue =
+                    (self.playback_state.current_cue + 1) % self.cues.len();
                 cue_time = 0.0;
-                println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                println!(
+                    "Advanced to cue: {}",
+                    self.cues[self.playback_state.current_cue].name
+                );
             }
 
             self.link_state.capture_app_state();
@@ -116,7 +141,7 @@ impl LightingConsole {
             // }
 
             // reset cue time if it's greater than cue duration (loop cue)
-            if cue_time >= self.cues[self.current_cue].duration {
+            if cue_time >= self.cues[self.playback_state.current_cue].duration {
                 cue_time = 0.0; // Reset cue time but don't change the cue
             }
 
@@ -125,8 +150,8 @@ impl LightingConsole {
             self.display_status(
                 clock,
                 frames_sent,
-                &self.cues[self.current_cue].name,
-                self.show_start_time.elapsed(),
+                &self.cues[self.playback_state.current_cue].name,
+                self.playback_state.show_start_time.elapsed(),
                 cue_time,
                 self.rhythm_state.beat_phase,
             );
@@ -145,7 +170,7 @@ impl LightingConsole {
         self.tempo = self.link_state.session_state.tempo();
         self.update_rhythm_state(beat_time);
 
-        if let Some(current_cue) = self.cues.get_mut(self.current_cue) {
+        if let Some(current_cue) = self.cues.get_mut(self.playback_state.current_cue) {
             // Apply cue-level static values first
             for static_value in &current_cue.static_values {
                 if let Some(fixture) = self
