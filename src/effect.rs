@@ -42,6 +42,10 @@ pub fn sine_effect(phase: f64) -> f64 {
     (phase * 2.0 * PI).sin() * 0.5 + 0.5
 }
 
+pub fn cosine_effect(phase: f64) -> f64 {
+    (phase * 2.0 * PI).cos() * 0.5 + 0.5
+}
+
 pub fn square_effect(phase: f64) -> f64 {
     if phase < 0.5 {
         1.0

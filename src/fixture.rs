@@ -307,7 +307,7 @@ pub fn create_fixtures() -> Vec<Fixture> {
                     value: 0,
                 },
             ],
-            37,
+            39,
         ),
         Fixture::new(
             "Moving Head Spot 1",

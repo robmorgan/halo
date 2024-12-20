@@ -247,24 +247,25 @@ fn main() -> Result<(), anyhow::Error> {
                     channel_name: "White".to_string(),
                     value: 65535,
                 },
-                // Set both washes to purple
+                // Set both washes to full intensity on the Dimmer channel
+                StaticValue {
+                    fixture_name: "Moving Wash 1".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 65535,
+                },
+                StaticValue {
+                    fixture_name: "Moving Wash 2".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 65535,
+                },
+                // Set the left wash to blue and the right to purple
                 StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Red".to_string(),
                     value: 65535,
                 },
                 StaticValue {
-                    fixture_name: "Moving Wash 2".to_string(),
-                    channel_name: "Red".to_string(),
-                    value: 65535,
-                },
-                StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
-                    channel_name: "Blue".to_string(),
-                    value: 65535,
-                },
-                StaticValue {
-                    fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "Blue".to_string(),
                     value: 65535,
                 },
@@ -272,6 +273,11 @@ fn main() -> Result<(), anyhow::Error> {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "White".to_string(),
                     value: 32767,
+                },
+                StaticValue {
+                    fixture_name: "Moving Wash 2".to_string(),
+                    channel_name: "Blue".to_string(),
+                    value: 65535,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 2".to_string(),
@@ -279,88 +285,168 @@ fn main() -> Result<(), anyhow::Error> {
                     value: 32767,
                 },
             ],
-            chases: vec![Chase {
-                name: "PAR Alternating Chase".to_string(),
-                current_step: 0,
-                current_step_elapsed: 0.0,
-                accumulated_beats: 0.0,
-                last_step_change: Instant::now(),
-                // steps: vec![
-                //     ChaseStep {
-                //         duration: 5.0, // Duration of 2 beats
-                //         effect_mappings: vec![EffectMapping {
-                //             effect: effects[2].clone(),
-                //             fixture_names: vec!["PAR Fixture 1".to_string()],
-                //             channel_types: vec![fixture::ChannelType::Dimmer],
-                //             distribution: EffectDistribution::All,
-                //         }],
-                //         static_values: vec![], // Remove static values from the chase step
-                //     },
-                //     ChaseStep {
-                //         duration: 5.0, // Duration of 2 beats
-                //         effect_mappings: vec![EffectMapping {
-                //             effect: effects[2].clone(),
-                //             fixture_names: vec!["PAR Fixture 2".to_string()],
-                //             channel_types: vec![fixture::ChannelType::Dimmer],
-                //             distribution: EffectDistribution::All,
-                //         }],
-                //         static_values: vec![], // Remove static values from the chase step
-                //     },
-                // ],
-                steps: vec![
-                    ChaseStep {
-                        //duration: 8.0, // Duration of 1 beat
-                        duration: Duration::new(1, 0),
-                        effect_mappings: vec![EffectMapping {
-                            effect: Effect {
-                                name: "Sawtooth Fade".to_string(),
-                                apply: effect::sawtooth_effect,
-                                min: 0,
-                                max: 255,
-                                params: EffectParams {
-                                    interval: Interval::Beat,
-                                    interval_ratio: 1.0,
-                                    phase: 0.0,
+            chases: vec![
+                Chase {
+                    name: "PAR Alternating Chase".to_string(),
+                    current_step: 0,
+                    current_step_elapsed: 0.0,
+                    accumulated_beats: 0.0,
+                    last_step_change: Instant::now(),
+                    // steps: vec![
+                    //     ChaseStep {
+                    //         duration: 5.0, // Duration of 2 beats
+                    //         effect_mappings: vec![EffectMapping {
+                    //             effect: effects[2].clone(),
+                    //             fixture_names: vec!["PAR Fixture 1".to_string()],
+                    //             channel_types: vec![fixture::ChannelType::Dimmer],
+                    //             distribution: EffectDistribution::All,
+                    //         }],
+                    //         static_values: vec![], // Remove static values from the chase step
+                    //     },
+                    //     ChaseStep {
+                    //         duration: 5.0, // Duration of 2 beats
+                    //         effect_mappings: vec![EffectMapping {
+                    //             effect: effects[2].clone(),
+                    //             fixture_names: vec!["PAR Fixture 2".to_string()],
+                    //             channel_types: vec![fixture::ChannelType::Dimmer],
+                    //             distribution: EffectDistribution::All,
+                    //         }],
+                    //         static_values: vec![], // Remove static values from the chase step
+                    //     },
+                    // ],
+                    steps: vec![
+                        ChaseStep {
+                            //duration: 8.0, // Duration of 1 beat
+                            duration: Duration::new(1, 0),
+                            effect_mappings: vec![EffectMapping {
+                                effect: Effect {
+                                    name: "Sawtooth Fade".to_string(),
+                                    apply: effect::sawtooth_effect,
+                                    min: 0,
+                                    max: 255,
+                                    params: EffectParams {
+                                        interval: Interval::Beat,
+                                        interval_ratio: 8.0,
+                                        phase: 0.0,
+                                    },
                                 },
+                                fixture_names: vec![
+                                    "PAR Fixture 1".to_string(),
+                                    "PAR Fixture 2".to_string(),
+                                ],
+                                channel_types: vec![fixture::ChannelType::Dimmer],
+                                distribution: EffectDistribution::Step(1),
+                            }],
+                            static_values: vec![],
+                        },
+                        // ChaseStep {
+                        //     //duration: 20.0, // Duration of 1 beat
+                        //     duration: Duration::new(1, 0),
+                        //     effect_mappings: vec![EffectMapping {
+                        //         effect: Effect {
+                        //             name: "Sawtooth Fade".to_string(),
+                        //             apply: effect::sawtooth_effect,
+                        //             min: 0,
+                        //             max: 255,
+                        //             params: EffectParams {
+                        //                 interval: Interval::Beat,
+                        //                 interval_ratio: 1.0,
+                        //                 phase: 0.0,
+                        //             },
+                        //         },
+                        //         fixture_names: vec!["PAR Fixture 2".to_string()],
+                        //         channel_types: vec![fixture::ChannelType::Dimmer],
+                        //         distribution: EffectDistribution::All,
+                        //     }],
+                        //     static_values: vec![],
+                        // },
+                    ],
+                    loop_count: None, // Infinite loop
+                },
+                Chase {
+                    name: "Slow Dance Floor Sweep".to_string(),
+                    current_step: 0,
+                    current_step_elapsed: 0.0,
+                    accumulated_beats: 0.0,
+                    last_step_change: Instant::now(),
+                    steps: vec![ChaseStep {
+                        duration: Duration::new(1, 0),
+                        effect_mappings: vec![
+                            EffectMapping {
+                                effect: Effect {
+                                    name: "Pan Sweep".to_string(),
+                                    apply: effect::sine_effect,
+                                    min: 195,
+                                    max: 235,
+                                    params: EffectParams {
+                                        interval: Interval::Phrase,
+                                        interval_ratio: 2.0,
+                                        phase: 0.0,
+                                    },
+                                },
+                                fixture_names: vec!["Moving Wash 1".to_string()],
+                                channel_types: vec![fixture::ChannelType::Pan],
+                                distribution: EffectDistribution::Step(1),
                             },
-                            fixture_names: vec![
-                                "PAR Fixture 1".to_string(),
-                                "PAR Fixture 2".to_string(),
-                            ],
-                            channel_types: vec![fixture::ChannelType::Dimmer],
-                            distribution: EffectDistribution::Step(1),
-                        }],
+                            EffectMapping {
+                                effect: Effect {
+                                    name: "Tilt Movement".to_string(),
+                                    apply: effect::sine_effect,
+                                    min: 27,
+                                    max: 60,
+                                    params: EffectParams {
+                                        interval: Interval::Phrase,
+                                        interval_ratio: 2.0,
+                                        phase: 0.0,
+                                    },
+                                },
+                                fixture_names: vec!["Moving Wash 1".to_string()],
+                                channel_types: vec![fixture::ChannelType::Tilt],
+                                distribution: EffectDistribution::Step(1),
+                            },
+                            EffectMapping {
+                                effect: Effect {
+                                    name: "Pan Sweep".to_string(),
+                                    apply: effect::sine_effect,
+                                    min: 195,
+                                    max: 235,
+                                    params: EffectParams {
+                                        interval: Interval::Phrase,
+                                        interval_ratio: 1.0,
+                                        phase: 0.0,
+                                    },
+                                },
+                                fixture_names: vec!["Moving Wash 2".to_string()],
+                                channel_types: vec![fixture::ChannelType::Pan],
+                                distribution: EffectDistribution::Step(1),
+                            },
+                            EffectMapping {
+                                effect: Effect {
+                                    name: "Tilt Movement".to_string(),
+                                    apply: effect::sine_effect,
+                                    min: 27,
+                                    max: 60,
+                                    params: EffectParams {
+                                        interval: Interval::Phrase,
+                                        interval_ratio: 1.0,
+                                        phase: 180.0,
+                                    },
+                                },
+                                fixture_names: vec!["Moving Wash 2".to_string()],
+                                channel_types: vec![fixture::ChannelType::Tilt],
+                                distribution: EffectDistribution::Step(1),
+                            },
+                        ],
                         static_values: vec![],
-                    },
-                    // ChaseStep {
-                    //     //duration: 20.0, // Duration of 1 beat
-                    //     duration: Duration::new(1, 0),
-                    //     effect_mappings: vec![EffectMapping {
-                    //         effect: Effect {
-                    //             name: "Sawtooth Fade".to_string(),
-                    //             apply: effect::sawtooth_effect,
-                    //             min: 0,
-                    //             max: 255,
-                    //             params: EffectParams {
-                    //                 interval: Interval::Beat,
-                    //                 interval_ratio: 1.0,
-                    //                 phase: 0.0,
-                    //             },
-                    //         },
-                    //         fixture_names: vec!["PAR Fixture 2".to_string()],
-                    //         channel_types: vec![fixture::ChannelType::Dimmer],
-                    //         distribution: EffectDistribution::All,
-                    //     }],
-                    //     static_values: vec![],
-                    // },
-                ],
-                loop_count: None, // Infinite loop
-            }],
+                    }],
+                    loop_count: None, // Infinite loop
+                },
+            ],
         },
     ];
 
     // Create the console
-    let mut console = console::LightingConsole::new(128.).unwrap();
+    let mut console = console::LightingConsole::new(80.).unwrap();
     console.set_fixtures(fixtures);
     console.set_cues(cues);
 
