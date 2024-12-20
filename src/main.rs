@@ -317,7 +317,7 @@ fn main() -> Result<(), anyhow::Error> {
                     steps: vec![
                         ChaseStep {
                             //duration: 8.0, // Duration of 1 beat
-                            duration: Duration::new(1, 0),
+                            duration: Duration::from_secs(10),
                             effect_mappings: vec![EffectMapping {
                                 effect: Effect {
                                     name: "Sawtooth Fade".to_string(),
@@ -325,8 +325,8 @@ fn main() -> Result<(), anyhow::Error> {
                                     min: 0,
                                     max: 255,
                                     params: EffectParams {
-                                        interval: Interval::Beat,
-                                        interval_ratio: 8.0,
+                                        interval: Interval::Bar,
+                                        interval_ratio: 0.1,
                                         phase: 0.0,
                                     },
                                 },
