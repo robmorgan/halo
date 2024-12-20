@@ -27,6 +27,8 @@ pub enum ChannelType {
     Green,
     Blue,
     White,
+    Amber,
+    UV,
     Strobe,
     Pan,
     Tilt,
@@ -174,7 +176,141 @@ pub fn create_fixtures() -> Vec<Fixture> {
             9,
         ),
         Fixture::new(
-            "Moving Head 1",
+            "Moving Wash 7x18W RGBWA+UV 1",
+            vec![
+                Channel {
+                    name: "Pan".to_string(),
+                    channel_type: ChannelType::Pan,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Tilt".to_string(),
+                    channel_type: ChannelType::Tilt,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Dimmer".to_string(),
+                    channel_type: ChannelType::Dimmer,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Red".to_string(),
+                    channel_type: ChannelType::Red,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Green".to_string(),
+                    channel_type: ChannelType::Green,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Blue".to_string(),
+                    channel_type: ChannelType::Blue,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "White".to_string(),
+                    channel_type: ChannelType::White,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Amber".to_string(),
+                    channel_type: ChannelType::Amber,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "UV".to_string(),
+                    channel_type: ChannelType::UV,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Function".to_string(),
+                    // TODO - I think this is XY speed?  Check the manual and update accordingly.
+                    channel_type: ChannelType::Other("Function".to_string()),
+                    is_16bit: false,
+                    value: 0,
+                },
+            ],
+            178,
+        ),
+        Fixture::new(
+            "Moving Wash 7x18W RGBWA+UV 2",
+            vec![
+                Channel {
+                    name: "Pan".to_string(),
+                    channel_type: ChannelType::Pan,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Tilt".to_string(),
+                    channel_type: ChannelType::Tilt,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Dimmer".to_string(),
+                    channel_type: ChannelType::Dimmer,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Red".to_string(),
+                    channel_type: ChannelType::Red,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Green".to_string(),
+                    channel_type: ChannelType::Green,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Blue".to_string(),
+                    channel_type: ChannelType::Blue,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "White".to_string(),
+                    channel_type: ChannelType::White,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Amber".to_string(),
+                    channel_type: ChannelType::Amber,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "UV".to_string(),
+                    channel_type: ChannelType::UV,
+                    is_16bit: false,
+                    value: 0,
+                },
+                Channel {
+                    name: "Function".to_string(),
+                    // TODO - I think this is XY speed?  Check the manual and update accordingly.
+                    channel_type: ChannelType::Other("Function".to_string()),
+                    is_16bit: false,
+                    value: 0,
+                },
+            ],
+            178,
+        ),
+        Fixture::new(
+            "Moving Head Spot 1",
             vec![
                 Channel {
                     name: "Pan".to_string(),
@@ -214,48 +350,6 @@ pub fn create_fixtures() -> Vec<Fixture> {
                 },
             ],
             169,
-        ),
-        Fixture::new(
-            "Moving Head 2",
-            vec![
-                Channel {
-                    name: "Pan".to_string(),
-                    channel_type: ChannelType::Pan,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Tilt".to_string(),
-                    channel_type: ChannelType::Tilt,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Color".to_string(),
-                    channel_type: ChannelType::Color,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Gobo".to_string(),
-                    channel_type: ChannelType::Gobo,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Strobe".to_string(),
-                    channel_type: ChannelType::Strobe,
-                    is_16bit: false,
-                    value: 0,
-                },
-                Channel {
-                    name: "Dimmer".to_string(),
-                    channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
-                    value: 0,
-                },
-            ],
-            178,
         ),
     ]
 }
