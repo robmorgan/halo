@@ -176,7 +176,7 @@ impl LightingConsole {
                             let current_value = channel.value as f64;
                             let target_value = static_value.value as f64;
                             channel.value =
-                                (current_value + (target_value - current_value)).round() as u16;
+                                (current_value + (target_value - current_value)).round() as u8;
                         }
                     }
                 }
@@ -278,7 +278,7 @@ impl LightingConsole {
     }
 }
 
-fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u16 {
+fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u8) -> u8 {
     let phase = effect::get_effect_phase(rhythm, &effect.params);
     let target_value = (effect.apply)(phase);
     let target_dmx = (target_value * (effect.max - effect.min) as f64 + effect.min as f64) as f64;
@@ -287,7 +287,7 @@ fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u1
     let current_dmx = current_value as f64;
     let new_dmx = current_dmx + (target_dmx - current_dmx);
 
-    new_dmx.round() as u16
+    new_dmx.round() as u8
 }
 
 fn format_duration(duration: Duration) -> String {

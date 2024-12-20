@@ -6,8 +6,8 @@ use crate::rhythm::{Interval, RhythmState};
 pub struct Effect {
     pub name: String,
     pub apply: fn(f64) -> f64, // Takes a phase (0.0 to 1.0) and returns a value (0.0 to 1.0)
-    pub min: u16,
-    pub max: u16,
+    pub min: u8,
+    pub max: u8,
     pub params: EffectParams,
 }
 

@@ -14,8 +14,7 @@ pub struct Group {
 pub struct Channel {
     pub name: String,
     pub channel_type: ChannelType,
-    pub is_16bit: bool,
-    pub value: u16, // Using u16 to accommodate 16-bit channels
+    pub value: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -45,7 +44,7 @@ impl Fixture {
         }
     }
 
-    pub fn set_channel_value(&mut self, channel_name: &str, value: u16) {
+    pub fn set_channel_value(&mut self, channel_name: &str, value: u8) {
         if let Some(channel) = self.channels.iter_mut().find(|c| c.name == channel_name) {
             channel.value = value;
         }
@@ -54,12 +53,7 @@ impl Fixture {
     pub fn get_dmx_values(&self) -> Vec<u8> {
         let mut values = Vec::new();
         for channel in &self.channels {
-            if channel.is_16bit {
-                values.push((channel.value >> 8) as u8);
-                values.push((channel.value & 0xFF) as u8);
-            } else {
-                values.push(channel.value as u8);
-            }
+            values.push(channel.value as u8);
         }
         values
     }
@@ -73,49 +67,41 @@ pub fn create_fixtures() -> Vec<Fixture> {
                 Channel {
                     name: "Dimmer".to_string(),
                     channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Red".to_string(),
                     channel_type: ChannelType::Red,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Green".to_string(),
                     channel_type: ChannelType::Green,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Blue".to_string(),
                     channel_type: ChannelType::Blue,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "White".to_string(),
                     channel_type: ChannelType::White,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Strobe".to_string(),
                     channel_type: ChannelType::Strobe,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Program".to_string(),
                     channel_type: ChannelType::Other("Program".to_string()),
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Function".to_string(),
                     channel_type: ChannelType::Other("Function".to_string()),
-                    is_16bit: false,
                     value: 0,
                 },
             ],
@@ -127,49 +113,41 @@ pub fn create_fixtures() -> Vec<Fixture> {
                 Channel {
                     name: "Dimmer".to_string(),
                     channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Red".to_string(),
                     channel_type: ChannelType::Red,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Green".to_string(),
                     channel_type: ChannelType::Green,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Blue".to_string(),
                     channel_type: ChannelType::Blue,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "White".to_string(),
                     channel_type: ChannelType::White,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Strobe".to_string(),
                     channel_type: ChannelType::Strobe,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Program".to_string(),
                     channel_type: ChannelType::Other("Program".to_string()),
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Function".to_string(),
                     channel_type: ChannelType::Other("Function".to_string()),
-                    is_16bit: false,
                     value: 0,
                 },
             ],
@@ -181,62 +159,52 @@ pub fn create_fixtures() -> Vec<Fixture> {
                 Channel {
                     name: "Pan".to_string(),
                     channel_type: ChannelType::Pan,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Tilt".to_string(),
                     channel_type: ChannelType::Tilt,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Dimmer".to_string(),
                     channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Red".to_string(),
                     channel_type: ChannelType::Red,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Green".to_string(),
                     channel_type: ChannelType::Green,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Blue".to_string(),
                     channel_type: ChannelType::Blue,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "White".to_string(),
                     channel_type: ChannelType::White,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Amber".to_string(),
                     channel_type: ChannelType::Amber,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "UV".to_string(),
                     channel_type: ChannelType::UV,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Function".to_string(),
                     // TODO - I think this is XY speed?  Check the manual and update accordingly.
                     channel_type: ChannelType::Other("Function".to_string()),
-                    is_16bit: false,
                     value: 0,
                 },
             ],
@@ -248,62 +216,52 @@ pub fn create_fixtures() -> Vec<Fixture> {
                 Channel {
                     name: "Pan".to_string(),
                     channel_type: ChannelType::Pan,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Tilt".to_string(),
                     channel_type: ChannelType::Tilt,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Dimmer".to_string(),
                     channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Red".to_string(),
                     channel_type: ChannelType::Red,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Green".to_string(),
                     channel_type: ChannelType::Green,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Blue".to_string(),
                     channel_type: ChannelType::Blue,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "White".to_string(),
                     channel_type: ChannelType::White,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Amber".to_string(),
                     channel_type: ChannelType::Amber,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "UV".to_string(),
                     channel_type: ChannelType::UV,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Function".to_string(),
                     // TODO - I think this is XY speed?  Check the manual and update accordingly.
                     channel_type: ChannelType::Other("Function".to_string()),
-                    is_16bit: false,
                     value: 0,
                 },
             ],
@@ -315,37 +273,31 @@ pub fn create_fixtures() -> Vec<Fixture> {
                 Channel {
                     name: "Pan".to_string(),
                     channel_type: ChannelType::Pan,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Tilt".to_string(),
                     channel_type: ChannelType::Tilt,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Color".to_string(),
                     channel_type: ChannelType::Color,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Gobo".to_string(),
                     channel_type: ChannelType::Gobo,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Strobe".to_string(),
                     channel_type: ChannelType::Strobe,
-                    is_16bit: false,
                     value: 0,
                 },
                 Channel {
                     name: "Dimmer".to_string(),
                     channel_type: ChannelType::Dimmer,
-                    is_16bit: false,
                     value: 0,
                 },
             ],

@@ -31,7 +31,7 @@ fn main() -> Result<(), anyhow::Error> {
             name: "Beat-synced Sine".to_string(),
             apply: effect::sine_effect,
             min: 0,
-            max: 65535,
+            max: 255,
             params: effect::EffectParams {
                 interval: rhythm::Interval::Beat,
                 interval_ratio: 1.0, // Twice as fast
@@ -42,7 +42,7 @@ fn main() -> Result<(), anyhow::Error> {
             name: "Bar-synced Square".to_string(),
             apply: effect::square_effect,
             min: 0,
-            max: 65535,
+            max: 255,
             params: effect::EffectParams {
                 interval: rhythm::Interval::Bar,
                 ..Default::default()
@@ -52,7 +52,7 @@ fn main() -> Result<(), anyhow::Error> {
             name: "Phrase-synced Sawtooth".to_string(),
             apply: effect::sawtooth_effect,
             min: 0,
-            max: 65535,
+            max: 255,
             params: effect::EffectParams {
                 interval: rhythm::Interval::Beat,
                 interval_ratio: 1.0, // Twice as fast
@@ -69,32 +69,32 @@ fn main() -> Result<(), anyhow::Error> {
                 StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Color".to_string(),
-                    value: 35000,
+                    value: 127,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 35000,
+                    value: 127,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "Color".to_string(),
-                    value: 35000,
+                    value: 127,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 35000,
+                    value: 127,
                 },
                 StaticValue {
                     fixture_name: "PAR Fixture 1".to_string(),
                     channel_name: "Red".to_string(),
-                    value: 35000,
+                    value: 127,
                 },
                 StaticValue {
                     fixture_name: "PAR Fixture 2".to_string(),
                     channel_name: "Red".to_string(),
-                    value: 35000,
+                    value: 127,
                 },
             ],
             chases: vec![
@@ -121,12 +121,12 @@ fn main() -> Result<(), anyhow::Error> {
                                 StaticValue {
                                     fixture_name: "Moving Wash 1".to_string(),
                                     channel_name: "Dimmer".to_string(),
-                                    value: 65535,
+                                    value: 255,
                                 },
                                 StaticValue {
                                     fixture_name: "Moving Wash 2".to_string(),
                                     channel_name: "Dimmer".to_string(),
-                                    value: 65535,
+                                    value: 255,
                                 },
                             ],
                         },
@@ -181,7 +181,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 StaticValue {
                                     fixture_name: "PAR Fixture 1".to_string(),
                                     channel_name: "Red".to_string(),
-                                    value: 65535,
+                                    value: 255,
                                 },
                                 StaticValue {
                                     fixture_name: "PAR Fixture 2".to_string(),
@@ -211,7 +211,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 StaticValue {
                                     fixture_name: "PAR Fixture 2".to_string(),
                                     channel_name: "Red".to_string(),
-                                    value: 65535,
+                                    value: 255,
                                 },
                             ],
                         },
@@ -229,60 +229,60 @@ fn main() -> Result<(), anyhow::Error> {
                 StaticValue {
                     fixture_name: "PAR Fixture 1".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 StaticValue {
                     fixture_name: "PAR Fixture 2".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 // Set both PARs to white
                 StaticValue {
                     fixture_name: "PAR Fixture 1".to_string(),
                     channel_name: "White".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 StaticValue {
                     fixture_name: "PAR Fixture 2".to_string(),
                     channel_name: "White".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 // Set both washes to full intensity on the Dimmer channel
                 StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 // Set the left wash to blue and the right to purple
                 StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Red".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Blue".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "White".to_string(),
-                    value: 32767,
+                    value: 255,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "Blue".to_string(),
-                    value: 65535,
+                    value: 255,
                 },
                 StaticValue {
                     fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "White".to_string(),
-                    value: 32767,
+                    value: 255,
                 },
             ],
             chases: vec![
