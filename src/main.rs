@@ -67,22 +67,22 @@ fn main() -> Result<(), anyhow::Error> {
             duration: 10.0,
             static_values: vec![
                 StaticValue {
-                    fixture_name: "Moving Head 1".to_string(),
+                    fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Color".to_string(),
                     value: 35000,
                 },
                 StaticValue {
-                    fixture_name: "Moving Head 1".to_string(),
+                    fixture_name: "Moving Wash 1".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 35000,
                 },
                 StaticValue {
-                    fixture_name: "Moving Head 2".to_string(),
+                    fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "Color".to_string(),
                     value: 35000,
                 },
                 StaticValue {
-                    fixture_name: "Moving Head 2".to_string(),
+                    fixture_name: "Moving Wash 2".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 35000,
                 },
@@ -111,20 +111,20 @@ fn main() -> Result<(), anyhow::Error> {
                             effect_mappings: vec![EffectMapping {
                                 effect: effects[0].clone(), // Beat-Synced Sine Wave,
                                 fixture_names: vec![
-                                    "Moving Head 1".to_string(),
-                                    "Moving Head 2".to_string(),
+                                    "Moving Wash 1".to_string(),
+                                    "Moving Wash 2".to_string(),
                                 ],
                                 channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
                                 StaticValue {
-                                    fixture_name: "Moving Head 1".to_string(),
+                                    fixture_name: "Moving Wash 1".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 65535,
                                 },
                                 StaticValue {
-                                    fixture_name: "Moving Head 2".to_string(),
+                                    fixture_name: "Moving Wash 2".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 65535,
                                 },
@@ -136,20 +136,20 @@ fn main() -> Result<(), anyhow::Error> {
                             effect_mappings: vec![EffectMapping {
                                 effect: effects[0].clone(), // Beat-Synced Sine Wave,
                                 fixture_names: vec![
-                                    "Moving Head 1".to_string(),
-                                    "Moving Head 2".to_string(),
+                                    "Moving Wash 1".to_string(),
+                                    "Moving Wash 2".to_string(),
                                 ],
                                 channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
                                 StaticValue {
-                                    fixture_name: "Moving Head 1".to_string(),
+                                    fixture_name: "Moving Wash 1".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 0,
                                 },
                                 StaticValue {
-                                    fixture_name: "Moving Head 2".to_string(),
+                                    fixture_name: "Moving Wash 2".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 0,
                                 },
@@ -246,6 +246,37 @@ fn main() -> Result<(), anyhow::Error> {
                     fixture_name: "PAR Fixture 2".to_string(),
                     channel_name: "White".to_string(),
                     value: 65535,
+                },
+                // Set both washes to purple
+                StaticValue {
+                    fixture_name: "Moving Wash 1".to_string(),
+                    channel_name: "Red".to_string(),
+                    value: 65535,
+                },
+                StaticValue {
+                    fixture_name: "Moving Wash 2".to_string(),
+                    channel_name: "Red".to_string(),
+                    value: 65535,
+                },
+                StaticValue {
+                    fixture_name: "Moving Wash 1".to_string(),
+                    channel_name: "Blue".to_string(),
+                    value: 65535,
+                },
+                StaticValue {
+                    fixture_name: "Moving Wash 2".to_string(),
+                    channel_name: "Blue".to_string(),
+                    value: 65535,
+                },
+                StaticValue {
+                    fixture_name: "Moving Wash 1".to_string(),
+                    channel_name: "White".to_string(),
+                    value: 32767,
+                },
+                StaticValue {
+                    fixture_name: "Moving Wash 2".to_string(),
+                    channel_name: "White".to_string(),
+                    value: 32767,
                 },
             ],
             chases: vec![Chase {

@@ -176,7 +176,7 @@ pub fn create_fixtures() -> Vec<Fixture> {
             9,
         ),
         Fixture::new(
-            "Moving Wash 7x18W RGBWA+UV 1",
+            "Moving Wash 1",
             vec![
                 Channel {
                     name: "Pan".to_string(),
@@ -240,10 +240,10 @@ pub fn create_fixtures() -> Vec<Fixture> {
                     value: 0,
                 },
             ],
-            178,
+            28,
         ),
         Fixture::new(
-            "Moving Wash 7x18W RGBWA+UV 2",
+            "Moving Wash 2",
             vec![
                 Channel {
                     name: "Pan".to_string(),
@@ -307,7 +307,7 @@ pub fn create_fixtures() -> Vec<Fixture> {
                     value: 0,
                 },
             ],
-            178,
+            37,
         ),
         Fixture::new(
             "Moving Head Spot 1",
@@ -349,7 +349,7 @@ pub fn create_fixtures() -> Vec<Fixture> {
                     value: 0,
                 },
             ],
-            169,
+            55,
         ),
     ]
 }
