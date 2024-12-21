@@ -4,6 +4,7 @@ mod console;
 mod cue;
 mod effect;
 mod fixture;
+mod midi;
 mod rhythm;
 
 use std::time::{Duration, Instant};
@@ -449,6 +450,38 @@ fn main() -> Result<(), anyhow::Error> {
     let mut console = console::LightingConsole::new(80.).unwrap();
     console.set_fixtures(fixtures);
     console.set_cues(cues);
+
+    console.add_midi_override(
+        45,
+        midi::MidiOverride {
+            // Pad 1 is note 45 on MPK49
+            static_values: vec![
+                StaticValue {
+                    fixture_name: "PAR Fixture 1".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 255,
+                },
+                StaticValue {
+                    fixture_name: "PAR Fixture 2".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 255,
+                },
+                StaticValue {
+                    fixture_name: "PAR Fixture 1".to_string(),
+                    channel_name: "Strobe".to_string(),
+                    value: 20,
+                },
+                StaticValue {
+                    fixture_name: "PAR Fixture 2".to_string(),
+                    channel_name: "Strobe".to_string(),
+                    value: 20,
+                },
+            ],
+            velocity_sensitive: true,
+        },
+    );
+
+    console.init_mpk49_midi()?;
 
     // run the show
     console.run();

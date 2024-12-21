@@ -1,5 +1,8 @@
+use midir::{MidiInput, MidiInputConnection};
+use std::collections::HashMap;
 use std::io::{self, stdout, Read, Write};
 use std::sync::mpsc;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -9,6 +12,7 @@ use crate::artnet::{self, ArtNet, ArtNetMode};
 use crate::cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use crate::effect::{Effect, EffectParams};
 use crate::fixture::{Channel, ChannelType, Fixture};
+use crate::midi::{MidiMessage, MidiOverride};
 use crate::rhythm::RhythmState;
 use crate::{ableton_link, effect};
 
@@ -24,6 +28,11 @@ pub struct LightingConsole {
     cues: Vec<Cue>,
     current_cue: usize,
     show_start_time: Instant,
+    midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
+    active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
+    override_tx: Sender<MidiMessage>,
+    override_rx: Receiver<MidiMessage>,
+    _midi_connection: Option<MidiInputConnection<()>>, // Keep connection alive
     rhythm_state: RhythmState,
 }
 
@@ -33,6 +42,8 @@ impl LightingConsole {
         link_state.link.enable(true);
         let dmx_output = ArtNet::new(ArtNetMode::Broadcast)?;
 
+        let (override_tx, override_rx) = channel();
+
         Ok(LightingConsole {
             tempo: bpm,
             fixtures: Vec::new(),
@@ -41,6 +52,11 @@ impl LightingConsole {
             show_start_time: Instant::now(),
             link_state: link_state,
             dmx_output: dmx_output,
+            midi_overrides: HashMap::new(),
+            active_overrides: HashMap::new(),
+            override_tx,
+            override_rx,
+            _midi_connection: None,
             rhythm_state: RhythmState {
                 beat_phase: 0.0,
                 bar_phase: 0.0,
@@ -65,6 +81,65 @@ impl LightingConsole {
 
     pub fn add_cue(&mut self, cue: Cue) {
         self.cues.push(cue);
+    }
+
+    pub fn init_mpk49_midi(&mut self) -> Result<(), anyhow::Error> {
+        let midi_in = MidiInput::new("halo_controller")?;
+
+        // Find the MPK49 port
+        let port = midi_in
+            .ports()
+            .into_iter()
+            .find(|port| {
+                midi_in
+                    .port_name(port)
+                    .map(|name| name.contains("MPK49"))
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| anyhow::Error::msg("MPK49 not found"))?;
+
+        let tx = self.override_tx.clone();
+
+        let connection = midi_in.connect(
+            &port,
+            "midi-override",
+            move |_timestamp, message, _| {
+                if message.len() >= 3 {
+                    match message[0] & 0xF0 {
+                        0x90 => {
+                            println!("midi note on: {} {}", message[1], message[2]);
+                            // Note On
+                            if message[2] > 0 {
+                                tx.send(MidiMessage::NoteOn(message[1], message[2]))
+                                    .unwrap();
+                            } else {
+                                tx.send(MidiMessage::NoteOff(message[1])).unwrap();
+                            }
+                        }
+                        0x80 => {
+                            // Note Off
+                            tx.send(MidiMessage::NoteOff(message[1])).unwrap();
+                        }
+                        0xB0 => {
+                            // Control Change
+                            tx.send(MidiMessage::ControlChange(message[1], message[2]))
+                                .unwrap();
+                        }
+                        _ => (),
+                    }
+                }
+            },
+            (),
+        )?;
+
+        self._midi_connection = Some(connection);
+        Ok(())
+    }
+
+    // Add a new MIDI override configuration
+    pub fn add_midi_override(&mut self, note: u8, override_config: MidiOverride) {
+        self.midi_overrides.insert(note, override_config);
+        self.active_overrides.insert(note, (false, 0));
     }
 
     pub fn run(&mut self) {
@@ -145,6 +220,27 @@ impl LightingConsole {
         self.tempo = self.link_state.session_state.tempo();
         self.update_rhythm_state(beat_time);
 
+        // Process any pending MIDI messages
+        while let Ok(midi_msg) = self.override_rx.try_recv() {
+            match midi_msg {
+                MidiMessage::NoteOn(note, velocity) => {
+                    if let Some(active) = self.active_overrides.get_mut(&note) {
+                        *active = (true, velocity);
+                    }
+                }
+                MidiMessage::NoteOff(note) => {
+                    if let Some(active) = self.active_overrides.get_mut(&note) {
+                        *active = (false, 0);
+                    }
+                }
+                MidiMessage::ControlChange(cc, value) => {
+                    // Handle CC messages (knobs/faders) here
+                    // This is where you could implement continuous control
+                    println!("CC: {}, Value: {}", cc, value);
+                }
+            }
+        }
+
         if let Some(current_cue) = self.cues.get_mut(self.current_cue) {
             // Apply cue-level static values first
             for static_value in &current_cue.static_values {
@@ -223,6 +319,38 @@ impl LightingConsole {
                 // Apply chase-level steps
                 // TODO - implement
                 // We probably need to determine the current chase step and apply the corresponding step values
+            }
+        }
+
+        // Then apply any active MIDI overrides
+        for (note, (is_active, _velocity)) in &self.active_overrides {
+            if *is_active {
+                if let Some(override_config) = self.midi_overrides.get(note) {
+                    // Apply overrides to fixtures
+                    for sv in override_config.static_values.iter() {
+                        if let Some(fixture) =
+                            self.fixtures.iter_mut().find(|f| f.name == sv.fixture_name)
+                        {
+                            if let Some(channel) = fixture
+                                .channels
+                                .iter_mut()
+                                .find(|c| c.name == sv.channel_name)
+                            {
+                                // TODO - fix velocity sensitive handling
+                                // let final_value = if override_config.velocity_sensitive {
+                                //     ((sv.value as u16 * *velocity as u16) / 127) as u8
+                                // } else {
+                                //     sv.value
+                                // };
+                                println!(
+                                    "applying midi override to fixture {:?} for channel {:?} with value {:?}",
+                                    sv.fixture_name, sv.channel_name, sv.value
+                                );
+                                channel.value = sv.value;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
