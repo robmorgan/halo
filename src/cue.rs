@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use crate::color::Color;
 use crate::effect::Effect;
 use crate::fixture::ChannelType;
 
@@ -7,6 +8,8 @@ use crate::fixture::ChannelType;
 pub struct Cue {
     pub name: String,
     pub duration: f64,
+    pub fade_in_time: Duration,
+    pub fade_out_time: Duration,
     pub static_values: Vec<StaticValue>,
     pub chases: Vec<Chase>,
 }
@@ -16,6 +19,38 @@ pub struct StaticValue {
     pub fixture_name: String,
     pub channel_name: String,
     pub value: u16,
+}
+
+impl StaticValue {
+    pub fn from_hex_color(fixture_name: String, hex_color: &str) -> Vec<StaticValue> {
+        let color = Color::from_hex(hex_color).unwrap();
+
+        // // Remove # if present
+        // let hex = hex_color.trim_start_matches('#');
+
+        // // Parse hex into RGB values
+        // let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as u16;
+        // let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as u16;
+        // let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as u16;
+
+        vec![
+            StaticValue {
+                fixture_name: fixture_name.clone(),
+                channel_name: "Red".to_string(),
+                value: color.r as u16,
+            },
+            StaticValue {
+                fixture_name: fixture_name.clone(),
+                channel_name: "Green".to_string(),
+                value: color.g as u16,
+            },
+            StaticValue {
+                fixture_name: fixture_name,
+                channel_name: "Blue".to_string(),
+                value: color.b as u16,
+            },
+        ]
+    }
 }
 
 #[derive(Clone, Debug)]
