@@ -9,8 +9,10 @@ mod rhythm;
 
 use std::time::{Duration, Instant};
 
+use color::Color;
 use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use effect::{Effect, EffectParams};
+use fixture::{Channel, ChannelType, Fixture};
 use rhythm::Interval;
 
 fn main() -> Result<(), anyhow::Error> {
@@ -62,283 +64,101 @@ fn main() -> Result<(), anyhow::Error> {
         },
     ];
 
-    let cues = vec![
-        Cue {
-            name: "Complex Chase with Static Values".to_string(),
-            fade_in_time: Duration::from_secs(0),
-            fade_out_time: Duration::from_secs(5),
-            duration: 10.0,
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Moving Head 1".to_string(),
-                    channel_name: "Color".to_string(),
-                    value: 35000,
-                },
-                StaticValue {
-                    fixture_name: "Moving Head 1".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 35000,
-                },
-                StaticValue {
-                    fixture_name: "Moving Head 2".to_string(),
-                    channel_name: "Color".to_string(),
-                    value: 35000,
-                },
-                StaticValue {
-                    fixture_name: "Moving Head 2".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 35000,
-                },
-                StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
-                    channel_name: "Red".to_string(),
-                    value: 35000,
-                },
-                StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
-                    channel_name: "Red".to_string(),
-                    value: 35000,
-                },
-            ],
-            chases: vec![
-                Chase {
-                    name: "Moving Head Chase".to_string(),
-                    current_step: 0,
-                    current_step_elapsed: 0.0,
-                    accumulated_beats: 0.0,
-                    last_step_change: Instant::now(),
-                    steps: vec![
-                        ChaseStep {
-                            //duration: 5.0,
-                            duration: Duration::new(1, 0),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[0].clone(), // Beat-Synced Sine Wave,
-                                fixture_names: vec![
-                                    "Moving Head 1".to_string(),
-                                    "Moving Head 2".to_string(),
-                                ],
-                                channel_types: vec![fixture::ChannelType::Tilt],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                StaticValue {
-                                    fixture_name: "Moving Head 1".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 65535,
-                                },
-                                StaticValue {
-                                    fixture_name: "Moving Head 2".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 65535,
-                                },
-                            ],
-                        },
-                        ChaseStep {
-                            //duration: 5.0,
-                            duration: Duration::new(1, 0),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[0].clone(), // Beat-Synced Sine Wave,
-                                fixture_names: vec![
-                                    "Moving Head 1".to_string(),
-                                    "Moving Head 2".to_string(),
-                                ],
-                                channel_types: vec![fixture::ChannelType::Tilt],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                StaticValue {
-                                    fixture_name: "Moving Head 1".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 0,
-                                },
-                                StaticValue {
-                                    fixture_name: "Moving Head 2".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 0,
-                                },
-                            ],
-                        },
-                    ],
-                    loop_count: None, // Infinite loop
-                },
-                Chase {
-                    name: "PAR Chase".to_string(),
-                    current_step: 0,
-                    current_step_elapsed: 0.0,
-                    accumulated_beats: 0.0,
-                    last_step_change: Instant::now(),
-                    steps: vec![
-                        ChaseStep {
-                            //duration: 5.0, // Matches the total duration of the Moving Head Chase
-                            duration: Duration::new(1, 500),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[1].clone(), // Beat-Synced Square Wave,
-                                fixture_names: vec![
-                                    "PAR Fixture 1".to_string(),
-                                    "PAR Fixture 2".to_string(),
-                                ],
-                                channel_types: vec![fixture::ChannelType::Dimmer],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                // StaticValue::from_hex_color("PAR Fixture 1".to_string(), "#FF0000").as_slice(),
-                                StaticValue::from_hex_color("PAR Fixture 1".to_string(), "#FFFFFF")
-                                    .as_slice(),
-                                // StaticValue {
-                                //     fixture_name: "PAR Fixture 1".to_string(),
-                                //     channel_name: "Red".to_string(),
-                                //     value: 65535,
-                                // },
-                                // StaticValue {
-                                //     fixture_name: "PAR Fixture 2".to_string(),
-                                //     channel_name: "Red".to_string(),
-                                //     value: 0,
-                                // },
-                            ]
-                            .concat(),
-                        },
-                        ChaseStep {
-                            //duration: 5.0, // Matches the total duration of the Moving Head Chase
-                            duration: Duration::new(1, 500),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[1].clone(), // Beat-Synced Square Wave,
-                                fixture_names: vec![
-                                    "PAR Fixture 1".to_string(),
-                                    "PAR Fixture 2".to_string(),
-                                ],
-                                channel_types: vec![fixture::ChannelType::Dimmer],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                StaticValue {
-                                    fixture_name: "PAR Fixture 1".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 0,
-                                },
-                                StaticValue {
-                                    fixture_name: "PAR Fixture 2".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 65535,
-                                },
-                            ],
-                        },
-                    ],
-                    loop_count: None, // Infinite loop
-                },
-            ],
-        },
-        Cue {
-            name: "Alternating PAR Chase".to_string(),
-            fade_in_time: Duration::from_secs(0),
-            fade_out_time: Duration::from_secs(0),
-            duration: 10.0,
-            //duration: Duration::new(10, 0),
-            static_values: vec![
-                // Set both PARs to full intensity on the Dimmer channel
-                StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 65535,
-                },
-                StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 65535,
-                },
-                // Set both PARs to white
-                StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
-                    channel_name: "White".to_string(),
-                    value: 65535,
-                },
-                StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
-                    channel_name: "White".to_string(),
-                    value: 65535,
-                },
-            ],
-            chases: vec![Chase {
-                name: "PAR Alternating Chase".to_string(),
+    let cues = vec![Cue {
+        name: "Alternating PAR Chase".to_string(),
+        fade_in_time: Duration::from_secs(0),
+        fade_out_time: Duration::from_secs(0),
+        duration: 60.0,
+        static_values: vec![
+            // Set both PARs to full intensity on the Dimmer channel
+            StaticValue {
+                fixture_name: "PAR Fixture 1".to_string(),
+                channel_name: "Dimmer".to_string(),
+                value: 65535,
+            },
+            StaticValue {
+                fixture_name: "PAR Fixture 2".to_string(),
+                channel_name: "Dimmer".to_string(),
+                value: 65535,
+            },
+        ],
+        chases: vec![
+            Chase {
+                name: "PAR Alternating Chase 1".to_string(),
                 current_step: 0,
                 current_step_elapsed: 0.0,
                 accumulated_beats: 0.0,
                 last_step_change: Instant::now(),
-                // steps: vec![
-                //     ChaseStep {
-                //         duration: 5.0, // Duration of 2 beats
-                //         effect_mappings: vec![EffectMapping {
-                //             effect: effects[2].clone(),
-                //             fixture_names: vec!["PAR Fixture 1".to_string()],
-                //             channel_types: vec![fixture::ChannelType::Dimmer],
-                //             distribution: EffectDistribution::All,
-                //         }],
-                //         static_values: vec![], // Remove static values from the chase step
-                //     },
-                //     ChaseStep {
-                //         duration: 5.0, // Duration of 2 beats
-                //         effect_mappings: vec![EffectMapping {
-                //             effect: effects[2].clone(),
-                //             fixture_names: vec!["PAR Fixture 2".to_string()],
-                //             channel_types: vec![fixture::ChannelType::Dimmer],
-                //             distribution: EffectDistribution::All,
-                //         }],
-                //         static_values: vec![], // Remove static values from the chase step
-                //     },
-                // ],
-                steps: vec![
-                    ChaseStep {
-                        //duration: 8.0, // Duration of 1 beat
-                        duration: Duration::new(1, 0),
-                        effect_mappings: vec![EffectMapping {
-                            effect: Effect {
-                                name: "Sawtooth Fade".to_string(),
-                                apply: effect::sawtooth_effect,
-                                min: 0,
-                                max: 255,
-                                params: EffectParams {
-                                    interval: Interval::Beat,
-                                    interval_ratio: 1.0,
-                                    phase: 0.0,
-                                },
+                steps: vec![ChaseStep {
+                    //duration: 8.0, // Duration of 1 beat
+                    duration: Duration::new(1, 500),
+                    effect_mappings: vec![EffectMapping {
+                        effect: Effect {
+                            name: "Sine Fade".to_string(),
+                            apply: effect::sine_effect,
+                            min: 0,
+                            max: 255,
+                            params: EffectParams {
+                                interval: Interval::Beat,
+                                interval_ratio: 1.0,
+                                phase: 0.0,
                             },
-                            fixture_names: vec![
-                                "PAR Fixture 1".to_string(),
-                                "PAR Fixture 2".to_string(),
-                            ],
-                            channel_types: vec![fixture::ChannelType::Dimmer],
-                            distribution: EffectDistribution::Step(1),
-                        }],
-                        static_values: vec![],
-                    },
-                    // ChaseStep {
-                    //     //duration: 20.0, // Duration of 1 beat
-                    //     duration: Duration::new(1, 0),
-                    //     effect_mappings: vec![EffectMapping {
-                    //         effect: Effect {
-                    //             name: "Sawtooth Fade".to_string(),
-                    //             apply: effect::sawtooth_effect,
-                    //             min: 0,
-                    //             max: 255,
-                    //             params: EffectParams {
-                    //                 interval: Interval::Beat,
-                    //                 interval_ratio: 1.0,
-                    //                 phase: 0.0,
-                    //             },
-                    //         },
-                    //         fixture_names: vec!["PAR Fixture 2".to_string()],
-                    //         channel_types: vec![fixture::ChannelType::Dimmer],
-                    //         distribution: EffectDistribution::All,
-                    //     }],
-                    //     static_values: vec![],
-                    // },
-                ],
+                        },
+                        fixture_names: vec!["PAR Fixture 1".to_string()],
+                        channel_types: vec![fixture::ChannelType::Dimmer],
+                        distribution: EffectDistribution::All,
+                    }],
+                    static_values: vec![StaticValue::from_hex_color(
+                        "PAR Fixture 1".to_string(),
+                        //"#FFA500", // set to orange
+                        //"#0000FF", // set to
+                        //"#800080", // set to purple #800080
+                        "#00FF00", // set to green #00FF00
+                    )
+                    .as_slice()]
+                    .concat(),
+                }],
                 loop_count: None, // Infinite loop
-            }],
-        },
-    ];
+            },
+            Chase {
+                name: "PAR Alternating Chase 2".to_string(),
+                current_step: 0,
+                current_step_elapsed: 0.0,
+                accumulated_beats: 0.0,
+                last_step_change: Instant::now(),
+                steps: vec![ChaseStep {
+                    //duration: 8.0, // Duration of 1 beat
+                    duration: Duration::new(1, 500),
+                    effect_mappings: vec![EffectMapping {
+                        effect: Effect {
+                            name: "Sine Fade".to_string(),
+                            apply: effect::sine_effect,
+                            min: 0,
+                            max: 255,
+                            params: EffectParams {
+                                interval: Interval::Bar,
+                                interval_ratio: 1.0,
+                                phase: 64.0,
+                            },
+                        },
+                        fixture_names: vec!["PAR Fixture 2".to_string()],
+                        channel_types: vec![fixture::ChannelType::Dimmer],
+                        distribution: EffectDistribution::All,
+                    }],
+                    static_values: vec![StaticValue::from_hex_color(
+                        "PAR Fixture 2".to_string(),
+                        "#FF0000",
+                    )
+                    .as_slice()]
+                    .concat(),
+                }],
+                loop_count: None, // Infinite loop
+            },
+        ],
+    }];
 
     // Create the console
-    let mut console = console::LightingConsole::new(128.).unwrap();
+    let mut console = console::LightingConsole::new(10.).unwrap();
     console.set_fixtures(fixtures);
     console.set_cues(cues);
 

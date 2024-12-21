@@ -1,9 +1,12 @@
+use crate::cue::StaticValue;
+
 // Color representation
 #[derive(Clone, Copy, Debug)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
     pub b: u8,
+    // TODO - model white as a separate color
 }
 
 impl Color {
@@ -32,5 +35,26 @@ impl Color {
         let start_f = start as f32;
         let end_f = end as f32;
         ((start_f + (end_f - start_f) * t) as u8).clamp(0, 255)
+    }
+
+    // TODO - this function should probably take into account if the fixture has a white channel
+    pub fn into_static_values(self, fixture_name: String) -> Vec<StaticValue> {
+        vec![
+            StaticValue {
+                fixture_name: fixture_name.clone(),
+                channel_name: "Red".to_string(),
+                value: self.r as u16,
+            },
+            StaticValue {
+                fixture_name: fixture_name.clone(),
+                channel_name: "Green".to_string(),
+                value: self.g as u16,
+            },
+            StaticValue {
+                fixture_name: fixture_name,
+                channel_name: "Blue".to_string(),
+                value: self.b as u16,
+            },
+        ]
     }
 }

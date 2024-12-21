@@ -1,0 +1,97 @@
+{
+  "show_name": "Example Show",
+  "version": "1.0",
+  "bpm": 120,
+  "cues": [
+    {
+      "name": "Alternating PAR Chase",
+      "fade_in_time_ms": 0,
+      "fade_out_time_ms": 0,
+      "duration_secs": 60.0,
+      "static_values": [
+        {
+          "fixture_name": "PAR Fixture 1",
+          "channel_name": "Dimmer",
+          "value": 65535
+        },
+        {
+          "fixture_name": "PAR Fixture 2",
+          "channel_name": "Dimmer",
+          "value": 65535
+        }
+      ],
+      "chases": [
+        {
+          "name": "PAR Alternating Chase 1",
+          "current_step": 0,
+          "current_step_elapsed": 0.0,
+          "accumulated_beats": 0.0,
+          "steps": [
+            {
+              "duration_ms": 1500,
+              "effect_mappings": [
+                {
+                  "effect": {
+                    "name": "Sine Fade",
+                    "min": 0,
+                    "max": 255,
+                    "params": {
+                      "interval": "Phrase",
+                      "interval_ratio": 1.0,
+                      "phase": 0.0
+                    }
+                  },
+                  "fixture_names": ["PAR Fixture 1"],
+                  "channel_types": ["Dimmer"],
+                  "distribution": "All"
+                }
+              ],
+              "static_values": [
+                {
+                  "fixture_name": "PAR Fixture 1",
+                  "color": "#FFA500"
+                }
+              ]
+            }
+          ],
+          "loop_count": null
+        },
+        {
+          "name": "PAR Alternating Chase 2",
+          "current_step": 0,
+          "current_step_elapsed": 0.0,
+          "accumulated_beats": 0.0,
+          "steps": [
+            {
+              "duration_ms": 1500,
+              "effect_mappings": [
+                {
+                  "effect": {
+                    "name": "Sine Fade",
+                    "min": 0,
+                    "max": 255,
+                    "params": {
+                      "interval": "Bar",
+                      "interval_ratio": 1.0,
+                      "phase": 64.0
+                    }
+                  },
+                  "fixture_names": ["PAR Fixture 2"],
+                  "channel_types": ["Dimmer"],
+                  "distribution": "All"
+                }
+              ],
+              "static_values": [
+                {
+                  "fixture_name": "PAR Fixture 2",
+                  "color": "#FF0000"
+                }
+              ]
+            }
+          ],
+          "loop_count": null
+        }
+      ]
+    }
+  ]
+}

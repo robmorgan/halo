@@ -12,6 +12,11 @@ use crate::fixture::{Channel, ChannelType, Fixture};
 use crate::rhythm::RhythmState;
 use crate::{ableton_link, effect};
 
+use std::{
+    net::{SocketAddr, ToSocketAddrs, UdpSocket},
+    time::SystemTime,
+};
+
 const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
 const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
@@ -42,7 +47,14 @@ impl LightingConsole {
     pub fn new(bpm: f64) -> Result<Self, anyhow::Error> {
         let link_state = ableton_link::State::new(bpm);
         link_state.link.enable(true);
+
+        // Broadcast
         let dmx_output = ArtNet::new(ArtNetMode::Broadcast)?;
+
+        // Unicast
+        // let src = ("0.0.0.0", 6453).to_socket_addrs()?.next().unwrap();
+        // let dest = ("192.168.1.78", 6454).to_socket_addrs()?.next().unwrap();
+        // let dmx_output = ArtNet::new(ArtNetMode::Unicast(src, dest))?;
 
         Ok(LightingConsole {
             tempo: bpm,
@@ -71,6 +83,20 @@ impl LightingConsole {
         })
     }
 
+    // TODO - implement show loading and saving
+    //
+    // pub fn save_show(&self, path: &str) -> Result<(), Error> {
+    //     let file = File::create(path)?;
+    //     serde_json::to_writer_pretty(file, &self.cues)?;
+    //     Ok(())
+    // }
+
+    // pub fn load_show(&mut self, path: &str) -> Result<(), Error> {
+    //     let file = File::open(path)?;
+    //     self.cues = serde_json::from_reader(file)?;
+    //     Ok(())
+    // }
+
     pub fn set_fixtures(&mut self, fixtures: Vec<Fixture>) {
         self.fixtures = fixtures;
     }
@@ -97,11 +123,21 @@ impl LightingConsole {
         thread::spawn(move || loop {
             let mut buffer = [0; 1];
             if io::stdin().read_exact(&mut buffer).is_ok() {
-                if buffer[0] == b'G' || buffer[0] == b'g' {
-                    tx.send(()).unwrap();
+                match buffer[0] {
+                    b'G' | b'g' => tx.send(KeyCommand::Go).unwrap(),
+                    b'[' => tx.send(KeyCommand::DecreaseBPM).unwrap(),
+                    b']' => tx.send(KeyCommand::IncreaseBPM).unwrap(),
+                    _ => {}
                 }
             }
         });
+
+        // Add enum for key commands
+        enum KeyCommand {
+            Go,
+            IncreaseBPM,
+            DecreaseBPM,
+        }
 
         let mut frames_sent = 0;
         let mut last_update = Instant::now();
@@ -115,15 +151,37 @@ impl LightingConsole {
             last_update = frame_start;
 
             // check for keyboard input
-            if rx.try_recv().is_ok() {
-                //self.current_cue = (self.current_cue + 1) % self.cues.len();
-                self.playback_state.current_cue =
-                    (self.playback_state.current_cue + 1) % self.cues.len();
-                cue_time = 0.0;
-                println!(
-                    "Advanced to cue: {}",
-                    self.cues[self.playback_state.current_cue].name
-                );
+            // if rx.try_recv().is_ok() {
+            //     self.playback_state.current_cue =
+            //         (self.playback_state.current_cue + 1) % self.cues.len();
+            //     cue_time = 0.0;
+            //     println!(
+            //         "Advanced to cue: {}",
+            //         self.cues[self.playback_state.current_cue].name
+            //     );
+            // }
+
+            if let Ok(cmd) = rx.try_recv() {
+                match cmd {
+                    KeyCommand::Go => {
+                        self.playback_state.current_cue =
+                            (self.playback_state.current_cue + 1) % self.cues.len();
+                        cue_time = 0.0;
+                        println!(
+                            "Advanced to cue: {}",
+                            self.cues[self.playback_state.current_cue].name
+                        );
+                    }
+                    KeyCommand::IncreaseBPM => {
+                        self.tempo += 1.0;
+                        self.link_state.set_tempo(self.tempo);
+                        self.link_state.session_state.set_tempo(bpm, at_time);
+                    }
+                    KeyCommand::DecreaseBPM => {
+                        self.tempo = (self.tempo - 1.0).max(1.0);
+                        self.link_state.set_tempo(self.tempo);
+                    }
+                }
             }
 
             self.link_state.capture_app_state();

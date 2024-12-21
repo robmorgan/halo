@@ -30,6 +30,7 @@ show file format. At the moment this is done purely in code.
 
 - [ ] LTC/SMPTE Timecode
 - [ ] Show file live reloading
+- [ ] Web Interface
 
 ## Concepts
 
@@ -51,6 +52,7 @@ No programmer. No editor. Halo is only a playback engine. You do the programming
  * Float16 (two channels)
  * RGB (color mixer)
  * Bool: Boolean value on a single DMX channel: 0-127 means false, 128-255 means true
+ * Restricted Movement: Limit the movement of a fixture to a specific range.
 
 ## Features
 

@@ -8,7 +8,10 @@ use std::{
 // The IP of the device running this SW
 const DEVICE_IP: &str = "0.0.0.0";
 
-const ART_NET_CONTROLLER_IP: &str = "255.255.255.255";
+//const ART_NET_CONTROLLER_IP: &str = "255.255.255.255"; // Broadcast (Capture)
+//const ART_NET_CONTROLLER_IP: &str = "192.168.1.78";
+//const ART_NET_CONTROLLER_IP: &str = "192.168.0.78"; // S-PLAY1
+const ART_NET_CONTROLLER_IP: &str = "192.168.1.9"; // ODE MK2
 
 const CHANNELS_PER_UNIVERSE: u16 = 512;
 
