@@ -154,6 +154,108 @@ pub fn create_fixtures() -> Vec<Fixture> {
             9,
         ),
         Fixture::new(
+            "Moving Head Spot 1",
+            vec![
+                Channel {
+                    name: "Pan".to_string(),
+                    channel_type: ChannelType::Pan,
+                    value: 0,
+                },
+                Channel {
+                    name: "Tilt".to_string(),
+                    channel_type: ChannelType::Tilt,
+                    value: 0,
+                },
+                Channel {
+                    name: "Color".to_string(),
+                    channel_type: ChannelType::Color,
+                    value: 0,
+                },
+                Channel {
+                    name: "Gobo".to_string(),
+                    channel_type: ChannelType::Gobo,
+                    value: 0,
+                },
+                Channel {
+                    name: "Strobe".to_string(),
+                    channel_type: ChannelType::Strobe,
+                    value: 0,
+                },
+                Channel {
+                    name: "Dimmer".to_string(),
+                    channel_type: ChannelType::Dimmer,
+                    value: 0,
+                },
+                Channel {
+                    name: "Speed".to_string(),
+                    channel_type: ChannelType::Other("Speed".to_string()),
+                    value: 0,
+                },
+                Channel {
+                    name: "Auto".to_string(),
+                    channel_type: ChannelType::Other("Auto".to_string()),
+                    value: 0,
+                },
+                Channel {
+                    name: "Reset".to_string(),
+                    channel_type: ChannelType::Other("Reset".to_string()),
+                    value: 0,
+                },
+            ],
+            18,
+        ),
+        Fixture::new(
+            "Moving Head Spot 2",
+            vec![
+                Channel {
+                    name: "Pan".to_string(),
+                    channel_type: ChannelType::Pan,
+                    value: 0,
+                },
+                Channel {
+                    name: "Tilt".to_string(),
+                    channel_type: ChannelType::Tilt,
+                    value: 0,
+                },
+                Channel {
+                    name: "Color".to_string(),
+                    channel_type: ChannelType::Color,
+                    value: 0,
+                },
+                Channel {
+                    name: "Gobo".to_string(),
+                    channel_type: ChannelType::Gobo,
+                    value: 0,
+                },
+                Channel {
+                    name: "Strobe".to_string(),
+                    channel_type: ChannelType::Strobe,
+                    value: 0,
+                },
+                Channel {
+                    name: "Dimmer".to_string(),
+                    channel_type: ChannelType::Dimmer,
+                    value: 0,
+                },
+                Channel {
+                    name: "Speed".to_string(),
+                    channel_type: ChannelType::Other("Speed".to_string()),
+                    value: 0,
+                },
+                Channel {
+                    name: "Auto".to_string(),
+                    channel_type: ChannelType::Other("Auto".to_string()),
+                    value: 0,
+                },
+                Channel {
+                    name: "Reset".to_string(),
+                    channel_type: ChannelType::Other("Reset".to_string()),
+                    value: 0,
+                },
+            ],
+            28,
+        ),
+        Fixture::new(
             "Moving Wash 1",
             vec![
                 Channel {
@@ -208,7 +310,7 @@ pub fn create_fixtures() -> Vec<Fixture> {
                     value: 0,
                 },
             ],
-            28,
+            38,
         ),
         Fixture::new(
             "Moving Wash 2",
@@ -265,43 +367,7 @@ pub fn create_fixtures() -> Vec<Fixture> {
                     value: 0,
                 },
             ],
-            39,
-        ),
-        Fixture::new(
-            "Moving Head Spot 1",
-            vec![
-                Channel {
-                    name: "Pan".to_string(),
-                    channel_type: ChannelType::Pan,
-                    value: 0,
-                },
-                Channel {
-                    name: "Tilt".to_string(),
-                    channel_type: ChannelType::Tilt,
-                    value: 0,
-                },
-                Channel {
-                    name: "Color".to_string(),
-                    channel_type: ChannelType::Color,
-                    value: 0,
-                },
-                Channel {
-                    name: "Gobo".to_string(),
-                    channel_type: ChannelType::Gobo,
-                    value: 0,
-                },
-                Channel {
-                    name: "Strobe".to_string(),
-                    channel_type: ChannelType::Strobe,
-                    value: 0,
-                },
-                Channel {
-                    name: "Dimmer".to_string(),
-                    channel_type: ChannelType::Dimmer,
-                    value: 0,
-                },
-            ],
-            55,
+            48,
         ),
     ]
 }
