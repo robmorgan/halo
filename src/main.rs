@@ -248,42 +248,27 @@ fn main() -> Result<(), anyhow::Error> {
                     channel_name: "White".to_string(),
                     value: 255,
                 },
-                // Set both washes to full intensity on the Dimmer channel
+                // Set both spots to full intensity on the Dimmer channel
                 StaticValue {
-                    fixture_name: "Moving Wash 1".to_string(),
+                    fixture_name: "Moving Head Spot 1".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 255,
                 },
                 StaticValue {
-                    fixture_name: "Moving Wash 2".to_string(),
+                    fixture_name: "Moving Head Spot 2".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 255,
                 },
-                // Set the left wash to blue and the right to purple
+                // Set the left spot to blue and the right to purple
                 StaticValue {
-                    fixture_name: "Moving Wash 1".to_string(),
-                    channel_name: "Red".to_string(),
-                    value: 255,
+                    fixture_name: "Moving Head Spot 1".to_string(),
+                    channel_name: "Color".to_string(),
+                    value: 50,
                 },
                 StaticValue {
-                    fixture_name: "Moving Wash 1".to_string(),
-                    channel_name: "Blue".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Moving Wash 1".to_string(),
-                    channel_name: "White".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Moving Wash 2".to_string(),
-                    channel_name: "Blue".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Moving Wash 2".to_string(),
-                    channel_name: "White".to_string(),
-                    value: 255,
+                    fixture_name: "Moving Head Spot 2".to_string(),
+                    channel_name: "Color".to_string(),
+                    value: 90,
                 },
             ],
             chases: vec![
@@ -377,15 +362,15 @@ fn main() -> Result<(), anyhow::Error> {
                                 effect: Effect {
                                     name: "Pan Sweep".to_string(),
                                     apply: effect::sine_effect,
-                                    min: 195,
-                                    max: 235,
+                                    min: 140,
+                                    max: 180,
                                     params: EffectParams {
                                         interval: Interval::Phrase,
                                         interval_ratio: 2.0,
                                         phase: 0.0,
                                     },
                                 },
-                                fixture_names: vec!["Moving Wash 1".to_string()],
+                                fixture_names: vec!["Moving Head Spot 1".to_string()],
                                 channel_types: vec![fixture::ChannelType::Pan],
                                 distribution: EffectDistribution::Step(1),
                             },
@@ -393,15 +378,15 @@ fn main() -> Result<(), anyhow::Error> {
                                 effect: Effect {
                                     name: "Tilt Movement".to_string(),
                                     apply: effect::sine_effect,
-                                    min: 27,
-                                    max: 60,
+                                    min: 30,
+                                    max: 70,
                                     params: EffectParams {
                                         interval: Interval::Phrase,
                                         interval_ratio: 2.0,
                                         phase: 0.0,
                                     },
                                 },
-                                fixture_names: vec!["Moving Wash 1".to_string()],
+                                fixture_names: vec!["Moving Head Spot 1".to_string()],
                                 channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::Step(1),
                             },
@@ -409,15 +394,15 @@ fn main() -> Result<(), anyhow::Error> {
                                 effect: Effect {
                                     name: "Pan Sweep".to_string(),
                                     apply: effect::sine_effect,
-                                    min: 195,
-                                    max: 235,
+                                    min: 130,
+                                    max: 175,
                                     params: EffectParams {
                                         interval: Interval::Phrase,
                                         interval_ratio: 1.0,
                                         phase: 0.0,
                                     },
                                 },
-                                fixture_names: vec!["Moving Wash 2".to_string()],
+                                fixture_names: vec!["Moving Head Spot 2".to_string()],
                                 channel_types: vec![fixture::ChannelType::Pan],
                                 distribution: EffectDistribution::Step(1),
                             },
@@ -425,15 +410,15 @@ fn main() -> Result<(), anyhow::Error> {
                                 effect: Effect {
                                     name: "Tilt Movement".to_string(),
                                     apply: effect::sine_effect,
-                                    min: 27,
-                                    max: 60,
+                                    min: 35,
+                                    max: 75,
                                     params: EffectParams {
                                         interval: Interval::Phrase,
                                         interval_ratio: 1.0,
                                         phase: 180.0,
                                     },
                                 },
-                                fixture_names: vec!["Moving Wash 2".to_string()],
+                                fixture_names: vec!["Moving Head Spot 2".to_string()],
                                 channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::Step(1),
                             },
@@ -452,7 +437,7 @@ fn main() -> Result<(), anyhow::Error> {
     console.set_cues(cues);
 
     console.add_midi_override(
-        45,
+        77,
         midi::MidiOverride {
             // Pad 1 is note 45 on MPK49
             static_values: vec![
@@ -481,7 +466,31 @@ fn main() -> Result<(), anyhow::Error> {
         },
     );
 
-    console.init_mpk49_midi()?;
+    console.add_midi_override(
+        60,
+        midi::MidiOverride {
+            static_values: vec![
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Blue".to_string(),
+                    value: 255,
+                },
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Strobe".to_string(),
+                    value: 135,
+                },
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Effect".to_string(),
+                    value: 101,
+                },
+            ],
+            velocity_sensitive: true,
+        },
+    );
+
+    //console.init_mpk49_midi()?;
 
     // run the show
     console.run();
