@@ -17,6 +17,13 @@ impl State {
         }
     }
 
+    pub fn set_tempo(&mut self, new_tempo: f64) {
+        self.capture_app_state();
+        self.session_state
+            .set_tempo(new_tempo, self.link.clock_micros());
+        self.commit_app_state();
+    }
+
     pub fn capture_app_state(&mut self) {
         self.link.capture_app_session_state(&mut self.session_state);
     }

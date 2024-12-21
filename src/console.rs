@@ -63,6 +63,8 @@ impl LightingConsole {
                 phrase_phase: 0.0,
                 beats_per_bar: 4,   // Default to 4/4 time
                 bars_per_phrase: 4, // Default 4-bar phrase
+                last_tap_time: Option::None,
+                tap_count: 0,
             },
         })
     }
@@ -106,6 +108,11 @@ impl LightingConsole {
             move |_timestamp, message, _| {
                 if message.len() >= 3 {
                     match message[0] & 0xF0 {
+                        0xF8 => {
+                            // MIDI Clock message
+                            println!("midi clock on: {} {}", message[1], message[2]);
+                            tx.send(MidiMessage::Clock).unwrap();
+                        }
                         0x90 => {
                             println!("midi note on: {} {}", message[1], message[2]);
                             // Note On
@@ -122,6 +129,7 @@ impl LightingConsole {
                         }
                         0xB0 => {
                             // Control Change
+                            println!("midi control change on: {} {}", message[1], message[2]);
                             tx.send(MidiMessage::ControlChange(message[1], message[2]))
                                 .unwrap();
                         }
@@ -223,6 +231,16 @@ impl LightingConsole {
         // Process any pending MIDI messages
         while let Ok(midi_msg) = self.override_rx.try_recv() {
             match midi_msg {
+                MidiMessage::Clock => {
+                    println!("MIDI Clock msg recv");
+                    let now = Instant::now();
+                    if let Some(last_time) = self.rhythm_state.last_tap_time {
+                        let interval = now.duration_since(last_time).as_secs_f64();
+                        let new_bpm = 60.0 / interval;
+                        self.link_state.set_tempo(new_bpm);
+                    }
+                    self.rhythm_state.last_tap_time = Some(now);
+                }
                 MidiMessage::NoteOn(note, velocity) => {
                     if let Some(active) = self.active_overrides.get_mut(&note) {
                         *active = (true, velocity);

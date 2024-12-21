@@ -15,4 +15,5 @@ pub enum MidiMessage {
     NoteOn(u8, u8),        // (note, velocity)
     NoteOff(u8),           // note
     ControlChange(u8, u8), // (controller number, value)
+    Clock,                 // MIDI clock messages
 }
