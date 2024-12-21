@@ -369,5 +369,46 @@ pub fn create_fixtures() -> Vec<Fixture> {
             ],
             48,
         ),
+        Fixture::new(
+            "Smoke Machine",
+            vec![
+                Channel {
+                    name: "Smoke".to_string(),
+                    channel_type: ChannelType::Other("Smoke".to_string()),
+                    value: 0,
+                },
+                Channel {
+                    name: "Red".to_string(),
+                    channel_type: ChannelType::Red,
+                    value: 0,
+                },
+                Channel {
+                    name: "Green".to_string(),
+                    channel_type: ChannelType::Green,
+                    value: 0,
+                },
+                Channel {
+                    name: "Blue".to_string(),
+                    channel_type: ChannelType::Blue,
+                    value: 0,
+                },
+                Channel {
+                    name: "Strobe".to_string(),
+                    channel_type: ChannelType::Strobe,
+                    value: 0,
+                },
+                Channel {
+                    name: "Effect".to_string(),
+                    // LED Effect
+                    // - 0-50: Off
+                    // - 51-100: Jump
+                    // - 101-200: Gradient
+                    // - 201-255: Color Strobe
+                    channel_type: ChannelType::Other("Function".to_string()),
+                    value: 0,
+                },
+            ],
+            69,
+        ),
     ]
 }
