@@ -25,7 +25,6 @@ struct Args {
 
 fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
-    let fixtures = fixture::create_fixtures();
 
     // let fixture_groups = vec![
     //     fixture::Group {
@@ -444,7 +443,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     // Create the console
     let mut console = console::LightingConsole::new(80.).unwrap();
-    console.set_fixtures(fixtures);
+    console.load_fixture_library();
     console.set_cues(cues);
 
     console.add_midi_override(

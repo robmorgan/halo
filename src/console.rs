@@ -11,7 +11,7 @@ use crate::ableton_link::ClockState;
 use crate::artnet::{self, ArtNet, ArtNetMode};
 use crate::cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use crate::effect::{Effect, EffectParams};
-use crate::fixture::{Channel, ChannelType, Fixture};
+use crate::fixture::{Channel, ChannelType, Fixture, FixtureLibrary};
 use crate::midi::{MidiMessage, MidiOverride};
 use crate::rhythm::RhythmState;
 use crate::{ableton_link, effect};
@@ -20,8 +20,12 @@ const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
 const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 
+// TODO - bounding box for Rals dancefloor.
+// One for spots and one for washes.
+
 pub struct LightingConsole {
     tempo: f64,
+    fixture_library: FixtureLibrary,
     fixtures: Vec<Fixture>,
     link_state: ableton_link::State,
     dmx_output: artnet::ArtNet,
@@ -47,6 +51,7 @@ impl LightingConsole {
 
         Ok(LightingConsole {
             tempo: bpm,
+            fixture_library: FixtureLibrary::new(),
             fixtures: Vec::new(),
             cues: Vec::new(),
             current_cue: 0,
@@ -71,12 +76,34 @@ impl LightingConsole {
         })
     }
 
-    pub fn set_fixtures(&mut self, fixtures: Vec<Fixture>) {
-        self.fixtures = fixtures;
+    pub fn load_fixture_library(&mut self) {
+        let fixture_library = fixture::FixtureLibrary::new();
+        self.fixture_library = fixture_library;
     }
 
-    pub fn add_fixture(&mut self, fixture: Fixture) {
+    pub fn patch_fixture(
+        &mut self,
+        name: String,
+        profile_name: String,
+        universe: u8,
+        address: u16,
+    ) -> Result<(), String> {
+        let profile = self
+            .fixture_library
+            .profiles
+            .get(&profile_name)
+            .ok_or_else(|| format!("Profile {} not found", profile_name))?;
+
+        let fixture = Fixture {
+            name,
+            profile_name,
+            channels: profile.channel_layout.clone(),
+            universe,
+            start_address: address,
+        };
+
         self.fixtures.push(fixture);
+        Ok(())
     }
 
     pub fn set_cues(&mut self, cues: Vec<Cue>) {
