@@ -1,4 +1,4 @@
-use midir::{MidiInput, MidiInputConnection};
+use midir::{MidiInput, MidiInputConnection, MidiOutputConnection};
 use std::collections::HashMap;
 use std::io::{self, stdout, Read, Write};
 use std::sync::mpsc;
@@ -33,6 +33,7 @@ pub struct LightingConsole {
     override_tx: Sender<MidiMessage>,
     override_rx: Receiver<MidiMessage>,
     _midi_connection: Option<MidiInputConnection<()>>, // Keep connection alive
+    _midi_output: Option<MidiOutputConnection>,
     rhythm_state: RhythmState,
 }
 
@@ -57,6 +58,7 @@ impl LightingConsole {
             override_tx,
             override_rx,
             _midi_connection: None,
+            _midi_output: None,
             rhythm_state: RhythmState {
                 beat_phase: 0.0,
                 bar_phase: 0.0,
@@ -142,6 +144,19 @@ impl LightingConsole {
 
         self._midi_connection = Some(connection);
         Ok(())
+    }
+
+    // pub fn set_midi_output(&mut self, midi_output: MidiOutputConnection) {
+    //     self._midi_output = Some(midi_output);
+    // }
+
+    // Send a message to the MIDI LCD
+    pub fn send_to_midi_lcd(&mut self, text: &str) {
+        if let Some(output) = &mut self._midi_output {
+            // Format SysEx message
+            let message = format_lcd_message(text);
+            output.send(&message).unwrap();
+        }
     }
 
     // Add a new MIDI override configuration
@@ -420,6 +435,9 @@ impl LightingConsole {
             "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Elapsed: {} | Cue Time: {:6.2}s | Beat: {:6.2} | FPS: {:5.2}",
             frames_sent, bpm, num_peers, current_cue, format_duration(elapsed), cue_time, beat_time, frames_sent as f64 / elapsed_secs
         );
+
+        // TODO - I'd love an ascii progress bar here with the current cue progress
+
         stdout().flush().unwrap();
     }
 }
@@ -447,4 +465,21 @@ fn format_duration(duration: Duration) -> String {
         "{:02}:{:02}:{:02}:{:03}",
         hours, minutes, seconds, milliseconds
     )
+}
+
+fn format_lcd_message(text: &str) -> Vec<u8> {
+    let mut message = vec![
+        0xF0, // Start of SysEx
+        0x47, // Akai Manufacturer ID
+        0x7F, // All channels
+        0x7C, // LCD Display message
+    ];
+
+    // Add the text bytes, truncated to display width
+    message.extend(text.chars().take(16).map(|c| c as u8));
+
+    // End SysEx
+    message.push(0xF7);
+
+    message
 }
