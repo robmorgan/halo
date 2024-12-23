@@ -1,4 +1,4 @@
-use midir::{MidiInput, MidiInputConnection, MidiOutputConnection};
+use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
 use std::io::{self, stdout, Read, Write};
 use std::sync::mpsc;
@@ -89,6 +89,7 @@ impl LightingConsole {
 
     pub fn init_mpk49_midi(&mut self) -> Result<(), anyhow::Error> {
         let midi_in = MidiInput::new("halo_controller")?;
+        let midi_out = MidiOutput::new("halo_controller")?;
 
         // Find the MPK49 port
         let port = midi_in
@@ -142,7 +143,21 @@ impl LightingConsole {
             (),
         )?;
 
+        let out_port = midi_out
+            .ports()
+            .into_iter()
+            .find(|port| {
+                midi_out
+                    .port_name(port)
+                    .map(|name| name.contains("MPK49"))
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| anyhow::Error::msg("MPK49 output not found"))?;
+
+        let output_connection = midi_out.connect(&out_port, "midi-display")?;
+
         self._midi_connection = Some(connection);
+        self._midi_output = Some(output_connection);
         Ok(())
     }
 
