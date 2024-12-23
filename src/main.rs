@@ -444,6 +444,20 @@ fn main() -> Result<(), anyhow::Error> {
     // Create the console
     let mut console = console::LightingConsole::new(80.).unwrap();
     console.load_fixture_library();
+
+    // patch fixtures
+    let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18);
+    let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28);
+    let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 40);
+    let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 50);
+    let _ = console.patch_fixture(
+        "Smoke Machine",
+        "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
+        1,
+        69,
+    );
+
+    // load cues
     console.set_cues(cues);
 
     console.add_midi_override(

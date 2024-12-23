@@ -77,26 +77,26 @@ impl LightingConsole {
     }
 
     pub fn load_fixture_library(&mut self) {
-        let fixture_library = fixture::FixtureLibrary::new();
+        let fixture_library = FixtureLibrary::new();
         self.fixture_library = fixture_library;
     }
 
     pub fn patch_fixture(
         &mut self,
-        name: String,
-        profile_name: String,
+        name: &str,
+        profile_name: &str,
         universe: u8,
         address: u16,
     ) -> Result<(), String> {
         let profile = self
             .fixture_library
             .profiles
-            .get(&profile_name)
+            .get(&profile_name.to_string())
             .ok_or_else(|| format!("Profile {} not found", profile_name))?;
 
         let fixture = Fixture {
-            name,
-            profile_name,
+            name: name.to_string(),
+            profile_name: profile_name.to_string(),
             channels: profile.channel_layout.clone(),
             universe,
             start_address: address,
