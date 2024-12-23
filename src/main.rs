@@ -142,7 +142,6 @@ fn main() -> Result<(), anyhow::Error> {
                             ],
                         },
                         ChaseStep {
-                            //duration: 5.0,
                             duration: Duration::new(1, 0),
                             effect_mappings: vec![EffectMapping {
                                 effect: effects[0].clone(), // Beat-Synced Sine Wave,
@@ -155,12 +154,12 @@ fn main() -> Result<(), anyhow::Error> {
                             }],
                             static_values: vec![
                                 StaticValue {
-                                    fixture_name: "Moving Wash 1".to_string(),
+                                    fixture_name: "Left Wash".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 0,
                                 },
                                 StaticValue {
-                                    fixture_name: "Moving Wash 2".to_string(),
+                                    fixture_name: "Right Wash".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 0,
                                 },
@@ -260,184 +259,116 @@ fn main() -> Result<(), anyhow::Error> {
                 },
                 // Set both spots to full intensity on the Dimmer channel
                 StaticValue {
-                    fixture_name: "Moving Head Spot 1".to_string(),
+                    fixture_name: "Left Spot".to_string(),
                     channel_name: "Dimmer".to_string(),
-                    value: 255,
+                    value: 125,
                 },
                 StaticValue {
-                    fixture_name: "Moving Head Spot 2".to_string(),
+                    fixture_name: "Right Spot".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 255,
                 },
                 // Set the left spot to blue and the right to purple
                 StaticValue {
-                    fixture_name: "Moving Head Spot 1".to_string(),
+                    fixture_name: "Left Spot".to_string(),
                     channel_name: "Color".to_string(),
                     value: 50,
                 },
                 StaticValue {
-                    fixture_name: "Moving Head Spot 2".to_string(),
+                    fixture_name: "Right Spot".to_string(),
                     channel_name: "Color".to_string(),
                     value: 90,
                 },
             ],
-            chases: vec![
-                Chase {
-                    name: "PAR Alternating Chase".to_string(),
-                    current_step: 0,
-                    current_step_elapsed: 0.0,
-                    accumulated_beats: 0.0,
-                    last_step_change: Instant::now(),
-                    // steps: vec![
-                    //     ChaseStep {
-                    //         duration: 5.0, // Duration of 2 beats
-                    //         effect_mappings: vec![EffectMapping {
-                    //             effect: effects[2].clone(),
-                    //             fixture_names: vec!["PAR Fixture 1".to_string()],
-                    //             channel_types: vec![fixture::ChannelType::Dimmer],
-                    //             distribution: EffectDistribution::All,
-                    //         }],
-                    //         static_values: vec![], // Remove static values from the chase step
-                    //     },
-                    //     ChaseStep {
-                    //         duration: 5.0, // Duration of 2 beats
-                    //         effect_mappings: vec![EffectMapping {
-                    //             effect: effects[2].clone(),
-                    //             fixture_names: vec!["PAR Fixture 2".to_string()],
-                    //             channel_types: vec![fixture::ChannelType::Dimmer],
-                    //             distribution: EffectDistribution::All,
-                    //         }],
-                    //         static_values: vec![], // Remove static values from the chase step
-                    //     },
-                    // ],
-                    steps: vec![
-                        ChaseStep {
-                            //duration: 8.0, // Duration of 1 beat
-                            duration: Duration::from_secs(10),
-                            effect_mappings: vec![EffectMapping {
-                                effect: Effect {
-                                    name: "Sawtooth Fade".to_string(),
-                                    apply: effect::sawtooth_effect,
-                                    min: 0,
-                                    max: 255,
-                                    params: EffectParams {
-                                        interval: Interval::Bar,
-                                        interval_ratio: 0.1,
-                                        phase: 0.0,
-                                    },
+            chases: vec![Chase {
+                name: "Slow Dance Floor Sweep".to_string(),
+                current_step: 0,
+                current_step_elapsed: 0.0,
+                accumulated_beats: 0.0,
+                last_step_change: Instant::now(),
+                steps: vec![ChaseStep {
+                    duration: Duration::new(1, 0),
+                    effect_mappings: vec![
+                        EffectMapping {
+                            effect: Effect {
+                                name: "Pan Sweep".to_string(),
+                                apply: effect::sine_effect,
+                                min: 140,
+                                max: 180,
+                                params: EffectParams {
+                                    interval: Interval::Phrase,
+                                    interval_ratio: 2.0,
+                                    phase: 0.0,
                                 },
-                                fixture_names: vec![
-                                    "PAR Fixture 1".to_string(),
-                                    "PAR Fixture 2".to_string(),
-                                ],
-                                channel_types: vec![fixture::ChannelType::Dimmer],
-                                distribution: EffectDistribution::Step(1),
-                            }],
-                            static_values: vec![],
+                            },
+                            fixture_names: vec!["Left Spot".to_string()],
+                            channel_types: vec![fixture::ChannelType::Pan],
+                            distribution: EffectDistribution::Step(1),
                         },
-                        // ChaseStep {
-                        //     //duration: 20.0, // Duration of 1 beat
-                        //     duration: Duration::new(1, 0),
-                        //     effect_mappings: vec![EffectMapping {
-                        //         effect: Effect {
-                        //             name: "Sawtooth Fade".to_string(),
-                        //             apply: effect::sawtooth_effect,
-                        //             min: 0,
-                        //             max: 255,
-                        //             params: EffectParams {
-                        //                 interval: Interval::Beat,
-                        //                 interval_ratio: 1.0,
-                        //                 phase: 0.0,
-                        //             },
-                        //         },
-                        //         fixture_names: vec!["PAR Fixture 2".to_string()],
-                        //         channel_types: vec![fixture::ChannelType::Dimmer],
-                        //         distribution: EffectDistribution::All,
-                        //     }],
-                        //     static_values: vec![],
-                        // },
+                        EffectMapping {
+                            effect: Effect {
+                                name: "Tilt Movement".to_string(),
+                                apply: effect::sine_effect,
+                                min: 30,
+                                max: 70,
+                                params: EffectParams {
+                                    interval: Interval::Phrase,
+                                    interval_ratio: 2.0,
+                                    phase: 0.0,
+                                },
+                            },
+                            fixture_names: vec!["Left Spot".to_string()],
+                            channel_types: vec![fixture::ChannelType::Tilt],
+                            distribution: EffectDistribution::Step(1),
+                        },
+                        EffectMapping {
+                            effect: Effect {
+                                name: "Pan Sweep".to_string(),
+                                apply: effect::sine_effect,
+                                min: 130,
+                                max: 175,
+                                params: EffectParams {
+                                    interval: Interval::Phrase,
+                                    interval_ratio: 1.0,
+                                    phase: 0.0,
+                                },
+                            },
+                            fixture_names: vec!["Right Spot".to_string()],
+                            channel_types: vec![fixture::ChannelType::Pan],
+                            distribution: EffectDistribution::Step(1),
+                        },
+                        EffectMapping {
+                            effect: Effect {
+                                name: "Tilt Movement".to_string(),
+                                apply: effect::sine_effect,
+                                min: 35,
+                                max: 75,
+                                params: EffectParams {
+                                    interval: Interval::Phrase,
+                                    interval_ratio: 1.0,
+                                    phase: 180.0,
+                                },
+                            },
+                            fixture_names: vec!["Right Spot".to_string()],
+                            channel_types: vec![fixture::ChannelType::Tilt],
+                            distribution: EffectDistribution::Step(1),
+                        },
                     ],
-                    loop_count: None, // Infinite loop
-                },
-                Chase {
-                    name: "Slow Dance Floor Sweep".to_string(),
-                    current_step: 0,
-                    current_step_elapsed: 0.0,
-                    accumulated_beats: 0.0,
-                    last_step_change: Instant::now(),
-                    steps: vec![ChaseStep {
-                        duration: Duration::new(1, 0),
-                        effect_mappings: vec![
-                            EffectMapping {
-                                effect: Effect {
-                                    name: "Pan Sweep".to_string(),
-                                    apply: effect::sine_effect,
-                                    min: 140,
-                                    max: 180,
-                                    params: EffectParams {
-                                        interval: Interval::Phrase,
-                                        interval_ratio: 2.0,
-                                        phase: 0.0,
-                                    },
-                                },
-                                fixture_names: vec!["Moving Head Spot 1".to_string()],
-                                channel_types: vec![fixture::ChannelType::Pan],
-                                distribution: EffectDistribution::Step(1),
-                            },
-                            EffectMapping {
-                                effect: Effect {
-                                    name: "Tilt Movement".to_string(),
-                                    apply: effect::sine_effect,
-                                    min: 30,
-                                    max: 70,
-                                    params: EffectParams {
-                                        interval: Interval::Phrase,
-                                        interval_ratio: 2.0,
-                                        phase: 0.0,
-                                    },
-                                },
-                                fixture_names: vec!["Moving Head Spot 1".to_string()],
-                                channel_types: vec![fixture::ChannelType::Tilt],
-                                distribution: EffectDistribution::Step(1),
-                            },
-                            EffectMapping {
-                                effect: Effect {
-                                    name: "Pan Sweep".to_string(),
-                                    apply: effect::sine_effect,
-                                    min: 130,
-                                    max: 175,
-                                    params: EffectParams {
-                                        interval: Interval::Phrase,
-                                        interval_ratio: 1.0,
-                                        phase: 0.0,
-                                    },
-                                },
-                                fixture_names: vec!["Moving Head Spot 2".to_string()],
-                                channel_types: vec![fixture::ChannelType::Pan],
-                                distribution: EffectDistribution::Step(1),
-                            },
-                            EffectMapping {
-                                effect: Effect {
-                                    name: "Tilt Movement".to_string(),
-                                    apply: effect::sine_effect,
-                                    min: 35,
-                                    max: 75,
-                                    params: EffectParams {
-                                        interval: Interval::Phrase,
-                                        interval_ratio: 1.0,
-                                        phase: 180.0,
-                                    },
-                                },
-                                fixture_names: vec!["Moving Head Spot 2".to_string()],
-                                channel_types: vec![fixture::ChannelType::Tilt],
-                                distribution: EffectDistribution::Step(1),
-                            },
-                        ],
-                        static_values: vec![],
-                    }],
-                    loop_count: None, // Infinite loop
-                },
-            ],
+                    static_values: vec![
+                        StaticValue {
+                            fixture_name: "Left Spot".to_string(),
+                            channel_name: "Dimmer".to_string(),
+                            value: 125,
+                        },
+                        StaticValue {
+                            fixture_name: "Right Spot".to_string(),
+                            channel_name: "Dimmer".to_string(),
+                            value: 255,
+                        },
+                    ],
+                }],
+                loop_count: None, // Infinite loop
+            }],
         },
     ];
 

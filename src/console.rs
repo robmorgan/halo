@@ -98,7 +98,7 @@ impl LightingConsole {
             name: name.to_string(),
             profile_name: profile_name.to_string(),
             channels: profile.channel_layout.clone(),
-            universe,
+            universe: universe,
             start_address: address,
         };
 
@@ -359,6 +359,14 @@ impl LightingConsole {
                         .iter_mut()
                         .filter(|f| mapping.fixture_names.contains(&f.name))
                         .collect();
+
+                    // if affected fixtures is empty, log a warning and continue
+                    if affected_fixtures.is_empty() {
+                        println!(
+                            "Warning: No fixtures found using mapping for fixtures: {:?}",
+                            mapping.fixture_names.join(", ")
+                        );
+                    }
 
                     for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
                         for channel_type in &mapping.channel_types {
