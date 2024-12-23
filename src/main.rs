@@ -7,13 +7,24 @@ mod fixture;
 mod midi;
 mod rhythm;
 
+use clap::Parser;
 use std::time::{Duration, Instant};
 
 use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use effect::{Effect, EffectParams};
 use rhythm::Interval;
 
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Whether to enable MIDI support
+    #[arg(short, long)]
+    enable_midi: bool,
+}
+
 fn main() -> Result<(), anyhow::Error> {
+    let args = Args::parse();
     let fixtures = fixture::create_fixtures();
 
     // let fixture_groups = vec![
@@ -490,7 +501,10 @@ fn main() -> Result<(), anyhow::Error> {
         },
     );
 
-    //console.init_mpk49_midi()?;
+    // Check if MIDI support is enabled
+    if args.enable_midi {
+        console.init_mpk49_midi()?;
+    }
 
     // run the show
     console.run();
