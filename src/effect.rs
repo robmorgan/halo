@@ -38,6 +38,10 @@ pub fn get_effect_phase(rhythm: &RhythmState, params: &EffectParams) -> f64 {
     (base_phase * params.interval_ratio + params.phase) % 1.0
 }
 
+pub fn linear_effect(phase: f64) -> f64 {
+    phase
+}
+
 pub fn sine_effect(phase: f64) -> f64 {
     (phase * 2.0 * PI).sin() * 0.5 + 0.5
 }

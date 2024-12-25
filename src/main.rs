@@ -78,22 +78,22 @@ fn main() -> Result<(), anyhow::Error> {
             duration: 10.0,
             static_values: vec![
                 StaticValue {
-                    fixture_name: "Moving Wash 1".to_string(),
+                    fixture_name: "Left Wash".to_string(),
                     channel_name: "Color".to_string(),
                     value: 127,
                 },
                 StaticValue {
-                    fixture_name: "Moving Wash 1".to_string(),
+                    fixture_name: "Left Wash".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 127,
                 },
                 StaticValue {
-                    fixture_name: "Moving Wash 2".to_string(),
+                    fixture_name: "Right Wash".to_string(),
                     channel_name: "Color".to_string(),
                     value: 127,
                 },
                 StaticValue {
-                    fixture_name: "Moving Wash 2".to_string(),
+                    fixture_name: "Right Wash".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 127,
                 },
@@ -122,20 +122,20 @@ fn main() -> Result<(), anyhow::Error> {
                             effect_mappings: vec![EffectMapping {
                                 effect: effects[0].clone(), // Beat-Synced Sine Wave,
                                 fixture_names: vec![
-                                    "Moving Wash 1".to_string(),
-                                    "Moving Wash 2".to_string(),
+                                    "Left Wash".to_string(),
+                                    "Right Wash".to_string(),
                                 ],
                                 channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
                                 StaticValue {
-                                    fixture_name: "Moving Wash 1".to_string(),
+                                    fixture_name: "Left Wash".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 255,
                                 },
                                 StaticValue {
-                                    fixture_name: "Moving Wash 2".to_string(),
+                                    fixture_name: "Right Wash".to_string(),
                                     channel_name: "Dimmer".to_string(),
                                     value: 255,
                                 },
@@ -146,8 +146,8 @@ fn main() -> Result<(), anyhow::Error> {
                             effect_mappings: vec![EffectMapping {
                                 effect: effects[0].clone(), // Beat-Synced Sine Wave,
                                 fixture_names: vec![
-                                    "Moving Wash 1".to_string(),
-                                    "Moving Wash 2".to_string(),
+                                    "Left Wash".to_string(),
+                                    "Right Wash".to_string(),
                                 ],
                                 channel_types: vec![fixture::ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
@@ -234,51 +234,25 @@ fn main() -> Result<(), anyhow::Error> {
             name: "Alternating PAR Chase".to_string(),
             duration: 10.0,
             //duration: Duration::new(10, 0),
-            static_values: vec![
+            static_values: static_values![
                 // Set both PARs to full intensity on the Dimmer channel
-                StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 255,
-                },
+                ("PAR Fixture 1", "Dimmer", 255),
+                ("PAR Fixture 2", "Dimmer", 255),
                 // Set both PARs to white
-                StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
-                    channel_name: "White".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
-                    channel_name: "White".to_string(),
-                    value: 255,
-                },
+                ("PAR Fixture 1", "White", 255),
+                ("PAR Fixture 2", "White", 255),
                 // Set both spots to full intensity on the Dimmer channel
-                StaticValue {
-                    fixture_name: "Left Spot".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 125,
-                },
-                StaticValue {
-                    fixture_name: "Right Spot".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 255,
-                },
+                ("Left Spot", "Dimmer", 255),
+                ("Right Spot", "Dimmer", 255),
                 // Set the left spot to blue and the right to purple
-                StaticValue {
-                    fixture_name: "Left Spot".to_string(),
-                    channel_name: "Color".to_string(),
-                    value: 50,
-                },
-                StaticValue {
-                    fixture_name: "Right Spot".to_string(),
-                    channel_name: "Color".to_string(),
-                    value: 90,
-                },
+                ("Left Spot", "Color", 50),
+                ("Right Spot", "Color", 90),
+                // Set both washes to full intensity on the Dimmer channel
+                //("Left Wash", "Dimmer", 255),
+                //("Right Wash", "Dimmer", 255),
+                // Set the left wash to blue and the right to purple
+                ("Left Wash", "Red", 50),
+                ("Right Wash", "Blue", 50),
             ],
             chases: vec![Chase {
                 name: "Slow Dance Floor Sweep".to_string(),
@@ -301,7 +275,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     phase: 0.0,
                                 },
                             },
-                            fixture_names: vec!["Left Spot".to_string()],
+                            fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
                             channel_types: vec![fixture::ChannelType::Pan],
                             distribution: EffectDistribution::Step(1),
                         },
@@ -317,9 +291,9 @@ fn main() -> Result<(), anyhow::Error> {
                                     phase: 0.0,
                                 },
                             },
-                            fixture_names: vec!["Left Spot".to_string()],
+                            fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
                             channel_types: vec![fixture::ChannelType::Tilt],
-                            distribution: EffectDistribution::Step(1),
+                            distribution: EffectDistribution::All,
                         },
                         EffectMapping {
                             effect: Effect {
@@ -353,6 +327,54 @@ fn main() -> Result<(), anyhow::Error> {
                             channel_types: vec![fixture::ChannelType::Tilt],
                             distribution: EffectDistribution::Step(1),
                         },
+                        EffectMapping {
+                            effect: Effect {
+                                name: "Pan Sweep".to_string(),
+                                apply: effect::sine_effect,
+                                min: 130,
+                                max: 175,
+                                params: EffectParams {
+                                    interval: Interval::Phrase,
+                                    interval_ratio: 1.0,
+                                    phase: 0.0,
+                                },
+                            },
+                            fixture_names: vec!["Right Wash".to_string()],
+                            channel_types: vec![fixture::ChannelType::Pan],
+                            distribution: EffectDistribution::All,
+                        },
+                        EffectMapping {
+                            effect: Effect {
+                                name: "Tilt Movement".to_string(),
+                                apply: effect::sine_effect,
+                                min: 35,
+                                max: 75,
+                                params: EffectParams {
+                                    interval: Interval::Phrase,
+                                    interval_ratio: 1.0,
+                                    phase: 180.0,
+                                },
+                            },
+                            fixture_names: vec!["Right Wash".to_string()],
+                            channel_types: vec![fixture::ChannelType::Tilt],
+                            distribution: EffectDistribution::All,
+                        },
+                        EffectMapping {
+                            effect: Effect {
+                                name: "Dimmer Sidechain".to_string(),
+                                apply: effect::sine_effect,
+                                min: 0,
+                                max: 255,
+                                params: EffectParams {
+                                    interval: Interval::Beat,
+                                    interval_ratio: 1.0,
+                                    phase: 0.0,
+                                },
+                            },
+                            fixture_names: vec!["Left Wash".to_string(), "Right Wash".to_string()],
+                            channel_types: vec![fixture::ChannelType::Dimmer],
+                            distribution: EffectDistribution::Step(1),
+                        },
                     ],
                     static_values: vec![
                         StaticValue {
@@ -379,8 +401,8 @@ fn main() -> Result<(), anyhow::Error> {
     // patch fixtures
     let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18);
     let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28);
-    let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 40);
-    let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 50);
+    let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38);
+    let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 48);
     let _ = console.patch_fixture(
         "Smoke Machine",
         "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
@@ -454,4 +476,19 @@ fn main() -> Result<(), anyhow::Error> {
     console.run();
 
     Ok(())
+}
+
+#[macro_export]
+macro_rules! static_values {
+    ($(($fixture:expr, $channel:expr, $value:expr)),* $(,)?) => {
+        vec![
+            $(
+                StaticValue {
+                    fixture_name: $fixture.to_string(),
+                    channel_name: $channel.to_string(),
+                    value: $value,
+                },
+            )*
+        ]
+    };
 }
