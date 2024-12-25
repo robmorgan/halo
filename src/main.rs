@@ -98,12 +98,12 @@ fn main() -> Result<(), anyhow::Error> {
                     value: 127,
                 },
                 StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
+                    fixture_name: "Left PAR".to_string(),
                     channel_name: "Red".to_string(),
                     value: 127,
                 },
                 StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
+                    fixture_name: "Right PAR".to_string(),
                     channel_name: "Red".to_string(),
                     value: 127,
                 },
@@ -181,20 +181,20 @@ fn main() -> Result<(), anyhow::Error> {
                             effect_mappings: vec![EffectMapping {
                                 effect: effects[1].clone(), // Beat-Synced Square Wave,
                                 fixture_names: vec![
-                                    "PAR Fixture 1".to_string(),
-                                    "PAR Fixture 2".to_string(),
+                                    "Left PAR".to_string(),
+                                    "Right PAR".to_string(),
                                 ],
                                 channel_types: vec![fixture::ChannelType::Dimmer],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
                                 StaticValue {
-                                    fixture_name: "PAR Fixture 1".to_string(),
+                                    fixture_name: "Left PAR".to_string(),
                                     channel_name: "Red".to_string(),
                                     value: 255,
                                 },
                                 StaticValue {
-                                    fixture_name: "PAR Fixture 2".to_string(),
+                                    fixture_name: "Right PAR".to_string(),
                                     channel_name: "Red".to_string(),
                                     value: 0,
                                 },
@@ -206,20 +206,20 @@ fn main() -> Result<(), anyhow::Error> {
                             effect_mappings: vec![EffectMapping {
                                 effect: effects[1].clone(), // Beat-Synced Square Wave,
                                 fixture_names: vec![
-                                    "PAR Fixture 1".to_string(),
-                                    "PAR Fixture 2".to_string(),
+                                    "Left PAR".to_string(),
+                                    "Right PAR".to_string(),
                                 ],
                                 channel_types: vec![fixture::ChannelType::Dimmer],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
                                 StaticValue {
-                                    fixture_name: "PAR Fixture 1".to_string(),
+                                    fixture_name: "Left PAR".to_string(),
                                     channel_name: "Red".to_string(),
                                     value: 0,
                                 },
                                 StaticValue {
-                                    fixture_name: "PAR Fixture 2".to_string(),
+                                    fixture_name: "Right PAR".to_string(),
                                     channel_name: "Red".to_string(),
                                     value: 255,
                                 },
@@ -236,11 +236,11 @@ fn main() -> Result<(), anyhow::Error> {
             //duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set both PARs to full intensity on the Dimmer channel
-                ("PAR Fixture 1", "Dimmer", 255),
-                ("PAR Fixture 2", "Dimmer", 255),
+                ("Left PAR", "Dimmer", 255),
+                ("Right PAR", "Dimmer", 255),
                 // Set both PARs to white
-                ("PAR Fixture 1", "White", 255),
-                ("PAR Fixture 2", "White", 255),
+                ("Left PAR", "White", 255),
+                ("Right PAR", "White", 255),
                 // Set both spots to full intensity on the Dimmer channel
                 ("Left Spot", "Dimmer", 255),
                 ("Right Spot", "Dimmer", 255),
@@ -399,6 +399,8 @@ fn main() -> Result<(), anyhow::Error> {
     console.load_fixture_library();
 
     // patch fixtures
+    let _ = console.patch_fixture("Left PAR", "shehds-led-spot-60w", 1, 1);
+    let _ = console.patch_fixture("Right PAR", "shehds-led-spot-60w", 1, 9);
     let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18);
     let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28);
     let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38);
@@ -419,22 +421,22 @@ fn main() -> Result<(), anyhow::Error> {
             // Pad 1 is note 45 on MPK49
             static_values: vec![
                 StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
+                    fixture_name: "Left PAR".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 255,
                 },
                 StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
+                    fixture_name: "Right PAR".to_string(),
                     channel_name: "Dimmer".to_string(),
                     value: 255,
                 },
                 StaticValue {
-                    fixture_name: "PAR Fixture 1".to_string(),
+                    fixture_name: "Left PAR".to_string(),
                     channel_name: "Strobe".to_string(),
                     value: 20,
                 },
                 StaticValue {
-                    fixture_name: "PAR Fixture 2".to_string(),
+                    fixture_name: "Right PAR".to_string(),
                     channel_name: "Strobe".to_string(),
                     value: 20,
                 },

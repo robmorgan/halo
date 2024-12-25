@@ -276,6 +276,44 @@ impl LightingConsole {
                 }
             }
 
+            // Process any pending MIDI messages
+            while let Ok(midi_msg) = self.override_rx.try_recv() {
+                match midi_msg {
+                    MidiMessage::Clock => {
+                        println!("MIDI Clock msg recv");
+                        let now = Instant::now();
+                        if let Some(last_time) = self.rhythm_state.last_tap_time {
+                            let interval = now.duration_since(last_time).as_secs_f64();
+                            let new_bpm = 60.0 / interval;
+                            self.link_state.set_tempo(new_bpm);
+                        }
+                        self.rhythm_state.last_tap_time = Some(now);
+                    }
+                    MidiMessage::NoteOn(note, velocity) => {
+                        if let Some(active) = self.active_overrides.get_mut(&note) {
+                            *active = (true, velocity);
+                        }
+                    }
+                    MidiMessage::NoteOff(note) => {
+                        if let Some(active) = self.active_overrides.get_mut(&note) {
+                            *active = (false, 0);
+                        }
+                    }
+                    MidiMessage::ControlChange(cc, value) => {
+                        // Handle CC messages (knobs/faders) here
+                        // This is where you could implement continuous control
+                        println!("CC: {}, Value: {}", cc, value);
+                        // Advance the cue
+                        if cc == 116 && value > 64 {
+                            // Example: CC #116 when value goes above 64
+                            self.current_cue = (self.current_cue + 1) % self.cues.len();
+                            cue_time = 0.0;
+                            println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                        }
+                    }
+                }
+            }
+
             self.link_state.capture_app_state();
             self.link_state.link.enable_start_stop_sync(true);
             self.link_state.commit_app_state();
@@ -319,37 +357,6 @@ impl LightingConsole {
 
         self.tempo = self.link_state.session_state.tempo();
         self.update_rhythm_state(beat_time);
-
-        // Process any pending MIDI messages
-        while let Ok(midi_msg) = self.override_rx.try_recv() {
-            match midi_msg {
-                MidiMessage::Clock => {
-                    println!("MIDI Clock msg recv");
-                    let now = Instant::now();
-                    if let Some(last_time) = self.rhythm_state.last_tap_time {
-                        let interval = now.duration_since(last_time).as_secs_f64();
-                        let new_bpm = 60.0 / interval;
-                        self.link_state.set_tempo(new_bpm);
-                    }
-                    self.rhythm_state.last_tap_time = Some(now);
-                }
-                MidiMessage::NoteOn(note, velocity) => {
-                    if let Some(active) = self.active_overrides.get_mut(&note) {
-                        *active = (true, velocity);
-                    }
-                }
-                MidiMessage::NoteOff(note) => {
-                    if let Some(active) = self.active_overrides.get_mut(&note) {
-                        *active = (false, 0);
-                    }
-                }
-                MidiMessage::ControlChange(cc, value) => {
-                    // Handle CC messages (knobs/faders) here
-                    // This is where you could implement continuous control
-                    println!("CC: {}, Value: {}", cc, value);
-                }
-            }
-        }
 
         if let Some(current_cue) = self.cues.get_mut(self.current_cue) {
             // Apply cue-level static values first
