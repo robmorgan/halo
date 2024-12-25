@@ -5,6 +5,9 @@
 ⭕️ Halo is a real-time lighting console built for the console. It's lighting engine supports beat synchronized effects
 using Ableton Link and SMPTE Timecode.
 
+> [!WARNING]
+> This project is still in heavy development and is not ready for production use.
+
 ## Features
 
  * Control multiple groups of fixtures.
