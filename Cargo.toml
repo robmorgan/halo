@@ -10,3 +10,4 @@ anyhow = "1.0.86"
 log = "0.4.22"
 midir = "0.10.1"
 clap = { version = "4.5.23", features = ["derive"] }
+crossterm = "0.28.1"

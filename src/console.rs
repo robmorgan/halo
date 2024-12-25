@@ -1,3 +1,7 @@
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
 use std::io::{self, stdout, Read, Write};
@@ -22,6 +26,13 @@ const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 
 // TODO - bounding box for Rals dancefloor.
 // One for spots and one for washes.
+
+// Key commands
+enum KeyCommand {
+    Go,
+    IncreaseBPM,
+    DecreaseBPM,
+}
 
 pub struct LightingConsole {
     tempo: f64,
@@ -214,11 +225,23 @@ impl LightingConsole {
         // Keyboard input handling
         let (tx, rx) = mpsc::channel();
 
+        // Enable raw mode before spawning input thread
+        enable_raw_mode().unwrap();
+
         thread::spawn(move || loop {
-            let mut buffer = [0; 1];
-            if io::stdin().read_exact(&mut buffer).is_ok() {
-                if buffer[0] == b'G' || buffer[0] == b'g' {
-                    tx.send(()).unwrap();
+            if let Ok(Event::Key(KeyEvent {
+                code, modifiers, ..
+            })) = event::read()
+            {
+                match (code, modifiers) {
+                    (KeyCode::Char('g'), _) => tx.send(KeyCommand::Go).unwrap(),
+                    (KeyCode::Char('['), _) => tx.send(KeyCommand::DecreaseBPM).unwrap(),
+                    (KeyCode::Char(']'), _) => tx.send(KeyCommand::IncreaseBPM).unwrap(),
+                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                        disable_raw_mode().unwrap();
+                        std::process::exit(0);
+                    }
+                    _ => {}
                 }
             }
         });
@@ -235,10 +258,22 @@ impl LightingConsole {
             last_update = frame_start;
 
             // check for keyboard input
-            if rx.try_recv().is_ok() {
-                self.current_cue = (self.current_cue + 1) % self.cues.len();
-                cue_time = 0.0;
-                println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+            if let Ok(cmd) = rx.try_recv() {
+                match cmd {
+                    KeyCommand::Go => {
+                        self.current_cue = (self.current_cue + 1) % self.cues.len();
+                        cue_time = 0.0;
+                        println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                    }
+                    KeyCommand::IncreaseBPM => {
+                        self.tempo += 1.0;
+                        self.link_state.set_tempo(self.tempo);
+                    }
+                    KeyCommand::DecreaseBPM => {
+                        self.tempo = (self.tempo - 1.0).max(1.0);
+                        self.link_state.set_tempo(self.tempo);
+                    }
+                }
             }
 
             self.link_state.capture_app_state();
