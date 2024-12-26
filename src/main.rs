@@ -446,7 +446,7 @@ fn main() -> Result<(), anyhow::Error> {
     );
 
     console.add_midi_override(
-        60,
+        76,
         midi::MidiOverride {
             static_values: vec![
                 StaticValue {
