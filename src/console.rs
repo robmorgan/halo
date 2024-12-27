@@ -16,7 +16,7 @@ use crate::artnet::{self, ArtNet, ArtNetMode};
 use crate::cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use crate::effect::{Effect, EffectParams};
 use crate::fixture::{Channel, ChannelType, Fixture, FixtureLibrary};
-use crate::midi::{MidiMessage, MidiOverride};
+use crate::midi::{MidiAction, MidiMessage, MidiOverride};
 use crate::rhythm::RhythmState;
 use crate::{ableton_link, effect};
 
@@ -463,48 +463,10 @@ impl LightingConsole {
         for (note, (is_active, _velocity)) in &self.active_overrides {
             if *is_active {
                 if let Some(override_config) = self.midi_overrides.get(note) {
-                    // Apply overrides to fixtures
-                    for sv in override_config.static_values.iter() {
-                        if let Some(fixture) =
-                            self.fixtures.iter_mut().find(|f| f.name == sv.fixture_name)
-                        {
-                            if let Some(channel) = fixture
-                                .channels
-                                .iter_mut()
-                                .find(|c| c.name == sv.channel_name)
-                            {
-                                println!(
-                            "\napplying midi override to fixture {:?} for channel {:?} with value {:?}\n",
-                            sv.fixture_name, sv.channel_name, sv.value
-                        );
-                                channel.value = sv.value;
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Check if any other active overrides control this channel
-                let should_reset = |fixture_name: &str, channel_name: &str| -> bool {
-                    !self
-                        .active_overrides
-                        .iter()
-                        .any(|(other_note, (is_active, _))| {
-                            if *is_active && other_note != note {
-                                if let Some(other_config) = self.midi_overrides.get(other_note) {
-                                    return other_config.static_values.iter().any(|sv| {
-                                        sv.fixture_name == fixture_name
-                                            && sv.channel_name == channel_name
-                                    });
-                                }
-                            }
-                            false
-                        })
-                };
-
-                // Reset channels when override is inactive, but only if no other override is using them
-                if let Some(override_config) = self.midi_overrides.get(note) {
-                    for sv in override_config.static_values.iter() {
-                        if should_reset(&sv.fixture_name, &sv.channel_name) {
+                    // First check if this override has StaticValues action
+                    if let MidiAction::StaticValues(static_values) = &override_config.action {
+                        // Apply overrides to fixtures
+                        for sv in static_values.iter() {
                             if let Some(fixture) =
                                 self.fixtures.iter_mut().find(|f| f.name == sv.fixture_name)
                             {
@@ -513,7 +475,75 @@ impl LightingConsole {
                                     .iter_mut()
                                     .find(|c| c.name == sv.channel_name)
                                 {
-                                    channel.value = 0;
+                                    println!(
+                        "\napplying midi override to fixture {:?} for channel {:?} with value {:?}\n",
+                        sv.fixture_name, sv.channel_name, sv.value
+                    );
+                                    channel.value = sv.value;
+                                }
+                            }
+                        }
+                    } else if let MidiAction::TriggerCue(cue_name) = &override_config.action {
+                        // Find the cue index by name and trigger it
+                        if let Some(cue_index) = self.cues.iter().position(|c| c.name == *cue_name)
+                        {
+                            self.current_cue = cue_index;
+                            // TODO - I cant reset cue time here, because its not global, but its only passed to the display_status
+                            // function, so I don't think its mission critical.
+                            //cue_time = 0.0;
+                            println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                        } else {
+                            println!("Cannot find cue: {}", cue_name);
+                        }
+                    }
+                }
+            } else {
+                if let Some(override_config) = self.midi_overrides.get(note) {
+                    if let MidiAction::StaticValues(static_values) = &override_config.action {
+                        // Check if any other active overrides control this channel
+                        let should_reset = |fixture_name: &str, channel_name: &str| -> bool {
+                            !self
+                                .active_overrides
+                                .iter()
+                                .any(|(other_note, (is_active, _))| {
+                                    if *is_active && other_note != note {
+                                        if let Some(other_config) =
+                                            self.midi_overrides.get(other_note)
+                                        {
+                                            if let MidiAction::StaticValues(static_values) =
+                                                &other_config.action
+                                            {
+                                                return static_values.iter().any(|sv| {
+                                                    sv.fixture_name == fixture_name
+                                                        && sv.channel_name == channel_name
+                                                });
+                                            }
+                                        }
+                                    }
+                                    false
+                                })
+                        };
+
+                        // Reset channels when override is inactive, but only if no other override is using them
+                        if let Some(override_config) = self.midi_overrides.get(note) {
+                            if let MidiAction::StaticValues(static_values) = &override_config.action
+                            {
+                                for sv in static_values.iter() {
+                                    if should_reset(&sv.fixture_name, &sv.channel_name) {
+                                        if let Some(fixture) = self
+                                            .fixtures
+                                            .iter_mut()
+                                            .find(|f| f.name == sv.fixture_name)
+                                        {
+                                            if let Some(channel) = fixture
+                                                .channels
+                                                .iter_mut()
+                                                .find(|c| c.name == sv.channel_name)
+                                            {
+                                                channel.value = 0;
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

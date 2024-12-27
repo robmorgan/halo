@@ -4,10 +4,14 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
+pub enum MidiAction {
+    StaticValues(Vec<StaticValue>),
+    TriggerCue(String), // Cue name to trigger
+}
+
 // Represent a MIDI override (could be from keys, pads, or controls)
 pub struct MidiOverride {
-    pub static_values: Vec<StaticValue>,
-    pub velocity_sensitive: bool, // Whether the override responds to velocity
+    pub action: MidiAction,
 }
 
 // MIDI message types we care about

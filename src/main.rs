@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use effect::{Effect, EffectParams};
+use midi::MidiAction;
 use rhythm::Interval;
 
 /// Simple program to greet a person
@@ -392,6 +393,21 @@ fn main() -> Result<(), anyhow::Error> {
                 loop_count: None, // Infinite loop
             }],
         },
+        Cue {
+            name: "Pinspot Purple".to_string(),
+            duration: 10.0,
+            //duration: Duration::new(10, 0),
+            static_values: static_values![
+                // Set the Pinspot to Deep Purple
+                ("Pinspot", "Dimmer", 255),
+                ("Pinspot", "Red", 147),
+                ("Pinspot", "Blue", 211),
+                ("Pinspot", "White", 20),
+                ("Pinspot", "Function", 200),
+                ("Pinspot", "Speed", 20),
+            ],
+            chases: vec![],
+        },
     ];
 
     // Create the console
@@ -420,19 +436,10 @@ fn main() -> Result<(), anyhow::Error> {
     console.add_midi_override(
         76,
         midi::MidiOverride {
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Blue".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Strobe".to_string(),
-                    value: 255,
-                },
-            ],
-            velocity_sensitive: true,
+            action: MidiAction::StaticValues(static_values![
+                ("Smoke Machine", "Blue", 255),
+                ("Smoke Machine", "Strobe", 255),
+            ]),
         },
     );
 
@@ -440,24 +447,11 @@ fn main() -> Result<(), anyhow::Error> {
     console.add_midi_override(
         77,
         midi::MidiOverride {
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Smoke".to_string(),
-                    value: 100,
-                },
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Red".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Strobe".to_string(),
-                    value: 220,
-                },
-            ],
-            velocity_sensitive: true,
+            action: MidiAction::StaticValues(static_values![
+                ("Smoke Machine", "Smoke", 100),
+                ("Smoke Machine", "Red", 255),
+                ("Smoke Machine", "Strobe", 220),
+            ]),
         },
     );
 
@@ -465,24 +459,11 @@ fn main() -> Result<(), anyhow::Error> {
     console.add_midi_override(
         78,
         midi::MidiOverride {
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Smoke".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Blue".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Strobe".to_string(),
-                    value: 255,
-                },
-            ],
-            velocity_sensitive: true,
+            action: MidiAction::StaticValues(static_values![
+                ("Smoke Machine", "Smoke", 255),
+                ("Smoke Machine", "Blue", 255),
+                ("Smoke Machine", "Strobe", 255),
+            ]),
         },
     );
 
@@ -490,72 +471,56 @@ fn main() -> Result<(), anyhow::Error> {
     console.add_midi_override(
         71,
         midi::MidiOverride {
-            static_values: vec![StaticValue {
-                fixture_name: "Smoke Machine".to_string(),
-                channel_name: "Smoke".to_string(),
-                value: 255,
-            }],
-            velocity_sensitive: true,
+            action: MidiAction::StaticValues(static_values![("Smoke Machine", "Smoke", 255),]),
         },
     );
 
     // Blue Pinspot
-    console.add_midi_override(
-        72,
-        midi::MidiOverride {
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Pinspot".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Pinspot".to_string(),
-                    channel_name: "Blue".to_string(),
-                    value: 255,
-                },
-            ],
-            velocity_sensitive: true,
-        },
-    );
+    // console.add_midi_override(
+    //     72,
+    //     midi::MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Pinspot", "Dimmer", 255),
+    //             ("Pinspot", "Blue", 255),
+    //         ]),
+    //     },
+    // );
 
     // Blackout by setting all fixture dimmers to 0
+    // console.add_midi_override(
+    //     74,
+    //     midi::MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Left Spot", "Dimmer", 0),
+    //             ("Right Spot", "Dimmer", 0),
+    //             ("Left Wash", "Dimmer", 0),
+    //             ("Right Wash", "Dimmer", 0),
+    //             ("Pinspot", "Dimmer", 0),
+    //             ("Smoke Machine", "Dimmer", 0),
+    //         ]),
+    //     },
+    // );
+
+    // Light Purple Pinspot
+    // console.add_midi_override(
+    //     67,
+    //     midi::MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Pinspot", "Dimmer", 255),
+    //             ("Pinspot", "Red", 203),
+    //             ("Pinspot", "Green", 160),
+    //             ("Pinspot", "Blue", 255),
+    //         ]),
+    //     },
+    // );
+
+    //// Cue Overrides
+
+    // Cue: Pinspot Purple
     console.add_midi_override(
-        74,
+        65,
         midi::MidiOverride {
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Left Spot".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 0,
-                },
-                StaticValue {
-                    fixture_name: "Right Spot".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 0,
-                },
-                StaticValue {
-                    fixture_name: "Left Wash".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 0,
-                },
-                StaticValue {
-                    fixture_name: "Right Wash".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 0,
-                },
-                StaticValue {
-                    fixture_name: "Pinspot".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 0,
-                },
-                StaticValue {
-                    fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 0,
-                },
-            ],
-            velocity_sensitive: true,
+            action: MidiAction::TriggerCue("Pinspot Purple".to_string()),
         },
     );
 
