@@ -399,8 +399,8 @@ fn main() -> Result<(), anyhow::Error> {
     console.load_fixture_library();
 
     // patch fixtures
-    let _ = console.patch_fixture("Left PAR", "shehds-led-spot-60w", 1, 1);
-    let _ = console.patch_fixture("Right PAR", "shehds-led-spot-60w", 1, 9);
+    let _ = console.patch_fixture("Left PAR", "shehds-rgbw-par", 1, 1);
+    let _ = console.patch_fixture("Right PAR", "shehds-rgbw-par", 1, 9);
     let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18);
     let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28);
     let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38);
