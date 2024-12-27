@@ -415,36 +415,7 @@ fn main() -> Result<(), anyhow::Error> {
     // load cues
     console.set_cues(cues);
 
-    console.add_midi_override(
-        77,
-        midi::MidiOverride {
-            // Pad 1 is note 45 on MPK49
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Left PAR".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Right PAR".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 255,
-                },
-                StaticValue {
-                    fixture_name: "Left PAR".to_string(),
-                    channel_name: "Strobe".to_string(),
-                    value: 20,
-                },
-                StaticValue {
-                    fixture_name: "Right PAR".to_string(),
-                    channel_name: "Strobe".to_string(),
-                    value: 20,
-                },
-            ],
-            velocity_sensitive: true,
-        },
-    );
-
+    // Blue Strobe Fast
     console.add_midi_override(
         76,
         midi::MidiOverride {
@@ -457,14 +428,72 @@ fn main() -> Result<(), anyhow::Error> {
                 StaticValue {
                     fixture_name: "Smoke Machine".to_string(),
                     channel_name: "Strobe".to_string(),
-                    value: 135,
+                    value: 255,
+                },
+            ],
+            velocity_sensitive: true,
+        },
+    );
+
+    // Red Strobe Medium w/Half Smoke
+    console.add_midi_override(
+        77,
+        midi::MidiOverride {
+            static_values: vec![
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Smoke".to_string(),
+                    value: 100,
                 },
                 StaticValue {
                     fixture_name: "Smoke Machine".to_string(),
-                    channel_name: "Effect".to_string(),
-                    value: 101,
+                    channel_name: "Red".to_string(),
+                    value: 255,
+                },
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Strobe".to_string(),
+                    value: 220,
                 },
             ],
+            velocity_sensitive: true,
+        },
+    );
+
+    // Blue Strobe Fast w/Full Smoke
+    console.add_midi_override(
+        78,
+        midi::MidiOverride {
+            static_values: vec![
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Smoke".to_string(),
+                    value: 255,
+                },
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Blue".to_string(),
+                    value: 255,
+                },
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Strobe".to_string(),
+                    value: 255,
+                },
+            ],
+            velocity_sensitive: true,
+        },
+    );
+
+    // Full Smoke
+    console.add_midi_override(
+        71,
+        midi::MidiOverride {
+            static_values: vec![StaticValue {
+                fixture_name: "Smoke Machine".to_string(),
+                channel_name: "Smoke".to_string(),
+                value: 255,
+            }],
             velocity_sensitive: true,
         },
     );
