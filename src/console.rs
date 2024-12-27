@@ -461,34 +461,48 @@ impl LightingConsole {
                                 .iter_mut()
                                 .find(|c| c.name == sv.channel_name)
                             {
-                                // TODO - fix velocity sensitive handling
-                                // let final_value = if override_config.velocity_sensitive {
-                                //     ((sv.value as u16 * *velocity as u16) / 127) as u8
-                                // } else {
-                                //     sv.value
-                                // };
                                 println!(
-                                    "\napplying midi override to fixture {:?} for channel {:?} with value {:?}\n",
-                                    sv.fixture_name, sv.channel_name, sv.value
-                                );
+                            "\napplying midi override to fixture {:?} for channel {:?} with value {:?}\n",
+                            sv.fixture_name, sv.channel_name, sv.value
+                        );
                                 channel.value = sv.value;
                             }
                         }
                     }
                 }
             } else {
-                // Reset channels when override is inactive
+                // Check if any other active overrides control this channel
+                let should_reset = |fixture_name: &str, channel_name: &str| -> bool {
+                    !self
+                        .active_overrides
+                        .iter()
+                        .any(|(other_note, (is_active, _))| {
+                            if *is_active && other_note != note {
+                                if let Some(other_config) = self.midi_overrides.get(other_note) {
+                                    return other_config.static_values.iter().any(|sv| {
+                                        sv.fixture_name == fixture_name
+                                            && sv.channel_name == channel_name
+                                    });
+                                }
+                            }
+                            false
+                        })
+                };
+
+                // Reset channels when override is inactive, but only if no other override is using them
                 if let Some(override_config) = self.midi_overrides.get(note) {
                     for sv in override_config.static_values.iter() {
-                        if let Some(fixture) =
-                            self.fixtures.iter_mut().find(|f| f.name == sv.fixture_name)
-                        {
-                            if let Some(channel) = fixture
-                                .channels
-                                .iter_mut()
-                                .find(|c| c.name == sv.channel_name)
+                        if should_reset(&sv.fixture_name, &sv.channel_name) {
+                            if let Some(fixture) =
+                                self.fixtures.iter_mut().find(|f| f.name == sv.fixture_name)
                             {
-                                channel.value = 0;
+                                if let Some(channel) = fixture
+                                    .channels
+                                    .iter_mut()
+                                    .find(|c| c.name == sv.channel_name)
+                                {
+                                    channel.value = 0;
+                                }
                             }
                         }
                     }
