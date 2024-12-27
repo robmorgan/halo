@@ -8,8 +8,10 @@ mod midi;
 mod rhythm;
 
 use clap::Parser;
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 
+use console::NetworkConfig;
 use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 use effect::{Effect, EffectParams};
 use midi::MidiAction;
@@ -17,15 +19,48 @@ use rhythm::Interval;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(name = "halo")]
+#[command(about = "Halo lighting console")]
 struct Args {
+    /// Art-Net Source IP address
+    #[arg(long, value_parser = parse_ip)]
+    source_ip: IpAddr,
+
+    /// Art-Net Destination IP address (optional - if not provided, broadcast mode will be used)
+    #[arg(long, value_parser = parse_ip)]
+    dest_ip: Option<IpAddr>,
+
+    /// Art-Net port (default: 6454)
+    #[arg(long, default_value = "6454")]
+    artnet_port: u16,
+
+    /// Force broadcast mode even if destination IP is provided
+    #[arg(long, default_value = "false")]
+    broadcast: bool,
+
     /// Whether to enable MIDI support
     #[arg(short, long)]
     enable_midi: bool,
 }
 
+fn parse_ip(s: &str) -> Result<IpAddr, String> {
+    s.parse().map_err(|e| format!("Invalid IP address: {}", e))
+}
+
 fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
+    let network_config = NetworkConfig::new(
+        args.source_ip,
+        args.dest_ip,
+        args.artnet_port,
+        args.broadcast,
+    );
+
+    println!("Configuring Halo with Art-Net settings:");
+    //    println!("Source IP: {}", network_config.source_ip);
+    println!("Mode: {}", network_config.get_mode_string());
+    println!("Destination: {}", network_config.get_destination());
+    println!("Port: {}", network_config.port);
 
     // let fixture_groups = vec![
     //     fixture::Group {
@@ -418,7 +453,7 @@ fn main() -> Result<(), anyhow::Error> {
     ];
 
     // Create the console
-    let mut console = console::LightingConsole::new(80.).unwrap();
+    let mut console = console::LightingConsole::new(80., network_config.clone()).unwrap();
     console.load_fixture_library();
 
     // patch fixtures
