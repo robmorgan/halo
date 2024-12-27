@@ -468,10 +468,27 @@ impl LightingConsole {
                                 //     sv.value
                                 // };
                                 println!(
-                                    "applying midi override to fixture {:?} for channel {:?} with value {:?}",
+                                    "\napplying midi override to fixture {:?} for channel {:?} with value {:?}\n",
                                     sv.fixture_name, sv.channel_name, sv.value
                                 );
                                 channel.value = sv.value;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Reset channels when override is inactive
+                if let Some(override_config) = self.midi_overrides.get(note) {
+                    for sv in override_config.static_values.iter() {
+                        if let Some(fixture) =
+                            self.fixtures.iter_mut().find(|f| f.name == sv.fixture_name)
+                        {
+                            if let Some(channel) = fixture
+                                .channels
+                                .iter_mut()
+                                .find(|c| c.name == sv.channel_name)
+                            {
+                                channel.value = 0;
                             }
                         }
                     }
