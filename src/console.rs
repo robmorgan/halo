@@ -302,13 +302,25 @@ impl LightingConsole {
                     MidiMessage::ControlChange(cc, value) => {
                         // Handle CC messages (knobs/faders) here
                         // This is where you could implement continuous control
-                        println!("CC: {}, Value: {}", cc, value);
-                        // Advance the cue
+
+                        // Go Button: Advance the cue
                         if cc == 116 && value > 64 {
                             // Example: CC #116 when value goes above 64
                             self.current_cue = (self.current_cue + 1) % self.cues.len();
                             cue_time = 0.0;
                             println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                        }
+
+                        // K1 Knob: Set the BPM
+                        if cc == 22 {
+                            // Control Encoder 22
+                            // Scale 0-127 to 60-187 BPM range
+                            let bpm = 60.0 + (value as f64 / 127.0) * (187.0 - 60.0);
+                            self.tempo = bpm;
+                            self.link_state.set_tempo(self.tempo);
+
+                            // Optionally display the BPM on the LCD
+                            self.send_to_midi_lcd(&format!("BPM: {:.1}", bpm));
                         }
                     }
                 }
