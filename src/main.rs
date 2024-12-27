@@ -411,6 +411,7 @@ fn main() -> Result<(), anyhow::Error> {
         1,
         69,
     );
+    let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80);
 
     // load cues
     console.set_cues(cues);
@@ -494,6 +495,66 @@ fn main() -> Result<(), anyhow::Error> {
                 channel_name: "Smoke".to_string(),
                 value: 255,
             }],
+            velocity_sensitive: true,
+        },
+    );
+
+    // Blue Pinspot
+    console.add_midi_override(
+        72,
+        midi::MidiOverride {
+            static_values: vec![
+                StaticValue {
+                    fixture_name: "Pinspot".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 255,
+                },
+                StaticValue {
+                    fixture_name: "Pinspot".to_string(),
+                    channel_name: "Blue".to_string(),
+                    value: 255,
+                },
+            ],
+            velocity_sensitive: true,
+        },
+    );
+
+    // Blackout by setting all fixture dimmers to 0
+    console.add_midi_override(
+        74,
+        midi::MidiOverride {
+            static_values: vec![
+                StaticValue {
+                    fixture_name: "Left Spot".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 0,
+                },
+                StaticValue {
+                    fixture_name: "Right Spot".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 0,
+                },
+                StaticValue {
+                    fixture_name: "Left Wash".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 0,
+                },
+                StaticValue {
+                    fixture_name: "Right Wash".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 0,
+                },
+                StaticValue {
+                    fixture_name: "Pinspot".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 0,
+                },
+                StaticValue {
+                    fixture_name: "Smoke Machine".to_string(),
+                    channel_name: "Dimmer".to_string(),
+                    value: 0,
+                },
+            ],
             velocity_sensitive: true,
         },
     );
