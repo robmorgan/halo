@@ -396,13 +396,20 @@ fn main() -> Result<(), anyhow::Error> {
         Cue {
             name: "Pinspot Purple".to_string(),
             duration: 10.0,
-            //duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set the Pinspot to Deep Purple
                 ("Pinspot", "Dimmer", 255),
                 ("Pinspot", "Red", 147),
                 ("Pinspot", "Blue", 211),
                 ("Pinspot", "White", 20),
+            ],
+            chases: vec![],
+        },
+        Cue {
+            name: "Pinspot Gradient".to_string(),
+            duration: 10.0,
+            static_values: static_values![
+                ("Pinspot", "Dimmer", 255),
                 ("Pinspot", "Function", 200),
                 ("Pinspot", "Speed", 20),
             ],
@@ -516,11 +523,19 @@ fn main() -> Result<(), anyhow::Error> {
 
     //// Cue Overrides
 
-    // Cue: Pinspot Purple
+    // Cue 5: Pinspot Purple
     console.add_midi_override(
-        65,
+        62,
         midi::MidiOverride {
             action: MidiAction::TriggerCue("Pinspot Purple".to_string()),
+        },
+    );
+
+    // Cue 6: Pinspot Gradient
+    console.add_midi_override(
+        64,
+        midi::MidiOverride {
+            action: MidiAction::TriggerCue("Pinspot Gradient".to_string()),
         },
     );
 
