@@ -1,3 +1,4 @@
+use crate::channel_layout;
 use std::collections::HashMap;
 
 pub struct Fixture {
@@ -191,6 +192,31 @@ impl FixtureLibrary {
         );
 
         profiles.insert(
+            "shehds-mini-led-pinspot-10w".to_string(),
+            FixtureProfile {
+                manufacturer: "Shehds".to_string(),
+                model: "Mini LED Pinspot 10W".to_string(),
+                channel_layout: channel_layout![
+                    ("Dimmer", ChannelType::Dimmer),
+                    ("Red", ChannelType::Red),
+                    ("Green", ChannelType::Green),
+                    ("Blue", ChannelType::Blue),
+                    ("White", ChannelType::White),
+                    ("Strobe", ChannelType::Strobe),
+                    // 0-50: no effect
+                    // 51-100: color selection mode
+                    // 101-150: Jump mode
+                    // 151-200: Gradient mode
+                    // 201-250: Automatic mode
+                    // 251-255: Voice control mode
+                    ("Function", ChannelType::Other("Function".to_string())),
+                    // From slow to fast
+                    ("Speed", ChannelType::Other("FunctionSpeed".to_string())),
+                ],
+            },
+        );
+
+        profiles.insert(
             "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
             FixtureProfile {
                 manufacturer: "DL Geyser".to_string(),
@@ -229,6 +255,12 @@ impl FixtureLibrary {
                         // - 101-200: Gradient
                         // - 201-255: Color Strobe
                         channel_type: ChannelType::Other("Function".to_string()),
+                        value: 0,
+                    },
+                    Channel {
+                        // Works with the Effect channel
+                        name: "Speed".to_string(),
+                        channel_type: ChannelType::Other("FunctionSpeed".to_string()),
                         value: 0,
                     },
                 ],
@@ -300,4 +332,19 @@ impl Fixture {
         }
         values
     }
+}
+
+#[macro_export]
+macro_rules! channel_layout {
+    ($(($name:expr, $type:expr)),* $(,)?) => {
+        vec![
+            $(
+                Channel {
+                    name: $name.to_string(),
+                    channel_type: $type,
+                    value: 0,
+                },
+            )*
+        ]
+    };
 }
