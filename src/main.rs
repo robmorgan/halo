@@ -303,8 +303,8 @@ fn main() -> Result<(), anyhow::Error> {
                             effect: Effect {
                                 name: "Pan Sweep".to_string(),
                                 apply: effect::sine_effect,
-                                min: 140,
-                                max: 180,
+                                min: 160,
+                                max: 200,
                                 params: EffectParams {
                                     interval: Interval::Phrase,
                                     interval_ratio: 2.0,
@@ -319,7 +319,7 @@ fn main() -> Result<(), anyhow::Error> {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
                                 apply: effect::sine_effect,
-                                min: 30,
+                                min: 60,
                                 max: 70,
                                 params: EffectParams {
                                     interval: Interval::Phrase,
@@ -335,8 +335,8 @@ fn main() -> Result<(), anyhow::Error> {
                             effect: Effect {
                                 name: "Pan Sweep".to_string(),
                                 apply: effect::sine_effect,
-                                min: 130,
-                                max: 175,
+                                min: 160,
+                                max: 200,
                                 params: EffectParams {
                                     interval: Interval::Phrase,
                                     interval_ratio: 1.0,
@@ -351,8 +351,8 @@ fn main() -> Result<(), anyhow::Error> {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
                                 apply: effect::sine_effect,
-                                min: 35,
-                                max: 75,
+                                min: 40,
+                                max: 50,
                                 params: EffectParams {
                                     interval: Interval::Phrase,
                                     interval_ratio: 1.0,
@@ -383,8 +383,8 @@ fn main() -> Result<(), anyhow::Error> {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
                                 apply: effect::sine_effect,
-                                min: 35,
-                                max: 75,
+                                min: 5,
+                                max: 10,
                                 params: EffectParams {
                                     interval: Interval::Phrase,
                                     interval_ratio: 1.0,
