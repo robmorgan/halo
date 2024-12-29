@@ -419,6 +419,15 @@ impl LightingConsole {
         }
     }
 
+    // Add a method to reset all fixture values
+    pub fn reset_fixtures(&mut self) {
+        for fixture in &mut self.fixtures {
+            for channel in &mut fixture.channels {
+                channel.value = 0;
+            }
+        }
+    }
+
     pub fn update(&mut self, elapsed: Duration) {
         let clock = self.link_state.get_clock_state();
         let beat_time = clock.beats;
@@ -547,6 +556,11 @@ impl LightingConsole {
                             // TODO - I cant reset cue time here, because its not global, but its only passed to the display_status
                             // function, so I don't think its mission critical.
                             //cue_time = 0.0;
+                            self.fixtures
+                                .iter_mut()
+                                .flat_map(|f| &mut f.channels)
+                                .for_each(|c| c.value = 0);
+
                             println!("Advanced to cue: {}", self.cues[self.current_cue].name);
                         } else {
                             println!("Cannot find cue: {}", cue_name);
