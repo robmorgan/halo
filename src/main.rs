@@ -8,7 +8,7 @@ mod midi;
 mod rhythm;
 
 use clap::Parser;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 use console::NetworkConfig;

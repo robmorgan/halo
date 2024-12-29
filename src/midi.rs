@@ -1,8 +1,4 @@
 use crate::cue::StaticValue;
-use midir::{MidiInput, MidiInputConnection};
-use std::collections::HashMap;
-use std::error::Error;
-use std::sync::mpsc::{channel, Receiver, Sender};
 
 pub enum MidiAction {
     StaticValues(Vec<StaticValue>),

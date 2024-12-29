@@ -4,9 +4,9 @@ use crossterm::{
 };
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
-use std::io::{self, stdout, Read, Write};
+use std::io::{stdout, Read, Write};
 use std::net::SocketAddr;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::sync::mpsc;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
@@ -15,9 +15,9 @@ use std::time::Instant;
 
 use crate::ableton_link::ClockState;
 use crate::artnet::{self, ArtNet, ArtNetMode};
-use crate::cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
-use crate::effect::{Effect, EffectParams};
-use crate::fixture::{Channel, ChannelType, Fixture, FixtureLibrary};
+use crate::cue::{Cue, EffectDistribution};
+use crate::effect::Effect;
+use crate::fixture::{Fixture, FixtureLibrary};
 use crate::midi::{MidiAction, MidiMessage, MidiOverride};
 use crate::rhythm::RhythmState;
 use crate::{ableton_link, effect};
