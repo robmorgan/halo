@@ -181,7 +181,7 @@ impl LightingConsole {
         self.cues.push(cue);
     }
 
-    pub fn init_mpk49_midi(&mut self) -> Result<(), anyhow::Error> {
+    pub fn init_mpk49_midi(&mut self) -> anyhow::Result<()> {
         let midi_in = MidiInput::new("halo_controller")?;
         let midi_out = MidiOutput::new("halo_controller")?;
 
