@@ -4,7 +4,6 @@ use crossterm::{
 };
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
-use std::error::Error;
 use std::io::{stdout, Read, Write};
 use std::net::IpAddr;
 use std::net::SocketAddr;
@@ -182,7 +181,7 @@ impl LightingConsole {
         self.cues.push(cue);
     }
 
-    pub fn init_mpk49_midi(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn init_mpk49_midi(&mut self) -> anyhow::Result<()> {
         let midi_in = MidiInput::new("halo_controller")?;
         let midi_out = MidiOutput::new("halo_controller")?;
 
