@@ -1,5 +1,5 @@
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
