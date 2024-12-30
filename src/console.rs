@@ -1,12 +1,12 @@
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
 use std::io::{stdout, Read, Write};
-use std::net::SocketAddr;
 use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::sync::mpsc;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
@@ -274,37 +274,19 @@ impl LightingConsole {
         self.active_overrides.insert(note, (false, 0));
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), anyhow::Error> {
         let fps = TARGET_FREQUENCY;
         let frame_duration = Duration::from_secs_f64(1.0 / fps as f64);
 
         // Keyboard input handling
         let (tx, rx) = mpsc::channel();
 
-        // Enable raw mode before spawning input thread
-        enable_raw_mode().unwrap();
-
-        thread::spawn(move || loop {
-            if let Ok(Event::Key(KeyEvent {
-                code, modifiers, ..
-            })) = event::read()
-            {
-                match (code, modifiers) {
-                    (KeyCode::Char('g'), _) => tx.send(KeyCommand::Go).unwrap(),
-                    (KeyCode::Char('['), _) => tx.send(KeyCommand::DecreaseBPM).unwrap(),
-                    (KeyCode::Char(']'), _) => tx.send(KeyCommand::IncreaseBPM).unwrap(),
-                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                        disable_raw_mode().unwrap();
-                        std::process::exit(0);
-                    }
-                    _ => {}
-                }
-            }
-        });
-
         let mut frames_sent = 0;
         let mut last_update = Instant::now();
         let mut cue_time = 0.0; // TODO - I think cue time needs to be Instant::now()
+
+        // Enable raw mode before entering the main loop
+        enable_raw_mode().unwrap();
 
         // Render loop
         loop {
@@ -313,7 +295,25 @@ impl LightingConsole {
                                                       //let elapsed_time = frame_start.duration_since(last_update);
             last_update = frame_start;
 
-            // check for keyboard input
+            // Poll for keyboard events with a timeout
+            if event::poll(Duration::from_millis(1))? {
+                if let Event::Key(key) = event::read()? {
+                    // Only handle key press events (ignore key release)
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('g') => tx.send(KeyCommand::Go)?,
+                            KeyCode::Char('[') => tx.send(KeyCommand::DecreaseBPM)?,
+                            KeyCode::Char(']') => tx.send(KeyCommand::IncreaseBPM)?,
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                disable_raw_mode()?;
+                                std::process::exit(0);
+                            }
+                            _ => (), // Ignore other keys
+                        }
+                    }
+                }
+            }
+
             if let Ok(cmd) = rx.try_recv() {
                 match cmd {
                     KeyCommand::Go => {
