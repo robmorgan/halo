@@ -2,7 +2,7 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use midir::{ConnectError, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
 use std::io::{stdout, Read, Write};
 use std::net::IpAddr;
@@ -248,7 +248,9 @@ impl LightingConsole {
             })
             .ok_or_else(|| anyhow::Error::msg("MPK49 output not found"))?;
 
-        let output_connection = midi_out.connect(&out_port, "midi-display")?;
+        let output_connection = midi_out
+            .connect(&out_port, "midi-display")
+            .map_err(|e| ConnectError::new(e.kind(), ()))?;
 
         self._midi_connection = Some(connection);
         self._midi_output = Some(output_connection);
