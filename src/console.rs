@@ -237,7 +237,7 @@ impl LightingConsole {
                 },
                 (),
             )
-            .map_err(|_| anyhow::anyhow!("opening input failed"))?;
+            .map_err(|_| anyhow::anyhow!("opening input failed"))?; // workaround: https://github.com/Boddlnagg/midir/issues/55
 
         let out_port = midi_out
             .ports()
@@ -252,7 +252,7 @@ impl LightingConsole {
 
         let output_connection = midi_out
             .connect(&out_port, "midi-display")
-            .map_err(|_| anyhow::anyhow!("opening output failed"))?;
+            .map_err(|_| anyhow::anyhow!("opening output failed"))?; // workaround: https://github.com/Boddlnagg/midir/issues/55
 
         self._midi_connection = Some(connection);
         self._midi_output = Some(output_connection);
