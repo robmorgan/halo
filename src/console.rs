@@ -199,43 +199,45 @@ impl LightingConsole {
 
         let tx = self.override_tx.clone();
 
-        let connection = midi_in.connect(
-            &port,
-            "midi-override",
-            move |_timestamp, message, _| {
-                if message.len() >= 3 {
-                    match message[0] & 0xF0 {
-                        0xF8 => {
-                            // MIDI Clock message
-                            println!("midi clock on: {} {}", message[1], message[2]);
-                            tx.send(MidiMessage::Clock).unwrap();
-                        }
-                        0x90 => {
-                            println!("midi note on: {} {}", message[1], message[2]);
-                            // Note On
-                            if message[2] > 0 {
-                                tx.send(MidiMessage::NoteOn(message[1], message[2]))
-                                    .unwrap();
-                            } else {
+        let connection = midi_in
+            .connect(
+                &port,
+                "midi-override",
+                move |_timestamp, message, _| {
+                    if message.len() >= 3 {
+                        match message[0] & 0xF0 {
+                            0xF8 => {
+                                // MIDI Clock message
+                                println!("midi clock on: {} {}", message[1], message[2]);
+                                tx.send(MidiMessage::Clock).unwrap();
+                            }
+                            0x90 => {
+                                println!("midi note on: {} {}", message[1], message[2]);
+                                // Note On
+                                if message[2] > 0 {
+                                    tx.send(MidiMessage::NoteOn(message[1], message[2]))
+                                        .unwrap();
+                                } else {
+                                    tx.send(MidiMessage::NoteOff(message[1])).unwrap();
+                                }
+                            }
+                            0x80 => {
+                                // Note Off
                                 tx.send(MidiMessage::NoteOff(message[1])).unwrap();
                             }
+                            0xB0 => {
+                                // Control Change
+                                println!("midi control change on: {} {}", message[1], message[2]);
+                                tx.send(MidiMessage::ControlChange(message[1], message[2]))
+                                    .unwrap();
+                            }
+                            _ => (),
                         }
-                        0x80 => {
-                            // Note Off
-                            tx.send(MidiMessage::NoteOff(message[1])).unwrap();
-                        }
-                        0xB0 => {
-                            // Control Change
-                            println!("midi control change on: {} {}", message[1], message[2]);
-                            tx.send(MidiMessage::ControlChange(message[1], message[2]))
-                                .unwrap();
-                        }
-                        _ => (),
                     }
-                }
-            },
-            (),
-        )?;
+                },
+                (),
+            )
+            .map_err(|_| anyhow::anyhow!("opening input failed"))?;
 
         let out_port = midi_out
             .ports()
@@ -250,7 +252,7 @@ impl LightingConsole {
 
         let output_connection = midi_out
             .connect(&out_port, "midi-display")
-            .map_err(|e| ConnectError::new(e.kind(), ()))?;
+            .map_err(|_| anyhow::anyhow!("opening output failed"))?;
 
         self._midi_connection = Some(connection);
         self._midi_output = Some(output_connection);
