@@ -6,7 +6,7 @@
 using Ableton Link and SMPTE Timecode.
 
 > [!WARNING]
-> This project is still in heavy development and is not ready for production use.
+> This project is still in heavy development and not suitable for production use (even though I use it for my own shows).
 
 ## Features
 
