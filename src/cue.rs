@@ -15,7 +15,7 @@ pub struct Cue {
 pub struct StaticValue {
     pub fixture_name: String,
     pub channel_name: String,
-    pub value: u16,
+    pub value: u8,
 }
 
 #[derive(Clone, Debug)]

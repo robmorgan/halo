@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 // Assuming we have access to these from our rhythm engine
 pub struct RhythmState {
     pub beat_phase: f64,   // 0.0 to 1.0, resets each beat
@@ -5,6 +7,8 @@ pub struct RhythmState {
     pub phrase_phase: f64, // 0.0 to 1.0, resets each phrase
     pub beats_per_bar: u32,
     pub bars_per_phrase: u32,
+    pub last_tap_time: Option<Instant>,
+    pub tap_count: u32,
 }
 
 #[derive(Clone, Debug)]

@@ -8,8 +8,8 @@ use std::{
 // The IP of the device running this SW
 const DEVICE_IP: &str = "0.0.0.0";
 
-const ART_NET_CONTROLLER_IP: &str = "255.255.255.255";
-
+const ART_NET_CONTROLLER_IP: &str = "255.255.255.255"; // Broadcast + Capture
+                                                       //const ART_NET_CONTROLLER_IP: &str = "10.8.45.80"; // ODE MK2
 const CHANNELS_PER_UNIVERSE: u16 = 512;
 
 pub struct ArtNet {

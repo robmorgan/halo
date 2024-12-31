@@ -1,14 +1,24 @@
-use std::io::{self, stdout, Read, Write};
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
+use midir::{ConnectError, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use std::collections::HashMap;
+use std::io::{stdout, Read, Write};
+use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::sync::mpsc;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
 use crate::ableton_link::ClockState;
 use crate::artnet::{self, ArtNet, ArtNetMode};
-use crate::cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
-use crate::effect::{Effect, EffectParams};
-use crate::fixture::{Channel, ChannelType, Fixture};
+use crate::cue::{Cue, EffectDistribution};
+use crate::effect::Effect;
+use crate::fixture::{Fixture, FixtureLibrary};
+use crate::midi::{MidiAction, MidiMessage, MidiOverride};
 use crate::rhythm::RhythmState;
 use crate::{ableton_link, effect};
 
@@ -16,47 +26,151 @@ const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
 const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 
+// TODO - bounding box for Rals dancefloor.
+// One for spots and one for washes.
+
+// Key commands
+enum KeyCommand {
+    Go,
+    IncreaseBPM,
+    DecreaseBPM,
+}
+
+// #[derive(Clone)]
+// enum ArtNetMode {
+//     Unicast(IpAddr),
+//     Broadcast,
+// }
+
+#[derive(Clone)]
+pub struct NetworkConfig {
+    pub mode: ArtNetMode,
+    pub port: u16,
+}
+
+impl NetworkConfig {
+    pub fn new(
+        source_ip: IpAddr,
+        dest_ip: Option<IpAddr>,
+        artnet_port: u16,
+        broadcast: bool,
+    ) -> Self {
+        let mode = if broadcast {
+            ArtNetMode::Broadcast
+        } else {
+            match dest_ip {
+                Some(ip) => ArtNetMode::Unicast(
+                    SocketAddr::new(source_ip, artnet_port),
+                    SocketAddr::new(ip, artnet_port),
+                ),
+                None => ArtNetMode::Broadcast,
+            }
+        };
+
+        NetworkConfig {
+            mode,
+            port: artnet_port,
+        }
+    }
+
+    pub fn get_destination(&self) -> String {
+        match &self.mode {
+            ArtNetMode::Unicast(src, destination) => {
+                format!("{}:{} -> {}:{}", src, self.port, destination, self.port)
+            }
+            ArtNetMode::Broadcast => format!("255.255.255.255:{}", self.port),
+        }
+    }
+
+    pub fn get_mode_string(&self) -> &str {
+        match &self.mode {
+            ArtNetMode::Unicast(_, _) => "unicast",
+            ArtNetMode::Broadcast => "broadcast",
+        }
+    }
+}
+
 pub struct LightingConsole {
     tempo: f64,
+    fixture_library: FixtureLibrary,
     fixtures: Vec<Fixture>,
     link_state: ableton_link::State,
     dmx_output: artnet::ArtNet,
     cues: Vec<Cue>,
     current_cue: usize,
     show_start_time: Instant,
+    midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
+    active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
+    override_tx: Sender<MidiMessage>,
+    override_rx: Receiver<MidiMessage>,
+    _midi_connection: Option<MidiInputConnection<()>>, // Keep connection alive
+    _midi_output: Option<MidiOutputConnection>,
     rhythm_state: RhythmState,
 }
 
 impl LightingConsole {
-    pub fn new(bpm: f64) -> Result<Self, anyhow::Error> {
+    pub fn new(bpm: f64, network_config: NetworkConfig) -> Result<Self, anyhow::Error> {
         let link_state = ableton_link::State::new(bpm);
         link_state.link.enable(true);
-        let dmx_output = ArtNet::new(ArtNetMode::Broadcast)?;
+        let dmx_output = ArtNet::new(network_config.mode)?;
+
+        let (override_tx, override_rx) = channel();
 
         Ok(LightingConsole {
             tempo: bpm,
+            fixture_library: FixtureLibrary::new(),
             fixtures: Vec::new(),
             cues: Vec::new(),
             current_cue: 0,
             show_start_time: Instant::now(),
             link_state: link_state,
             dmx_output: dmx_output,
+            midi_overrides: HashMap::new(),
+            active_overrides: HashMap::new(),
+            override_tx,
+            override_rx,
+            _midi_connection: None,
+            _midi_output: None,
             rhythm_state: RhythmState {
                 beat_phase: 0.0,
                 bar_phase: 0.0,
                 phrase_phase: 0.0,
                 beats_per_bar: 4,   // Default to 4/4 time
                 bars_per_phrase: 4, // Default 4-bar phrase
+                last_tap_time: Option::None,
+                tap_count: 0,
             },
         })
     }
 
-    pub fn set_fixtures(&mut self, fixtures: Vec<Fixture>) {
-        self.fixtures = fixtures;
+    pub fn load_fixture_library(&mut self) {
+        let fixture_library = FixtureLibrary::new();
+        self.fixture_library = fixture_library;
     }
 
-    pub fn add_fixture(&mut self, fixture: Fixture) {
+    pub fn patch_fixture(
+        &mut self,
+        name: &str,
+        profile_name: &str,
+        universe: u8,
+        address: u16,
+    ) -> Result<(), String> {
+        let profile = self
+            .fixture_library
+            .profiles
+            .get(&profile_name.to_string())
+            .ok_or_else(|| format!("Profile {} not found", profile_name))?;
+
+        let fixture = Fixture {
+            name: name.to_string(),
+            profile_name: profile_name.to_string(),
+            channels: profile.channel_layout.clone(),
+            universe: universe,
+            start_address: address,
+        };
+
         self.fixtures.push(fixture);
+        Ok(())
     }
 
     pub fn set_cues(&mut self, cues: Vec<Cue>) {
@@ -67,25 +181,116 @@ impl LightingConsole {
         self.cues.push(cue);
     }
 
-    pub fn run(&mut self) {
+    pub fn init_mpk49_midi(&mut self) -> anyhow::Result<()> {
+        let midi_in = MidiInput::new("halo_controller")?;
+        let midi_out = MidiOutput::new("halo_controller")?;
+
+        // Find the MPK49 port
+        let port = midi_in
+            .ports()
+            .into_iter()
+            .find(|port| {
+                midi_in
+                    .port_name(port)
+                    .map(|name| name.contains("MPK49"))
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| anyhow::Error::msg("MPK49 not found"))?;
+
+        let tx = self.override_tx.clone();
+
+        let connection = midi_in
+            .connect(
+                &port,
+                "midi-override",
+                move |_timestamp, message, _| {
+                    if message.len() >= 3 {
+                        match message[0] & 0xF0 {
+                            0xF8 => {
+                                // MIDI Clock message
+                                println!("midi clock on: {} {}", message[1], message[2]);
+                                tx.send(MidiMessage::Clock).unwrap();
+                            }
+                            0x90 => {
+                                println!("midi note on: {} {}", message[1], message[2]);
+                                // Note On
+                                if message[2] > 0 {
+                                    tx.send(MidiMessage::NoteOn(message[1], message[2]))
+                                        .unwrap();
+                                } else {
+                                    tx.send(MidiMessage::NoteOff(message[1])).unwrap();
+                                }
+                            }
+                            0x80 => {
+                                // Note Off
+                                tx.send(MidiMessage::NoteOff(message[1])).unwrap();
+                            }
+                            0xB0 => {
+                                // Control Change
+                                println!("midi control change on: {} {}", message[1], message[2]);
+                                tx.send(MidiMessage::ControlChange(message[1], message[2]))
+                                    .unwrap();
+                            }
+                            _ => (),
+                        }
+                    }
+                },
+                (),
+            )
+            .map_err(|_| anyhow::anyhow!("opening input failed"))?;
+
+        let out_port = midi_out
+            .ports()
+            .into_iter()
+            .find(|port| {
+                midi_out
+                    .port_name(port)
+                    .map(|name| name.contains("MPK49"))
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| anyhow::Error::msg("MPK49 output not found"))?;
+
+        let output_connection = midi_out
+            .connect(&out_port, "midi-display")
+            .map_err(|_| anyhow::anyhow!("opening output failed"))?;
+
+        self._midi_connection = Some(connection);
+        self._midi_output = Some(output_connection);
+        Ok(())
+    }
+
+    // pub fn set_midi_output(&mut self, midi_output: MidiOutputConnection) {
+    //     self._midi_output = Some(midi_output);
+    // }
+
+    // Send a message to the MIDI LCD
+    pub fn send_to_midi_lcd(&mut self, text: &str) {
+        if let Some(output) = &mut self._midi_output {
+            // Format SysEx message
+            let message = format_lcd_message(text);
+            output.send(&message).unwrap();
+        }
+    }
+
+    // Add a new MIDI override configuration
+    pub fn add_midi_override(&mut self, note: u8, override_config: MidiOverride) {
+        self.midi_overrides.insert(note, override_config);
+        self.active_overrides.insert(note, (false, 0));
+    }
+
+    pub fn run(&mut self) -> Result<(), anyhow::Error> {
         let fps = TARGET_FREQUENCY;
         let frame_duration = Duration::from_secs_f64(1.0 / fps as f64);
 
         // Keyboard input handling
         let (tx, rx) = mpsc::channel();
 
-        thread::spawn(move || loop {
-            let mut buffer = [0; 1];
-            if io::stdin().read_exact(&mut buffer).is_ok() {
-                if buffer[0] == b'G' || buffer[0] == b'g' {
-                    tx.send(()).unwrap();
-                }
-            }
-        });
-
         let mut frames_sent = 0;
         let mut last_update = Instant::now();
         let mut cue_time = 0.0; // TODO - I think cue time needs to be Instant::now()
+
+        // Enable raw mode before entering the main loop
+        enable_raw_mode().unwrap();
 
         // Render loop
         loop {
@@ -94,11 +299,91 @@ impl LightingConsole {
                                                       //let elapsed_time = frame_start.duration_since(last_update);
             last_update = frame_start;
 
-            // check for keyboard input
-            if rx.try_recv().is_ok() {
-                self.current_cue = (self.current_cue + 1) % self.cues.len();
-                cue_time = 0.0;
-                println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+            // Poll for keyboard events with a timeout
+            if event::poll(Duration::from_millis(1))? {
+                if let Event::Key(key) = event::read()? {
+                    // Only handle key press events (ignore key release)
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('g') => tx.send(KeyCommand::Go)?,
+                            KeyCode::Char('[') => tx.send(KeyCommand::DecreaseBPM)?,
+                            KeyCode::Char(']') => tx.send(KeyCommand::IncreaseBPM)?,
+                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                disable_raw_mode()?;
+                                std::process::exit(0);
+                            }
+                            _ => (), // Ignore other keys
+                        }
+                    }
+                }
+            }
+
+            if let Ok(cmd) = rx.try_recv() {
+                match cmd {
+                    KeyCommand::Go => {
+                        self.current_cue = (self.current_cue + 1) % self.cues.len();
+                        cue_time = 0.0;
+                        println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                    }
+                    KeyCommand::IncreaseBPM => {
+                        self.tempo += 1.0;
+                        self.link_state.set_tempo(self.tempo);
+                    }
+                    KeyCommand::DecreaseBPM => {
+                        self.tempo = (self.tempo - 1.0).max(1.0);
+                        self.link_state.set_tempo(self.tempo);
+                    }
+                }
+            }
+
+            // Process any pending MIDI messages
+            while let Ok(midi_msg) = self.override_rx.try_recv() {
+                match midi_msg {
+                    MidiMessage::Clock => {
+                        println!("MIDI Clock msg recv");
+                        let now = Instant::now();
+                        if let Some(last_time) = self.rhythm_state.last_tap_time {
+                            let interval = now.duration_since(last_time).as_secs_f64();
+                            let new_bpm = 60.0 / interval;
+                            self.link_state.set_tempo(new_bpm);
+                        }
+                        self.rhythm_state.last_tap_time = Some(now);
+                    }
+                    MidiMessage::NoteOn(note, velocity) => {
+                        if let Some(active) = self.active_overrides.get_mut(&note) {
+                            *active = (true, velocity);
+                        }
+                    }
+                    MidiMessage::NoteOff(note) => {
+                        if let Some(active) = self.active_overrides.get_mut(&note) {
+                            *active = (false, 0);
+                        }
+                    }
+                    MidiMessage::ControlChange(cc, value) => {
+                        // Handle CC messages (knobs/faders) here
+                        // This is where you could implement continuous control
+
+                        // Go Button: Advance the cue
+                        if cc == 116 && value > 64 {
+                            // Example: CC #116 when value goes above 64
+                            self.current_cue = (self.current_cue + 1) % self.cues.len();
+                            cue_time = 0.0;
+                            println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                        }
+
+                        // K1 Knob: Set the BPM
+                        if cc == 22 {
+                            // Control Encoder 22
+                            // Scale 0-127 to 60-187 BPM range
+                            let bpm = 60.0 + (value as f64 / 127.0) * (187.0 - 60.0);
+                            self.tempo = bpm;
+                            self.link_state.set_tempo(self.tempo);
+
+                            // Optionally display the BPM on the LCD
+                            self.send_to_midi_lcd(&format!("BPM: {:.1}", bpm));
+                        }
+                    }
+                }
             }
 
             self.link_state.capture_app_state();
@@ -134,6 +419,15 @@ impl LightingConsole {
             let elapsed = frame_start.elapsed();
             if elapsed < frame_duration {
                 thread::sleep(frame_duration - elapsed);
+            }
+        }
+    }
+
+    // Add a method to reset all fixture values
+    pub fn reset_fixtures(&mut self) {
+        for fixture in &mut self.fixtures {
+            for channel in &mut fixture.channels {
+                channel.value = 0;
             }
         }
     }
@@ -176,7 +470,7 @@ impl LightingConsole {
                             let current_value = channel.value as f64;
                             let target_value = static_value.value as f64;
                             channel.value =
-                                (current_value + (target_value - current_value)).round() as u16;
+                                (current_value + (target_value - current_value)).round() as u8;
                         }
                     }
                 }
@@ -188,6 +482,14 @@ impl LightingConsole {
                         .iter_mut()
                         .filter(|f| mapping.fixture_names.contains(&f.name))
                         .collect();
+
+                    // if affected fixtures is empty, log a warning and continue
+                    if affected_fixtures.is_empty() {
+                        println!(
+                            "Warning: No fixtures found using mapping for fixtures: {:?}",
+                            mapping.fixture_names.join(", ")
+                        );
+                    }
 
                     for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
                         for channel_type in &mapping.channel_types {
@@ -223,6 +525,104 @@ impl LightingConsole {
                 // Apply chase-level steps
                 // TODO - implement
                 // We probably need to determine the current chase step and apply the corresponding step values
+            }
+        }
+
+        // Then apply any active MIDI overrides
+        for (note, (is_active, _velocity)) in &self.active_overrides {
+            if *is_active {
+                if let Some(override_config) = self.midi_overrides.get(note) {
+                    // First check if this override has StaticValues action
+                    if let MidiAction::StaticValues(static_values) = &override_config.action {
+                        // Apply overrides to fixtures
+                        for sv in static_values.iter() {
+                            if let Some(fixture) =
+                                self.fixtures.iter_mut().find(|f| f.name == sv.fixture_name)
+                            {
+                                if let Some(channel) = fixture
+                                    .channels
+                                    .iter_mut()
+                                    .find(|c| c.name == sv.channel_name)
+                                {
+                                    println!(
+                        "\napplying midi override to fixture {:?} for channel {:?} with value {:?}\n",
+                        sv.fixture_name, sv.channel_name, sv.value
+                    );
+                                    channel.value = sv.value;
+                                }
+                            }
+                        }
+                    } else if let MidiAction::TriggerCue(cue_name) = &override_config.action {
+                        // Find the cue index by name and trigger it
+                        if let Some(cue_index) = self.cues.iter().position(|c| c.name == *cue_name)
+                        {
+                            self.current_cue = cue_index;
+                            // TODO - I cant reset cue time here, because its not global, but its only passed to the display_status
+                            // function, so I don't think its mission critical.
+                            //cue_time = 0.0;
+                            self.fixtures
+                                .iter_mut()
+                                .flat_map(|f| &mut f.channels)
+                                .for_each(|c| c.value = 0);
+
+                            println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                        } else {
+                            println!("Cannot find cue: {}", cue_name);
+                        }
+                    }
+                }
+            } else {
+                if let Some(override_config) = self.midi_overrides.get(note) {
+                    if let MidiAction::StaticValues(static_values) = &override_config.action {
+                        // Check if any other active overrides control this channel
+                        let should_reset = |fixture_name: &str, channel_name: &str| -> bool {
+                            !self
+                                .active_overrides
+                                .iter()
+                                .any(|(other_note, (is_active, _))| {
+                                    if *is_active && other_note != note {
+                                        if let Some(other_config) =
+                                            self.midi_overrides.get(other_note)
+                                        {
+                                            if let MidiAction::StaticValues(static_values) =
+                                                &other_config.action
+                                            {
+                                                return static_values.iter().any(|sv| {
+                                                    sv.fixture_name == fixture_name
+                                                        && sv.channel_name == channel_name
+                                                });
+                                            }
+                                        }
+                                    }
+                                    false
+                                })
+                        };
+
+                        // Reset channels when override is inactive, but only if no other override is using them
+                        if let Some(override_config) = self.midi_overrides.get(note) {
+                            if let MidiAction::StaticValues(static_values) = &override_config.action
+                            {
+                                for sv in static_values.iter() {
+                                    if should_reset(&sv.fixture_name, &sv.channel_name) {
+                                        if let Some(fixture) = self
+                                            .fixtures
+                                            .iter_mut()
+                                            .find(|f| f.name == sv.fixture_name)
+                                        {
+                                            if let Some(channel) = fixture
+                                                .channels
+                                                .iter_mut()
+                                                .find(|c| c.name == sv.channel_name)
+                                            {
+                                                channel.value = 0;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -274,11 +674,14 @@ impl LightingConsole {
             "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Elapsed: {} | Cue Time: {:6.2}s | Beat: {:6.2} | FPS: {:5.2}",
             frames_sent, bpm, num_peers, current_cue, format_duration(elapsed), cue_time, beat_time, frames_sent as f64 / elapsed_secs
         );
+
+        // TODO - I'd love an ascii progress bar here with the current cue progress
+
         stdout().flush().unwrap();
     }
 }
 
-fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u16 {
+fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u8) -> u8 {
     let phase = effect::get_effect_phase(rhythm, &effect.params);
     let target_value = (effect.apply)(phase);
     let target_dmx = (target_value * (effect.max - effect.min) as f64 + effect.min as f64) as f64;
@@ -287,7 +690,7 @@ fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u16) -> u1
     let current_dmx = current_value as f64;
     let new_dmx = current_dmx + (target_dmx - current_dmx);
 
-    new_dmx.round() as u16
+    new_dmx.round() as u8
 }
 
 fn format_duration(duration: Duration) -> String {
@@ -301,4 +704,21 @@ fn format_duration(duration: Duration) -> String {
         "{:02}:{:02}:{:02}:{:03}",
         hours, minutes, seconds, milliseconds
     )
+}
+
+fn format_lcd_message(text: &str) -> Vec<u8> {
+    let mut message = vec![
+        0xF0, // Start of SysEx
+        0x47, // Akai Manufacturer ID
+        0x7F, // All channels
+        0x7C, // LCD Display message
+    ];
+
+    // Add the text bytes, truncated to display width
+    message.extend(text.chars().take(16).map(|c| c as u8));
+
+    // End SysEx
+    message.push(0xF7);
+
+    message
 }

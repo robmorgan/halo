@@ -6,8 +6,8 @@ use crate::rhythm::{Interval, RhythmState};
 pub struct Effect {
     pub name: String,
     pub apply: fn(f64) -> f64, // Takes a phase (0.0 to 1.0) and returns a value (0.0 to 1.0)
-    pub min: u16,
-    pub max: u16,
+    pub min: u8,
+    pub max: u8,
     pub params: EffectParams,
 }
 
@@ -38,8 +38,16 @@ pub fn get_effect_phase(rhythm: &RhythmState, params: &EffectParams) -> f64 {
     (base_phase * params.interval_ratio + params.phase) % 1.0
 }
 
+pub fn linear_effect(phase: f64) -> f64 {
+    phase
+}
+
 pub fn sine_effect(phase: f64) -> f64 {
     (phase * 2.0 * PI).sin() * 0.5 + 0.5
+}
+
+pub fn cosine_effect(phase: f64) -> f64 {
+    (phase * 2.0 * PI).cos() * 0.5 + 0.5
 }
 
 pub fn square_effect(phase: f64) -> f64 {
