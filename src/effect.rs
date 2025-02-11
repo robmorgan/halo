@@ -9,6 +9,9 @@ pub struct Effect {
     pub min: u8,
     pub max: u8,
     pub params: EffectParams,
+    // pub value: f64,
+    // pub loop: bool,
+    // pub paused: bool,
 }
 
 #[derive(Clone, Debug)]
