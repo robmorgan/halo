@@ -7,6 +7,7 @@ mod fixture;
 mod midi;
 mod rhythm;
 mod ui;
+mod visualization;
 
 use clap::Parser;
 use std::net::IpAddr;

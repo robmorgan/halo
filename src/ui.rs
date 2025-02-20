@@ -6,9 +6,17 @@ use crate::console::LightingConsole;
 use crate::cue::{Chase, ChaseStep, Cue, EffectMapping};
 use crate::effect::EffectType;
 use crate::fixture;
+use crate::visualization::{PatchPanel, VisualizerState};
 
+enum ActiveTab {
+    Dashboard,
+    CueEditor,
+    Visualizer,
+    PatchPanel,
+}
 pub struct HaloApp {
     pub console: Arc<Mutex<LightingConsole>>,
+    active_tab: ActiveTab,
     selected_fixture_index: Option<usize>,
     selected_cue_index: Option<usize>,
     selected_chase_index: Option<usize>,
@@ -23,12 +31,16 @@ pub struct HaloApp {
     effect_offset: f32,
     selected_effect_type: EffectType,
     temp_color_value: [f32; 3], // RGB for color picker
+    visualizer_state: VisualizerState,
+    patch_panel: PatchPanel,
+    show_visualizer_window: bool,
 }
 
 impl HaloApp {
     fn new(_cc: &eframe::CreationContext<'_>, console: Arc<Mutex<LightingConsole>>) -> Self {
-        Self {
+        let mut app = Self {
             console,
+            active_tab: ActiveTab::Dashboard,
             selected_fixture_index: None,
             selected_cue_index: None,
             selected_chase_index: None,
@@ -43,7 +55,16 @@ impl HaloApp {
             effect_offset: 0.5,
             selected_effect_type: EffectType::Sine,
             temp_color_value: [0.5, 0.5, 0.5],
-        }
+            visualizer_state: VisualizerState::new(),
+            patch_panel: PatchPanel::new(),
+            show_visualizer_window: false,
+        };
+
+        // Initialize visualizer with existing fixtures
+        app.visualizer_state
+            .sync_fixtures_with_console(&app.console);
+
+        app
     }
 }
 
@@ -60,6 +81,9 @@ impl eframe::App for HaloApp {
                         self.selected_cue_index = None;
                         self.selected_chase_index = None;
                         self.selected_step_index = None;
+
+                        // Reset visualizer
+                        self.visualizer_state = VisualizerState::new();
                     }
                     if ui.button("Save Show").clicked() {
                         // TODO: Implement save functionality
@@ -69,11 +93,11 @@ impl eframe::App for HaloApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    if ui.button("Visualizer").clicked() {
-                        // TODO: Open visualizer
+                    if ui.button("Visualizer Window").clicked() {
+                        self.show_visualizer_window = !self.show_visualizer_window;
                     }
                     if ui.button("Patch Panel").clicked() {
-                        // TODO: Open patch panel
+                        self.active_tab = ActiveTab::PatchPanel;
                     }
                 });
                 ui.menu_button("Tools", |ui| {
@@ -85,6 +109,45 @@ impl eframe::App for HaloApp {
                     }
                     if ui.button("DMX Settings").clicked() {
                         // TODO: Open DMX settings
+                    }
+                });
+                // Tab selector
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .selectable_label(
+                            matches!(self.active_tab, ActiveTab::PatchPanel),
+                            "Patch Panel",
+                        )
+                        .clicked()
+                    {
+                        self.active_tab = ActiveTab::PatchPanel;
+                    }
+                    if ui
+                        .selectable_label(
+                            matches!(self.active_tab, ActiveTab::Visualizer),
+                            "Visualizer",
+                        )
+                        .clicked()
+                    {
+                        self.active_tab = ActiveTab::Visualizer;
+                    }
+                    if ui
+                        .selectable_label(
+                            matches!(self.active_tab, ActiveTab::CueEditor),
+                            "Cue Editor",
+                        )
+                        .clicked()
+                    {
+                        self.active_tab = ActiveTab::CueEditor;
+                    }
+                    if ui
+                        .selectable_label(
+                            matches!(self.active_tab, ActiveTab::Dashboard),
+                            "Dashboard",
+                        )
+                        .clicked()
+                    {
+                        self.active_tab = ActiveTab::Dashboard;
                     }
                 });
             });
@@ -202,6 +265,46 @@ impl eframe::App for HaloApp {
                 ui.label(format!("Tempo: {:.1} BPM", clock.tempo));
                 ui.label(format!("Beat: {:.2}", clock.beats));
                 ui.label(format!("Phase: {:.2}", clock.phase));
+
+                // Quick visualizer preview
+                ui.separator();
+                ui.heading("Stage Preview");
+                let preview_height = 200.0;
+                let available_width = ui.available_width();
+                let aspect_ratio =
+                    self.visualizer_state.stage_width / self.visualizer_state.stage_depth;
+                let preview_width = preview_height * aspect_ratio;
+
+                ui.allocate_ui(egui::vec2(preview_width, preview_height), |ui| {
+                    // Simple preview - we'll calculate a scaling factor
+                    let scale_x = preview_width / self.visualizer_state.stage_width;
+                    let scale_y = preview_height / self.visualizer_state.stage_depth;
+
+                    // Draw stage background
+                    let stage_rect = ui.max_rect();
+                    ui.painter()
+                        .rect_filled(stage_rect, 0.0, egui::Color32::from_rgb(20, 20, 30));
+
+                    // Draw fixtures (simplified)
+                    //let console_guard = self.console.lock().unwrap();
+                    for fixture_vis in &self.visualizer_state.fixtures {
+                        let fixture_rect = egui::Rect::from_center_size(
+                            egui::pos2(
+                                stage_rect.min.x + fixture_vis.position.x * scale_x,
+                                stage_rect.min.y + fixture_vis.position.y * scale_y,
+                            ),
+                            egui::vec2(fixture_vis.size.x * scale_x, fixture_vis.size.y * scale_y),
+                        );
+
+                        // Draw simple fixture representation
+                        ui.painter()
+                            .rect_filled(fixture_rect, 2.0, fixture_vis.color);
+                    }
+                });
+
+                if ui.button("Open Full Visualizer").clicked() {
+                    self.active_tab = ActiveTab::Visualizer;
+                }
             }
         });
     }
