@@ -2,9 +2,9 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use midir::{ConnectError, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
-use std::io::{stdout, Read, Write};
+use std::io::{stdout, Write};
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::mpsc;
@@ -93,11 +93,11 @@ impl NetworkConfig {
 pub struct LightingConsole {
     tempo: f64,
     fixture_library: FixtureLibrary,
-    fixtures: Vec<Fixture>,
-    link_state: ableton_link::State,
+    pub fixtures: Vec<Fixture>,
+    pub link_state: ableton_link::State,
     dmx_output: artnet::ArtNet,
-    cues: Vec<Cue>,
-    current_cue: usize,
+    pub cues: Vec<Cue>,
+    pub current_cue: usize,
     show_start_time: Instant,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)

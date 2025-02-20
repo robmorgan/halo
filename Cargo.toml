@@ -11,3 +11,4 @@ log = "0.4.22"
 midir = "0.10.1"
 clap = { version = "4.5.23", features = ["derive"] }
 crossterm = "0.28.1"
+eframe = "0.31.0"

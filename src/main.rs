@@ -6,9 +6,11 @@ mod effect;
 mod fixture;
 mod midi;
 mod rhythm;
+mod ui;
 
 use clap::Parser;
 use std::net::IpAddr;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use console::NetworkConfig;
@@ -17,7 +19,7 @@ use effect::{Effect, EffectParams};
 use midi::MidiAction;
 use rhythm::Interval;
 
-/// Simple program to greet a person
+/// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
 #[command(name = "halo")]
 #[command(about = "Halo lighting console")]
@@ -84,6 +86,7 @@ fn main() -> Result<(), anyhow::Error> {
                 interval_ratio: 1.0, // Twice as fast
                 phase: 0.25,         // Quarter phase offset
             },
+            ..Default::default()
         },
         effect::Effect {
             name: "Bar-synced Square".to_string(),
@@ -94,6 +97,7 @@ fn main() -> Result<(), anyhow::Error> {
                 interval: rhythm::Interval::Bar,
                 ..Default::default()
             },
+            ..Default::default()
         },
         effect::Effect {
             name: "Phrase-synced Sawtooth".to_string(),
@@ -105,6 +109,7 @@ fn main() -> Result<(), anyhow::Error> {
                 interval_ratio: 1.0, // Twice as fast
                 phase: 0.0,          // Quarter phase offset
             },
+            ..Default::default()
         },
     ];
 
@@ -153,6 +158,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 2.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
                             channel_types: vec![fixture::ChannelType::Pan],
@@ -169,6 +175,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 2.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
                             channel_types: vec![fixture::ChannelType::Tilt],
@@ -185,6 +192,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 1.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
                             channel_types: vec![fixture::ChannelType::Pan],
@@ -201,6 +209,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 1.0,
                                     phase: 180.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
                             channel_types: vec![fixture::ChannelType::Tilt],
@@ -217,6 +226,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 1.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Right Wash".to_string()],
                             channel_types: vec![fixture::ChannelType::Pan],
@@ -233,6 +243,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 1.0,
                                     phase: 180.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Right Wash".to_string()],
                             channel_types: vec![fixture::ChannelType::Tilt],
@@ -249,6 +260,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 1.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Left Wash".to_string(), "Right Wash".to_string()],
                             channel_types: vec![fixture::ChannelType::Dimmer],
@@ -306,6 +318,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 2.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string()],
                             channel_types: vec![fixture::ChannelType::Pan],
@@ -322,6 +335,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 2.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string()],
                             channel_types: vec![fixture::ChannelType::Tilt],
@@ -338,6 +352,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 1.0,
                                     phase: 0.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
                             channel_types: vec![fixture::ChannelType::Pan],
@@ -354,6 +369,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     interval_ratio: 1.0,
                                     phase: 180.0,
                                 },
+                                ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
                             channel_types: vec![fixture::ChannelType::Tilt],
@@ -685,7 +701,10 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // run the show
-    console.run();
+    //console.run();
+
+    // Launch the UI in the main thread
+    ui::run_ui(Arc::new(Mutex::new(console)));
 
     Ok(())
 }

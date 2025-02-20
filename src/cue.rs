@@ -20,6 +20,17 @@ pub struct Cue {
     //Block bool
 }
 
+impl Default for Cue {
+    fn default() -> Self {
+        Self {
+            name: "".to_string(),
+            duration: 0.0,
+            static_values: Vec::new(),
+            chases: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct StaticValue {
     pub fixture_name: String,
