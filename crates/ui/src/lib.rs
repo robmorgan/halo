@@ -4,8 +4,10 @@ use std::time::Duration;
 
 use halo_core::{Chase, ChaseStep, Cue, EffectMapping, EffectType, LightingConsole};
 use halo_fixtures::Fixture;
-use visualizer::{PatchPanel, VisualizerState};
+use patch_panel::PatchPanel;
+use visualizer::VisualizerState;
 
+mod patch_panel;
 mod visualizer;
 
 enum ActiveTab {
