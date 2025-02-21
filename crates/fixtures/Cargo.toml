@@ -1,0 +1,7 @@
+[package]
+name = "halo-fixtures"
+version = "0.1.0"
+authors = ["Rob Morgan <robbym@gmail.com>"]
+edition = "2021"
+
+[dependencies]

@@ -2,9 +2,9 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use midir::{ConnectError, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use std::collections::HashMap;
-use std::io::{stdout, Read, Write};
+use std::io::{stdout, Write};
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::mpsc;
@@ -13,14 +13,15 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::ableton_link;
 use crate::ableton_link::ClockState;
 use crate::artnet::{self, ArtNet, ArtNetMode};
 use crate::cue::{Cue, EffectDistribution};
-use crate::effect::Effect;
-use crate::fixture::{Fixture, FixtureLibrary};
-use crate::midi::{MidiAction, MidiMessage, MidiOverride};
-use crate::rhythm::RhythmState;
-use crate::{ableton_link, effect};
+use crate::effect::effect::get_effect_phase;
+use crate::midi::midi::{MidiAction, MidiMessage, MidiOverride};
+use crate::Effect;
+use crate::RhythmState;
+use halo_fixtures::{Fixture, FixtureLibrary};
 
 const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
@@ -93,11 +94,11 @@ impl NetworkConfig {
 pub struct LightingConsole {
     tempo: f64,
     fixture_library: FixtureLibrary,
-    fixtures: Vec<Fixture>,
-    link_state: ableton_link::State,
+    pub fixtures: Vec<Fixture>,
+    pub link_state: ableton_link::State,
     dmx_output: artnet::ArtNet,
-    cues: Vec<Cue>,
-    current_cue: usize,
+    pub cues: Vec<Cue>,
+    pub current_cue: usize,
     show_start_time: Instant,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
@@ -682,7 +683,7 @@ impl LightingConsole {
 }
 
 fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u8) -> u8 {
-    let phase = effect::get_effect_phase(rhythm, &effect.params);
+    let phase = get_effect_phase(rhythm, &effect.params);
     let target_value = (effect.apply)(phase);
     let target_dmx = (target_value * (effect.max - effect.min) as f64 + effect.min as f64) as f64;
 

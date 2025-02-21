@@ -1,6 +1,6 @@
-use crate::channel_layout;
 use std::collections::HashMap;
 
+#[derive(Clone, Debug)]
 pub struct Fixture {
     pub name: String,
     pub profile_name: String,

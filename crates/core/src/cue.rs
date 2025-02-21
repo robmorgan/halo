@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use crate::effect::Effect;
-use crate::fixture::ChannelType;
+use crate::Effect;
+use halo_fixtures::ChannelType;
 
 #[derive(Clone, Debug)]
 pub struct Cue {
@@ -18,6 +18,17 @@ pub struct Cue {
     //WaitTime time.Duration
     // A blocking cue prevents level changes from tracking through it and successive cues.
     //Block bool
+}
+
+impl Default for Cue {
+    fn default() -> Self {
+        Self {
+            name: "".to_string(),
+            duration: 0.0,
+            static_values: Vec::new(),
+            chases: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

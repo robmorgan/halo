@@ -1,0 +1,10 @@
+[package]
+name = "halo-ui"
+version = "0.1.0"
+authors = ["Rob Morgan <robbym@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+halo-core = { path = "../core" }
+halo-fixtures = { path = "../fixtures" }
+eframe = "0.31.0"
