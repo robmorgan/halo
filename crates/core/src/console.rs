@@ -13,14 +13,15 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::ableton_link;
 use crate::ableton_link::ClockState;
 use crate::artnet::{self, ArtNet, ArtNetMode};
 use crate::cue::{Cue, EffectDistribution};
-use crate::effect::Effect;
-use crate::fixture::{Fixture, FixtureLibrary};
-use crate::midi::{MidiAction, MidiMessage, MidiOverride};
-use crate::rhythm::RhythmState;
-use crate::{ableton_link, effect};
+use crate::effect::effect::get_effect_phase;
+use crate::midi::midi::{MidiAction, MidiMessage, MidiOverride};
+use crate::Effect;
+use crate::RhythmState;
+use halo_fixtures::{Fixture, FixtureLibrary};
 
 const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
@@ -682,7 +683,7 @@ impl LightingConsole {
 }
 
 fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u8) -> u8 {
-    let phase = effect::get_effect_phase(rhythm, &effect.params);
+    let phase = get_effect_phase(rhythm, &effect.params);
     let target_value = (effect.apply)(phase);
     let target_dmx = (target_value * (effect.max - effect.min) as f64 + effect.min as f64) as f64;
 

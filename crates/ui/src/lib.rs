@@ -2,11 +2,11 @@ use eframe::egui;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::console::LightingConsole;
-use crate::cue::{Chase, ChaseStep, Cue, EffectMapping};
-use crate::effect::EffectType;
-use crate::fixture;
-use crate::visualization::{PatchPanel, VisualizerState};
+use halo_core::{Chase, ChaseStep, Cue, EffectMapping, EffectType, LightingConsole};
+use halo_fixtures::Fixture;
+use visualizer::{PatchPanel, VisualizerState};
+
+mod visualizer;
 
 enum ActiveTab {
     Dashboard,
@@ -352,7 +352,7 @@ impl HaloApp {
 
     fn show_cue_editor(&mut self, ui: &mut egui::Ui, cue_idx: usize) {
         let mut console = self.console.lock().unwrap();
-        let fixtures: Vec<fixture::Fixture> = console.fixtures.iter().cloned().collect();
+        let fixtures: Vec<Fixture> = console.fixtures.iter().cloned().collect();
         let cue = &mut console.cues[cue_idx];
 
         // Chase editor

@@ -1,24 +1,26 @@
-mod ableton_link;
-mod artnet;
-mod console;
-mod cue;
-mod effect;
-mod fixture;
-mod midi;
-mod rhythm;
-mod ui;
-mod visualization;
-
 use clap::Parser;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use console::NetworkConfig;
-use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
-use effect::{Effect, EffectParams};
-use midi::MidiAction;
-use rhythm::Interval;
+use halo_core::{
+    Chase, ChaseStep, Cue, Effect, EffectDistribution, EffectMapping, EffectParams, Interval,
+    LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
+};
+use halo_fixtures::ChannelType;
+
+// use crate::effect::effect::{
+//     sawtooth_effect, sine_effect, square_effect, triangle_effect, EffectDistribution,
+// };
+
+//use console::NetworkConfig;
+//use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
+// use effect::{Effect, EffectParams};
+// use rhythm::Interval;
+
+use halo_core::sawtooth_effect;
+use halo_core::sine_effect;
+use halo_core::square_effect;
 
 /// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
@@ -77,36 +79,36 @@ fn main() -> Result<(), anyhow::Error> {
     // ];
 
     let effects = vec![
-        effect::Effect {
+        Effect {
             name: "Beat-synced Sine".to_string(),
-            apply: effect::sine_effect,
+            apply: sine_effect,
             min: 0,
             max: 255,
-            params: effect::EffectParams {
-                interval: rhythm::Interval::Beat,
+            params: EffectParams {
+                interval: Interval::Beat,
                 interval_ratio: 1.0, // Twice as fast
                 phase: 0.25,         // Quarter phase offset
             },
             ..Default::default()
         },
-        effect::Effect {
+        Effect {
             name: "Bar-synced Square".to_string(),
-            apply: effect::square_effect,
+            apply: square_effect,
             min: 0,
             max: 255,
-            params: effect::EffectParams {
-                interval: rhythm::Interval::Bar,
+            params: EffectParams {
+                interval: Interval::Bar,
                 ..Default::default()
             },
             ..Default::default()
         },
-        effect::Effect {
+        Effect {
             name: "Phrase-synced Sawtooth".to_string(),
-            apply: effect::sawtooth_effect,
+            apply: sawtooth_effect,
             min: 0,
             max: 255,
-            params: effect::EffectParams {
-                interval: rhythm::Interval::Beat,
+            params: EffectParams {
+                interval: Interval::Beat,
                 interval_ratio: 1.0, // Twice as fast
                 phase: 0.0,          // Quarter phase offset
             },
@@ -151,7 +153,7 @@ fn main() -> Result<(), anyhow::Error> {
                         EffectMapping {
                             effect: Effect {
                                 name: "Pan Sweep".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 160,
                                 max: 200,
                                 params: EffectParams {
@@ -162,13 +164,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
-                            channel_types: vec![fixture::ChannelType::Pan],
+                            channel_types: vec![ChannelType::Pan],
                             distribution: EffectDistribution::Step(1),
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 60,
                                 max: 70,
                                 params: EffectParams {
@@ -179,13 +181,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
-                            channel_types: vec![fixture::ChannelType::Tilt],
+                            channel_types: vec![ChannelType::Tilt],
                             distribution: EffectDistribution::All,
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Pan Sweep".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 160,
                                 max: 200,
                                 params: EffectParams {
@@ -196,13 +198,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![fixture::ChannelType::Pan],
+                            channel_types: vec![ChannelType::Pan],
                             distribution: EffectDistribution::Step(1),
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 40,
                                 max: 50,
                                 params: EffectParams {
@@ -213,13 +215,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![fixture::ChannelType::Tilt],
+                            channel_types: vec![ChannelType::Tilt],
                             distribution: EffectDistribution::Step(1),
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Pan Sweep".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 130,
                                 max: 175,
                                 params: EffectParams {
@@ -230,13 +232,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Right Wash".to_string()],
-                            channel_types: vec![fixture::ChannelType::Pan],
+                            channel_types: vec![ChannelType::Pan],
                             distribution: EffectDistribution::All,
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 5,
                                 max: 10,
                                 params: EffectParams {
@@ -247,13 +249,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Right Wash".to_string()],
-                            channel_types: vec![fixture::ChannelType::Tilt],
+                            channel_types: vec![ChannelType::Tilt],
                             distribution: EffectDistribution::All,
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Dimmer Sidechain".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 0,
                                 max: 255,
                                 params: EffectParams {
@@ -264,7 +266,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Left Wash".to_string(), "Right Wash".to_string()],
-                            channel_types: vec![fixture::ChannelType::Dimmer],
+                            channel_types: vec![ChannelType::Dimmer],
                             distribution: EffectDistribution::Step(1),
                         },
                     ],
@@ -311,7 +313,7 @@ fn main() -> Result<(), anyhow::Error> {
                         EffectMapping {
                             effect: Effect {
                                 name: "Pan Sweep".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 160,
                                 max: 200,
                                 params: EffectParams {
@@ -322,13 +324,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string()],
-                            channel_types: vec![fixture::ChannelType::Pan],
+                            channel_types: vec![ChannelType::Pan],
                             distribution: EffectDistribution::Step(1),
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 60,
                                 max: 70,
                                 params: EffectParams {
@@ -339,13 +341,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Left Spot".to_string()],
-                            channel_types: vec![fixture::ChannelType::Tilt],
+                            channel_types: vec![ChannelType::Tilt],
                             distribution: EffectDistribution::All,
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Pan Sweep".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 160,
                                 max: 200,
                                 params: EffectParams {
@@ -356,13 +358,13 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![fixture::ChannelType::Pan],
+                            channel_types: vec![ChannelType::Pan],
                             distribution: EffectDistribution::Step(1),
                         },
                         EffectMapping {
                             effect: Effect {
                                 name: "Tilt Movement".to_string(),
-                                apply: effect::sine_effect,
+                                apply: sine_effect,
                                 min: 40,
                                 max: 50,
                                 params: EffectParams {
@@ -373,7 +375,7 @@ fn main() -> Result<(), anyhow::Error> {
                                 ..Default::default()
                             },
                             fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![fixture::ChannelType::Tilt],
+                            channel_types: vec![ChannelType::Tilt],
                             distribution: EffectDistribution::Step(1),
                         },
                     ],
@@ -445,7 +447,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     "Left Wash".to_string(),
                                     "Right Wash".to_string(),
                                 ],
-                                channel_types: vec![fixture::ChannelType::Tilt],
+                                channel_types: vec![ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -469,7 +471,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     "Left Wash".to_string(),
                                     "Right Wash".to_string(),
                                 ],
-                                channel_types: vec![fixture::ChannelType::Tilt],
+                                channel_types: vec![ChannelType::Tilt],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -504,7 +506,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     "Left PAR".to_string(),
                                     "Right PAR".to_string(),
                                 ],
-                                channel_types: vec![fixture::ChannelType::Dimmer],
+                                channel_types: vec![ChannelType::Dimmer],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -529,7 +531,7 @@ fn main() -> Result<(), anyhow::Error> {
                                     "Left PAR".to_string(),
                                     "Right PAR".to_string(),
                                 ],
-                                channel_types: vec![fixture::ChannelType::Dimmer],
+                                channel_types: vec![ChannelType::Dimmer],
                                 distribution: EffectDistribution::All,
                             }],
                             static_values: vec![
@@ -575,7 +577,7 @@ fn main() -> Result<(), anyhow::Error> {
     ];
 
     // Create the console
-    let mut console = console::LightingConsole::new(80., network_config.clone()).unwrap();
+    let mut console = LightingConsole::new(80., network_config.clone()).unwrap();
     console.load_fixture_library();
 
     // patch fixtures
@@ -599,7 +601,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Blue Strobe Fast
     console.add_midi_override(
         76,
-        midi::MidiOverride {
+        MidiOverride {
             action: MidiAction::StaticValues(static_values![
                 ("Smoke Machine", "Blue", 255),
                 ("Smoke Machine", "Strobe", 255),
@@ -610,7 +612,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Red Strobe Medium w/Half Smoke
     console.add_midi_override(
         77,
-        midi::MidiOverride {
+        MidiOverride {
             action: MidiAction::StaticValues(static_values![
                 ("Smoke Machine", "Smoke", 100),
                 ("Smoke Machine", "Red", 255),
@@ -622,7 +624,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Blue Strobe Fast w/Full Smoke
     console.add_midi_override(
         78,
-        midi::MidiOverride {
+        MidiOverride {
             action: MidiAction::StaticValues(static_values![
                 ("Smoke Machine", "Smoke", 255),
                 ("Smoke Machine", "Blue", 255),
@@ -634,7 +636,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Full Smoke
     console.add_midi_override(
         71,
-        midi::MidiOverride {
+        MidiOverride {
             action: MidiAction::StaticValues(static_values![("Smoke Machine", "Smoke", 255),]),
         },
     );
@@ -683,7 +685,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Cue 5: Pinspot Purple
     console.add_midi_override(
         62,
-        midi::MidiOverride {
+        MidiOverride {
             action: MidiAction::TriggerCue("Pinspot Purple".to_string()),
         },
     );
@@ -691,7 +693,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Cue 6: Pinspot Gradient
     console.add_midi_override(
         64,
-        midi::MidiOverride {
+        MidiOverride {
             action: MidiAction::TriggerCue("Pinspot Gradient".to_string()),
         },
     );
@@ -705,7 +707,7 @@ fn main() -> Result<(), anyhow::Error> {
     //console.run();
 
     // Launch the UI in the main thread
-    ui::run_ui(Arc::new(Mutex::new(console)));
+    halo_ui::run_ui(Arc::new(Mutex::new(console)));
 
     Ok(())
 }

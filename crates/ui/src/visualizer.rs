@@ -1,8 +1,7 @@
-//use crate::{Channel, Fixture, LightingConsole};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
-use crate::console::LightingConsole;
+use halo_core::LightingConsole;
 
 // Fixture visualization data
 pub struct FixtureVisualization {

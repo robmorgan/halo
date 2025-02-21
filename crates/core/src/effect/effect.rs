@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use crate::rhythm::{Interval, RhythmState};
+use crate::{Interval, RhythmState};
 
 #[derive(Clone, Debug)]
 pub struct Effect {

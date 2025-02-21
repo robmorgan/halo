@@ -1563,9 +1563,38 @@ dependencies = [
  "clap",
  "crossterm",
  "eframe",
+ "halo-core",
+ "halo-fixtures",
+ "halo-ui",
  "log",
  "midir",
  "rusty_link",
+]
+
+[[package]]
+name = "halo-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "artnet_protocol",
+ "crossterm",
+ "halo-fixtures",
+ "log",
+ "midir",
+ "rusty_link",
+]
+
+[[package]]
+name = "halo-fixtures"
+version = "0.1.0"
+
+[[package]]
+name = "halo-ui"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "halo-core",
+ "halo-fixtures",
 ]
 
 [[package]]

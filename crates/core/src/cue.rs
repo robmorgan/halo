@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use crate::effect::Effect;
-use crate::fixture::ChannelType;
+use crate::Effect;
+use halo_fixtures::ChannelType;
 
 #[derive(Clone, Debug)]
 pub struct Cue {
