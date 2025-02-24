@@ -7,6 +7,7 @@ pub struct Fixture {
     pub channels: Vec<Channel>,
     pub universe: u8,
     pub start_address: u16,
+    //pub sub_fixtures: Option<usize>,
 }
 
 #[derive(Clone, Debug)]

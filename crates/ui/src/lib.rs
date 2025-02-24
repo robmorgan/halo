@@ -70,13 +70,14 @@ impl HaloApp {
 
 impl eframe::App for HaloApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // TODO - only the lock the console once in the update loop and get everything you need
+        // -
         let console = self.console.lock().unwrap();
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Show").clicked() {
-                        //let console = self.console.lock().unwrap();
                         self.selected_fixture_index = None;
                         self.selected_cue_index = None;
                         self.selected_chase_index = None;
@@ -305,8 +306,13 @@ impl eframe::App for HaloApp {
                 if ui.button("Open Full Visualizer").clicked() {
                     self.active_tab = ActiveTab::Visualizer;
                 }
+
+                self.render_timeline(ui);
             }
         });
+
+        // Request a repaint
+        ctx.request_repaint();
     }
 }
 
@@ -349,6 +355,8 @@ impl HaloApp {
     //         }
     //     });
     // }
+
+    fn render_timeline(&mut self, ui: &mut egui::Ui) {}
 
     fn show_cue_editor(&mut self, ui: &mut egui::Ui, cue_idx: usize) {
         let mut console = self.console.lock().unwrap();
@@ -584,11 +592,7 @@ impl HaloApp {
                             //     .and_then(|f| f.channels.get(*channel_idx))
                             //     .map_or("Unknown Channel", |c| &c.name);
 
-                            let effect_type = match effect.effect_type {
-                                EffectType::Sine => "Sine",
-                                EffectType::Sawtooth => "Sawtooth",
-                                // Add other effect types as needed
-                            };
+                            let effect_type = effect.effect_type.as_str();
 
                             ui.horizontal(|ui| {
                                 ui.label(format!(
