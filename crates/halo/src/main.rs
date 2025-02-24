@@ -707,7 +707,7 @@ fn main() -> Result<(), anyhow::Error> {
     //console.run();
 
     // Launch the UI in the main thread
-    halo_ui::run_ui(Arc::new(Mutex::new(console)));
+    halo_ui::run_ui(Arc::new(Mutex::new(console)))?;
 
     Ok(())
 }
