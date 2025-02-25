@@ -7,6 +7,7 @@ use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
 use visualizer::VisualizerState;
 
+mod fixture_grid;
 mod header;
 mod patch_panel;
 mod visualizer;

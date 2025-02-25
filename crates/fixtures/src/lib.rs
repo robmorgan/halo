@@ -10,8 +10,18 @@ pub struct Fixture {
     //pub sub_fixtures: Option<usize>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum FixtureType {
+    MovingHead,
+    PAR,
+    LEDBar,
+    Wash,
+    Pinspot,
+}
+
 #[derive(Clone, Debug)]
 pub struct FixtureProfile {
+    pub fixture_type: FixtureType,
     pub manufacturer: String,
     pub model: String,
     pub channel_layout: Vec<Channel>,
