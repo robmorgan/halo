@@ -703,9 +703,6 @@ fn main() -> Result<(), anyhow::Error> {
         console.init_mpk49_midi()?;
     }
 
-    // run the show
-    //console.run();
-
     // Launch the UI in the main thread
     halo_ui::run_ui(Arc::new(Mutex::new(console)));
 
