@@ -7,10 +7,11 @@ use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
 use visualizer::VisualizerState;
 
+mod header;
 mod patch_panel;
 mod visualizer;
 
-enum ActiveTab {
+pub enum ActiveTab {
     Dashboard,
     CueEditor,
     Visualizer,
@@ -72,87 +73,9 @@ impl HaloApp {
 
 impl eframe::App for HaloApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // TODO - only the lock the console once in the update loop and get everything you need
-        // -
-        let console = self.console.lock().unwrap();
-
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("New Show").clicked() {
-                        self.selected_fixture_index = None;
-                        self.selected_cue_index = None;
-                        self.selected_chase_index = None;
-                        self.selected_step_index = None;
-
-                        // Reset visualizer
-                        self.visualizer_state = VisualizerState::new();
-                    }
-                    if ui.button("Save Show").clicked() {
-                        // TODO: Implement save functionality
-                    }
-                    if ui.button("Load Show").clicked() {
-                        // TODO: Implement load functionality
-                    }
-                });
-                ui.menu_button("View", |ui| {
-                    if ui.button("Visualizer Window").clicked() {
-                        self.show_visualizer_window = !self.show_visualizer_window;
-                    }
-                    if ui.button("Patch Panel").clicked() {
-                        self.active_tab = ActiveTab::PatchPanel;
-                    }
-                });
-                ui.menu_button("Tools", |ui| {
-                    if ui.button("Ableton Link").clicked() {
-                        // TODO: Toggle Ableton Link
-                    }
-                    if ui.button("MIDI Settings").clicked() {
-                        // TODO: Open MIDI settings
-                    }
-                    if ui.button("DMX Settings").clicked() {
-                        // TODO: Open DMX settings
-                    }
-                });
-                // Tab selector
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::PatchPanel),
-                            "Patch Panel",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::PatchPanel;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::Visualizer),
-                            "Visualizer",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::Visualizer;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::CueEditor),
-                            "Cue Editor",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::CueEditor;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::Dashboard),
-                            "Dashboard",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::Dashboard;
-                    }
-                });
+                header::render(ui, &mut self.active_tab);
             });
         });
 
@@ -178,10 +101,15 @@ impl eframe::App for HaloApp {
 
             // List fixtures
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (idx, fixture) in console.fixtures.iter().enumerate() {
+                let fixtures;
+                {
+                    let console = self.console.lock().unwrap();
+                    fixtures = console.fixtures.clone();
+                    drop(console);
+                }
+                for (idx, fixture) in fixtures.iter().enumerate() {
                     let is_selected = self.selected_fixture_index == Some(idx);
                     if ui.selectable_label(is_selected, &fixture.name).clicked() {
-                        drop(console);
                         self.selected_fixture_index = Some(idx);
                         return;
                     }
@@ -197,12 +125,13 @@ impl eframe::App for HaloApp {
                 ui.label("Name:");
                 ui.text_edit_singleline(&mut self.new_cue_name);
                 if ui.button("Add Cue").clicked() && !self.new_cue_name.is_empty() {
-                    let mut console = self.console.lock().unwrap();
-                    console.add_cue(Cue {
-                        name: self.new_cue_name.clone(),
-                        chases: Vec::new(),
-                        ..Default::default()
-                    });
+                    // TODO - add cues here
+                    // let mut console = self.console.lock().unwrap();
+                    // console.add_cue(Cue {
+                    //     name: self.new_cue_name.clone(),
+                    //     chases: Vec::new(),
+                    //     ..Default::default()
+                    // });
                     self.new_cue_name.clear();
                 }
             });
@@ -235,11 +164,11 @@ impl eframe::App for HaloApp {
             // Go button to activate selected cue
             if let Some(cue_idx) = self.selected_cue_index {
                 if ui.button("GO").clicked() {
-                    drop(console);
                     let mut console = self.console.lock().unwrap();
                     console.current_cue = cue_idx;
                 }
             }
+            drop(console);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -277,6 +206,7 @@ impl eframe::App for HaloApp {
                 let aspect_ratio =
                     self.visualizer_state.stage_width / self.visualizer_state.stage_depth;
                 let preview_width = preview_height * aspect_ratio;
+                drop(console);
 
                 ui.allocate_ui(egui::vec2(preview_width, preview_height), |ui| {
                     // Simple preview - we'll calculate a scaling factor
@@ -289,7 +219,6 @@ impl eframe::App for HaloApp {
                         .rect_filled(stage_rect, 0.0, egui::Color32::from_rgb(20, 20, 30));
 
                     // Draw fixtures (simplified)
-                    //let console_guard = self.console.lock().unwrap();
                     for fixture_vis in &self.visualizer_state.fixtures {
                         let fixture_rect = egui::Rect::from_center_size(
                             egui::pos2(

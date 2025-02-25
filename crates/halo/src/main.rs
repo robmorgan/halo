@@ -285,6 +285,7 @@ fn main() -> Result<(), anyhow::Error> {
                 }],
                 loop_count: None, // Infinite loop
             }],
+            ..Default::default()
         },
         Cue {
             name: "Dance Floor Spot Sweep".to_string(),
@@ -394,6 +395,7 @@ fn main() -> Result<(), anyhow::Error> {
                 }],
                 loop_count: None, // Infinite loop
             }],
+            ..Default::default()
         },
         Cue {
             name: "Complex Chase with Static Values".to_string(),
@@ -551,6 +553,7 @@ fn main() -> Result<(), anyhow::Error> {
                     loop_count: None, // Infinite loop
                 },
             ],
+            ..Default::default()
         },
         Cue {
             name: "Pinspot Purple".to_string(),
@@ -563,6 +566,7 @@ fn main() -> Result<(), anyhow::Error> {
                 ("Pinspot", "White", 20),
             ],
             chases: vec![],
+            ..Default::default()
         },
         Cue {
             name: "Pinspot Gradient".to_string(),
@@ -573,6 +577,7 @@ fn main() -> Result<(), anyhow::Error> {
                 ("Pinspot", "Speed", 20),
             ],
             chases: vec![],
+            ..Default::default()
         },
     ];
 
