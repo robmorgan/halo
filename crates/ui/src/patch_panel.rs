@@ -1,4 +1,7 @@
 use eframe::egui;
+use std::sync::{Arc, Mutex};
+
+use halo_core::LightingConsole;
 
 pub struct PatchPanel {
     pub dmx_addresses: Vec<u16>,
@@ -28,7 +31,7 @@ impl PatchPanel {
         ui.separator();
 
         // Ensure we have the right number of DMX addresses
-        let mut console_guard = console.lock().unwrap();
+        let console_guard = console.lock().unwrap();
         if self.dmx_addresses.len() != console_guard.fixtures.len() {
             self.dmx_addresses.resize(console_guard.fixtures.len(), 1);
         }
