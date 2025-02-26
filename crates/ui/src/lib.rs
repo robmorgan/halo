@@ -1,4 +1,5 @@
 use eframe::egui;
+use fixture_grid::FixtureGrid;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -81,7 +82,23 @@ impl eframe::App for HaloApp {
         });
 
         egui::SidePanel::left("fixture_panel").show(ctx, |ui| {
+            // TODO: we probably need to put this on the root
+            let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
+
             ui.heading("Fixtures");
+
+            // render fixtures grid
+            let mut fixture_grid = FixtureGrid::default();
+
+            let fixtures;
+            {
+                let console = self.console.lock().unwrap();
+                fixtures = console.fixtures.clone();
+                drop(console);
+            }
+
+            // Call render with your UI context and fixtures
+            fixture_grid.render(ui, fixtures, main_content_height - 120.0); // Subtract the height of the overrides grid
 
             // Add new fixture UI
             ui.horizontal(|ui| {

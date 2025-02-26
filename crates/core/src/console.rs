@@ -162,9 +162,13 @@ impl LightingConsole {
             .get(&profile_name.to_string())
             .ok_or_else(|| format!("Profile {} not found", profile_name))?;
 
+        // Assign a new ID to the fixture
+        let id = self.fixtures.len();
+
         let fixture = Fixture {
+            id: id,
             name: name.to_string(),
-            profile_name: profile_name.to_string(),
+            profile: profile.clone(),
             channels: profile.channel_layout.clone(),
             universe: universe,
             start_address: address,
