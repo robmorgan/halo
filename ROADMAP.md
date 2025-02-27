@@ -52,6 +52,6 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Final UI polish and documentation
 - [ ] Performance optimization and bug fixes
 
-## Week 6 (CW15): System Test
+## Week 6 (CW15): New Lighting Engine
 
-- [ ] Test the entire system with a live performance
+- [ ] Use tokio for async io + UDP
