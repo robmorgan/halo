@@ -1,8 +1,6 @@
 use eframe::egui;
-use std::sync::{Arc, Mutex};
 
 use crate::ActiveTab;
-use halo_core::LightingConsole;
 
 pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
     ui.menu_button("File", |ui| {
