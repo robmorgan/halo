@@ -1,21 +1,22 @@
 <!-- LOGO -->
 <h1>
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/66b08c09-defc-464e-a2d3-c734d92da5da" alt="Logo" width="256">
+  <img src="https://github.com/user-attachments/assets/66b08c09-defc-464e-a2d3-c734d92da5da" alt="Logo" width="128">
   <br>Halo
 </h1>
   <p align="center">
-    Lighting console bringing advanced features to solo performances.
+    <strong>Lighting console bringing advanced features to solo performances.</strong>
   </p>
 </p>
 
 ## About
 
-⭕️ Halo is a real-time lighting console designed to bring modern, immersive experiences into the hands of solo
-performers. Advanced lighting consoles are typically deployed at front of house (FOH) and require an experienced
-lighting designer. Halo intends to push the boundaries and make advanced features accessible to solo performers during
-a live show. It does this by using a combination of pre-defined cues, and beat-synchronized effects and allows for live
-improvisation through the concept of overrides.
+⭕️ Halo is a real-time lighting console, designed to bring modern, immersive experiences into the hands of solo
+performers. Traditional consoles are typically deployed at front of house (FOH) and require a dedicated lighting
+designer. On the other hand, software designed for solo performers is often limited in features and is difficult to
+operate during a live show. Halo bridges this gap through a combination of pre-defined cues, and beat-synchronized
+effects and allows for live improvisation through the concept of overrides. This enables performers to elevate their
+shows with immersive lighting that responds to their performance.
 
 > [!WARNING]
 > This project is still in heavy development and unsuitable for production use (even though I'm using it for shows).
@@ -26,7 +27,7 @@ we will expand the lighting engine to handle SMPTE timecode so performances can 
 
 ## Features
 
-* **DMX Control.** Control lighting fixtures using the Art-Net protocol.
+* **Programmer.** Control lighting fixtures using a programmer interface.
 * **Ableton Link.** Create dynamic lighting effects that synchronize with your music.
 * **MIDI Integration.** Control your show with MIDI devices (currently supports an Akai MPK49)
 * **Fixture Library.** Built-in support for various lighting fixtures. Will support other libraries over time.
@@ -39,7 +40,7 @@ we will expand the lighting engine to handle SMPTE timecode so performances can 
 As of now, you will need the following:
 
 * Rust toolchain (cargo, rustc)
-* Network interface for Art-Net output
+* Network interface for Art-Net output (I use an [Enttec ODE MK2](https://support.enttec.com/support/solutions/articles/101000438016-ode-mk2-70405-70406-))
 * Optional: MIDI controller
 * Optional: Ableton Link compatible device/software
 
@@ -87,10 +88,11 @@ Here is the current roadmap (to be expanded upon later):
 | :-: | --------------------------------------------------------- | :----: |
 |  1  | Terminal-based lighting engine                            |   ✅   |
 |  2  | Functional UI with basic show features                    |   ⌛️   |
-|  3  | Timecode engine                                           |   ❌   |
-|  4  | Pixel Engine                                              |   ❌   |
-|  5  | Richer UI features -- RDM, config, pixel effects          |   ❌   |
-|  5  | OSC / Web Support?                                        |   ❌   |
+|  3  | Timecode support                                          |   ❌   |
+|  4  | Pixel engine                                              |   ❌   |
+|  5  | Better MIDI Support (full control)                        |   ❌   |
+|  6  | Richer UI features -- RDM, config, pixel effects          |   ❌   |
+|  7  | OSC / Web Support?                                        |   ❌   |
 |  N  | Fancy features (to be expanded upon later)                |   ❌   |
 
 ## License
