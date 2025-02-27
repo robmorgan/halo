@@ -11,6 +11,7 @@ use visualizer::VisualizerState;
 mod fixture_grid;
 mod header;
 mod patch_panel;
+mod utils;
 mod visualizer;
 
 pub enum ActiveTab {
