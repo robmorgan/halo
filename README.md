@@ -1,83 +1,104 @@
+<!-- LOGO -->
+<h1>
 <p align="center">
-  <img width="350" height="350" src="/_docs/halo_logo.png">
+  <img src="https://github.com/user-attachments/assets/66b08c09-defc-464e-a2d3-c734d92da5da" alt="Logo" width="128">
+  <br>Halo
+</h1>
+  <p align="center">
+    <strong>Lighting console bringing advanced features to solo performances.</strong>
+  </p>
 </p>
 
-⭕️ Halo is a real-time lighting console built for the console. It's lighting engine supports beat synchronized effects
-using Ableton Link and SMPTE Timecode.
+## About
+
+⭕️ Halo is a real-time lighting console, designed to bring modern, immersive experiences into the hands of solo
+performers. Traditional consoles are typically deployed at front of house (FOH) and require a dedicated lighting
+designer. On the other hand, software designed for solo performers is often limited in features and is difficult to
+operate during a live show. Halo bridges this gap through a combination of pre-defined cues, and beat-synchronized
+effects and allows for live improvisation through the concept of overrides. This enables performers to elevate their
+shows with immersive lighting that responds to their performance.
 
 > [!WARNING]
-> This project is still in heavy development and not suitable for production use (even though I use it for my own shows).
+> This project is still in heavy development and unsuitable for production use (even though I'm using it for shows).
+
+The current version of Halo operates purely in the terminal and requires shows to be defined inline in code, but our
+next goal is to build a UI that is both powerful and easy to operate on the fly during a live performance. Eventually,
+we will expand the lighting engine to handle SMPTE timecode so performances can be precisely synchronized.
 
 ## Features
 
- * Control multiple groups of fixtures.
- * Synchronize with an Ableton Link session.
+* **Programmer.** Control lighting fixtures using a programmer interface.
+* **Ableton Link.** Create dynamic lighting effects that synchronize with your music.
+* **MIDI Integration.** Control your show with MIDI devices (currently supports an Akai MPK49)
+* **Fixture Library.** Built-in support for various lighting fixtures. Will support other libraries over time.
+* **Cue System.** Create, save, and recall lighting scenes using cue lists and cues.
+* **Effect Engine.** Various effect patterns (sine, sawtooth, square) with customizable parameters
+* **Art-Net Output.** Output DMX over Art-Net to control lighting fixtures.
 
 ## Requirements
 
-* Network interface for Art-Net output
-* Ableton Link compatible device/software (optional)
+As of now, you will need the following:
+
+* Rust toolchain (cargo, rustc)
+* Network interface for Art-Net output (I use an [Enttec ODE MK2](https://support.enttec.com/support/solutions/articles/101000438016-ode-mk2-70405-70406-))
+* Optional: MIDI controller
+* Optional: Ableton Link compatible device/software
+
+## Installation
+
+```bash
+git clone https://github.com/robmorgan/halo.git
+cd halo
+cargo build --release
+```
 
 ## Usage
 
+Basic usage (Art-Net Broadcast):
+
 ```bash
-cargo run --release
+cargo run --release -- --source-ip <SOURCE_IP>
 ```
 
-## Getting Started
+With Unicast Art-Net settings and MIDI enabled:
 
-Halo doesn't use a programmer, editor or GUI. It is only a playback engine. You define shows ahead of time using the
-show file format. At the moment this is done purely in code.
+```bash
+cargo run --release -- --source-ip 192.168.1.100 --dest-ip 192.168.1.200 --enable-midi
+```
 
-## Planned Features
+Command line options:
 
-- [ ] LTC/SMPTE Timecode
-- [ ] Show file live reloading
+```bash
+USAGE:
+    halo [OPTIONS]
 
-## Concepts
+OPTIONS:
+    --source-ip <IP>             Art-Net Source IP address
+    --dest-ip <IP>               Art-Net Destination IP address (optional)
+    --artnet-port <PORT>         Art-Net port (default: 6454)
+    --broadcast                  Force broadcast mode even if destination IP is provided
+    -m, --enable-midi            Enable MIDI support
+```
 
-No programmer. No editor. Halo is only a playback engine. You do the programming in code using HScript.
+## Roadmap & Planned Features
 
- * Surfaces: Ways to control the show or view output. Usually a MIDI interface or LCD.
- * Cue: TODO
- * Cue List: A collection of cues. Can be started, stopped, etc.
- * Executor: Cue Lists can have multiple executors to run tasks in parallel.
- * Fader: TODO
- * Scene: TODO
- * Fixture: A device that emits light.
- * Scene: A programmed look you have set up the lights to display.
- * Venue: Constrain movers and custom presets. (could skip this)
+Here is the current roadmap (to be expanded upon later):
 
-## Fixture Profiles
+|  #  | Step                                                      | Status |
+| :-: | --------------------------------------------------------- | :----: |
+|  1  | Terminal-based lighting engine                            |   ✅   |
+|  2  | Functional UI with basic show features                    |   ⌛️   |
+|  3  | Timecode support                                          |   ❌   |
+|  4  | Pixel engine                                              |   ❌   |
+|  5  | Better MIDI Support (full control)                        |   ❌   |
+|  6  | Richer UI features -- RDM, config, pixel effects          |   ❌   |
+|  7  | OSC / Web Support?                                        |   ❌   |
+|  N  | Fancy features (to be expanded upon later)                |   ❌   |
 
- * Float
- * Float16 (two channels)
- * RGB (color mixer)
- * Bool: Boolean value on a single DMX channel: 0-127 means false, 128-255 means true
+## License
 
-## Features
+Halo is licensed under the Fair Core License, Version 1.0, ALv2.
 
- * Fixture Test Mode
-   * Cycle through fixtures and highlight them to test patches.
- * Playback Engine
-   * Save/Load Shows
-   * SMPTE Input
- * Beat Sync
-   * Ableton Link
- * Pixel Engine
-   * Support WS??? LED lights. Enttec Octo
-   * Convert videos into pixels?
-   * There is no GUI pixel mapping. You need to do this yourself.
- * OSC Support
-   * Start show
-   * Cues
-     * Go
-     * Jump to Cue
+## Contributing
 
-## References
-
- * https://opensource.com/article/17/5/open-source-lighting
- * https://dev.to/davidsbond/golang-reverse-engineering-an-akai-mpd26-using-gousb-3b49
- * https://corylulu.github.io/VDocs/NodeIODMX.html?itm=174
- * https://github.com/node-dmx/dmx
- * https://github.com/qmsk/dmx
+Contributions are welcome! Please feel free to submit a Pull Request.
