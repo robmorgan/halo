@@ -1,9 +1,10 @@
 use eframe::egui;
 use fixture_grid::FixtureGrid;
+use session::SessionPanel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
-use halo_core::{Chase, ChaseStep, Cue, EffectMapping, EffectType, LightingConsole};
+use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, LightingConsole};
 use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
 use visualizer::VisualizerState;
@@ -12,6 +13,7 @@ mod fixture_grid;
 mod footer;
 mod header;
 mod patch_panel;
+mod session;
 mod utils;
 mod visualizer;
 
@@ -154,6 +156,12 @@ impl eframe::App for HaloApp {
         });
 
         egui::SidePanel::right("cue_panel").show(ctx, |ui| {
+            // render session panel
+            let mut session_panel = SessionPanel::default();
+            session_panel.render(ui);
+
+            ui.separator();
+
             ui.heading("Cues");
 
             // Add new cue UI
