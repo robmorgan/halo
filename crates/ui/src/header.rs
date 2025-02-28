@@ -62,6 +62,12 @@ pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
             *active_tab = ActiveTab::CueEditor;
         }
         if ui
+            .selectable_label(matches!(active_tab, ActiveTab::Programmer), "Programmer")
+            .clicked()
+        {
+            *active_tab = ActiveTab::Programmer;
+        }
+        if ui
             .selectable_label(matches!(active_tab, ActiveTab::Dashboard), "Dashboard")
             .clicked()
         {

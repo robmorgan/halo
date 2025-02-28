@@ -19,6 +19,7 @@ mod visualizer;
 
 pub enum ActiveTab {
     Dashboard,
+    Programmer,
     CueEditor,
     Visualizer,
     PatchPanel,
