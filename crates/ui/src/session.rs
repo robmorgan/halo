@@ -128,18 +128,15 @@ impl SessionPanel {
 
                 // Large monospace font for clock
                 let font_id = FontId::monospace(32.0);
-                ui.with_layout(
-                    Layout::centered_and_justified(Direction::LeftToRight),
-                    |ui| {
-                        ui.label(RichText::new(clock_text).font(font_id));
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(clock_text).font(font_id));
 
-                        let mode_label = match self.clock_mode {
-                            ClockMode::TimeCode => "Timecode",
-                            ClockMode::System => "System Clock",
-                        };
-                        ui.label(mode_label);
-                    },
-                );
+                    let mode_label = match self.clock_mode {
+                        ClockMode::TimeCode => "Timecode",
+                        ClockMode::System => "System Clock",
+                    };
+                    ui.label(mode_label);
+                });
             });
 
             ui.add_space(10.0);
@@ -154,14 +151,9 @@ impl SessionPanel {
 
                     let bpm_text = format!("{:.1}", self.bpm);
                     let font_id = FontId::monospace(24.0);
-                    ui.with_layout(
-                        Layout::centered_and_justified(Direction::LeftToRight),
-                        |ui| {
-                            ui.colored_label(
-                                Color32::from_rgb(255, 215, 0),
-                                RichText::new(bpm_text).font(font_id),
-                            );
-                        },
+                    ui.colored_label(
+                        Color32::from_rgb(255, 215, 0),
+                        RichText::new(bpm_text).font(font_id),
                     );
 
                     if ui.button("+").clicked() {
