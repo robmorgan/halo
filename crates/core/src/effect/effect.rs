@@ -34,10 +34,28 @@ impl Default for Effect {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+// Effect types
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum EffectType {
     Sine,
     Sawtooth,
+    Square,
+    Triangle,
+    Pulse,
+    Random,
+}
+
+impl EffectType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EffectType::Sine => "Sine",
+            EffectType::Sawtooth => "Sawtooth",
+            EffectType::Square => "Square",
+            EffectType::Triangle => "Triangle",
+            EffectType::Pulse => "Pulse",
+            EffectType::Random => "Random",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

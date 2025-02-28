@@ -14,15 +14,15 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 **Deliverable:** Basic application frame with working panes.
 
 - [ ] Create basic styling system and color theme
-- [ ] Implement header and footer UI
-- [ ] Build session pane with time display and session controls
-- [ ] Build fixture grid with selection functionality
+- [x] Implement header and footer UI
+- [x] Build session pane with time display and session controls
 - [ ] Create cue list panel with basic cue display
 
 ## Week 2 (CW11): Fixture & Cue Functionality
 
 **Deliverable:** Working fixture display, cue activation, and basic timeline.
 
+- [ ] Build fixture grid with selection functionality
 - [ ] 2D fixture visualization with different fixture types
 - [ ] Implement cue activation and progress tracking
 - [ ] Add basic cue functionality (play, stop, pause)
@@ -52,6 +52,6 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Final UI polish and documentation
 - [ ] Performance optimization and bug fixes
 
-## Week 6 (CW15): System Test
+## Week 6 (CW15): New Lighting Engine
 
-- [ ] Test the entire system with a live performance
+- [ ] Use tokio for async io + UDP

@@ -7,6 +7,8 @@ use halo_fixtures::ChannelType;
 pub struct Cue {
     pub name: String,
     pub duration: f64,
+    pub fade_time: f64,
+    pub timecode: String,
     pub static_values: Vec<StaticValue>,
     pub chases: Vec<Chase>,
     // A cue's "time" is a measure of how long it takes the cue to complete, once it has been executed. Depending upon
@@ -25,6 +27,8 @@ impl Default for Cue {
         Self {
             name: "".to_string(),
             duration: 0.0,
+            fade_time: 0.0,
+            timecode: "".to_string(),
             static_values: Vec::new(),
             chases: Vec::new(),
         }
