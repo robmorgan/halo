@@ -1,7 +1,5 @@
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Rounding, Stroke, Vec2};
-use std::sync::{Arc, Mutex};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
 
-use halo_core::LightingConsole;
 use halo_fixtures::{Fixture, FixtureType};
 
 const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [

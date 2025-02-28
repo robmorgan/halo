@@ -1,45 +1,40 @@
-use eframe::egui;
+use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
 
-use crate::ActiveTab;
+use halo_fixtures::Fixture;
 
-fn render(ui: &mut eframe::egui::Ui, theme: &mut eframe::Theme) {
-    ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Halo v0.1");
-            ui.separator();
-            ui.label("Made with ❤️ by your name");
+use crate::utils::Theme;
+
+pub fn render(ui: &mut eframe::egui::Ui, fps: u32, fixtures: Vec<Fixture>) {
+    let theme = Theme::default();
+
+    ui.painter().rect_filled(
+        ui.available_rect_before_wrap(),
+        CornerRadius::same(0),
+        theme.bg_color,
+    );
+
+    ui.horizontal(|ui| {
+        ui.add_space(12.0);
+        ui.label(
+            RichText::new(format!("FPS: {}", fps))
+                .size(12.0)
+                .color(theme.text_dim),
+        );
+
+        ui.with_layout(
+            Layout::centered_and_justified(Direction::LeftToRight),
+            |ui| {
+                ui.label(
+                    RichText::new(format!("{} Fixtures | 42 Parameters", fixtures.len()))
+                        .size(12.0)
+                        .color(theme.text_dim),
+                );
+            },
+        );
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(12.0);
+            ui.label(RichText::new("Halo v1.0").size(12.0).color(theme.text_dim));
         });
     });
-
 }
-
-/// Delete everything below. I'm just leaving it here as a reference.
-///
-// fn draw_footer(&self, ui: &mut Ui, bg_color: Color32, text_dim: Color32) {
-// pub fn render(ui: &mut egui::Ui, active_tab: &mut ActiveTab) {
-//     ui.menu_button("Help", |ui| {
-//         if ui.button("About").clicked() {
-//             // TODO: Implement about functionality
-//         }
-//         if ui.button("Documentation").clicked() {
-//             // TODO: Implement documentation functionality
-//         }
-//         if ui.button("Support").clicked() {
-//             // TODO: Implement support functionality
-//         }
-//     });
-//     ui.menu_button("Window", |ui| {
-//         if ui.button("Dashboard").clicked() {
-//             *active_tab = ActiveTab::Dashboard;
-//         }
-//         if ui.button("Cue Editor").clicked() {
-//             *active_tab = ActiveTab::CueEditor;
-//         }
-//         if ui.button("Visualizer").clicked() {
-//             *active_tab = ActiveTab::Visualizer;
-//         }
-//         if ui.button("Patch Panel").clicked() {
-//             *active_tab = ActiveTab::PatchPanel;
-//         }
-//     });
-// }

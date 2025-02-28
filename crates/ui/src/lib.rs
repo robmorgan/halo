@@ -1,7 +1,7 @@
 use eframe::egui;
 use fixture_grid::FixtureGrid;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 use halo_core::{Chase, ChaseStep, Cue, EffectMapping, EffectType, LightingConsole};
 use halo_fixtures::Fixture;
@@ -9,6 +9,7 @@ use patch_panel::PatchPanel;
 use visualizer::VisualizerState;
 
 mod fixture_grid;
+mod footer;
 mod header;
 mod patch_panel;
 mod utils;
@@ -22,6 +23,8 @@ pub enum ActiveTab {
 }
 pub struct HaloApp {
     pub console: Arc<Mutex<LightingConsole>>,
+    last_update: Instant,
+    current_time: SystemTime,
     active_tab: ActiveTab,
     selected_fixture_index: Option<usize>,
     selected_cue_index: Option<usize>,
@@ -40,12 +43,15 @@ pub struct HaloApp {
     visualizer_state: VisualizerState,
     patch_panel: PatchPanel,
     show_visualizer_window: bool,
+    fps: u32,
 }
 
 impl HaloApp {
     fn new(_cc: &eframe::CreationContext<'_>, console: Arc<Mutex<LightingConsole>>) -> Self {
         let mut app = Self {
             console,
+            last_update: Instant::now(),
+            current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
             selected_fixture_index: None,
             selected_cue_index: None,
@@ -64,6 +70,7 @@ impl HaloApp {
             visualizer_state: VisualizerState::new(),
             patch_panel: PatchPanel::new(),
             show_visualizer_window: false,
+            fps: 60,
         };
 
         // Initialize visualizer with existing fixtures
@@ -76,6 +83,16 @@ impl HaloApp {
 
 impl eframe::App for HaloApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_update);
+        self.last_update = now;
+        self.current_time = SystemTime::now();
+
+        // Simulate random FPS changes
+        if now.elapsed().as_millis() % 500 == 0 {
+            self.fps = 58 + (rand::random::<u32>() % 5);
+        }
+
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 header::render(ui, &mut self.active_tab);
@@ -259,6 +276,14 @@ impl eframe::App for HaloApp {
 
                 self.render_timeline(ui);
             }
+
+            let fixtures;
+            {
+                let console = self.console.lock().unwrap();
+                fixtures = console.fixtures.clone();
+                drop(console);
+            }
+            footer::render(ui, self.fps, fixtures);
         });
 
         // Request a repaint
