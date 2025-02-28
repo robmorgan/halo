@@ -34,7 +34,7 @@ pub fn render(ui: &mut eframe::egui::Ui, fps: u32, fixtures: Vec<Fixture>) {
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(12.0);
-            ui.label(RichText::new("Halo v1.0").size(12.0).color(theme.text_dim));
+            ui.label(RichText::new("Halo v0.2").size(12.0).color(theme.text_dim));
         });
     });
 }
