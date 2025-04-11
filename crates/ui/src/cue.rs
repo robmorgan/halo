@@ -1,6 +1,6 @@
 use eframe::egui;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use halo_core::{Cue, LightingConsole};
 

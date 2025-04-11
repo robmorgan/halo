@@ -104,61 +104,25 @@ impl eframe::App for HaloApp {
             });
         });
 
-        egui::SidePanel::left("fixture_panel").show(ctx, |ui| {
-            // TODO: we probably need to put this on the root
-            let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
+        egui::SidePanel::left("left_panel").show(ctx, |ui| {
+            ui.heading("Left Panel");
 
-            ui.heading("Fixtures");
-
-            // render fixtures grid
-            let mut fixture_grid = FixtureGrid::default();
-
-            let fixtures;
-            {
-                let console = self.console.lock().unwrap();
-                fixtures = console.fixtures.clone();
-                drop(console);
-            }
-
-            // Call render with your UI context and fixtures
-            fixture_grid.render(ui, fixtures, main_content_height - 120.0); // Subtract the height of the overrides grid
-
-            // Add new fixture UI
-            ui.horizontal(|ui| {
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut self.new_fixture_name);
-                if ui.button("Add Fixture").clicked() && !self.new_fixture_name.is_empty() {
-                    // TODO - patch fixture here
-                    //let console = self.console.lock().unwrap();
-                    // console.add_fixture(Fixture {
-                    //     name: self.new_fixture_name.clone(),
-                    //     channels: Vec::new(),
-                    // });
-                    self.new_fixture_name.clear();
-                }
-            });
+            // Overrides
 
             ui.separator();
 
-            // List fixtures
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let fixtures;
-                {
-                    let console = self.console.lock().unwrap();
-                    fixtures = console.fixtures.clone();
-                    drop(console);
-                }
-                for (idx, fixture) in fixtures.iter().enumerate() {
-                    let is_selected = self.selected_fixture_index == Some(idx);
-                    if ui.selectable_label(is_selected, &fixture.name).clicked() {
-                        self.selected_fixture_index = Some(idx);
-                        return;
-                    }
-                }
-            });
+            // Fixtures
+            // TODO - somehow we need to extract the selected fixture id from the component
+            // and pass it upstream.
+            let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
+            let mut fixture_grid = FixtureGrid::default();
+            fixture_grid.render(ui, &self.console, main_content_height - 120.0);
+            // Subtract the height of the overrides grid
         });
 
-        egui::SidePanel::right("cue_panel").show(ctx, |ui| {
+        egui::SidePanel::right("right_panel").show(ctx, |ui| {
+            ui.heading("Right Panel");
+
             // Render Session panel
             let mut session_panel = SessionPanel::default();
             session_panel.render(ui);
@@ -171,82 +135,17 @@ impl eframe::App for HaloApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Respond based on what's selected
-            if let Some(fixture_idx) = self.selected_fixture_index {
-                //self.show_fixture_editor(ui, fixture_idx);
-                // do nothing for now
-                ui.label("Fixture Editor");
-            } else if let Some(cue_idx) = self.selected_cue_index {
-                self.show_cue_editor(ui, cue_idx);
-            } else {
-                ui.heading("Halo Lighting Console");
-                ui.label("Select a fixture or cue to begin editing.");
+            // Programmer
+            ui.heading("Programmer");
+            // let mut programmer_panel = ProgrammerPanel::default();
+            // programmer_panel.render(ui);
+        });
 
-                // Show status information
-                let mut console = self.console.lock().unwrap();
-                ui.separator();
-                ui.heading("Status");
-                ui.label(format!("Total Fixtures: {}", console.fixtures.len()));
-                ui.label(format!("Total Cues: {}", console.cues.len()));
-                ui.label(format!("Current Cue: {}", console.current_cue));
-
-                // Show Ableton Link status
-                let clock = console.link_state.get_clock_state();
-                ui.label(format!("Ableton Link: Connected"));
-                ui.label(format!("Tempo: {:.1} BPM", clock.tempo));
-                ui.label(format!("Beat: {:.2}", clock.beats));
-                ui.label(format!("Phase: {:.2}", clock.phase));
-
-                // Quick visualizer preview
-                ui.separator();
-                ui.heading("Stage Preview");
-                let preview_height = 200.0;
-                let available_width = ui.available_width();
-                let aspect_ratio =
-                    self.visualizer_state.stage_width / self.visualizer_state.stage_depth;
-                let preview_width = preview_height * aspect_ratio;
-                drop(console);
-
-                ui.allocate_ui(egui::vec2(preview_width, preview_height), |ui| {
-                    // Simple preview - we'll calculate a scaling factor
-                    let scale_x = preview_width / self.visualizer_state.stage_width;
-                    let scale_y = preview_height / self.visualizer_state.stage_depth;
-
-                    // Draw stage background
-                    let stage_rect = ui.max_rect();
-                    ui.painter()
-                        .rect_filled(stage_rect, 0.0, egui::Color32::from_rgb(20, 20, 30));
-
-                    // Draw fixtures (simplified)
-                    for fixture_vis in &self.visualizer_state.fixtures {
-                        let fixture_rect = egui::Rect::from_center_size(
-                            egui::pos2(
-                                stage_rect.min.x + fixture_vis.position.x * scale_x,
-                                stage_rect.min.y + fixture_vis.position.y * scale_y,
-                            ),
-                            egui::vec2(fixture_vis.size.x * scale_x, fixture_vis.size.y * scale_y),
-                        );
-
-                        // Draw simple fixture representation
-                        ui.painter()
-                            .rect_filled(fixture_rect, 2.0, fixture_vis.color);
-                    }
-                });
-
-                if ui.button("Open Full Visualizer").clicked() {
-                    self.active_tab = ActiveTab::Visualizer;
-                }
-
-                self.render_timeline(ui);
-            }
-
-            let fixtures;
-            {
-                let console = self.console.lock().unwrap();
-                fixtures = console.fixtures.clone();
-                drop(console);
-            }
-            footer::render(ui, self.fps, fixtures);
+        // Footer
+        egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            // TODO - could this method return the selected fixtures?
+            // so we can control/react to them in the programmer?
+            footer::render(ui, &self.console, self.fps);
         });
 
         // Request a repaint
@@ -293,8 +192,6 @@ impl HaloApp {
     //         }
     //     });
     // }
-
-    fn render_timeline(&mut self, ui: &mut egui::Ui) {}
 
     fn show_cue_editor(&mut self, ui: &mut egui::Ui, cue_idx: usize) {
         let mut console = self.console.lock().unwrap();

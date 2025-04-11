@@ -1,5 +1,7 @@
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
+use std::sync::{Arc, Mutex};
 
+use halo_core::LightingConsole;
 use halo_fixtures::{Fixture, FixtureType};
 
 const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [
@@ -30,17 +32,29 @@ impl Default for FixtureGrid {
 
 impl FixtureGrid {
     /// Draw the fixture grid, creating/destroying it as required.
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, fixtures: Vec<Fixture>, height: f32) {
-        let dark_bg = Color32::from_rgb(0, 0, 0);
-        let dark_panel_bg = Color32::from_rgb(16, 16, 16);
-        let dark_element_bg = Color32::from_rgb(32, 32, 32);
-        let gray_700 = Color32::from_rgb(55, 65, 81);
+    pub fn render(
+        &mut self,
+        ui: &mut eframe::egui::Ui,
+        console: &Arc<Mutex<LightingConsole>>,
+        height: f32,
+    ) {
+        let _dark_bg = Color32::from_rgb(0, 0, 0);
+        let _dark_panel_bg = Color32::from_rgb(16, 16, 16);
+        let _dark_element_bg = Color32::from_rgb(32, 32, 32);
+        let _gray_700 = Color32::from_rgb(55, 65, 81);
         let text_color = Color32::from_rgb(255, 255, 255);
         let button_color = Color32::from_rgb(255, 255, 255);
         let text_dim = Color32::from_rgb(156, 163, 175);
-        let border_color = Color32::from_rgb(55, 65, 81);
-        let active_color = Color32::from_rgb(30, 64, 175);
+        let _border_color = Color32::from_rgb(55, 65, 81);
+        let _active_color = Color32::from_rgb(30, 64, 175);
         let highlight_color = Color32::from_rgb(59, 130, 246);
+
+        let fixtures;
+        {
+            let console = console.lock().unwrap();
+            fixtures = console.fixtures.clone();
+            drop(console);
+        }
 
         // Create a scrollable area for fixtures
         egui::ScrollArea::vertical()
