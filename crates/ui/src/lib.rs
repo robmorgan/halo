@@ -98,26 +98,19 @@ impl eframe::App for HaloApp {
             self.fps = 58 + (rand::random::<u32>() % 5);
         }
 
+        // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 header::render(ui, &mut self.active_tab);
             });
         });
 
-        egui::SidePanel::left("left_panel").show(ctx, |ui| {
-            ui.heading("Left Panel");
+        // Footer
+        egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            // Display the programmer
+            ui.label("Programmer");
 
-            // Overrides
-
-            ui.separator();
-
-            // Fixtures
-            // TODO - somehow we need to extract the selected fixture id from the component
-            // and pass it upstream.
-            let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
-            let mut fixture_grid = FixtureGrid::default();
-            fixture_grid.render(ui, &self.console, main_content_height - 120.0);
-            // Subtract the height of the overrides grid
+            footer::render(ui, &self.console, self.fps);
         });
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
@@ -136,16 +129,17 @@ impl eframe::App for HaloApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // Programmer
-            ui.heading("Programmer");
+            //ui.heading("Programmer");
             // let mut programmer_panel = ProgrammerPanel::default();
             // programmer_panel.render(ui);
-        });
 
-        // Footer
-        egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            // TODO - could this method return the selected fixtures?
-            // so we can control/react to them in the programmer?
-            footer::render(ui, &self.console, self.fps);
+            // Fixtures
+            // TODO - somehow we need to extract the selected fixture id from the component
+            // and pass it upstream.
+            let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
+            let mut fixture_grid = FixtureGrid::default();
+            fixture_grid.render(ui, &self.console, main_content_height - 120.0);
+            // Subtract the height of the overrides grid
         });
 
         // Request a repaint
