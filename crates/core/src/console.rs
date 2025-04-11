@@ -406,7 +406,7 @@ impl LightingConsole {
             // }
 
             // reset cue time if it's greater than cue duration (loop cue)
-            if cue_time >= self.cues[self.current_cue].duration {
+            if cue_time >= self.cues[self.current_cue].duration.as_secs_f64() {
                 cue_time = 0.0; // Reset cue time but don't change the cue
             }
 

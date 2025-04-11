@@ -16,7 +16,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Create basic styling system and color theme
 - [x] Implement header and footer UI
 - [x] Build session pane with time display and session controls
-- [ ] Create cue list panel with basic cue display
+- [x] Create cue list panel with basic cue display
 
 ## Week 2 (CW11): Fixture & Cue Functionality
 

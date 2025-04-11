@@ -1,3 +1,4 @@
+use cue::CuePanel;
 use eframe::egui;
 use fixture_grid::FixtureGrid;
 use session::SessionPanel;
@@ -9,6 +10,7 @@ use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
 use visualizer::VisualizerState;
 
+mod cue;
 mod fixture_grid;
 mod footer;
 mod header;
@@ -157,63 +159,15 @@ impl eframe::App for HaloApp {
         });
 
         egui::SidePanel::right("cue_panel").show(ctx, |ui| {
-            // render session panel
+            // Render Session panel
             let mut session_panel = SessionPanel::default();
             session_panel.render(ui);
 
             ui.separator();
 
-            ui.heading("Cues");
-
-            // Add new cue UI
-            ui.horizontal(|ui| {
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut self.new_cue_name);
-                if ui.button("Add Cue").clicked() && !self.new_cue_name.is_empty() {
-                    // TODO - add cues here
-                    // let mut console = self.console.lock().unwrap();
-                    // console.add_cue(Cue {
-                    //     name: self.new_cue_name.clone(),
-                    //     chases: Vec::new(),
-                    //     ..Default::default()
-                    // });
-                    self.new_cue_name.clear();
-                }
-            });
-
-            ui.separator();
-
-            // List cues
-            let console = self.console.lock().unwrap();
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (idx, cue) in console.cues.iter().enumerate() {
-                    let is_selected = self.selected_cue_index == Some(idx);
-                    let is_current = console.current_cue == idx;
-                    let label = if is_current {
-                        format!("▶ {}", cue.name)
-                    } else {
-                        cue.name.clone()
-                    };
-
-                    if ui.selectable_label(is_selected, label).clicked() {
-                        self.selected_cue_index = Some(idx);
-                        // When selecting a cue, clear lower-level selections
-                        self.selected_chase_index = None;
-                        self.selected_step_index = None;
-                    }
-                }
-            });
-
-            ui.separator();
-
-            // Go button to activate selected cue
-            if let Some(cue_idx) = self.selected_cue_index {
-                if ui.button("GO").clicked() {
-                    let mut console = self.console.lock().unwrap();
-                    console.current_cue = cue_idx;
-                }
-            }
-            drop(console);
+            // Render Cue List
+            let mut cue_panel = CuePanel::default();
+            cue_panel.render(ui, &self.console);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {

@@ -66,6 +66,7 @@ impl SessionPanel {
             match self.clock_mode {
                 ClockMode::TimeCode => {
                     // Update timecode (at 30fps)
+                    // TODO - in the future we'll allow the user to set the frame rate
                     self.timecode.frames += 1;
                     if self.timecode.frames >= 30 {
                         self.timecode.frames = 0;
@@ -86,7 +87,7 @@ impl SessionPanel {
             }
         }
 
-        // Sesion UI
+        // Session UI
         ui.vertical(|ui| {
             // Top row - header and mode toggle
             ui.horizontal(|ui| {

@@ -119,8 +119,7 @@ fn main() -> Result<(), anyhow::Error> {
     let cues = vec![
         Cue {
             name: "Alternating PAR Chase".to_string(),
-            duration: 10.0,
-            //duration: Duration::new(10, 0),
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set both PARs to full intensity on the Dimmer channel
                 ("Left PAR", "Dimmer", 255),
@@ -289,8 +288,7 @@ fn main() -> Result<(), anyhow::Error> {
         },
         Cue {
             name: "Dance Floor Spot Sweep".to_string(),
-            duration: 10.0,
-            //duration: Duration::new(10, 0),
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set both PARs to full intensity on the Dimmer channel
                 ("Left PAR", "Dimmer", 255),
@@ -399,7 +397,7 @@ fn main() -> Result<(), anyhow::Error> {
         },
         Cue {
             name: "Complex Chase with Static Values".to_string(),
-            duration: 10.0,
+            duration: Duration::new(10, 0),
             static_values: vec![
                 StaticValue {
                     fixture_name: "Left Wash".to_string(),
@@ -557,7 +555,7 @@ fn main() -> Result<(), anyhow::Error> {
         },
         Cue {
             name: "Pinspot Purple".to_string(),
-            duration: 10.0,
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set the Pinspot to Deep Purple
                 ("Pinspot", "Dimmer", 255),
@@ -570,7 +568,7 @@ fn main() -> Result<(), anyhow::Error> {
         },
         Cue {
             name: "Pinspot Gradient".to_string(),
-            duration: 10.0,
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 ("Pinspot", "Dimmer", 255),
                 ("Pinspot", "Function", 200),
