@@ -1,6 +1,7 @@
 use cue::CuePanel;
 use eframe::egui;
 use fixture_grid::FixtureGrid;
+use programmer::Programmer;
 use session::SessionPanel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -15,6 +16,7 @@ mod fixture_grid;
 mod footer;
 mod header;
 mod patch_panel;
+mod programmer;
 mod session;
 mod utils;
 mod visualizer;
@@ -49,6 +51,7 @@ pub struct HaloApp {
     patch_panel: PatchPanel,
     show_visualizer_window: bool,
     fps: u32,
+    programmer: programmer::Programmer,
 }
 
 impl HaloApp {
@@ -76,6 +79,7 @@ impl HaloApp {
             patch_panel: PatchPanel::new(),
             show_visualizer_window: false,
             fps: 60,
+            programmer: Programmer::new(),
         };
 
         // Initialize visualizer with existing fixtures
@@ -108,7 +112,7 @@ impl eframe::App for HaloApp {
         // Footer
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
             // Display the programmer
-            ui.label("Programmer");
+            self.programmer.show(ui);
 
             footer::render(ui, &self.console, self.fps);
         });
@@ -128,11 +132,6 @@ impl eframe::App for HaloApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Programmer
-            //ui.heading("Programmer");
-            // let mut programmer_panel = ProgrammerPanel::default();
-            // programmer_panel.render(ui);
-
             // Fixtures
             // TODO - somehow we need to extract the selected fixture id from the component
             // and pass it upstream.
