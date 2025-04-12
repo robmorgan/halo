@@ -31,9 +31,10 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 **Deliverable:** Functional programmer that can control fixtures panel with fixture selection and effect controls.
 
-- [ ] Build parameter controls (intensity, color, position)
+- [x] Build parameter controls (intensity, color, position)
 - [ ] Implement parameter value storage and application to fixtures
 - [ ] Add visual feedback for parameter changes
+- [ ] Provide a way to hide the programmer
 
 ## Week 4 (CW13): Effects System & Overrides
 
