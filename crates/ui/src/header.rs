@@ -20,6 +20,9 @@ pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
         if ui.button("Load Show").clicked() {
             // TODO: Implement load functionality
         }
+        if ui.button("Quit").clicked() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
     });
     ui.menu_button("View", |ui| {
         if ui.button("Visualizer Window").clicked() {
