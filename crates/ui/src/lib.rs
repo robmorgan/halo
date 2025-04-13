@@ -1,14 +1,15 @@
 use cue::CuePanel;
 use eframe::egui;
-use fixture_grid::FixtureGrid;
-use programmer::Programmer;
-use session::SessionPanel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
+use fixture_grid::FixtureGrid;
 use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, LightingConsole};
 use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
+use programmer::Programmer;
+use session::SessionPanel;
+use timeline::Timeline;
 use visualizer::VisualizerState;
 
 mod cue;
@@ -18,6 +19,7 @@ mod header;
 mod patch_panel;
 mod programmer;
 mod session;
+mod timeline;
 mod utils;
 mod visualizer;
 
@@ -52,6 +54,7 @@ pub struct HaloApp {
     show_visualizer_window: bool,
     fps: u32,
     programmer: programmer::Programmer,
+    timeline: timeline::Timeline,
 }
 
 impl HaloApp {
@@ -80,6 +83,7 @@ impl HaloApp {
             show_visualizer_window: false,
             fps: 60,
             programmer: Programmer::new(),
+            timeline: Timeline::new(),
         };
 
         // Initialize visualizer with existing fixtures
@@ -113,6 +117,9 @@ impl eframe::App for HaloApp {
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
             // Display the programmer
             self.programmer.show(ui);
+
+            // Timeline
+            self.timeline.show(ui);
 
             footer::render(ui, &self.console, self.fps);
         });
