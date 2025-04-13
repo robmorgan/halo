@@ -25,7 +25,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Build fixture grid with selection functionality
 - [ ] Implement cue activation and progress tracking
 - [ ] Add basic cue functionality (play, stop, pause)
-- [ ] Add timeline UI with position indicator and playback controls
+- [x] Add timeline UI with position indicator and playback controls
 
 ## Week 3 (CW12): Programmer Panel
 
@@ -38,17 +38,18 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 ## Week 4 (CW13): Effects System & Overrides
 
-**Deliverrable:** Effects system with basic effects and overrides.
+**Deliverable:** Effects system with basic effects and overrides.
 
 - [ ] Implement effects engine (waveforms, parameters)
-- [ ] Build effects UI in programmer panel
+- [x] Build effects UI in programmer panel
 - [ ] Add override buttons with quick-access functionality
 
 ## Week 5 (CW14): Integration & Polish
 
 **Deliverable:** Complete, integrated application ready for testing.
 
-- [ ] Add patch panel and settings functionality
+- [ ] Add patch panel functionality
+- [ ] Add settings modal functionality (audio device, dmx, fixture library)
 - [ ] Final UI polish and documentation
 - [ ] Performance optimization and bug fixes
 
