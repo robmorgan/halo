@@ -16,30 +16,10 @@
           "kind": "bin"
         }
       },
-      "args": [],
+      "args": ["--source-ip", "127.0.0.1"],
       "env": {
         "RUST_BACKTRACE": "1"
       },
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Launch multicue",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/multicue",
-      "env": {},
-      "args": [],
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Launch oscproxy",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/oscproxy",
-      "env": {},
-      "args": ["8766"],
       "console": "integratedTerminal"
     }
   ]
