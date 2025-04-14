@@ -3,7 +3,7 @@ use eframe::egui;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
-use fixture_grid::FixtureGrid;
+use fixture::FixtureGrid;
 use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, LightingConsole};
 use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
@@ -13,7 +13,7 @@ use timeline::Timeline;
 use visualizer::VisualizerState;
 
 mod cue;
-mod fixture_grid;
+mod fixture;
 mod footer;
 mod header;
 mod patch_panel;
@@ -53,6 +53,7 @@ pub struct HaloApp {
     patch_panel: PatchPanel,
     show_visualizer_window: bool,
     fps: u32,
+    fixture_grid: fixture::FixtureGrid,
     programmer: programmer::Programmer,
     timeline: timeline::Timeline,
 }
@@ -82,6 +83,7 @@ impl HaloApp {
             patch_panel: PatchPanel::new(),
             show_visualizer_window: false,
             fps: 60,
+            fixture_grid: FixtureGrid::default(),
             programmer: Programmer::new(),
             timeline: Timeline::new(),
         };
@@ -125,8 +127,6 @@ impl eframe::App for HaloApp {
         });
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            ui.heading("Right Panel");
-
             // Render Session panel
             let mut session_panel = SessionPanel::default();
             session_panel.render(ui);
@@ -143,8 +143,8 @@ impl eframe::App for HaloApp {
             // TODO - somehow we need to extract the selected fixture id from the component
             // and pass it upstream.
             let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
-            let mut fixture_grid = FixtureGrid::default();
-            fixture_grid.render(ui, &self.console, main_content_height - 120.0);
+            self.fixture_grid
+                .render(ui, &self.console, main_content_height - 120.0);
             // Subtract the height of the overrides grid
         });
 
