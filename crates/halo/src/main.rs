@@ -591,7 +591,7 @@ fn main() -> Result<(), anyhow::Error> {
     let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38);
     let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 48);
     let _ = console.patch_fixture(
-        "Smoke Machine",
+        "Smoke #1",
         "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
         1,
         69,
@@ -606,8 +606,8 @@ fn main() -> Result<(), anyhow::Error> {
         76,
         MidiOverride {
             action: MidiAction::StaticValues(static_values![
-                ("Smoke Machine", "Blue", 255),
-                ("Smoke Machine", "Strobe", 255),
+                ("Smoke #1", "Blue", 255),
+                ("Smoke #1", "Strobe", 255),
             ]),
         },
     );
@@ -617,9 +617,9 @@ fn main() -> Result<(), anyhow::Error> {
         77,
         MidiOverride {
             action: MidiAction::StaticValues(static_values![
-                ("Smoke Machine", "Smoke", 100),
-                ("Smoke Machine", "Red", 255),
-                ("Smoke Machine", "Strobe", 220),
+                ("Smoke #1", "Smoke", 100),
+                ("Smoke #1", "Red", 255),
+                ("Smoke #1", "Strobe", 220),
             ]),
         },
     );
@@ -629,9 +629,9 @@ fn main() -> Result<(), anyhow::Error> {
         78,
         MidiOverride {
             action: MidiAction::StaticValues(static_values![
-                ("Smoke Machine", "Smoke", 255),
-                ("Smoke Machine", "Blue", 255),
-                ("Smoke Machine", "Strobe", 255),
+                ("Smoke #1", "Smoke", 255),
+                ("Smoke #1", "Blue", 255),
+                ("Smoke #1", "Strobe", 255),
             ]),
         },
     );
@@ -640,7 +640,7 @@ fn main() -> Result<(), anyhow::Error> {
     console.add_midi_override(
         71,
         MidiOverride {
-            action: MidiAction::StaticValues(static_values![("Smoke Machine", "Smoke", 255),]),
+            action: MidiAction::StaticValues(static_values![("Smoke #1", "Smoke", 255),]),
         },
     );
 
@@ -665,7 +665,7 @@ fn main() -> Result<(), anyhow::Error> {
     //             ("Left Wash", "Dimmer", 0),
     //             ("Right Wash", "Dimmer", 0),
     //             ("Pinspot", "Dimmer", 0),
-    //             ("Smoke Machine", "Dimmer", 0),
+    //             ("Smoke #1", "Dimmer", 0),
     //         ]),
     //     },
     // );
