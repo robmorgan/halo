@@ -147,7 +147,7 @@ impl SessionPanel {
                 ui.label("Master BPM");
                 ui.horizontal(|ui| {
                     if ui.button("-").clicked() {
-                        self.bpm = (self.bpm - 0.1).max(1.0);
+                        self.bpm = (self.bpm - 0.1).max(20.0);
                     }
 
                     let bpm_text = format!("{:.1}", self.bpm);

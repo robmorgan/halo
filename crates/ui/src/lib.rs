@@ -54,6 +54,8 @@ pub struct HaloApp {
     show_visualizer_window: bool,
     fps: u32,
     fixture_grid: fixture::FixtureGrid,
+    session_panel: session::SessionPanel,
+    cue_panel: cue::CuePanel,
     programmer: programmer::Programmer,
     timeline: timeline::Timeline,
 }
@@ -84,6 +86,8 @@ impl HaloApp {
             show_visualizer_window: false,
             fps: 60,
             fixture_grid: FixtureGrid::default(),
+            session_panel: SessionPanel::default(),
+            cue_panel: CuePanel::default(),
             programmer: Programmer::new(),
             timeline: Timeline::new(),
         };
@@ -115,27 +119,17 @@ impl eframe::App for HaloApp {
             });
         });
 
-        // Footer
+        // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            // Display the programmer
             self.programmer.show(ui);
-
-            // Timeline
             self.timeline.show(ui);
-
             footer::render(ui, &self.console, self.fps);
         });
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            // Render Session panel
-            let mut session_panel = SessionPanel::default();
-            session_panel.render(ui);
-
+            self.session_panel.render(ui);
             ui.separator();
-
-            // Render Cue List
-            let mut cue_panel = CuePanel::default();
-            cue_panel.render(ui, &self.console);
+            self.cue_panel.render(ui, &self.console);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
