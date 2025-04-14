@@ -22,7 +22,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 **Deliverable:** Working fixture display, cue activation, and basic timeline.
 
-- [ ] Build fixture grid with selection functionality
+- [x] Build fixture grid with selection functionality
 - [ ] Implement cue activation and progress tracking
 - [ ] Add basic cue functionality (play, stop, pause)
 - [x] Add timeline UI with position indicator and playback controls

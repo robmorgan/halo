@@ -44,6 +44,7 @@ impl FixtureGrid {
         let _gray_700 = Color32::from_rgb(55, 65, 81);
         let text_color = Color32::from_rgb(255, 255, 255);
         let button_color = Color32::from_rgb(255, 255, 255);
+        let fixture_bg = Color32::from_rgb(30, 30, 30);
         let text_dim = Color32::from_rgb(156, 163, 175);
         let _border_color = Color32::from_rgb(55, 65, 81);
         let _active_color = Color32::from_rgb(30, 64, 175);
@@ -61,7 +62,7 @@ impl FixtureGrid {
             .max_height(height)
             .show(ui, |ui| {
                 ui.add_space(8.0);
-                ui.label(RichText::new("FIXTURES").color(text_dim).size(12.0));
+                ui.heading("FIXTURES");
                 ui.add_space(4.0);
 
                 // Determine grid layout based on available width
@@ -86,14 +87,13 @@ impl FixtureGrid {
                                     80.0
                                 };
 
-                            // Background with optional highlight for selected fixtures
+                            // Draw fixture background with optional highlight for selected fixtures
                             let is_selected = self.selected_fixtures.contains(&fixture.id);
                             let rect = ui
                                 .allocate_space(Vec2::new(fixture_width, fixture_height))
                                 .1;
 
                             // Draw fixture box with potential selection highlight
-                            let fixture_bg = button_color;
                             ui.painter()
                                 .rect_filled(rect, CornerRadius::same(4), fixture_bg);
 
@@ -123,85 +123,26 @@ impl FixtureGrid {
                                 }
                             }
 
-                            // Fixture header with color indicator and name
-                            let header_rect = Rect::from_min_size(
-                                Pos2::new(rect.min.x + 6.0, rect.min.y + 6.0),
-                                Vec2::new(rect.width() - 12.0, 20.0),
+                            // Draw color strip at the top of the fixture box
+                            let color_strip_height = 6.0;
+                            let color_strip_rect = Rect::from_min_size(
+                                rect.min,
+                                Vec2::new(rect.width(), color_strip_height),
                             );
-
-                            // Draw color indicator
-                            ui.painter().circle_filled(
-                                Pos2::new(header_rect.min.x + 10.0, header_rect.center().y),
-                                8.0,
+                            ui.painter().rect_filled(
+                                color_strip_rect,
+                                CornerRadius::same(4).at_least(4),
                                 Self::get_fixture_type_color(&fixture.profile.fixture_type),
                             );
 
-                            // Draw fixture name
+                            // Draw fixture name (centered)
                             ui.painter().text(
-                                Pos2::new(header_rect.min.x + 25.0, header_rect.center().y),
-                                egui::Align2::LEFT_CENTER,
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
                                 &fixture.name,
                                 egui::FontId::proportional(14.0),
                                 text_color,
                             );
-
-                            // Draw fixture type visualization
-                            match fixture.profile.fixture_type {
-                                FixtureType::MovingHead => {
-                                    let center = Pos2::new(rect.center().x, rect.min.y + 45.0);
-                                    ui.painter().circle_stroke(
-                                        center,
-                                        16.0,
-                                        Stroke::new(2.0, Color32::from_gray(100)),
-                                    );
-                                }
-                                FixtureType::PAR => {
-                                    let center = Pos2::new(rect.center().x, rect.min.y + 45.0);
-                                    ui.painter().circle_stroke(
-                                        center,
-                                        16.0,
-                                        Stroke::new(2.0, Color32::from_gray(100)),
-                                    );
-                                }
-                                FixtureType::Wash | FixtureType::Pinspot => {
-                                    let center = Pos2::new(rect.center().x, rect.min.y + 45.0);
-                                    let size = 16.0;
-                                    ui.painter().rect_stroke(
-                                        Rect::from_center_size(
-                                            center,
-                                            Vec2::new(size * 2.0, size * 2.0),
-                                        ),
-                                        CornerRadius::same(0),
-                                        Stroke::new(2.0, Color32::from_gray(100)),
-                                        egui::StrokeKind::Outside,
-                                    );
-                                }
-                                FixtureType::LEDBar => {
-                                    if let Some(subs) = &fixture.profile.sub_fixtures {
-                                        let sub_width = (rect.width() - 20.0) / *subs as f32;
-                                        let y = rect.min.y + 45.0;
-                                        for i in 0..*subs {
-                                            let x = rect.min.x
-                                                + 10.0
-                                                + i as f32 * sub_width
-                                                + sub_width / 2.0;
-                                            ui.painter().circle_filled(
-                                                Pos2::new(x, y),
-                                                sub_width / 2.5,
-                                                button_color, // TODO - set subs separately?
-                                            );
-                                        }
-                                    }
-                                }
-                                FixtureType::Smoke => {
-                                    let center = Pos2::new(rect.center().x, rect.min.y + 45.0);
-                                    ui.painter().circle_stroke(
-                                        center,
-                                        16.0,
-                                        Stroke::new(2.0, Color32::from_gray(100)),
-                                    );
-                                }
-                            }
 
                             // New row after each column
                             if (i + 1) % columns == 0 && i < fixtures.len() - 1 {
