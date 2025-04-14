@@ -67,17 +67,6 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Destination: {}", network_config.get_destination());
     println!("Port: {}", network_config.port);
 
-    // let fixture_groups = vec![
-    //     fixture::Group {
-    //         name: "Moving Heads".to_string(),
-    //         fixture_names: vec!["Moving Head 1".to_string(), "Moving Head 2".to_string()],
-    //     },
-    //     fixture::Group {
-    //         name: "PARs".to_string(),
-    //         fixture_names: vec!["PAR Fixture 1".to_string(), "PAR Fixture 2".to_string()],
-    //     },
-    // ];
-
     let effects = vec![
         Effect {
             name: "Beat-synced Sine".to_string(),
