@@ -1,23 +1,42 @@
+use cue::CuePanel;
 use eframe::egui;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use master::{MasterPanel, OverridesPanel};
+use parking_lot::Mutex;
+use std::sync::Arc;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant, SystemTime};
 
-use halo_core::{Chase, ChaseStep, Cue, EffectMapping, EffectType, LightingConsole};
+use fixture::FixtureGrid;
+use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, EventLoop, LightingConsole};
 use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
-use visualizer::VisualizerState;
+use programmer::Programmer;
+use session::SessionPanel;
+use timeline::Timeline;
 
+mod cue;
+mod fixture;
+mod footer;
+mod header;
+mod master;
 mod patch_panel;
-mod visualizer;
+mod programmer;
+mod session;
+mod timeline;
+mod utils;
 
-enum ActiveTab {
+pub enum ActiveTab {
     Dashboard,
+    Programmer,
     CueEditor,
     Visualizer,
     PatchPanel,
 }
 pub struct HaloApp {
     pub console: Arc<Mutex<LightingConsole>>,
+    _event_thread: JoinHandle<()>,
+    last_update: Instant,
+    current_time: SystemTime,
     active_tab: ActiveTab,
     selected_fixture_index: Option<usize>,
     selected_cue_index: Option<usize>,
@@ -33,15 +52,35 @@ pub struct HaloApp {
     effect_offset: f32,
     selected_effect_type: EffectType,
     temp_color_value: [f32; 3], // RGB for color picker
-    visualizer_state: VisualizerState,
     patch_panel: PatchPanel,
     show_visualizer_window: bool,
+    fps: u32,
+    overrides_panel: OverridesPanel,
+    master_panel: MasterPanel,
+    fixture_grid: fixture::FixtureGrid,
+    session_panel: session::SessionPanel,
+    cue_panel: cue::CuePanel,
+    programmer: programmer::Programmer,
+    timeline: timeline::Timeline,
 }
 
 impl HaloApp {
     fn new(_cc: &eframe::CreationContext<'_>, console: Arc<Mutex<LightingConsole>>) -> Self {
-        let mut app = Self {
+        let mut event_loop = EventLoop::new(Arc::clone(&console), 44.0);
+
+        // Spawn the event loop thread
+        let event_thread = std::thread::Builder::new()
+            .name("HaloWorker".to_string())
+            .spawn(move || {
+                event_loop.run();
+            })
+            .expect("failed to spawn thread");
+
+        Self {
             console,
+            _event_thread: event_thread,
+            last_update: Instant::now(),
+            current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
             selected_fixture_index: None,
             selected_cue_index: None,
@@ -57,303 +96,86 @@ impl HaloApp {
             effect_offset: 0.5,
             selected_effect_type: EffectType::Sine,
             temp_color_value: [0.5, 0.5, 0.5],
-            visualizer_state: VisualizerState::new(),
             patch_panel: PatchPanel::new(),
             show_visualizer_window: false,
-        };
-
-        // Initialize visualizer with existing fixtures
-        app.visualizer_state
-            .sync_fixtures_with_console(&app.console);
-
-        app
+            fps: 60,
+            overrides_panel: OverridesPanel::new(),
+            master_panel: MasterPanel::new(),
+            fixture_grid: FixtureGrid::default(),
+            session_panel: SessionPanel::default(),
+            cue_panel: CuePanel::default(),
+            programmer: Programmer::new(),
+            timeline: Timeline::new(),
+        }
     }
 }
 
 impl eframe::App for HaloApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let console = self.console.lock().unwrap();
+        let now = Instant::now();
+        self.last_update = now;
+        self.current_time = SystemTime::now();
 
+        // Get the currently patched fixtures from the console
+        let fixtures;
+        {
+            let console = self.console.lock();
+            fixtures = console.fixtures.iter().cloned().collect();
+        }
+
+        // Update the programmer with the current fixtures and selection
+        self.programmer.set_fixtures(fixtures);
+        self.programmer
+            .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
+
+        // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("New Show").clicked() {
-                        //let console = self.console.lock().unwrap();
-                        self.selected_fixture_index = None;
-                        self.selected_cue_index = None;
-                        self.selected_chase_index = None;
-                        self.selected_step_index = None;
-
-                        // Reset visualizer
-                        self.visualizer_state = VisualizerState::new();
-                    }
-                    if ui.button("Save Show").clicked() {
-                        // TODO: Implement save functionality
-                    }
-                    if ui.button("Load Show").clicked() {
-                        // TODO: Implement load functionality
-                    }
-                });
-                ui.menu_button("View", |ui| {
-                    if ui.button("Visualizer Window").clicked() {
-                        self.show_visualizer_window = !self.show_visualizer_window;
-                    }
-                    if ui.button("Patch Panel").clicked() {
-                        self.active_tab = ActiveTab::PatchPanel;
-                    }
-                });
-                ui.menu_button("Tools", |ui| {
-                    if ui.button("Ableton Link").clicked() {
-                        // TODO: Toggle Ableton Link
-                    }
-                    if ui.button("MIDI Settings").clicked() {
-                        // TODO: Open MIDI settings
-                    }
-                    if ui.button("DMX Settings").clicked() {
-                        // TODO: Open DMX settings
-                    }
-                });
-                // Tab selector
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::PatchPanel),
-                            "Patch Panel",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::PatchPanel;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::Visualizer),
-                            "Visualizer",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::Visualizer;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::CueEditor),
-                            "Cue Editor",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::CueEditor;
-                    }
-                    if ui
-                        .selectable_label(
-                            matches!(self.active_tab, ActiveTab::Dashboard),
-                            "Dashboard",
-                        )
-                        .clicked()
-                    {
-                        self.active_tab = ActiveTab::Dashboard;
-                    }
-                });
+                header::render(ui, &mut self.active_tab);
             });
         });
 
-        egui::SidePanel::left("fixture_panel").show(ctx, |ui| {
-            ui.heading("Fixtures");
-
-            // Add new fixture UI
-            ui.horizontal(|ui| {
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut self.new_fixture_name);
-                if ui.button("Add Fixture").clicked() && !self.new_fixture_name.is_empty() {
-                    // TODO - patch fixture here
-                    //let console = self.console.lock().unwrap();
-                    // console.add_fixture(Fixture {
-                    //     name: self.new_fixture_name.clone(),
-                    //     channels: Vec::new(),
-                    // });
-                    self.new_fixture_name.clear();
-                }
-            });
-
-            ui.separator();
-
-            // List fixtures
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (idx, fixture) in console.fixtures.iter().enumerate() {
-                    let is_selected = self.selected_fixture_index == Some(idx);
-                    if ui.selectable_label(is_selected, &fixture.name).clicked() {
-                        drop(console);
-                        self.selected_fixture_index = Some(idx);
-                        return;
-                    }
-                }
-            });
+        // Bottom UI
+        egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            self.programmer.show(ui);
+            self.timeline.show(ui);
+            footer::render(ui, &self.console, self.fps);
         });
 
-        egui::SidePanel::right("cue_panel").show(ctx, |ui| {
-            ui.heading("Cues");
-
-            // Add new cue UI
-            ui.horizontal(|ui| {
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut self.new_cue_name);
-                if ui.button("Add Cue").clicked() && !self.new_cue_name.is_empty() {
-                    let mut console = self.console.lock().unwrap();
-                    console.add_cue(Cue {
-                        name: self.new_cue_name.clone(),
-                        chases: Vec::new(),
-                        ..Default::default()
-                    });
-                    self.new_cue_name.clear();
-                }
-            });
-
+        egui::SidePanel::right("right_panel").show(ctx, |ui| {
+            self.session_panel.render(ui, &self.console);
             ui.separator();
-
-            // List cues
-            let console = self.console.lock().unwrap();
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (idx, cue) in console.cues.iter().enumerate() {
-                    let is_selected = self.selected_cue_index == Some(idx);
-                    let is_current = console.current_cue == idx;
-                    let label = if is_current {
-                        format!("▶ {}", cue.name)
-                    } else {
-                        cue.name.clone()
-                    };
-
-                    if ui.selectable_label(is_selected, label).clicked() {
-                        self.selected_cue_index = Some(idx);
-                        // When selecting a cue, clear lower-level selections
-                        self.selected_chase_index = None;
-                        self.selected_step_index = None;
-                    }
-                }
-            });
-
-            ui.separator();
-
-            // Go button to activate selected cue
-            if let Some(cue_idx) = self.selected_cue_index {
-                if ui.button("GO").clicked() {
-                    drop(console);
-                    let mut console = self.console.lock().unwrap();
-                    console.current_cue = cue_idx;
-                }
-            }
+            self.cue_panel.render(ui, &self.console);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Respond based on what's selected
-            if let Some(fixture_idx) = self.selected_fixture_index {
-                //self.show_fixture_editor(ui, fixture_idx);
-                // do nothing for now
-                ui.label("Fixture Editor");
-            } else if let Some(cue_idx) = self.selected_cue_index {
-                self.show_cue_editor(ui, cue_idx);
-            } else {
-                ui.heading("Halo Lighting Console");
-                ui.label("Select a fixture or cue to begin editing.");
+            ui.horizontal(|ui| {
+                // Overrides Grid
+                self.overrides_panel.show(ui, &self.console);
 
-                // Show status information
-                let mut console = self.console.lock().unwrap();
+                ui.add_space(10.0);
                 ui.separator();
-                ui.heading("Status");
-                ui.label(format!("Total Fixtures: {}", console.fixtures.len()));
-                ui.label(format!("Total Cues: {}", console.cues.len()));
-                ui.label(format!("Current Cue: {}", console.current_cue));
+                ui.add_space(10.0);
 
-                // Show Ableton Link status
-                let clock = console.link_state.get_clock_state();
-                ui.label(format!("Ableton Link: Connected"));
-                ui.label(format!("Tempo: {:.1} BPM", clock.tempo));
-                ui.label(format!("Beat: {:.2}", clock.beats));
-                ui.label(format!("Phase: {:.2}", clock.phase));
+                // Master Panel
+                self.master_panel.show(ui, &self.console);
+            });
 
-                // Quick visualizer preview
-                ui.separator();
-                ui.heading("Stage Preview");
-                let preview_height = 200.0;
-                let available_width = ui.available_width();
-                let aspect_ratio =
-                    self.visualizer_state.stage_width / self.visualizer_state.stage_depth;
-                let preview_width = preview_height * aspect_ratio;
-
-                ui.allocate_ui(egui::vec2(preview_width, preview_height), |ui| {
-                    // Simple preview - we'll calculate a scaling factor
-                    let scale_x = preview_width / self.visualizer_state.stage_width;
-                    let scale_y = preview_height / self.visualizer_state.stage_depth;
-
-                    // Draw stage background
-                    let stage_rect = ui.max_rect();
-                    ui.painter()
-                        .rect_filled(stage_rect, 0.0, egui::Color32::from_rgb(20, 20, 30));
-
-                    // Draw fixtures (simplified)
-                    //let console_guard = self.console.lock().unwrap();
-                    for fixture_vis in &self.visualizer_state.fixtures {
-                        let fixture_rect = egui::Rect::from_center_size(
-                            egui::pos2(
-                                stage_rect.min.x + fixture_vis.position.x * scale_x,
-                                stage_rect.min.y + fixture_vis.position.y * scale_y,
-                            ),
-                            egui::vec2(fixture_vis.size.x * scale_x, fixture_vis.size.y * scale_y),
-                        );
-
-                        // Draw simple fixture representation
-                        ui.painter()
-                            .rect_filled(fixture_rect, 2.0, fixture_vis.color);
-                    }
-                });
-
-                if ui.button("Open Full Visualizer").clicked() {
-                    self.active_tab = ActiveTab::Visualizer;
-                }
-            }
+            // Fixtures
+            let main_content_height = ui.available_height(); // Subtract header and footer heights
+            self.fixture_grid
+                .render(ui, &self.console, main_content_height - 120.0);
+            // TODO - Subtract the height of the overrides grid
         });
+
+        // Request a repaint
+        ctx.request_repaint();
     }
 }
 
 impl HaloApp {
-    // fn show_fixture_editor(&mut self, ui: &mut egui::Ui, fixture_idx: usize) {
-    //     let mut console = self.console.lock().unwrap();
-    //     let fixture = &mut console.fixtures[fixture_idx];
-
-    //     ui.heading(format!("Editing Fixture: {}", fixture.name));
-
-    //     // Channel editor
-    //     ui.heading("Channels");
-    //     ui.horizontal(|ui| {
-    //         ui.label("Channel Name:");
-    //         ui.text_edit_singleline(&mut self.new_channel_name);
-    //         if ui.button("Add Channel").clicked() && !self.new_channel_name.is_empty() {
-    //             fixture.channels.push(Channel {
-    //                 name: self.new_channel_name.clone(),
-    //                 value: 0,
-    //             });
-    //             self.new_channel_name.clear();
-    //         }
-    //     });
-
-    //     ui.separator();
-
-    //     // List and edit channels
-    //     egui::ScrollArea::vertical().show(ui, |ui| {
-    //         for (idx, channel) in fixture.channels.iter_mut().enumerate() {
-    //             ui.horizontal(|ui| {
-    //                 ui.label(format!("{}:", channel.name));
-    //                 let mut value = channel.value as f32;
-    //                 if ui.add(egui::Slider::new(&mut value, 0.0..=255.0)).changed() {
-    //                     channel.value = value as u8;
-    //                 }
-    //                 if ui.button("Remove").clicked() {
-    //                     fixture.channels.remove(idx);
-    //                 }
-    //             });
-    //         }
-    //     });
-    // }
-
     fn show_cue_editor(&mut self, ui: &mut egui::Ui, cue_idx: usize) {
-        let mut console = self.console.lock().unwrap();
+        let mut console = self.console.lock();
         let fixtures: Vec<Fixture> = console.fixtures.iter().cloned().collect();
         let cue = &mut console.cues[cue_idx];
 
@@ -566,7 +388,7 @@ impl HaloApp {
                         ui.heading("Current Effects");
 
                         for (
-                            i,
+                            _i,
                             EffectMapping {
                                 effect,
                                 fixture_names,
@@ -586,11 +408,7 @@ impl HaloApp {
                             //     .and_then(|f| f.channels.get(*channel_idx))
                             //     .map_or("Unknown Channel", |c| &c.name);
 
-                            let effect_type = match effect.effect_type {
-                                EffectType::Sine => "Sine",
-                                EffectType::Sawtooth => "Sawtooth",
-                                // Add other effect types as needed
-                            };
+                            let effect_type = effect.effect_type.as_str();
 
                             ui.horizontal(|ui| {
                                 ui.label(format!(

@@ -24,7 +24,7 @@ impl PatchPanel {
             ui.add(
                 egui::DragValue::new(&mut self.selected_universe)
                     .speed(0.1)
-                    .clamp_range(0..=15),
+                    .range(0..=15),
             );
         });
 
@@ -57,11 +57,7 @@ impl PatchPanel {
                     // DMX address input
                     let mut address = self.dmx_addresses[idx];
                     if ui
-                        .add(
-                            egui::DragValue::new(&mut address)
-                                .speed(1.0)
-                                .clamp_range(1..=512),
-                        )
+                        .add(egui::DragValue::new(&mut address).speed(1.0).range(1..=512))
                         .changed()
                     {
                         self.dmx_addresses[idx] = address;

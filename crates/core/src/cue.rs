@@ -6,9 +6,14 @@ use halo_fixtures::ChannelType;
 #[derive(Clone, Debug)]
 pub struct Cue {
     pub name: String,
-    pub duration: f64,
+    pub duration: Duration,
+    pub start_time: Duration,
+    pub fade_time: f64,
+    pub timecode: String,
     pub static_values: Vec<StaticValue>,
     pub chases: Vec<Chase>,
+    pub is_playing: bool,
+    pub progress: f32,
     // A cue's "time" is a measure of how long it takes the cue to complete, once it has been executed. Depending upon
     // the console, time(s), entered in minutes and seconds, can be entered for the cue as a whole or, individually,
     // for transitions in focus, intensity (up and/or down), and color, as well as for individual channels. Time (or
@@ -24,9 +29,14 @@ impl Default for Cue {
     fn default() -> Self {
         Self {
             name: "".to_string(),
-            duration: 0.0,
+            duration: Duration::ZERO,
+            start_time: Duration::ZERO,
+            fade_time: 0.0,
+            timecode: "".to_string(),
             static_values: Vec::new(),
             chases: Vec::new(),
+            is_playing: false,
+            progress: 0.0,
         }
     }
 }

@@ -2,18 +2,31 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct Fixture {
+    pub id: usize,
     pub name: String,
-    pub profile_name: String,
+    pub profile: FixtureProfile,
     pub channels: Vec<Channel>,
     pub universe: u8,
     pub start_address: u16,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum FixtureType {
+    MovingHead,
+    PAR,
+    LEDBar,
+    Wash,
+    Pinspot,
+    Smoke,
+}
+
 #[derive(Clone, Debug)]
 pub struct FixtureProfile {
+    pub fixture_type: FixtureType,
     pub manufacturer: String,
     pub model: String,
     pub channel_layout: Vec<Channel>,
+    pub sub_fixtures: Option<usize>,
 }
 
 pub struct FixtureLibrary {
@@ -28,6 +41,7 @@ impl FixtureLibrary {
         profiles.insert(
             "shehds-rgbw-par".to_string(),
             FixtureProfile {
+                fixture_type: FixtureType::PAR,
                 manufacturer: "Shehds".to_string(),
                 model: "LED Flat PAR 12x3W RGBW".to_string(),
                 channel_layout: vec![
@@ -72,12 +86,14 @@ impl FixtureLibrary {
                         value: 0,
                     },
                 ],
+                sub_fixtures: None,
             },
         );
 
         profiles.insert(
             "shehds-led-spot-60w".to_string(),
             FixtureProfile {
+                fixture_type: FixtureType::MovingHead,
                 manufacturer: "Shehds".to_string(),
                 model: "LED Spot 60W Lighting".to_string(),
                 channel_layout: vec![
@@ -127,12 +143,14 @@ impl FixtureLibrary {
                         value: 0,
                     },
                 ],
+                sub_fixtures: None,
             },
         );
 
         profiles.insert(
             "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
             FixtureProfile {
+                fixture_type: FixtureType::Wash,
                 manufacturer: "Shehds".to_string(),
                 model: "LED Wash 7x18W RGBWA+UV".to_string(),
                 channel_layout: vec![
@@ -188,12 +206,14 @@ impl FixtureLibrary {
                         value: 0,
                     },
                 ],
+                sub_fixtures: None,
             },
         );
 
         profiles.insert(
             "shehds-mini-led-pinspot-10w".to_string(),
             FixtureProfile {
+                fixture_type: FixtureType::Pinspot,
                 manufacturer: "Shehds".to_string(),
                 model: "Mini LED Pinspot 10W".to_string(),
                 channel_layout: channel_layout![
@@ -213,12 +233,14 @@ impl FixtureLibrary {
                     // From slow to fast
                     ("Speed", ChannelType::Other("FunctionSpeed".to_string())),
                 ],
+                sub_fixtures: None,
             },
         );
 
         profiles.insert(
             "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
             FixtureProfile {
+                fixture_type: FixtureType::Smoke,
                 manufacturer: "DL Geyser".to_string(),
                 model: "DL Geyser 1000 LED Smoke Machine".to_string(),
                 channel_layout: vec![
@@ -264,6 +286,7 @@ impl FixtureLibrary {
                         value: 0,
                     },
                 ],
+                sub_fixtures: None,
             },
         );
 
@@ -304,15 +327,17 @@ pub enum ChannelType {
 
 impl Fixture {
     pub fn new(
+        id: usize,
         name: &str,
-        profile_name: &str,
+        profile: FixtureProfile,
         channels: Vec<Channel>,
         universe: u8,
         start_address: u16,
     ) -> Self {
         Fixture {
+            id,
             name: name.to_string(),
-            profile_name: profile_name.to_string(),
+            profile: profile.clone(),
             channels,
             universe,
             start_address,

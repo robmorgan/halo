@@ -1,26 +1,17 @@
 use clap::Parser;
+use parking_lot::Mutex;
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use halo_core::sawtooth_effect;
+use halo_core::sine_effect;
+use halo_core::square_effect;
 use halo_core::{
     Chase, ChaseStep, Cue, Effect, EffectDistribution, EffectMapping, EffectParams, Interval,
     LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
 };
 use halo_fixtures::ChannelType;
-
-// use crate::effect::effect::{
-//     sawtooth_effect, sine_effect, square_effect, triangle_effect, EffectDistribution,
-// };
-
-//use console::NetworkConfig;
-//use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
-// use effect::{Effect, EffectParams};
-// use rhythm::Interval;
-
-use halo_core::sawtooth_effect;
-use halo_core::sine_effect;
-use halo_core::square_effect;
 
 /// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
@@ -67,17 +58,6 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Destination: {}", network_config.get_destination());
     println!("Port: {}", network_config.port);
 
-    // let fixture_groups = vec![
-    //     fixture::Group {
-    //         name: "Moving Heads".to_string(),
-    //         fixture_names: vec!["Moving Head 1".to_string(), "Moving Head 2".to_string()],
-    //     },
-    //     fixture::Group {
-    //         name: "PARs".to_string(),
-    //         fixture_names: vec!["PAR Fixture 1".to_string(), "PAR Fixture 2".to_string()],
-    //     },
-    // ];
-
     let effects = vec![
         Effect {
             name: "Beat-synced Sine".to_string(),
@@ -119,8 +99,7 @@ fn main() -> Result<(), anyhow::Error> {
     let cues = vec![
         Cue {
             name: "Alternating PAR Chase".to_string(),
-            duration: 10.0,
-            //duration: Duration::new(10, 0),
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set both PARs to full intensity on the Dimmer channel
                 ("Left PAR", "Dimmer", 255),
@@ -285,11 +264,11 @@ fn main() -> Result<(), anyhow::Error> {
                 }],
                 loop_count: None, // Infinite loop
             }],
+            ..Default::default()
         },
         Cue {
             name: "Dance Floor Spot Sweep".to_string(),
-            duration: 10.0,
-            //duration: Duration::new(10, 0),
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set both PARs to full intensity on the Dimmer channel
                 ("Left PAR", "Dimmer", 255),
@@ -394,10 +373,11 @@ fn main() -> Result<(), anyhow::Error> {
                 }],
                 loop_count: None, // Infinite loop
             }],
+            ..Default::default()
         },
         Cue {
             name: "Complex Chase with Static Values".to_string(),
-            duration: 10.0,
+            duration: Duration::new(10, 0),
             static_values: vec![
                 StaticValue {
                     fixture_name: "Left Wash".to_string(),
@@ -551,10 +531,11 @@ fn main() -> Result<(), anyhow::Error> {
                     loop_count: None, // Infinite loop
                 },
             ],
+            ..Default::default()
         },
         Cue {
             name: "Pinspot Purple".to_string(),
-            duration: 10.0,
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 // Set the Pinspot to Deep Purple
                 ("Pinspot", "Dimmer", 255),
@@ -563,16 +544,18 @@ fn main() -> Result<(), anyhow::Error> {
                 ("Pinspot", "White", 20),
             ],
             chases: vec![],
+            ..Default::default()
         },
         Cue {
             name: "Pinspot Gradient".to_string(),
-            duration: 10.0,
+            duration: Duration::new(10, 0),
             static_values: static_values![
                 ("Pinspot", "Dimmer", 255),
                 ("Pinspot", "Function", 200),
                 ("Pinspot", "Speed", 20),
             ],
             chases: vec![],
+            ..Default::default()
         },
     ];
 
@@ -588,7 +571,7 @@ fn main() -> Result<(), anyhow::Error> {
     let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38);
     let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 48);
     let _ = console.patch_fixture(
-        "Smoke Machine",
+        "Smoke #1",
         "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
         1,
         69,
@@ -603,8 +586,8 @@ fn main() -> Result<(), anyhow::Error> {
         76,
         MidiOverride {
             action: MidiAction::StaticValues(static_values![
-                ("Smoke Machine", "Blue", 255),
-                ("Smoke Machine", "Strobe", 255),
+                ("Smoke #1", "Blue", 255),
+                ("Smoke #1", "Strobe", 255),
             ]),
         },
     );
@@ -614,9 +597,9 @@ fn main() -> Result<(), anyhow::Error> {
         77,
         MidiOverride {
             action: MidiAction::StaticValues(static_values![
-                ("Smoke Machine", "Smoke", 100),
-                ("Smoke Machine", "Red", 255),
-                ("Smoke Machine", "Strobe", 220),
+                ("Smoke #1", "Smoke", 100),
+                ("Smoke #1", "Red", 255),
+                ("Smoke #1", "Strobe", 220),
             ]),
         },
     );
@@ -626,9 +609,9 @@ fn main() -> Result<(), anyhow::Error> {
         78,
         MidiOverride {
             action: MidiAction::StaticValues(static_values![
-                ("Smoke Machine", "Smoke", 255),
-                ("Smoke Machine", "Blue", 255),
-                ("Smoke Machine", "Strobe", 255),
+                ("Smoke #1", "Smoke", 255),
+                ("Smoke #1", "Blue", 255),
+                ("Smoke #1", "Strobe", 255),
             ]),
         },
     );
@@ -637,7 +620,7 @@ fn main() -> Result<(), anyhow::Error> {
     console.add_midi_override(
         71,
         MidiOverride {
-            action: MidiAction::StaticValues(static_values![("Smoke Machine", "Smoke", 255),]),
+            action: MidiAction::StaticValues(static_values![("Smoke #1", "Smoke", 255),]),
         },
     );
 
@@ -662,7 +645,7 @@ fn main() -> Result<(), anyhow::Error> {
     //             ("Left Wash", "Dimmer", 0),
     //             ("Right Wash", "Dimmer", 0),
     //             ("Pinspot", "Dimmer", 0),
-    //             ("Smoke Machine", "Dimmer", 0),
+    //             ("Smoke #1", "Dimmer", 0),
     //         ]),
     //     },
     // );
@@ -704,6 +687,13 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Launch the UI in the main thread
+
+    // eframe::run_native(
+    //     "44Hz Thread Example",
+    //     options,
+    //     Box::new(|_cc| Box::new(MyApp::new()))
+    // )
+
     halo_ui::run_ui(Arc::new(Mutex::new(console)));
 
     Ok(())
