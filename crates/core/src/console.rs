@@ -283,6 +283,12 @@ impl LightingConsole {
         self.active_overrides.insert(note, (false, 0));
     }
 
+    pub fn set_bpm(&mut self, bpm: f64) {
+        // set the tempo using ableton's boundary
+        self.tempo = bpm.min(999.0).max(20.0);
+        self.link_state.set_tempo(self.tempo);
+    }
+
     pub fn run(&mut self) -> Result<(), anyhow::Error> {
         let fps = TARGET_FREQUENCY;
         let frame_duration = Duration::from_secs_f64(1.0 / fps as f64);
