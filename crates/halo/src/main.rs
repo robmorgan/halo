@@ -4,24 +4,14 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use halo_core::sawtooth_effect;
+use halo_core::sine_effect;
+use halo_core::square_effect;
 use halo_core::{
     Chase, ChaseStep, Cue, Effect, EffectDistribution, EffectMapping, EffectParams, Interval,
     LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
 };
 use halo_fixtures::ChannelType;
-
-// use crate::effect::effect::{
-//     sawtooth_effect, sine_effect, square_effect, triangle_effect, EffectDistribution,
-// };
-
-//use console::NetworkConfig;
-//use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
-// use effect::{Effect, EffectParams};
-// use rhythm::Interval;
-
-use halo_core::sawtooth_effect;
-use halo_core::sine_effect;
-use halo_core::square_effect;
 
 /// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
