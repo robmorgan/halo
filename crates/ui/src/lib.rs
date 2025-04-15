@@ -111,14 +111,20 @@ impl HaloApp {
 impl eframe::App for HaloApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let now = Instant::now();
-        let elapsed = now.duration_since(self.last_update);
         self.last_update = now;
         self.current_time = SystemTime::now();
 
-        // Simulate random FPS changes
-        if now.elapsed().as_millis() % 500 == 0 {
-            self.fps = 58 + (rand::random::<u32>() % 5);
+        // Get the currently patched fixtures from the console
+        let fixtures;
+        {
+            let console = self.console.lock();
+            fixtures = console.fixtures.iter().cloned().collect();
         }
+
+        // Update the programmer with the current fixtures and selection
+        self.programmer.set_fixtures(fixtures);
+        self.programmer
+            .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
 
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -141,13 +147,14 @@ impl eframe::App for HaloApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Overrides Grid
+            // TODO - self.overrides_grid.render(ui);
+
             // Fixtures
-            // TODO - somehow we need to extract the selected fixture id from the component
-            // and pass it upstream.
             let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
             self.fixture_grid
                 .render(ui, &self.console, main_content_height - 120.0);
-            // Subtract the height of the overrides grid
+            // TODO - Subtract the height of the overrides grid
         });
 
         // Request a repaint

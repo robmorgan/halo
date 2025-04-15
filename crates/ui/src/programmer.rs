@@ -1,4 +1,5 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use halo_fixtures::{Channel, Fixture};
 use std::collections::HashMap;
 
 // Define the active tab types for the programmer
@@ -102,12 +103,14 @@ impl ProgrammerState {
 
 pub struct Programmer {
     state: ProgrammerState,
+    fixtures: Vec<Fixture>,
 }
 
 impl Programmer {
     pub fn new() -> Self {
         Self {
             state: ProgrammerState::new(),
+            fixtures: vec![],
         }
     }
 
@@ -165,6 +168,14 @@ impl Programmer {
                 self.show_effects_panel(ui);
             });
         });
+    }
+
+    pub fn set_fixtures(&mut self, fixtures: Vec<Fixture>) {
+        self.fixtures = fixtures;
+    }
+
+    pub fn set_selected_fixtures(&mut self, selected_fixtures: Vec<usize>) {
+        self.state.selected_fixtures = selected_fixtures;
     }
 
     // Helper function to draw tab buttons
@@ -290,8 +301,57 @@ impl Programmer {
         changed
     }
 
+    // Helper method to get channels of selected fixtures by type
+    fn get_selected_fixture_channels(&self, channel_type: &str) -> Vec<(&Fixture, &Channel)> {
+        let mut channels = Vec::new();
+
+        for fixture in &self.fixtures {
+            if self.state.selected_fixtures.contains(&fixture.id) {
+                for channel in &fixture.channels {
+                    let channel_name = channel.name.to_lowercase();
+                    let matches = match channel_type {
+                        "intensity" => {
+                            channel_name.contains("dimmer")
+                                || channel_name.contains("intensity")
+                                || channel_name.contains("strobe")
+                        }
+                        "color" => {
+                            channel_name.contains("red")
+                                || channel_name.contains("green")
+                                || channel_name.contains("blue")
+                                || channel_name.contains("white")
+                                || channel_name.contains("amber")
+                                || channel_name.contains("color")
+                        }
+                        "position" => channel_name.contains("pan") || channel_name.contains("tilt"),
+                        "beam" => {
+                            channel_name.contains("focus")
+                                || channel_name.contains("zoom")
+                                || channel_name.contains("gobo")
+                                || channel_name.contains("prism")
+                        }
+                        _ => false,
+                    };
+
+                    if matches {
+                        channels.push((fixture, channel));
+                    }
+                }
+            }
+        }
+
+        channels
+    }
+
     // Intensity tab content
     fn show_intensity_tab(&mut self, ui: &mut egui::Ui) {
+        let intensity_channels = self.get_selected_fixture_channels("intensity");
+
+        if intensity_channels.is_empty() {
+            ui.label("No intensity channels available for selected fixtures");
+            return;
+        }
+
         ui.horizontal(|ui| {
             let spacing = 20.0;
             let slider_height = 180.0;
@@ -608,15 +668,3 @@ impl Programmer {
         });
     }
 }
-
-// Example usage in your app:
-/*
-fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-    egui::CentralPanel::default().show(ctx, |ui| {
-        // Other UI elements...
-
-        // Show the programmer section at the bottom
-        self.programmer.show(ui);
-    });
-}
-*/

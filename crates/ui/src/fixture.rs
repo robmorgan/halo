@@ -44,9 +44,8 @@ impl FixtureGrid {
         let _dark_element_bg = Color32::from_rgb(32, 32, 32);
         let _gray_700 = Color32::from_rgb(55, 65, 81);
         let text_color = Color32::from_rgb(255, 255, 255);
-        let button_color = Color32::from_rgb(255, 255, 255);
         let fixture_bg = Color32::from_rgb(30, 30, 30);
-        let text_dim = Color32::from_rgb(156, 163, 175);
+        let _text_dim = Color32::from_rgb(156, 163, 175);
         let _border_color = Color32::from_rgb(55, 65, 81);
         let _active_color = Color32::from_rgb(30, 64, 175);
         let highlight_color = Color32::from_rgb(59, 130, 246);
@@ -152,6 +151,10 @@ impl FixtureGrid {
                         }
                     });
             });
+    }
+
+    pub fn selected_fixtures(&self) -> &Vec<usize> {
+        &self.selected_fixtures
     }
 
     fn get_fixture_type_color(fixture_type: &FixtureType) -> Color32 {
