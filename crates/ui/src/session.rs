@@ -1,6 +1,7 @@
 use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use halo_core::LightingConsole;

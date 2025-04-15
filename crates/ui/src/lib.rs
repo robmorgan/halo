@@ -1,10 +1,12 @@
 use cue::CuePanel;
 use eframe::egui;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
 use fixture::FixtureGrid;
-use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, LightingConsole};
+use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, EventLoop, LightingConsole};
 use halo_fixtures::Fixture;
 use patch_panel::PatchPanel;
 use programmer::Programmer;
@@ -32,6 +34,7 @@ pub enum ActiveTab {
 }
 pub struct HaloApp {
     pub console: Arc<Mutex<LightingConsole>>,
+    _event_thread: JoinHandle<()>,
     last_update: Instant,
     current_time: SystemTime,
     active_tab: ActiveTab,
@@ -62,8 +65,19 @@ pub struct HaloApp {
 
 impl HaloApp {
     fn new(_cc: &eframe::CreationContext<'_>, console: Arc<Mutex<LightingConsole>>) -> Self {
-        let mut app = Self {
+        let mut event_loop = EventLoop::new(Arc::clone(&console), 44.0);
+
+        // Spawn the event loop thread
+        let event_thread = std::thread::Builder::new()
+            .name("HaloWorker".to_string())
+            .spawn(move || {
+                event_loop.run();
+            })
+            .expect("failed to spawn thread");
+
+        Self {
             console,
+            _event_thread: event_thread,
             last_update: Instant::now(),
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
@@ -90,13 +104,7 @@ impl HaloApp {
             cue_panel: CuePanel::default(),
             programmer: Programmer::new(),
             timeline: Timeline::new(),
-        };
-
-        // Initialize visualizer with existing fixtures
-        app.visualizer_state
-            .sync_fixtures_with_console(&app.console);
-
-        app
+        }
     }
 }
 
@@ -148,47 +156,8 @@ impl eframe::App for HaloApp {
 }
 
 impl HaloApp {
-    // fn show_fixture_editor(&mut self, ui: &mut egui::Ui, fixture_idx: usize) {
-    //     let mut console = self.console.lock().unwrap();
-    //     let fixture = &mut console.fixtures[fixture_idx];
-
-    //     ui.heading(format!("Editing Fixture: {}", fixture.name));
-
-    //     // Channel editor
-    //     ui.heading("Channels");
-    //     ui.horizontal(|ui| {
-    //         ui.label("Channel Name:");
-    //         ui.text_edit_singleline(&mut self.new_channel_name);
-    //         if ui.button("Add Channel").clicked() && !self.new_channel_name.is_empty() {
-    //             fixture.channels.push(Channel {
-    //                 name: self.new_channel_name.clone(),
-    //                 value: 0,
-    //             });
-    //             self.new_channel_name.clear();
-    //         }
-    //     });
-
-    //     ui.separator();
-
-    //     // List and edit channels
-    //     egui::ScrollArea::vertical().show(ui, |ui| {
-    //         for (idx, channel) in fixture.channels.iter_mut().enumerate() {
-    //             ui.horizontal(|ui| {
-    //                 ui.label(format!("{}:", channel.name));
-    //                 let mut value = channel.value as f32;
-    //                 if ui.add(egui::Slider::new(&mut value, 0.0..=255.0)).changed() {
-    //                     channel.value = value as u8;
-    //                 }
-    //                 if ui.button("Remove").clicked() {
-    //                     fixture.channels.remove(idx);
-    //                 }
-    //             });
-    //         }
-    //     });
-    // }
-
     fn show_cue_editor(&mut self, ui: &mut egui::Ui, cue_idx: usize) {
-        let mut console = self.console.lock().unwrap();
+        let mut console = self.console.lock();
         let fixtures: Vec<Fixture> = console.fixtures.iter().cloned().collect();
         let cue = &mut console.cues[cue_idx];
 

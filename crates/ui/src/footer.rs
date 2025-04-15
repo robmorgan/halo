@@ -1,5 +1,6 @@
 use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use halo_core::LightingConsole;
 use halo_fixtures::{Fixture, FixtureType};
@@ -11,7 +12,7 @@ pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>, 
     let fixture_count;
     let clock;
     {
-        let mut console = console.lock().unwrap();
+        let mut console = console.lock();
         fixture_count = console.fixtures.clone().len();
         clock = console.link_state.get_clock_state();
         drop(console);

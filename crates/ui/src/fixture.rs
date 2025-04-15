@@ -1,5 +1,6 @@
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use halo_core::LightingConsole;
 use halo_fixtures::{Fixture, FixtureType};
@@ -52,7 +53,7 @@ impl FixtureGrid {
 
         let fixtures;
         {
-            let console = console.lock().unwrap();
+            let console = console.lock();
             fixtures = console.fixtures.clone();
             drop(console);
         }

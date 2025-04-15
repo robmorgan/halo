@@ -1588,6 +1588,7 @@ dependencies = [
  "halo-ui",
  "log",
  "midir",
+ "parking_lot",
  "rusty_link",
 ]
 
@@ -1601,6 +1602,7 @@ dependencies = [
  "halo-fixtures",
  "log",
  "midir",
+ "parking_lot",
  "rusty_link",
 ]
 
@@ -1616,6 +1618,7 @@ dependencies = [
  "eframe",
  "halo-core",
  "halo-fixtures",
+ "parking_lot",
  "rand 0.9.0",
 ]
 

@@ -1,6 +1,7 @@
 use clap::Parser;
+use parking_lot::Mutex;
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use halo_core::{
@@ -696,6 +697,13 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Launch the UI in the main thread
+
+    // eframe::run_native(
+    //     "44Hz Thread Example",
+    //     options,
+    //     Box::new(|_cc| Box::new(MyApp::new()))
+    // )
+
     halo_ui::run_ui(Arc::new(Mutex::new(console)));
 
     Ok(())

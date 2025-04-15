@@ -1,17 +1,16 @@
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    terminal::{disable_raw_mode, enable_raw_mode},
-};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::io::{stdout, Write};
 use std::net::IpAddr;
 use std::net::SocketAddr;
-use std::sync::mpsc;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
+use std::{
+    io::{stdout, Write},
+    sync::Arc,
+};
 
 use crate::ableton_link;
 use crate::ableton_link::ClockState;
@@ -23,7 +22,7 @@ use crate::Effect;
 use crate::RhythmState;
 use halo_fixtures::{Fixture, FixtureLibrary};
 
-const TARGET_FREQUENCY: f64 = 40.0; // 40Hz DMX Spec (every 25ms)
+const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
 const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 
@@ -92,6 +91,7 @@ impl NetworkConfig {
 }
 
 pub struct LightingConsole {
+    is_running: bool,
     tempo: f64,
     fixture_library: FixtureLibrary,
     pub fixtures: Vec<Fixture>,
@@ -118,6 +118,7 @@ impl LightingConsole {
         let (override_tx, override_rx) = channel();
 
         Ok(LightingConsole {
+            is_running: true,
             tempo: bpm,
             fixture_library: FixtureLibrary::new(),
             fixtures: Vec::new(),
@@ -268,15 +269,6 @@ impl LightingConsole {
     //     self._midi_output = Some(midi_output);
     // }
 
-    // Send a message to the MIDI LCD
-    pub fn send_to_midi_lcd(&mut self, text: &str) {
-        if let Some(output) = &mut self._midi_output {
-            // Format SysEx message
-            let message = format_lcd_message(text);
-            output.send(&message).unwrap();
-        }
-    }
-
     // Add a new MIDI override configuration
     pub fn add_midi_override(&mut self, note: u8, override_config: MidiOverride) {
         self.midi_overrides.insert(note, override_config);
@@ -293,15 +285,9 @@ impl LightingConsole {
         let fps = TARGET_FREQUENCY;
         let frame_duration = Duration::from_secs_f64(1.0 / fps as f64);
 
-        // Keyboard input handling
-        let (tx, rx) = mpsc::channel();
-
         let mut frames_sent = 0;
         let mut last_update = Instant::now();
         let mut cue_time = 0.0; // TODO - I think cue time needs to be Instant::now()
-
-        // Enable raw mode before entering the main loop
-        enable_raw_mode().unwrap();
 
         // Render loop
         loop {
@@ -309,43 +295,6 @@ impl LightingConsole {
             let elapsed_time = last_update.elapsed(); // TODO - rename to delta time?
                                                       //let elapsed_time = frame_start.duration_since(last_update);
             last_update = frame_start;
-
-            // Poll for keyboard events with a timeout
-            if event::poll(Duration::from_millis(1))? {
-                if let Event::Key(key) = event::read()? {
-                    // Only handle key press events (ignore key release)
-                    if key.kind == KeyEventKind::Press {
-                        match key.code {
-                            KeyCode::Char('g') => tx.send(KeyCommand::Go)?,
-                            KeyCode::Char('[') => tx.send(KeyCommand::DecreaseBPM)?,
-                            KeyCode::Char(']') => tx.send(KeyCommand::IncreaseBPM)?,
-                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                disable_raw_mode()?;
-                                std::process::exit(0);
-                            }
-                            _ => (), // Ignore other keys
-                        }
-                    }
-                }
-            }
-
-            if let Ok(cmd) = rx.try_recv() {
-                match cmd {
-                    KeyCommand::Go => {
-                        self.current_cue = (self.current_cue + 1) % self.cues.len();
-                        cue_time = 0.0;
-                        println!("Advanced to cue: {}", self.cues[self.current_cue].name);
-                    }
-                    KeyCommand::IncreaseBPM => {
-                        self.tempo += 1.0;
-                        self.link_state.set_tempo(self.tempo);
-                    }
-                    KeyCommand::DecreaseBPM => {
-                        self.tempo = (self.tempo - 1.0).max(1.0);
-                        self.link_state.set_tempo(self.tempo);
-                    }
-                }
-            }
 
             // Process any pending MIDI messages
             while let Ok(midi_msg) = self.override_rx.try_recv() {
@@ -389,61 +338,21 @@ impl LightingConsole {
                             let bpm = 60.0 + (value as f64 / 127.0) * (187.0 - 60.0);
                             self.tempo = bpm;
                             self.link_state.set_tempo(self.tempo);
-
-                            // Optionally display the BPM on the LCD
-                            self.send_to_midi_lcd(&format!("BPM: {:.1}", bpm));
                         }
                     }
                 }
             }
 
-            self.link_state.capture_app_state();
-            self.link_state.link.enable_start_stop_sync(true);
-            self.link_state.commit_app_state();
-
-            self.update(elapsed_time);
+            self.update();
             self.render();
-
-            frames_sent += 1;
-
-            // TODO - what is this doing and do we need it?
-            // if beat_time - cue_start_time >= cues[current_cue].duration {
-            //     cue_start_time = beat_time;
-            // }
-
-            // reset cue time if it's greater than cue duration (loop cue)
-            if cue_time >= self.cues[self.current_cue].duration.as_secs_f64() {
-                cue_time = 0.0; // Reset cue time but don't change the cue
-            }
-
-            // Display status information
-            let clock = &self.link_state.get_clock_state();
-            self.display_status(
-                clock,
-                frames_sent,
-                &self.cues[self.current_cue].name,
-                self.show_start_time.elapsed(),
-                cue_time,
-                self.rhythm_state.beat_phase,
-            );
-
-            let elapsed = frame_start.elapsed();
-            if elapsed < frame_duration {
-                thread::sleep(frame_duration - elapsed);
-            }
         }
     }
 
-    // Add a method to reset all fixture values
-    pub fn reset_fixtures(&mut self) {
-        for fixture in &mut self.fixtures {
-            for channel in &mut fixture.channels {
-                channel.value = 0;
-            }
-        }
-    }
+    pub fn update(&mut self) {
+        self.link_state.capture_app_state();
+        self.link_state.link.enable_start_stop_sync(true);
+        self.link_state.commit_app_state();
 
-    pub fn update(&mut self, elapsed: Duration) {
         let clock = self.link_state.get_clock_state();
         let beat_time = clock.beats;
 
@@ -463,6 +372,8 @@ impl LightingConsole {
             }
 
             for chase in &mut current_cue.chases {
+                // TODO - use the real elasped time
+                let elapsed = Duration::from_secs(1);
                 chase.update(elapsed);
 
                 // Apply chase-level static values
@@ -672,18 +583,16 @@ impl LightingConsole {
         clock: &ClockState,
         frames_sent: u64,
         current_cue: &str,
-        elapsed: Duration,
         cue_time: f64,
         beat_time: f64,
     ) {
         let bpm = clock.tempo;
         let num_peers = clock.num_peers;
-        let elapsed_secs = elapsed.as_secs_f64();
 
         print!("\r"); // Move cursor to the beginning of the line
         print!(
-            "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Elapsed: {} | Cue Time: {:6.2}s | Beat: {:6.2} | FPS: {:5.2}",
-            frames_sent, bpm, num_peers, current_cue, format_duration(elapsed), cue_time, beat_time, frames_sent as f64 / elapsed_secs
+            "Frames: {:8} | BPM: {:6.2} | Peers: {:3} | Current Cue: {:3} | Cue Time: {:6.2}s | Beat: {:6.2}",
+            frames_sent, bpm, num_peers, current_cue, cue_time, beat_time
         );
 
         // TODO - I'd love an ascii progress bar here with the current cue progress
@@ -717,19 +626,59 @@ fn format_duration(duration: Duration) -> String {
     )
 }
 
-fn format_lcd_message(text: &str) -> Vec<u8> {
-    let mut message = vec![
-        0xF0, // Start of SysEx
-        0x47, // Akai Manufacturer ID
-        0x7F, // All channels
-        0x7C, // LCD Display message
-    ];
+/// EventLoop handles the main event loop and communication with the hardware.
+pub struct EventLoop {
+    console: Arc<Mutex<LightingConsole>>,
+    frequency: f64,
+    frames_sent: i128,
+}
 
-    // Add the text bytes, truncated to display width
-    message.extend(text.chars().take(16).map(|c| c as u8));
+impl EventLoop {
+    pub fn new(console: Arc<Mutex<LightingConsole>>, frequency: f64) -> Self {
+        Self {
+            console,
+            frequency,
+            frames_sent: 0,
+        }
+    }
 
-    // End SysEx
-    message.push(0xF7);
+    pub fn run(&mut self) {
+        let target_cycle_time = Duration::from_secs_f64(1.0 / self.frequency);
 
-    message
+        loop {
+            let is_running = {
+                // Scope the mutex guard to release it as soon as possible
+                let console = self.console.lock();
+                if !console.is_running {
+                    break;
+                }
+                true
+            };
+
+            if !is_running {
+                break;
+            }
+
+            let cycle_start = Instant::now();
+
+            // Perform update operations
+            self.update();
+
+            // Sleep to maintain target frequency
+            let elapsed = cycle_start.elapsed();
+            if elapsed < target_cycle_time {
+                thread::sleep(target_cycle_time - elapsed);
+            }
+        }
+    }
+
+    pub fn update(&mut self) {
+        {
+            // Scope the mutex guard to minimize lock time
+            let mut console = self.console.lock();
+            console.update();
+            console.render();
+            self.frames_sent += 1;
+        }
+    }
 }

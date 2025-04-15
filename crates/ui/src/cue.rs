@@ -1,5 +1,6 @@
 use eframe::egui;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::Duration;
 
 use halo_core::{Cue, LightingConsole};
@@ -19,7 +20,7 @@ impl CuePanel {
     pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
         ui.heading("Cues");
 
-        let console_guard = console.lock().unwrap();
+        let console_guard = console.lock();
 
         // Cue Playback Controls
         ui.horizontal(|ui| {

@@ -1,4 +1,4 @@
-pub use console::{LightingConsole, NetworkConfig};
+pub use console::{EventLoop, LightingConsole, NetworkConfig};
 pub use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 pub use effect::effect::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectParams, EffectType,
