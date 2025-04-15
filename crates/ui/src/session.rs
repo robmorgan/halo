@@ -1,7 +1,9 @@
-use eframe::egui::{Align, Color32, CornerRadius, Direction, FontId, Layout, RichText};
+use chrono::{Local, Timelike};
+use eframe::egui::{Align, Color32, FontId, Layout, RichText};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use chrono::{Local, Timelike};
+use halo_core::LightingConsole;
 
 enum ClockMode {
     TimeCode,
@@ -18,9 +20,9 @@ struct TimeCode {
 /// A panel that shows the current session overview.
 ///
 /// This includes:
-/// - a toggable clock that can show either timecode or the system clock.
-/// - The Master BPM display +/- buttons
-/// - Ableton Link status and connected peers
+/// - A toggable clock that can show either timecode or the system clock.
+/// - The Master BPM display +/- buttons.
+/// - Ableton Link status and connected peers.
 pub struct SessionPanel {
     // Clock state
     clock_mode: ClockMode,
@@ -54,7 +56,7 @@ impl Default for SessionPanel {
 }
 
 impl SessionPanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui) {
+    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
         // Update clock
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_update);

@@ -127,7 +127,7 @@ impl eframe::App for HaloApp {
         });
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            self.session_panel.render(ui);
+            self.session_panel.render(ui, &self.console);
             ui.separator();
             self.cue_panel.render(ui, &self.console);
         });
