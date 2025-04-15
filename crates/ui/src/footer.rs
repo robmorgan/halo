@@ -3,7 +3,6 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 use halo_core::LightingConsole;
-use halo_fixtures::{Fixture, FixtureType};
 
 use crate::utils::Theme;
 

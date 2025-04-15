@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, RichText, Stroke, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Rect, Stroke, Vec2};
 use parking_lot::Mutex;
 use std::sync::Arc;
 

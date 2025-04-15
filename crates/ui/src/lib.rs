@@ -1,5 +1,6 @@
 use cue::CuePanel;
 use eframe::egui;
+use master::{MasterPanel, OverridesPanel};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -12,18 +13,17 @@ use patch_panel::PatchPanel;
 use programmer::Programmer;
 use session::SessionPanel;
 use timeline::Timeline;
-use visualizer::VisualizerState;
 
 mod cue;
 mod fixture;
 mod footer;
 mod header;
+mod master;
 mod patch_panel;
 mod programmer;
 mod session;
 mod timeline;
 mod utils;
-mod visualizer;
 
 pub enum ActiveTab {
     Dashboard,
@@ -52,10 +52,11 @@ pub struct HaloApp {
     effect_offset: f32,
     selected_effect_type: EffectType,
     temp_color_value: [f32; 3], // RGB for color picker
-    visualizer_state: VisualizerState,
     patch_panel: PatchPanel,
     show_visualizer_window: bool,
     fps: u32,
+    overrides_panel: OverridesPanel,
+    master_panel: MasterPanel,
     fixture_grid: fixture::FixtureGrid,
     session_panel: session::SessionPanel,
     cue_panel: cue::CuePanel,
@@ -95,10 +96,11 @@ impl HaloApp {
             effect_offset: 0.5,
             selected_effect_type: EffectType::Sine,
             temp_color_value: [0.5, 0.5, 0.5],
-            visualizer_state: VisualizerState::new(),
             patch_panel: PatchPanel::new(),
             show_visualizer_window: false,
             fps: 60,
+            overrides_panel: OverridesPanel::new(),
+            master_panel: MasterPanel::new(),
             fixture_grid: FixtureGrid::default(),
             session_panel: SessionPanel::default(),
             cue_panel: CuePanel::default(),
@@ -377,7 +379,7 @@ impl HaloApp {
                         ui.heading("Current Effects");
 
                         for (
-                            i,
+                            _i,
                             EffectMapping {
                                 effect,
                                 fixture_names,

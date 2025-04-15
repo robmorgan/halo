@@ -57,7 +57,7 @@ impl Default for SessionPanel {
 }
 
 impl SessionPanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
+    pub fn render(&mut self, ui: &mut eframe::egui::Ui, _console: &Arc<Mutex<LightingConsole>>) {
         // Update clock
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_update);

@@ -1,5 +1,4 @@
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 // Timeline state
@@ -353,7 +352,7 @@ impl Timeline {
                         .x_to_position(pos.x - timeline_rect.min.x, timeline_rect.width());
                     self.state.seek_to(new_pos);
                 }
-            } else if self.state.dragging && timeline_response.drag_released() {
+            } else if self.state.dragging && timeline_response.drag_stopped() {
                 self.state.dragging = false;
             }
 
