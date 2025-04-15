@@ -144,6 +144,37 @@ impl FixtureGrid {
                                 text_color,
                             );
 
+                            // Add intensity percentage in bottom right corner
+                            let intensity_value = if let Some(channel) =
+                                fixture.channels.iter().find(|c| {
+                                    c.name.to_lowercase().contains("dimmer")
+                                        || c.name.to_lowercase().contains("intensity")
+                                }) {
+                                channel.value
+                            } else {
+                                0 // Default if no dimmer/intensity channel found
+                            };
+
+                            // Format as percentage
+                            let intensity_text = format!(
+                                "{}%",
+                                (intensity_value as f32 / 255.0 * 100.0).round() as u8
+                            );
+
+                            // Position in bottom right with some padding
+                            let text_pos = rect.right_bottom() - Vec2::new(8.0, 8.0);
+                            ui.painter().text(
+                                text_pos,
+                                egui::Align2::RIGHT_BOTTOM,
+                                &intensity_text,
+                                egui::FontId::proportional(11.0),
+                                if intensity_value > 0 {
+                                    highlight_color.linear_multiply(0.9)
+                                } else {
+                                    Color32::from_gray(130) // Dimmed when intensity is 0
+                                },
+                            );
+
                             // New row after each column
                             if (i + 1) % columns == 0 && i < fixtures.len() - 1 {
                                 ui.end_row();
