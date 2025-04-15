@@ -9,6 +9,12 @@
 The current goal is to introduce a UI that is both powerful and easy to operate on the fly during a live performance.
 We introduced a 6-week challenge to hopefully get there in time for an autumn 2025 show.
 
+## MVP
+
+* Play music directly from the Halo UI (no need for Ableton).
+* Use a hardware mixer for effects. (e.g: DJM-800)
+* Use a MIDI controller for cue and override control (e.g: Novation Launch Control XL)
+
 ## Week 1 (CW10): Core UI Components
 
 **Deliverable:** Basic application frame with working panes.
@@ -53,10 +59,8 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Final UI polish and documentation
 - [ ] Performance optimization and bug fixes
 
-## Week 6 (CW15): New Lighting Engine
-
-- [ ] Use tokio for async io + UDP
-
 ## Future
 
+- [ ] Use tokio for async io + UDP
+- [ ] Bring back a headless console mode with keyboard input
 - [ ] 2D fixture visualization with different fixture types
