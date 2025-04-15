@@ -48,7 +48,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 - [ ] Implement effects engine (waveforms, parameters)
 - [x] Build effects UI in programmer panel
-- [ ] Add override buttons with quick-access functionality
+- [x] Add override buttons with quick-access functionality
 
 ## Week 5 (CW14): Integration & Polish
 

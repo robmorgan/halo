@@ -149,11 +149,20 @@ impl eframe::App for HaloApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Overrides Grid
-            // TODO - self.overrides_grid.render(ui);
+            ui.horizontal(|ui| {
+                // Overrides Grid
+                self.overrides_panel.show(ui, &self.console);
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                // Master Panel
+                self.master_panel.show(ui, &self.console);
+            });
 
             // Fixtures
-            let main_content_height = ui.available_height() - 80.0; // Subtract header and footer heights
+            let main_content_height = ui.available_height(); // Subtract header and footer heights
             self.fixture_grid
                 .render(ui, &self.console, main_content_height - 120.0);
             // TODO - Subtract the height of the overrides grid

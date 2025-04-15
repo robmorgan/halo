@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 // Override button state
+#[derive(Clone, Debug)]
 pub struct OverrideButton {
     pub name: String,
     pub color: Color32,
@@ -126,7 +127,8 @@ impl OverridesPanel {
 
             // Draw buttons horizontally
             ui.horizontal(|ui| {
-                for (i, button) in self.buttons.iter_mut().enumerate() {
+                let mut buttons = self.buttons.clone();
+                for (i, button) in buttons.iter_mut().enumerate() {
                     let button_width = 120.0;
                     let button_height = 40.0;
 
@@ -339,19 +341,18 @@ impl MasterPanel {
             ui.add_space(5.0);
 
             // Draw master fader
-            self.draw_master_fader(ui, &self.master_fader, console);
+            Self::draw_master_fader(ui, &mut self.master_fader, console);
             ui.add_space(15.0);
 
             // Draw smoke fader
-            self.draw_master_fader(ui, &self.smoke_fader, console);
+            Self::draw_master_fader(ui, &mut self.smoke_fader, console);
         });
     }
     // Draw a single master fader
     fn draw_master_fader(
-        &self,
         ui: &mut egui::Ui,
-        fader: &MasterFader,
-        console: &Arc<Mutex<LightingConsole>>,
+        fader: &mut MasterFader,
+        _console: &Arc<Mutex<LightingConsole>>,
     ) {
         ui.vertical(|ui| {
             // Fader label and value
@@ -372,61 +373,35 @@ impl MasterPanel {
             );
 
             // Customize fader appearance
-            if let Some(slider_rect) = response.rect {
-                // Draw the fader track
-                let track_height = height * 0.8;
-                let track_rect = Rect::from_min_size(
-                    Pos2::new(
-                        slider_rect.min.x,
-                        slider_rect.center().y - track_height / 2.0,
-                    ),
-                    Vec2::new(slider_rect.width(), track_height),
-                );
+            let slider_rect = response.rect; // Draw the fader track
+            let track_height = height * 0.8;
+            let track_rect = Rect::from_min_size(
+                Pos2::new(
+                    slider_rect.min.x,
+                    slider_rect.center().y - track_height / 2.0,
+                ),
+                Vec2::new(slider_rect.width(), track_height),
+            );
 
-                // Draw filled portion
-                let fill_width = slider_rect.width() * fader.value;
-                let fill_rect =
-                    Rect::from_min_size(track_rect.min, Vec2::new(fill_width, track_height));
+            // Draw filled portion
+            let fill_width = slider_rect.width() * fader.value;
+            let fill_rect =
+                Rect::from_min_size(track_rect.min, Vec2::new(fill_width, track_height));
 
-                ui.painter()
-                    .rect_filled(track_rect, 2.0, Color32::from_rgb(40, 40, 40));
+            ui.painter()
+                .rect_filled(track_rect, 2.0, Color32::from_rgb(40, 40, 40));
 
-                ui.painter().rect_filled(fill_rect, 2.0, fader.color);
-            }
+            ui.painter().rect_filled(fill_rect, 2.0, fader.color);
 
             // Apply fader value changes to console
             if response.changed() {
-                let console_guard = console.lock();
                 if fader.name == "Master" {
-                    // Apply master dimmer
-                    for fixture in &mut console_guard.fixtures {
-                        for channel in &mut fixture.channels {
-                            if let ChannelType::Dimmer = channel.channel_type {
-                                // This is a simplified implementation
-                                let original_value = channel.value;
-                                let scaled_value = (original_value as f32 * fader.value) as u8;
-                                channel.value = scaled_value;
-                            }
-                        }
-                    }
+                    // TODO - Apply master dimmer
+                    // When we are rendering a frame, we'll loop over each fixture and limit its intensity to the master dimmer value.
                 } else if fader.name == "Smoke %" {
-                    // Apply smoke master
-                    for fixture in &mut console_guard.fixtures {
-                        if fixture.name.to_lowercase().contains("smoke") {
-                            for channel in &mut fixture.channels {
-                                if let ChannelType::Other(ref name) = channel.channel_type {
-                                    if name == "Smoke" {
-                                        let original_value = channel.value;
-                                        let scaled_value =
-                                            (original_value as f32 * fader.value) as u8;
-                                        channel.value = scaled_value;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // TODO - Apply smoke master
+                    // We'll do the same here but limit smoke instead.
                 }
-                drop(console);
             }
         });
     }
