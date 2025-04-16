@@ -164,7 +164,7 @@ impl eframe::App for HaloApp {
             // Fixtures
             let main_content_height = ui.available_height(); // Subtract header and footer heights
             self.fixture_grid
-                .render(ui, &self.console, main_content_height - 120.0);
+                .render(ui, &self.console, main_content_height - 60.0);
             // TODO - Subtract the height of the overrides grid
         });
 
