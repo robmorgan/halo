@@ -201,6 +201,28 @@ impl Programmer {
         if !intensity_channels.is_empty() {
             self.update_selected_fixture_channels("dimmer", console);
         }
+
+        // Color
+        let color_channels = self.get_selected_fixture_channels("color");
+        if !color_channels.is_empty() {
+            self.update_selected_fixture_channels("red", console);
+            self.update_selected_fixture_channels("green", console);
+            self.update_selected_fixture_channels("blue", console);
+            self.update_selected_fixture_channels("white", console);
+        }
+
+        // Position
+        let position_channels = self.get_selected_fixture_channels("position");
+        if !position_channels.is_empty() {
+            self.update_selected_fixture_channels("pan", console);
+            self.update_selected_fixture_channels("tilt", console);
+        }
+
+        // Beam
+        let beam_channels = self.get_selected_fixture_channels("beam");
+        if !beam_channels.is_empty() {
+            self.update_selected_fixture_channels("beam", console);
+        }
     }
 
     // Helper function to draw tab buttons
