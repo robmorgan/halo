@@ -1,6 +1,8 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
-use halo_fixtures::{Channel, Fixture};
-use std::collections::HashMap;
+use halo_core::LightingConsole;
+use halo_fixtures::{Channel, ChannelType, Fixture};
+use parking_lot::Mutex;
+use std::{collections::HashMap, sync::Arc};
 
 // Define the active tab types for the programmer
 #[derive(Clone, Debug, PartialEq)]
@@ -21,6 +23,7 @@ pub struct ProgrammerState {
     effect_waveform: usize,
     effect_interval: usize,
     effect_distribution: usize,
+    preview_mode: bool,
 }
 
 impl Default for ProgrammerState {
@@ -63,6 +66,7 @@ impl Default for ProgrammerState {
             effect_waveform: 0,
             effect_interval: 0,
             effect_distribution: 0,
+            preview_mode: false,
         }
     }
 }
@@ -115,7 +119,7 @@ impl Programmer {
     }
 
     // Main rendering function for the programmer panel
-    pub fn show(&mut self, ui: &mut egui::Ui) {
+    pub fn show(&mut self, ui: &mut egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
         ui.vertical(|ui| {
             // Programmer header with title and action buttons
             ui.horizontal(|ui| {
@@ -132,6 +136,14 @@ impl Programmer {
 
                     if ui.button("HIGHLIGHT").clicked() {
                         // Highlight function would go here
+                    }
+
+                    // If the preview button is toggled on, enter preview mode
+                    if ui
+                        .add(egui::Button::new("PREVIEW").selected(self.state.preview_mode))
+                        .clicked()
+                    {
+                        self.state.preview_mode = !self.state.preview_mode;
                     }
 
                     ui.label(format!(
@@ -167,6 +179,11 @@ impl Programmer {
                 // Effects panel on the right
                 self.show_effects_panel(ui);
             });
+
+            // Update the fixtures based on the programmer's state if preview mode is enabled
+            if self.state.preview_mode {
+                self.update_fixtures(&console);
+            }
         });
     }
 
@@ -176,6 +193,14 @@ impl Programmer {
 
     pub fn set_selected_fixtures(&mut self, selected_fixtures: Vec<usize>) {
         self.state.selected_fixtures = selected_fixtures;
+    }
+
+    pub fn update_fixtures(&mut self, console: &Arc<Mutex<LightingConsole>>) {
+        // Intensity
+        let intensity_channels = self.get_selected_fixture_channels("intensity");
+        if !intensity_channels.is_empty() {
+            self.update_selected_fixture_channels("dimmer", console);
+        }
     }
 
     // Helper function to draw tab buttons
@@ -341,6 +366,43 @@ impl Programmer {
         }
 
         channels
+    }
+
+    // Improved update_selected_fixture_channels method
+    fn update_selected_fixture_channels(
+        &mut self,
+        param_name: &str, // The programmer parameter name (e.g., "dimmer")
+        console: &Arc<Mutex<LightingConsole>>,
+    ) {
+        // Get the value from programmer state
+        let value = self.state.get_param(param_name);
+
+        let mut console = console.lock();
+
+        // For each selected fixture
+        for fixture_id in &self.state.selected_fixtures {
+            // Find the fixture in the console by ID
+            if let Some(console_fixture) = console.fixtures.iter_mut().find(|f| f.id == *fixture_id)
+            {
+                // Map parameter name to actual channel name(s)
+                let channel_names = match param_name {
+                    "dimmer" => vec!["Dimmer", "Intensity"],
+                    "red" => vec!["Red"],
+                    "green" => vec!["Green"],
+                    "blue" => vec!["Blue"],
+                    "white" => vec!["White"],
+                    "pan" => vec!["Pan"],
+                    "tilt" => vec!["Tilt"],
+                    // Add other mappings as needed
+                    _ => vec![param_name],
+                };
+
+                // Try each possible channel name
+                for channel_name in channel_names {
+                    console_fixture.set_channel_value(channel_name, value as u8);
+                }
+            }
+        }
     }
 
     // Intensity tab content

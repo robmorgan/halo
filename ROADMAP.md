@@ -39,7 +39,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 - [x] Build parameter controls (intensity, color, position)
 - [ ] Implement parameter value storage and application to fixtures
-- [ ] Add visual feedback for parameter changes
+- [x] Add visual feedback for parameter changes
 - [ ] Provide a way to hide the programmer
 
 ## Week 4 (CW13): Effects System & Overrides
@@ -54,6 +54,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 **Deliverable:** Complete, integrated application ready for testing.
 
+- [ ] Show saving and loading
 - [ ] Add patch panel functionality
 - [ ] Add settings modal functionality (audio device, dmx, fixture library)
 - [ ] Final UI polish and documentation

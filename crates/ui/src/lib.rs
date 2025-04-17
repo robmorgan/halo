@@ -137,7 +137,7 @@ impl eframe::App for HaloApp {
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            self.programmer.show(ui);
+            self.programmer.show(ui, &self.console);
             self.timeline.show(ui);
             footer::render(ui, &self.console, self.fps);
         });
@@ -435,7 +435,7 @@ impl HaloApp {
     }
 }
 
-pub fn run_ui(console: Arc<Mutex<LightingConsole>>) -> eframe::Result<()> {
+pub fn run_ui(console: Arc<Mutex<LightingConsole>>) -> eframe::Result {
     let native_options = eframe::NativeOptions {
         // initial_window_size: Some(egui::vec2(400.0, 200.0)),
         // min_window_size: Some(egui::vec2(300.0, 150.0)),
