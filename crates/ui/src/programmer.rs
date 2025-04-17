@@ -409,7 +409,7 @@ impl Programmer {
                 // Map parameter name to actual channel name(s)
                 let channel_names = match param_name {
                     "dimmer" => vec!["Dimmer", "Intensity"],
-                    "red" => vec!["Red"],
+                    "red" => vec!["Red", "Color"],
                     "green" => vec!["Green"],
                     "blue" => vec!["Blue"],
                     "white" => vec!["White"],
