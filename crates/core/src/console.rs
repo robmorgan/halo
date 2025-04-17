@@ -1,8 +1,6 @@
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::net::IpAddr;
-use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
@@ -12,14 +10,14 @@ use std::{
     sync::Arc,
 };
 
-use crate::ableton_link;
 use crate::ableton_link::ClockState;
-use crate::artnet::{self, ArtNet, ArtNetMode};
+use crate::artnet::{artnet::ArtNet, network_config::NetworkConfig};
 use crate::cue::{Cue, EffectDistribution};
 use crate::effect::effect::get_effect_phase;
 use crate::midi::midi::{MidiAction, MidiMessage, MidiOverride};
 use crate::Effect;
 use crate::RhythmState;
+use crate::{ableton_link, artnet};
 use halo_fixtures::{Fixture, FixtureLibrary};
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
@@ -29,74 +27,13 @@ const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 // TODO - bounding box for Rals dancefloor.
 // One for spots and one for washes.
 
-// Key commands
-enum KeyCommand {
-    Go,
-    IncreaseBPM,
-    DecreaseBPM,
-}
-
-// #[derive(Clone)]
-// enum ArtNetMode {
-//     Unicast(IpAddr),
-//     Broadcast,
-// }
-
-#[derive(Clone)]
-pub struct NetworkConfig {
-    pub mode: ArtNetMode,
-    pub port: u16,
-}
-
-impl NetworkConfig {
-    pub fn new(
-        source_ip: IpAddr,
-        dest_ip: Option<IpAddr>,
-        artnet_port: u16,
-        broadcast: bool,
-    ) -> Self {
-        let mode = if broadcast {
-            ArtNetMode::Broadcast
-        } else {
-            match dest_ip {
-                Some(ip) => ArtNetMode::Unicast(
-                    SocketAddr::new(source_ip, artnet_port),
-                    SocketAddr::new(ip, artnet_port),
-                ),
-                None => ArtNetMode::Broadcast,
-            }
-        };
-
-        NetworkConfig {
-            mode,
-            port: artnet_port,
-        }
-    }
-
-    pub fn get_destination(&self) -> String {
-        match &self.mode {
-            ArtNetMode::Unicast(src, destination) => {
-                format!("{}:{} -> {}:{}", src, self.port, destination, self.port)
-            }
-            ArtNetMode::Broadcast => format!("255.255.255.255:{}", self.port),
-        }
-    }
-
-    pub fn get_mode_string(&self) -> &str {
-        match &self.mode {
-            ArtNetMode::Unicast(_, _) => "unicast",
-            ArtNetMode::Broadcast => "broadcast",
-        }
-    }
-}
-
 pub struct LightingConsole {
     is_running: bool,
     tempo: f64,
     fixture_library: FixtureLibrary,
     pub fixtures: Vec<Fixture>,
     pub link_state: ableton_link::State,
-    dmx_output: artnet::ArtNet,
+    dmx_output: artnet::artnet::ArtNet,
     pub cues: Vec<Cue>,
     pub current_cue: usize,
     show_start_time: Instant,
