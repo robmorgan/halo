@@ -1,4 +1,5 @@
-pub use console::{EventLoop, LightingConsole, NetworkConfig};
+pub use artnet::network_config::NetworkConfig;
+pub use console::{EventLoop, LightingConsole};
 pub use cue::{Chase, ChaseStep, Cue, EffectDistribution, EffectMapping, StaticValue};
 pub use effect::effect::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectParams, EffectType,
@@ -12,4 +13,5 @@ mod console;
 mod cue;
 mod effect;
 mod midi;
+mod programmer;
 mod rhythm;

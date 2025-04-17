@@ -325,6 +325,27 @@ pub enum ChannelType {
     Other(String),
 }
 
+impl std::fmt::Display for ChannelType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ChannelType::Dimmer => write!(f, "Dimmer"),
+            ChannelType::Color => write!(f, "Color"),
+            ChannelType::Gobo => write!(f, "Gobo"),
+            ChannelType::Red => write!(f, "Red"),
+            ChannelType::Green => write!(f, "Green"),
+            ChannelType::Blue => write!(f, "Blue"),
+            ChannelType::White => write!(f, "White"),
+            ChannelType::Amber => write!(f, "Amber"),
+            ChannelType::UV => write!(f, "UV"),
+            ChannelType::Strobe => write!(f, "Strobe"),
+            ChannelType::Pan => write!(f, "Pan"),
+            ChannelType::Tilt => write!(f, "Tilt"),
+            ChannelType::TiltSpeed => write!(f, "TiltSpeed"),
+            ChannelType::Other(s) => write!(f, "Other({})", s),
+        }
+    }
+}
+
 impl Fixture {
     pub fn new(
         id: usize,
