@@ -24,6 +24,7 @@ pub struct ProgrammerState {
     effect_interval: usize,
     effect_distribution: usize,
     preview_mode: bool,
+    collapsed: bool,
 }
 
 impl Default for ProgrammerState {
@@ -67,6 +68,7 @@ impl Default for ProgrammerState {
             effect_interval: 0,
             effect_distribution: 0,
             preview_mode: false,
+            collapsed: false,
         }
     }
 }
@@ -74,6 +76,14 @@ impl Default for ProgrammerState {
 impl ProgrammerState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn toggle_collapsed(&mut self) {
+        self.collapsed = !self.collapsed;
+    }
+
+    pub fn is_collapsed(&self) -> bool {
+        self.collapsed
     }
 
     pub fn set_selected_fixtures(&mut self, fixtures: Vec<usize>) {
@@ -123,6 +133,11 @@ impl Programmer {
         ui.vertical(|ui| {
             // Programmer header with title and action buttons
             ui.horizontal(|ui| {
+                let collapse_icon = if self.state.collapsed { "▶" } else { "▼" };
+                if ui.button(collapse_icon).clicked() {
+                    self.state.collapsed = !self.state.collapsed;
+                }
+
                 ui.heading("PROGRAMMER");
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -153,32 +168,87 @@ impl Programmer {
                 });
             });
 
-            // Programmer tabs
-            ui.horizontal(|ui| {
-                self.draw_tab_button(ui, "Intensity", ActiveProgrammerTab::Intensity);
-                self.draw_tab_button(ui, "Color", ActiveProgrammerTab::Color);
-                self.draw_tab_button(ui, "Position", ActiveProgrammerTab::Position);
-                self.draw_tab_button(ui, "Beam", ActiveProgrammerTab::Beam);
-            });
-
-            ui.separator();
-
-            // Tab content and effects panel
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| match self.state.active_tab {
-                    ActiveProgrammerTab::Intensity => self.show_intensity_tab(ui),
-                    ActiveProgrammerTab::Color => self.show_color_tab(ui),
-                    ActiveProgrammerTab::Position => self.show_position_tab(ui),
-                    ActiveProgrammerTab::Beam => self.show_beam_tab(ui),
-                    _ => {}
+            // Only show the rest of the programmer if not collapsed
+            if !self.state.collapsed {
+                // Programmer tabs
+                ui.horizontal(|ui| {
+                    self.draw_tab_button(ui, "Intensity", ActiveProgrammerTab::Intensity);
+                    self.draw_tab_button(ui, "Color", ActiveProgrammerTab::Color);
+                    self.draw_tab_button(ui, "Position", ActiveProgrammerTab::Position);
+                    self.draw_tab_button(ui, "Beam", ActiveProgrammerTab::Beam);
                 });
-                ui.set_min_size(Vec2::new(ui.available_width() - 250.0, 0.0));
 
                 ui.separator();
 
-                // Effects panel on the right
-                self.show_effects_panel(ui);
-            });
+                // Tab content and effects panel
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| match self.state.active_tab {
+                        ActiveProgrammerTab::Intensity => self.show_intensity_tab(ui),
+                        ActiveProgrammerTab::Color => self.show_color_tab(ui),
+                        ActiveProgrammerTab::Position => self.show_position_tab(ui),
+                        ActiveProgrammerTab::Beam => self.show_beam_tab(ui),
+                        _ => {}
+                    });
+                    ui.set_min_size(Vec2::new(ui.available_width() - 250.0, 0.0));
+
+                    ui.separator();
+
+                    // Effects panel on the right
+                    self.show_effects_panel(ui);
+                });
+            } else {
+                // When collapsed, show a compact summary of selected fixtures and active parameters
+                ui.horizontal(|ui| {
+                    if !self.state.selected_fixtures.is_empty() {
+                        let active_tab_name = match self.state.active_tab {
+                            ActiveProgrammerTab::Intensity => "Intensity",
+                            ActiveProgrammerTab::Color => "Color",
+                            ActiveProgrammerTab::Position => "Position",
+                            ActiveProgrammerTab::Beam => "Beam",
+                            ActiveProgrammerTab::Effects => "Effects",
+                        };
+
+                        ui.label(format!(
+                            "{} fixtures | Active tab: {}",
+                            self.state.selected_fixtures.len(),
+                            active_tab_name
+                        ));
+
+                        // Show a few key parameters based on the active tab
+                        match self.state.active_tab {
+                            ActiveProgrammerTab::Intensity => {
+                                ui.label(format!(
+                                    "Dimmer: {}%",
+                                    self.state.get_param("dimmer").round()
+                                ));
+                            }
+                            ActiveProgrammerTab::Color => {
+                                let r = self.state.get_param("red").round() as u8;
+                                let g = self.state.get_param("green").round() as u8;
+                                let b = self.state.get_param("blue").round() as u8;
+                                let color_preview = Color32::from_rgb(r, g, b);
+
+                                ui.label("RGB:");
+                                ui.painter().rect_filled(
+                                    ui.available_rect_before_wrap(),
+                                    4.0,
+                                    color_preview,
+                                );
+                            }
+                            ActiveProgrammerTab::Position => {
+                                ui.label(format!(
+                                    "Pan: {}° | Tilt: {}°",
+                                    self.state.get_param("pan").round(),
+                                    self.state.get_param("tilt").round()
+                                ));
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        ui.label("No fixtures selected");
+                    }
+                });
+            }
 
             // Update the fixtures based on the programmer's state if preview mode is enabled
             if self.state.preview_mode {

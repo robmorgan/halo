@@ -41,7 +41,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Implement parameter value storage and application to fixtures
 - [x] Add visual feedback for parameter changes
 - [x] We need a color mapping system to translate the RGBW values to single channel values for certain fixtures (e.g: Shehds Spots). Short-cut: would be to map the Red channel for now.
-- [ ] Provide a way to hide the programmer
+- [x] Provide a way to hide/collapse the programmer
 
 ## Week 4 (CW13): Effects System & Overrides
 
