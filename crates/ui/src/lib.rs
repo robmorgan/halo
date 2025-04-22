@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
+use cue_editor::CueEditor;
 use fixture::FixtureGrid;
 use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, EventLoop, LightingConsole};
 use halo_fixtures::Fixture;
@@ -15,6 +16,7 @@ use session::SessionPanel;
 use timeline::Timeline;
 
 mod cue;
+mod cue_editor;
 mod fixture;
 mod footer;
 mod header;
@@ -60,6 +62,7 @@ pub struct HaloApp {
     cue_panel: cue::CuePanel,
     programmer: programmer::Programmer,
     timeline: timeline::Timeline,
+    cue_editor: cue_editor::CueEditor,
 }
 
 impl HaloApp {
@@ -103,6 +106,7 @@ impl HaloApp {
             cue_panel: CuePanel::default(),
             programmer: Programmer::new(),
             timeline: Timeline::new(),
+            cue_editor: CueEditor::new(),
         }
     }
 }
@@ -139,296 +143,47 @@ impl eframe::App for HaloApp {
             footer::render(ui, &self.console, self.fps);
         });
 
-        egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            self.session_panel.render(ui, &self.console);
-            ui.separator();
-            self.cue_panel.render(ui, &self.console);
-        });
+        match self.active_tab {
+            ActiveTab::Dashboard => {
+                egui::SidePanel::right("right_panel").show(ctx, |ui| {
+                    self.session_panel.render(ui, &self.console);
+                    ui.separator();
+                    self.cue_panel.render(ui, &self.console);
+                });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                // Overrides Grid
-                self.overrides_panel.show(ui, &self.console);
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        // Overrides Grid
+                        self.overrides_panel.show(ui, &self.console);
 
-                ui.add_space(10.0);
-                ui.separator();
-                ui.add_space(10.0);
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
 
-                // Master Panel
-                self.master_panel.show(ui, &self.console);
-            });
+                        // Master Panel
+                        self.master_panel.show(ui, &self.console);
+                    });
 
-            // Fixtures
-            let main_content_height = ui.available_height(); // Subtract header and footer heights
-            self.fixture_grid
-                .render(ui, &self.console, main_content_height - 60.0);
-            // TODO - Subtract the height of the overrides grid
-        });
+                    // Fixtures
+                    let main_content_height = ui.available_height(); // Subtract header and footer heights
+                    self.fixture_grid
+                        .render(ui, &self.console, main_content_height - 60.0);
+                    // TODO - Subtract the height of the overrides grid
+                });
+            }
+            ActiveTab::CueEditor => {
+                self.cue_editor.render(ctx, &self.console);
+            }
+            ActiveTab::Programmer => {
+                //self.programmer.show(ui, &self.console)
+            }
+            ActiveTab::PatchPanel => {
+                //self.patch_panel.show(ui, &self.console)
+            }
+        }
 
         // Request a repaint
         ctx.request_repaint();
-    }
-}
-
-impl HaloApp {
-    fn show_cue_editor(&mut self, ui: &mut egui::Ui, cue_idx: usize) {
-        let mut console = self.console.lock();
-        let fixtures: Vec<Fixture> = console.fixtures.iter().cloned().collect();
-        let cue = &mut console.cues[cue_idx];
-
-        // Chase editor
-        ui.heading("Chases");
-        ui.horizontal(|ui| {
-            ui.label("Chase Name:");
-            ui.text_edit_singleline(&mut self.new_chase_name);
-            if ui.button("Add Chase").clicked() && !self.new_chase_name.is_empty() {
-                cue.chases
-                    .push(Chase::new(self.new_chase_name.clone(), Vec::new(), None));
-                self.new_chase_name.clear();
-            }
-        });
-
-        ui.separator();
-
-        // List chases
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for (idx, chase) in cue.chases.iter().enumerate() {
-                let is_selected = self.selected_chase_index == Some(idx);
-                if ui.selectable_label(is_selected, &chase.name).clicked() {
-                    self.selected_chase_index = Some(idx);
-                    self.selected_step_index = None;
-                }
-            }
-        });
-
-        // Show chase editor if one is selected
-        if let Some(chase_idx) = self.selected_chase_index {
-            if chase_idx < cue.chases.len() {
-                let chase = &mut cue.chases[chase_idx];
-
-                ui.separator();
-                ui.heading(format!("Editing Chase: {}", chase.name));
-
-                // Step editor
-                ui.heading("Steps");
-                ui.horizontal(|ui| {
-                    ui.label("Duration (ms):");
-                    ui.add(egui::DragValue::new(&mut self.step_duration_ms).speed(10));
-                    if ui.button("Add Step").clicked() {
-                        chase.steps.push(ChaseStep {
-                            duration: Duration::from_millis(self.step_duration_ms),
-                            effect_mappings: Vec::new(),
-                            static_values: Vec::new(),
-                        });
-                    }
-                });
-
-                ui.separator();
-
-                // List steps
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (idx, step) in chase.steps.iter().enumerate() {
-                        let is_selected = self.selected_step_index == Some(idx);
-                        if ui
-                            .selectable_label(
-                                is_selected,
-                                format!("Step {} ({} ms)", idx + 1, step.duration.as_millis()),
-                            )
-                            .clicked()
-                        {
-                            self.selected_step_index = Some(idx);
-                        }
-                    }
-                });
-
-                // Show effect editor if a step is selected
-                if let Some(step_idx) = self.selected_step_index {
-                    if step_idx < chase.steps.len() {
-                        let step = &mut chase.steps[step_idx];
-
-                        ui.separator();
-                        ui.heading(format!("Editing Step {}", step_idx + 1));
-
-                        // Effect editor
-                        ui.heading("Effects");
-
-                        // Effect parameters
-                        ui.horizontal(|ui| {
-                            ui.label("Effect Type:");
-                            ui.radio_value(
-                                &mut self.selected_effect_type,
-                                EffectType::Sine,
-                                "Sine",
-                            );
-                            // ui.radio_value(
-                            //     &mut self.selected_effect_type,
-                            //     EffectType::Sawtooth,
-                            //     "Sawtooth",
-                            // );
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Frequency:");
-                            ui.add(
-                                egui::Slider::new(&mut self.effect_frequency, 0.1..=10.0)
-                                    .text("Hz"),
-                            );
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Amplitude:");
-                            ui.add(egui::Slider::new(&mut self.effect_amplitude, 0.0..=1.0));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Offset:");
-                            ui.add(egui::Slider::new(&mut self.effect_offset, 0.0..=1.0));
-                        });
-
-                        // Color picker helper for RGB fixtures
-                        ui.horizontal(|ui| {
-                            ui.label("Quick Color:");
-                            ui.color_edit_button_rgb(&mut self.temp_color_value);
-                            if ui.button("Apply to RGB").clicked() {
-                                // Find RGB channels and apply
-                                // This is a placeholder - you'd need to implement the logic
-                                // to identify RGB channels in the selected fixture
-                            }
-                        });
-
-                        ui.separator();
-
-                        // Fixture/channel selector for effect
-                        ui.heading("Add Effect to Channel");
-                        egui::ComboBox::from_label("Fixture")
-                            .selected_text(if let Some(idx) = self.selected_fixture_index {
-                                //fixture_names.get(idx).map_or("Select Fixture", |f| &f)
-                                //fixtures.get(idx).map_or("Select Fixture", |f| &f)
-
-                                fixtures.get(idx).map_or("Select Fixture", |f| &f.name)
-                            } else {
-                                "Select Fixture"
-                            })
-                            .show_ui(ui, |ui| {
-                                for (idx, fixture) in fixtures.iter().enumerate() {
-                                    ui.selectable_value(
-                                        &mut self.selected_fixture_index,
-                                        Some(idx),
-                                        fixture.name.clone().as_str(),
-                                    );
-                                }
-                            });
-
-                        if let Some(fixture_idx) = self.selected_fixture_index {
-                            if let Some(fixture) = fixtures.get(fixture_idx) {
-                                // Channel selector
-                                let channel_names: Vec<&str> =
-                                    fixture.channels.iter().map(|c| c.name.as_str()).collect();
-
-                                if !channel_names.is_empty() {
-                                    let mut selected_channel_idx = 0;
-                                    egui::ComboBox::from_label("Channel")
-                                        .selected_text(
-                                            channel_names[selected_channel_idx].to_string(),
-                                        )
-                                        .show_ui(ui, |ui| {
-                                            for (idx, name) in channel_names.iter().enumerate() {
-                                                ui.selectable_value(
-                                                    &mut selected_channel_idx,
-                                                    idx,
-                                                    *name,
-                                                );
-                                            }
-                                        });
-
-                                    // egui::ComboBox::from_label("Channel")
-                                    //     .selected_text(format!("{radio:?}"))
-                                    //     .show_ui(ui, |ui| {
-                                    //         ui.selectable_value(
-                                    //             selected_channel_idx,
-                                    //             Enum::First,
-                                    //             "First",
-                                    //         );
-                                    //         ui.selectable_value(
-                                    //             selected_channel_idx,
-                                    //             Enum::Second,
-                                    //             "Second",
-                                    //         );
-                                    //         ui.selectable_value(
-                                    //             selected_channel_idx,
-                                    //             Enum::Third,
-                                    //             "Third",
-                                    //         );
-                                    //     });
-
-                                    // if ui.button("Add Effect").clicked() {
-                                    //     step.effect_mappings.push((
-                                    //         fixture_idx,
-                                    //         selected_channel_idx,
-                                    //         Effect {
-                                    //             effect_type: self.selected_effect_type.clone(),
-                                    //             frequency: self.effect_frequency,
-                                    //             amplitude: self.effect_amplitude,
-                                    //             offset: self.effect_offset,
-                                    //             ..Default::default()
-                                    //         },
-                                    //     ));
-                                    // }
-                                } else {
-                                    ui.label("No channels in selected fixture");
-                                }
-                            }
-                        }
-
-                        // List current effects in step
-                        ui.separator();
-                        ui.heading("Current Effects");
-
-                        for (
-                            _i,
-                            EffectMapping {
-                                effect,
-                                fixture_names,
-                                channel_types,
-                                distribution: _,
-                            },
-                        ) in step.effect_mappings.iter().enumerate()
-                        {
-                            // let fixture_name = console
-                            //     .fixtures
-                            //     .get(*fixture_idx)
-                            //     .map_or("Unknown Fixture", |f| &f.name);
-
-                            // let channel_name = console
-                            //     .fixtures
-                            //     .get(*fixture_idx)
-                            //     .and_then(|f| f.channels.get(*channel_idx))
-                            //     .map_or("Unknown Channel", |c| &c.name);
-
-                            let effect_type = effect.effect_type.as_str();
-
-                            ui.horizontal(|ui| {
-                                ui.label(format!(
-                                    "{:#?}.{:#?} - {} (f:{:.1}Hz, a:{:.2}, o:{:.2})",
-                                    fixture_names,
-                                    channel_types,
-                                    effect_type,
-                                    effect.frequency,
-                                    effect.amplitude,
-                                    effect.offset
-                                ));
-
-                                if ui.button("Remove").clicked() {
-                                    // TODO: Figure out a way to remove the effect mapping from an already borrowed
-                                    // effect mappings.
-                                    //step.effect_mappings.remove(i);
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
