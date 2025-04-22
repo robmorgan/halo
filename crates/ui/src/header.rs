@@ -10,9 +10,6 @@ pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
             // self.selected_cue_index = None;
             // self.selected_chase_index = None;
             // self.selected_step_index = None;
-
-            // // Reset visualizer
-            // self.visualizer_state = VisualizerState::new();
         }
         if ui.button("Save Show").clicked() {
             // TODO: Implement save functionality
@@ -25,11 +22,7 @@ pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
         }
     });
     ui.menu_button("View", |ui| {
-        if ui.button("Visualizer Window").clicked() {
-            // TODO: enable or remove the visualizer
-            //self.show_visualizer_window = !self.show_visualizer_window;
-        }
-        if ui.button("Patch Panel").clicked() {
+        if ui.button("Patch").clicked() {
             *active_tab = ActiveTab::PatchPanel;
         }
     });
@@ -47,16 +40,10 @@ pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
     // Tab selector
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if ui
-            .selectable_label(matches!(active_tab, ActiveTab::PatchPanel), "Patch Panel")
+            .selectable_label(matches!(active_tab, ActiveTab::PatchPanel), "Patch")
             .clicked()
         {
             *active_tab = ActiveTab::PatchPanel;
-        }
-        if ui
-            .selectable_label(matches!(active_tab, ActiveTab::Visualizer), "Visualizer")
-            .clicked()
-        {
-            *active_tab = ActiveTab::Visualizer;
         }
         if ui
             .selectable_label(matches!(active_tab, ActiveTab::CueEditor), "Cue Editor")

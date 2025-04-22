@@ -29,7 +29,6 @@ pub enum ActiveTab {
     Dashboard,
     Programmer,
     CueEditor,
-    Visualizer,
     PatchPanel,
 }
 pub struct HaloApp {
@@ -53,7 +52,6 @@ pub struct HaloApp {
     selected_effect_type: EffectType,
     temp_color_value: [f32; 3], // RGB for color picker
     patch_panel: PatchPanel,
-    show_visualizer_window: bool,
     fps: u32,
     overrides_panel: OverridesPanel,
     master_panel: MasterPanel,
@@ -97,7 +95,6 @@ impl HaloApp {
             selected_effect_type: EffectType::Sine,
             temp_color_value: [0.5, 0.5, 0.5],
             patch_panel: PatchPanel::new(),
-            show_visualizer_window: false,
             fps: 60,
             overrides_panel: OverridesPanel::new(),
             master_panel: MasterPanel::new(),
