@@ -6,6 +6,7 @@ use std::time::Duration;
 use halo_core::{Chase, ChaseStep, Cue, Effect, EffectMapping, EffectType, LightingConsole};
 use halo_fixtures::ChannelType;
 
+#[derive(Clone, Debug)]
 pub struct CueList {
     pub name: String,
     pub cues: Vec<usize>, // Indices of cues in the console's cue list
@@ -88,28 +89,6 @@ impl CueEditor {
                     }
                 }
             });
-
-            // Audio file for selected cue list
-            if let Some(idx) = self.selected_cue_list_index {
-                if idx < self.cue_lists.len() {
-                    ui.separator();
-                    ui.heading("Audio File");
-
-                    ui.horizontal(|ui| {
-                        let audio_file =
-                            self.cue_lists[idx].audio_file.as_deref().unwrap_or("None");
-                        ui.label(format!("Current: {}", audio_file));
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.text_edit_singleline(&mut self.audio_file_path);
-                        if ui.button("Load Audio").clicked() && !self.audio_file_path.is_empty() {
-                            self.cue_lists[idx].audio_file = Some(self.audio_file_path.clone());
-                            self.audio_file_path.clear();
-                        }
-                    });
-                }
-            }
         });
     }
 
@@ -163,7 +142,7 @@ impl CueEditor {
             // Table of cues
             if let Some(cue_list_idx) = self.selected_cue_list_index {
                 if cue_list_idx < self.cue_lists.len() {
-                    let cue_list = &self.cue_lists[cue_list_idx];
+                    let cue_list = &self.cue_lists[cue_list_idx].clone();
                     let console_lock = console.lock();
 
                     egui::Grid::new("cues_grid")
@@ -197,6 +176,24 @@ impl CueEditor {
                             }
                         });
 
+                    ui.separator();
+                    ui.heading("Audio File");
+
+                    ui.horizontal(|ui| {
+                        let audio_file = self.cue_lists[cue_list_idx]
+                            .audio_file
+                            .as_deref()
+                            .unwrap_or("None");
+                        ui.label(format!("Current: {}", audio_file));
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.audio_file_path);
+                        if ui.button("Load Audio").clicked() && !self.audio_file_path.is_empty() {
+                            self.set_audio_file(cue_list_idx, self.audio_file_path.clone());
+                        }
+                    });
+
                     // Cue details if selected
                     if let Some(cue_idx) = self.selected_cue_index {
                         if cue_idx < cue_list.cues.len() {
@@ -219,5 +216,10 @@ impl CueEditor {
                 }
             }
         });
+    }
+
+    fn set_audio_file(&mut self, cue_list_idx: usize, audio_file: String) {
+        self.cue_lists[cue_list_idx].audio_file = Some(audio_file);
+        self.audio_file_path.clear();
     }
 }
