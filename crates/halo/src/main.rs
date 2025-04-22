@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use clap::Parser;
 use parking_lot::Mutex;
 use std::net::IpAddr;
@@ -624,45 +625,6 @@ fn main() -> Result<(), anyhow::Error> {
         },
     );
 
-    // Blue Pinspot
-    // console.add_midi_override(
-    //     72,
-    //     midi::MidiOverride {
-    //         action: MidiAction::StaticValues(static_values![
-    //             ("Pinspot", "Dimmer", 255),
-    //             ("Pinspot", "Blue", 255),
-    //         ]),
-    //     },
-    // );
-
-    // Blackout by setting all fixture dimmers to 0
-    // console.add_midi_override(
-    //     74,
-    //     midi::MidiOverride {
-    //         action: MidiAction::StaticValues(static_values![
-    //             ("Left Spot", "Dimmer", 0),
-    //             ("Right Spot", "Dimmer", 0),
-    //             ("Left Wash", "Dimmer", 0),
-    //             ("Right Wash", "Dimmer", 0),
-    //             ("Pinspot", "Dimmer", 0),
-    //             ("Smoke #1", "Dimmer", 0),
-    //         ]),
-    //     },
-    // );
-
-    // Light Purple Pinspot
-    // console.add_midi_override(
-    //     67,
-    //     midi::MidiOverride {
-    //         action: MidiAction::StaticValues(static_values![
-    //             ("Pinspot", "Dimmer", 255),
-    //             ("Pinspot", "Red", 203),
-    //             ("Pinspot", "Green", 160),
-    //             ("Pinspot", "Blue", 255),
-    //         ]),
-    //     },
-    // );
-
     //// Cue Overrides
 
     // Cue 5: Pinspot Purple
@@ -687,15 +649,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Launch the UI in the main thread
-
-    // eframe::run_native(
-    //     "44Hz Thread Example",
-    //     options,
-    //     Box::new(|_cc| Box::new(MyApp::new()))
-    // )
-
     halo_ui::run_ui(Arc::new(Mutex::new(console)));
-
     Ok(())
 }
 

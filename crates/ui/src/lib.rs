@@ -29,7 +29,6 @@ pub enum ActiveTab {
     Dashboard,
     Programmer,
     CueEditor,
-    Visualizer,
     PatchPanel,
 }
 pub struct HaloApp {
@@ -53,7 +52,6 @@ pub struct HaloApp {
     selected_effect_type: EffectType,
     temp_color_value: [f32; 3], // RGB for color picker
     patch_panel: PatchPanel,
-    show_visualizer_window: bool,
     fps: u32,
     overrides_panel: OverridesPanel,
     master_panel: MasterPanel,
@@ -97,7 +95,6 @@ impl HaloApp {
             selected_effect_type: EffectType::Sine,
             temp_color_value: [0.5, 0.5, 0.5],
             patch_panel: PatchPanel::new(),
-            show_visualizer_window: false,
             fps: 60,
             overrides_panel: OverridesPanel::new(),
             master_panel: MasterPanel::new(),
@@ -137,7 +134,7 @@ impl eframe::App for HaloApp {
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            self.programmer.show(ui);
+            self.programmer.show(ui, &self.console);
             self.timeline.show(ui);
             footer::render(ui, &self.console, self.fps);
         });
@@ -435,7 +432,7 @@ impl HaloApp {
     }
 }
 
-pub fn run_ui(console: Arc<Mutex<LightingConsole>>) -> eframe::Result<()> {
+pub fn run_ui(console: Arc<Mutex<LightingConsole>>) -> eframe::Result {
     let native_options = eframe::NativeOptions {
         // initial_window_size: Some(egui::vec2(400.0, 200.0)),
         // min_window_size: Some(egui::vec2(300.0, 150.0)),
