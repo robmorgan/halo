@@ -15,6 +15,11 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 * Use a hardware mixer for effects. (e.g: DJM-800)
 * Use a MIDI controller for cue and override control (e.g: Novation Launch Control XL)
 
+- [ ] Wire up Effects UI + save to cue
+- [ ] Show Save/Load
+- [ ] Cues advance to timecode
+- [ ] Ability to control smoke, strobe and cuelists with Traktor MIDI controller
+
 ## Week 1 (CW10): Core UI Components
 
 **Deliverable:** Basic application frame with working panes.
