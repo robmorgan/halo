@@ -1,4 +1,4 @@
-use crate::cue::StaticValue;
+use crate::StaticValue;
 
 pub enum MidiAction {
     StaticValues(Vec<StaticValue>),

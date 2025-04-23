@@ -12,12 +12,12 @@ use std::{
 
 use crate::ableton_link::ClockState;
 use crate::artnet::{artnet::ArtNet, network_config::NetworkConfig};
-use crate::cue::{Cue, EffectDistribution};
+use crate::cue::cue_manager::CueManager;
 use crate::effect::effect::get_effect_phase;
 use crate::midi::midi::{MidiMessage, MidiOverride};
-use crate::Effect;
-use crate::RhythmState;
 use crate::{ableton_link, artnet};
+use crate::{CueList, Effect};
+use crate::{EffectDistribution, RhythmState};
 use halo_fixtures::{Fixture, FixtureLibrary};
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
@@ -30,14 +30,12 @@ const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 pub struct LightingConsole {
     // is the event loop running?
     is_running: bool,
-    is_playing: bool,
     tempo: f64,
     fixture_library: FixtureLibrary,
     pub fixtures: Vec<Fixture>,
     pub link_state: ableton_link::State,
+    pub cue_manager: CueManager,
     dmx_output: artnet::artnet::ArtNet,
-    pub cues: Vec<Cue>,
-    pub current_cue: usize,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
     override_tx: Sender<MidiMessage>,
@@ -57,14 +55,12 @@ impl LightingConsole {
 
         Ok(LightingConsole {
             is_running: true,
-            is_playing: false,
             tempo: bpm,
             fixture_library: FixtureLibrary::new(),
             fixtures: Vec::new(),
-            cues: Vec::new(),
-            current_cue: 0,
-            link_state: link_state,
-            dmx_output: dmx_output,
+            cue_manager: CueManager::new(Vec::new()),
+            link_state,
+            dmx_output,
             midi_overrides: HashMap::new(),
             active_overrides: HashMap::new(),
             override_tx,
@@ -105,11 +101,11 @@ impl LightingConsole {
         let id = self.fixtures.len();
 
         let fixture = Fixture {
-            id: id,
+            id,
             name: name.to_string(),
             profile: profile.clone(),
             channels: profile.channel_layout.clone(),
-            universe: universe,
+            universe,
             start_address: address,
         };
 
@@ -117,12 +113,8 @@ impl LightingConsole {
         Ok(())
     }
 
-    pub fn set_cues(&mut self, cues: Vec<Cue>) {
-        self.cues = cues;
-    }
-
-    pub fn add_cue(&mut self, cue: Cue) {
-        self.cues.push(cue);
+    pub fn set_cue_lists(&mut self, cue_lists: Vec<CueList>) {
+        self.cue_manager.set_cue_lists(cue_lists);
     }
 
     pub fn init_mpk49_midi(&mut self) -> anyhow::Result<()> {
@@ -220,20 +212,8 @@ impl LightingConsole {
     }
 
     pub fn run(&mut self) -> Result<(), anyhow::Error> {
-        let fps = TARGET_FREQUENCY;
-        let frame_duration = Duration::from_secs_f64(1.0 / fps as f64);
-
-        let frames_sent = 0;
-        let mut last_update = Instant::now();
-        let mut cue_time = 0.0; // TODO - I think cue time needs to be Instant::now()
-
         // Render loop
         loop {
-            let frame_start = Instant::now();
-            let elapsed_time = last_update.elapsed(); // TODO - rename to delta time?
-                                                      //let elapsed_time = frame_start.duration_since(last_update);
-            last_update = frame_start;
-
             // Process any pending MIDI messages
             while let Ok(midi_msg) = self.override_rx.try_recv() {
                 match midi_msg {
@@ -264,9 +244,7 @@ impl LightingConsole {
                         // Go Button: Advance the cue
                         if cc == 116 && value > 64 {
                             // Example: CC #116 when value goes above 64
-                            self.current_cue = (self.current_cue + 1) % self.cues.len();
-                            cue_time = 0.0;
-                            println!("Advanced to cue: {}", self.cues[self.current_cue].name);
+                            self.cue_manager.go_to_next_cue();
                         }
 
                         // K1 Knob: Set the BPM
@@ -274,8 +252,7 @@ impl LightingConsole {
                             // Control Encoder 22
                             // Scale 0-127 to 60-187 BPM range
                             let bpm = 60.0 + (value as f64 / 127.0) * (187.0 - 60.0);
-                            self.tempo = bpm;
-                            self.link_state.set_tempo(self.tempo);
+                            self.set_bpm(bpm);
                         }
                     }
                 }
@@ -299,8 +276,8 @@ impl LightingConsole {
         self.update_rhythm_state(beat_time);
 
         // Is the console currently playing a cue?
-        if self.is_playing {
-            if let Some(current_cue) = self.cues.get_mut(self.current_cue) {
+        if self.cue_manager.is_playing() {
+            if let Some(current_cue) = self.cue_manager.get_current_cue() {
                 // Apply cue-level static values first
                 for static_value in &current_cue.static_values {
                     if let Some(fixture) = self
@@ -312,10 +289,11 @@ impl LightingConsole {
                     }
                 }
 
-                for chase in &mut current_cue.chases {
-                    // TODO - use the real elasped time
-                    let elapsed = Duration::from_secs(1);
-                    chase.update(elapsed);
+                for chase in &current_cue.chases {
+                    // TODO - use the real elapsed time
+                    // TODO - i don't want to use chases anymore or make them mutable.
+                    //let elapsed = Duration::from_secs(1);
+                    //chase.update(elapsed);
 
                     // Apply chase-level static values
                     for static_value in chase.get_current_static_values() {

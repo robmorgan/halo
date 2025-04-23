@@ -1,20 +1,11 @@
-use eframe::egui::{self, Align, Color32, Layout, RichText, Stroke};
+use eframe::egui::{self, RichText};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 
-use halo_core::{Chase, ChaseStep, Cue, Effect, EffectMapping, EffectType, LightingConsole};
-use halo_fixtures::ChannelType;
-
-#[derive(Clone, Debug)]
-pub struct CueList {
-    pub name: String,
-    pub cues: Vec<usize>, // Indices of cues in the console's cue list
-    pub audio_file: Option<String>,
-}
+use halo_core::{Cue, CueList, LightingConsole};
 
 pub struct CueEditor {
-    cue_lists: Vec<CueList>,
     selected_cue_list_index: Option<usize>,
     selected_cue_index: Option<usize>,
     new_cue_list_name: String,
@@ -27,11 +18,6 @@ pub struct CueEditor {
 impl Default for CueEditor {
     fn default() -> Self {
         Self {
-            cue_lists: vec![CueList {
-                name: "Main".to_string(),
-                cues: Vec::new(),
-                audio_file: None,
-            }],
             selected_cue_list_index: Some(0),
             selected_cue_index: None,
             new_cue_list_name: String::new(),
@@ -69,11 +55,13 @@ impl CueEditor {
                 ui.label("Name:");
                 ui.text_edit_singleline(&mut self.new_cue_list_name);
                 if ui.button("Add Cue List").clicked() && !self.new_cue_list_name.is_empty() {
-                    self.cue_lists.push(CueList {
+                    let mut console_lock = console.lock();
+                    console_lock.cue_manager.add_cue_list(CueList {
                         name: self.new_cue_list_name.clone(),
                         cues: Vec::new(),
                         audio_file: None,
                     });
+                    drop(console_lock);
                     self.new_cue_list_name.clear();
                 }
             });
@@ -82,7 +70,10 @@ impl CueEditor {
 
             // List of cue lists
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (idx, cue_list) in self.cue_lists.iter().enumerate() {
+                let console_lock = console.lock();
+                let cue_lists = console_lock.cue_manager.get_cue_lists();
+
+                for (idx, cue_list) in cue_lists.iter().enumerate() {
                     let is_selected = self.selected_cue_list_index == Some(idx);
                     if ui.selectable_label(is_selected, &cue_list.name).clicked() {
                         self.selected_cue_list_index = Some(idx);
@@ -114,23 +105,25 @@ impl CueEditor {
 
                     if ui.button("Add Cue").clicked() && !self.new_cue_name.is_empty() {
                         let mut console_lock = console.lock();
-                        let cue_idx = console_lock.cues.len();
+                        let cue_idx = console_lock.cue_manager.get_next_cue_idx();
 
-                        // Create new cue
-                        console_lock.cues.push(Cue {
-                            name: self.new_cue_name.clone(),
-                            fade_time: self.new_fade_time,
-                            timecode: self.new_timecode.clone(),
-                            duration: Duration::from_secs_f64(self.new_fade_time),
-                            ..Default::default()
-                        });
+                        // Create new cue and add to the current cue list
+                        if let Some(cue_list_idx) = self.selected_cue_list_index {
+                            console_lock.cue_manager.add_cue(
+                                cue_list_idx,
+                                Cue {
+                                    name: self.new_cue_name.clone(),
+                                    fade_time: self.new_fade_time,
+                                    timecode: self.new_timecode.clone(),
+                                    duration: Duration::from_secs_f64(self.new_fade_time),
+                                    ..Default::default()
+                                },
+                            );
 
-                        // Add to current cue list
-                        self.cue_lists[cue_list_idx].cues.push(cue_idx);
-
-                        // Clear inputs
-                        self.new_cue_name.clear();
-                        self.new_timecode.clear();
+                            // Clear inputs
+                            self.new_cue_name.clear();
+                            self.new_timecode.clear();
+                        }
                     }
                 });
             } else {
@@ -141,76 +134,76 @@ impl CueEditor {
 
             // Table of cues
             if let Some(cue_list_idx) = self.selected_cue_list_index {
-                if cue_list_idx < self.cue_lists.len() {
-                    let cue_list = &self.cue_lists[cue_list_idx].clone();
-                    let console_lock = console.lock();
+                let console_lock = console.lock();
+                let cue_list = console_lock.cue_manager.get_cue_list(cue_list_idx);
 
-                    egui::Grid::new("cues_grid")
-                        .striped(true)
-                        .num_columns(4)
-                        .spacing([10.0, 6.0])
-                        .show(ui, |ui| {
-                            // Header
-                            ui.strong("ID");
-                            ui.strong("Name");
-                            ui.strong("Fade Time");
-                            ui.strong("Timecode");
-                            ui.end_row();
+                egui::Grid::new("cues_grid")
+                    .striped(true)
+                    .num_columns(4)
+                    .spacing([10.0, 6.0])
+                    .show(ui, |ui| {
+                        // Header
+                        ui.strong("ID");
+                        ui.strong("Name");
+                        ui.strong("Fade Time");
+                        ui.strong("Timecode");
+                        ui.end_row();
 
-                            // Cues
-                            for (list_idx, &cue_idx) in cue_list.cues.iter().enumerate() {
-                                if let Some(cue) = console_lock.cues.get(cue_idx) {
-                                    let is_selected = self.selected_cue_index == Some(list_idx);
-                                    let id_text =
-                                        RichText::new(format!("{}", cue_idx + 1)).strong();
+                        // Cues
+                        if let Some(cue_list) = cue_list {
+                            for (idx, cue) in cue_list.cues.iter().enumerate() {
+                                let is_selected = self.selected_cue_index == Some(idx);
+                                let id_text = RichText::new(format!("{}", idx + 1)).strong();
 
-                                    if ui.selectable_label(is_selected, id_text).clicked() {
-                                        self.selected_cue_index = Some(list_idx);
-                                    }
-
-                                    ui.label(&cue.name);
-                                    ui.label(format!("{:.1} s", cue.fade_time));
-                                    ui.label(&cue.timecode);
-                                    ui.end_row();
+                                if ui.selectable_label(is_selected, id_text).clicked() {
+                                    self.selected_cue_index = Some(idx);
                                 }
+
+                                ui.label(&cue.name);
+                                ui.label(format!("{:.1} s", cue.fade_time));
+                                ui.label(&cue.timecode);
+                                ui.end_row();
                             }
-                        });
-
-                    ui.separator();
-                    ui.heading("Audio File");
-
-                    ui.horizontal(|ui| {
-                        let audio_file = self.cue_lists[cue_list_idx]
-                            .audio_file
-                            .as_deref()
-                            .unwrap_or("None");
-                        ui.label(format!("Current: {}", audio_file));
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.text_edit_singleline(&mut self.audio_file_path);
-                        if ui.button("Load Audio").clicked() && !self.audio_file_path.is_empty() {
-                            self.set_audio_file(cue_list_idx, self.audio_file_path.clone());
                         }
                     });
 
-                    // Cue details if selected
-                    if let Some(cue_idx) = self.selected_cue_index {
-                        if cue_idx < cue_list.cues.len() {
-                            let console_cue_idx = cue_list.cues[cue_idx];
-                            if let Some(cue) = console_lock.cues.get(console_cue_idx) {
-                                ui.separator();
-                                ui.heading(format!("Cue {} Details", console_cue_idx + 1));
+                ui.separator();
+                ui.heading("Audio File");
 
-                                ui.label(format!("Static Values: {}", cue.static_values.len()));
-                                ui.label(format!("Chases: {}", cue.chases.len()));
+                ui.horizontal(|ui| {
+                    let console_lock = console.lock();
+                    let cue_lists = console_lock.cue_manager.get_cue_lists();
 
-                                if ui.button("Edit Cue").clicked() {
-                                    // This would open the detailed cue editor
-                                    // For now, we'll just set the selected cue in the main app
-                                    // The actual implementation would depend on how you want to handle navigation
-                                }
-                            }
+                    let audio_file = cue_lists[cue_list_idx]
+                        .audio_file
+                        .as_deref()
+                        .unwrap_or("None");
+                    ui.label(format!("Current: {}", audio_file));
+                });
+
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(&mut self.audio_file_path);
+                    if ui.button("Load Audio").clicked() && !self.audio_file_path.is_empty() {
+                        self.set_audio_file(cue_list_idx, self.audio_file_path.clone(), console);
+                    }
+                });
+
+                // Cue details if selected
+                if let Some(cue_idx) = self.selected_cue_index {
+                    let console_lock = console.lock();
+                    let cue = console_lock.cue_manager.get_cue(cue_idx);
+
+                    if let Some(cue) = cue {
+                        ui.separator();
+                        ui.heading(format!("Cue {} Details", cue_idx + 1));
+
+                        ui.label(format!("Static Values: {}", cue.static_values.len()));
+                        ui.label(format!("Chases: {}", cue.chases.len()));
+
+                        if ui.button("Edit Cue").clicked() {
+                            // This would open the detailed cue editor
+                            // For now, we'll just set the selected cue in the main app
+                            // The actual implementation would depend on how you want to handle navigation
                         }
                     }
                 }
@@ -218,8 +211,16 @@ impl CueEditor {
         });
     }
 
-    fn set_audio_file(&mut self, cue_list_idx: usize, audio_file: String) {
-        self.cue_lists[cue_list_idx].audio_file = Some(audio_file);
+    fn set_audio_file(
+        &mut self,
+        cue_list_idx: usize,
+        audio_file: String,
+        console: &Arc<Mutex<LightingConsole>>,
+    ) {
+        let mut console_lock = console.lock();
+        console_lock
+            .cue_manager
+            .set_audio_file(cue_list_idx, audio_file);
         self.audio_file_path.clear();
     }
 }
