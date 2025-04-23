@@ -32,6 +32,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Implement cue activation and progress tracking
 - [ ] Add basic cue functionality (play, stop, pause)
 - [x] Add timeline UI with position indicator and playback controls
+- [x] Build cue editor and manager
 
 ## Week 3 (CW12): Programmer Panel
 
@@ -56,10 +57,10 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 **Deliverable:** Complete, integrated application ready for testing.
 
 - [ ] Show saving and loading
+- [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
 - [ ] Add patch panel functionality
 - [ ] Add settings modal functionality (audio device, dmx, fixture library)
 - [ ] Final UI polish and documentation
-- [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
 
 ## Future
 
