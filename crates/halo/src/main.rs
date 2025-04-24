@@ -5,9 +5,9 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use halo_core::sawtooth_effect;
 use halo_core::sine_effect;
 use halo_core::square_effect;
+use halo_core::{sawtooth_effect, CueList};
 use halo_core::{
     Chase, ChaseStep, Cue, Effect, EffectDistribution, EffectMapping, EffectParams, Interval,
     LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
@@ -579,8 +579,16 @@ fn main() -> Result<(), anyhow::Error> {
     );
     let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80);
 
-    // load cues
-    console.set_cues(cues);
+    // store the cues in a default cue list
+    let mut cue_lists = Vec::new();
+    cue_lists.push(CueList {
+        name: "Default".to_string(),
+        cues,
+        audio_file: None,
+    });
+
+    // load cue lists
+    console.set_cue_lists(cue_lists);
 
     // Blue Strobe Fast
     console.add_midi_override(

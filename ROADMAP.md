@@ -15,6 +15,11 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 * Use a hardware mixer for effects. (e.g: DJM-800)
 * Use a MIDI controller for cue and override control (e.g: Novation Launch Control XL)
 
+- [ ] Wire up Effects UI + save to cue
+- [ ] Show Save/Load
+- [ ] Cues advance to timecode
+- [ ] Ability to control smoke, strobe and cuelists with Traktor MIDI controller
+
 ## Week 1 (CW10): Core UI Components
 
 **Deliverable:** Basic application frame with working panes.
@@ -32,6 +37,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Implement cue activation and progress tracking
 - [ ] Add basic cue functionality (play, stop, pause)
 - [x] Add timeline UI with position indicator and playback controls
+- [x] Build cue editor and manager
 
 ## Week 3 (CW12): Programmer Panel
 
@@ -41,7 +47,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Implement parameter value storage and application to fixtures
 - [x] Add visual feedback for parameter changes
 - [x] We need a color mapping system to translate the RGBW values to single channel values for certain fixtures (e.g: Shehds Spots). Short-cut: would be to map the Red channel for now.
-- [ ] Provide a way to hide the programmer
+- [x] Provide a way to hide/collapse the programmer
 
 ## Week 4 (CW13): Effects System & Overrides
 
@@ -56,13 +62,14 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 **Deliverable:** Complete, integrated application ready for testing.
 
 - [ ] Show saving and loading
+- [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
 - [ ] Add patch panel functionality
 - [ ] Add settings modal functionality (audio device, dmx, fixture library)
 - [ ] Final UI polish and documentation
-- [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
 
 ## Future
 
 - [ ] Use tokio for async io + UDP
 - [ ] Bring back a headless console mode with keyboard input
 - [ ] 2D fixture visualization with different fixture types
+- [ ] Sequences/Chases with looping functionality

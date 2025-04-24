@@ -37,7 +37,7 @@ impl CuePanel {
         });
 
         // Display cues with progress bars
-        let cues = console_guard.cues.iter();
+        let cues = console_guard.cue_manager.get_current_cues();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             for cue in cues {

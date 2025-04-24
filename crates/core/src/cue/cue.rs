@@ -42,6 +42,13 @@ impl Default for Cue {
 }
 
 #[derive(Clone, Debug)]
+pub struct CueList {
+    pub name: String,
+    pub cues: Vec<Cue>,
+    pub audio_file: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 pub struct StaticValue {
     pub fixture_name: String,
     pub channel_name: String,
@@ -68,7 +75,7 @@ impl Chase {
             current_step: 0,
             current_step_elapsed: 0.0,
             accumulated_beats: 0.0,
-            loop_count: loop_count,
+            loop_count,
             last_step_change: Instant::now(),
         }
     }
@@ -113,10 +120,6 @@ impl Chase {
     pub fn set_current_step(&mut self, step: usize) {
         self.current_step = step;
     }
-
-    // pub fn set_accumulated_beats(&mut self, beats: f64) {
-    //     self.accumulated_beats = beats;
-    // }
 }
 
 #[derive(Clone, Debug)]

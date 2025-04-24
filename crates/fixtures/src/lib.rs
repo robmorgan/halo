@@ -295,12 +295,6 @@ impl FixtureLibrary {
 }
 
 #[derive(Clone, Debug)]
-pub struct Group {
-    name: String,
-    fixture_names: Vec<String>,
-}
-
-#[derive(Clone, Debug)]
 pub struct Channel {
     pub name: String,
     pub channel_type: ChannelType,
