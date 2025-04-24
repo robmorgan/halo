@@ -1,5 +1,6 @@
-use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use std::time::{Duration, Instant};
+
+use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 
 // Timeline state
 pub struct TimelineState {
@@ -476,7 +477,8 @@ impl Timeline {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.button("🗑").clicked() {
                                 // Mark for removal (can't remove here due to borrowing)
-                                // In a real implementation, use an event system or indices to handle this
+                                // In a real implementation, use an event system or indices to
+                                // handle this
                             }
 
                             let color_button =

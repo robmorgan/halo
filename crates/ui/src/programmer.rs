@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use halo_core::LightingConsole;
 use halo_fixtures::{Channel, ChannelType, Fixture};
 use parking_lot::Mutex;
-use std::{collections::HashMap, sync::Arc};
 
 // Define the active tab types for the programmer
 #[derive(Clone, Debug, PartialEq)]

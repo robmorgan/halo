@@ -201,7 +201,7 @@ impl FixtureLibrary {
                     },
                     Channel {
                         name: "Function".to_string(),
-                        // TODO - I think this is XY speed?  Check the manual and update accordingly.
+                        // TODO - I think this is XY speed? Check the manual and update accordingly.
                         channel_type: ChannelType::Other("Function".to_string()),
                         value: 0,
                     },

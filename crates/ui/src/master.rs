@@ -1,9 +1,10 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Stroke, Vec2};
 use halo_core::{LightingConsole, MidiAction, MidiOverride, StaticValue};
 use halo_fixtures::ChannelType;
 use parking_lot::Mutex;
-use std::collections::HashMap;
-use std::sync::Arc;
 
 // Override button state
 #[derive(Clone, Debug)]
@@ -397,7 +398,8 @@ impl MasterPanel {
             if response.changed() {
                 if fader.name == "Master" {
                     // TODO - Apply master dimmer
-                    // When we are rendering a frame, we'll loop over each fixture and limit its intensity to the master dimmer value.
+                    // When we are rendering a frame, we'll loop over each fixture and limit its
+                    // intensity to the master dimmer value.
                 } else if fader.name == "Smoke %" {
                     // TODO - Apply smoke master
                     // We'll do the same here but limit smoke instead.

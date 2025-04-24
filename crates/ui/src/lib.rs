@@ -1,15 +1,15 @@
-use cue::CuePanel;
-use eframe::egui;
-use master::{MasterPanel, OverridesPanel};
-use parking_lot::Mutex;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
+use cue::CuePanel;
 use cue_editor::CueEditor;
+use eframe::egui;
 use fixture::FixtureGrid;
 use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, EventLoop, LightingConsole};
 use halo_fixtures::Fixture;
+use master::{MasterPanel, OverridesPanel};
+use parking_lot::Mutex;
 use patch_panel::PatchPanel;
 use programmer::Programmer;
 use session::SessionPanel;

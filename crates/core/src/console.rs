@@ -1,24 +1,21 @@
+use std::collections::HashMap;
+use std::io::{stdout, Write};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
+
+use halo_fixtures::{Fixture, FixtureLibrary};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use parking_lot::Mutex;
-use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::thread;
-use std::time::Duration;
-use std::time::Instant;
-use std::{
-    io::{stdout, Write},
-    sync::Arc,
-};
 
 use crate::ableton_link::ClockState;
-use crate::artnet::{artnet::ArtNet, network_config::NetworkConfig};
+use crate::artnet::artnet::ArtNet;
+use crate::artnet::network_config::NetworkConfig;
 use crate::cue::cue_manager::CueManager;
 use crate::effect::effect::get_effect_phase;
 use crate::midi::midi::{MidiMessage, MidiOverride};
-use crate::{ableton_link, artnet};
-use crate::{CueList, Effect};
-use crate::{EffectDistribution, RhythmState};
-use halo_fixtures::{Fixture, FixtureLibrary};
+use crate::{ableton_link, artnet, CueList, Effect, EffectDistribution, RhythmState};
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;

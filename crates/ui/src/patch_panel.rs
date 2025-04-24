@@ -1,6 +1,6 @@
-use eframe::egui;
 use std::sync::{Arc, Mutex};
 
+use eframe::egui;
 use halo_core::LightingConsole;
 
 pub struct PatchPanel {

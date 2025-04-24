@@ -1,9 +1,9 @@
-use eframe::egui::{self, RichText};
-use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 
+use eframe::egui::{self, RichText};
 use halo_core::{Cue, CueList, LightingConsole};
+use parking_lot::Mutex;
 
 pub struct CueEditor {
     selected_cue_list_index: Option<usize>,
@@ -245,7 +245,8 @@ impl CueEditor {
 
                         if ui.button("Edit Cue").clicked() {
                             // This would open the detailed cue editor
-                            // The actual implementation would depend on how you want to handle navigation
+                            // The actual implementation would depend on how you want to handle
+                            // navigation
                         }
                     });
             }
