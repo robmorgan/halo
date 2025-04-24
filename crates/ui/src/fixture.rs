@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Color32, CornerRadius, Rect, Stroke, Vec2};
 use halo_core::LightingConsole;
-use halo_fixtures::{Fixture, FixtureType};
+use halo_fixtures::FixtureType;
 use parking_lot::Mutex;
 
 const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [

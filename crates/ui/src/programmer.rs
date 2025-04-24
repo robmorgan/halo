@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use halo_core::LightingConsole;
-use halo_fixtures::{Channel, ChannelType, Fixture};
+use halo_fixtures::{Channel, Fixture};
 use parking_lot::Mutex;
 
 // Define the active tab types for the programmer
