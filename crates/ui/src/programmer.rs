@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::f64::consts::PI;
 use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use egui_plot::{Line, Plot, PlotPoints};
 use halo_core::LightingConsole;
 use halo_fixtures::{Channel, Fixture};
 use parking_lot::Mutex;
@@ -809,6 +811,11 @@ impl Programmer {
 
             ui.add_space(10.0);
 
+            // Show waveform visualization
+            self.show_waveform_visualization(ui);
+
+            ui.add_space(10.0);
+
             // Distribution dropdown
             egui::ComboBox::from_label("Distribution")
                 .selected_text(match self.state.effect_distribution {
@@ -830,5 +837,83 @@ impl Programmer {
                 // Apply effect functionality would go here
             }
         });
+    }
+
+    fn show_waveform_visualization(&self, ui: &mut egui::Ui) {
+        // Get effect parameters
+        let waveform_type = self.state.effect_waveform;
+        let ratio = self.state.get_param("effect_ratio");
+        let phase_degrees = self.state.get_param("effect_phase");
+        let phase_radians = phase_degrees * PI as f32 / 180.0;
+
+        // Generate points for the selected waveform
+        let n_points = 100;
+        let mut points = Vec::with_capacity(n_points);
+
+        for i in 0..n_points {
+            let x = i as f64 / (n_points - 1) as f64 * 2.0 * PI;
+            let phase = phase_radians as f64;
+            let r = ratio as f64;
+
+            // Calculate y based on waveform type
+            let y = match waveform_type {
+                0 => {
+                    // Sine
+                    (x * r + phase).sin()
+                }
+                1 => {
+                    // Square
+                    if ((x * r + phase) % (2.0 * PI)).sin() >= 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    }
+                }
+                2 => {
+                    // Sawtooth
+                    let mut v = ((x * r + phase) % (2.0 * PI)) / PI - 1.0;
+                    if v > 1.0 {
+                        v -= 2.0
+                    };
+                    v
+                }
+                3 => {
+                    // Triangle
+                    let p = (x * r + phase) % (2.0 * PI);
+                    if p < PI {
+                        -1.0 + 2.0 * p / PI
+                    } else {
+                        3.0 - 2.0 * p / PI
+                    }
+                }
+                _ => (x * r + phase).sin(), // Default to sine
+            };
+
+            points.push([x, y]);
+        }
+
+        // Create plot points and line
+        let plot_points = PlotPoints::from(points);
+        let line = Line::new("", plot_points).color(match self.state.active_tab {
+            ActiveProgrammerTab::Intensity => egui::Color32::from_rgb(0, 150, 255),
+            ActiveProgrammerTab::Color => egui::Color32::from_rgb(255, 100, 100),
+            ActiveProgrammerTab::Position => egui::Color32::from_rgb(100, 255, 100),
+            ActiveProgrammerTab::Beam => egui::Color32::from_rgb(255, 200, 0),
+        });
+
+        // Create and show the plot
+        Plot::new("effect_waveform")
+            .height(120.0)
+            .allow_zoom(false)
+            .allow_drag(false)
+            .show_axes([false, false])
+            .include_y(-1.2)
+            .include_y(1.2)
+            .show(ui, |plot_ui| {
+                plot_ui.line(line);
+            });
+
+        // Add title for the plot
+        ui.label("Waveform Preview");
     }
 }
