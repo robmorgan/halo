@@ -18,7 +18,9 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Wire up Effects UI + save to cue
 - [ ] Show Save/Load
 - [ ] Cues advance to timecode
+- [ ] Blocking cues
 - [ ] Ability to control smoke, strobe and cuelists with Traktor MIDI controller
+- [ ] Audio file playback
 
 ## Week 1 (CW10): Core UI Components
 
