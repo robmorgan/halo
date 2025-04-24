@@ -241,7 +241,7 @@ impl CueEditor {
                     .default_open(true)
                     .show(ui, |ui| {
                         ui.label(format!("Static Values: {}", cue.static_values.len()));
-                        ui.label(format!("Chases: {}", cue.chases.len()));
+                        ui.label(format!("Effects: {}", cue.effects.len()));
 
                         if ui.button("Edit Cue").clicked() {
                             // This would open the detailed cue editor

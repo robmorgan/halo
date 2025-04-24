@@ -87,11 +87,11 @@ impl LightingConsole {
         profile_name: &str,
         universe: u8,
         address: u16,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         let profile = self
             .fixture_library
             .profiles
-            .get(&profile_name.to_string())
+            .get(profile_name)
             .ok_or_else(|| format!("Profile {} not found", profile_name))?;
 
         // Assign a new ID to the fixture
@@ -107,7 +107,7 @@ impl LightingConsole {
         };
 
         self.fixtures.push(fixture);
-        Ok(())
+        Ok(id)
     }
 
     pub fn set_cue_lists(&mut self, cue_lists: Vec<CueList>) {
@@ -220,7 +220,7 @@ impl LightingConsole {
                         if let Some(last_time) = self.rhythm_state.last_tap_time {
                             let interval = now.duration_since(last_time).as_secs_f64();
                             let new_bpm = 60.0 / interval;
-                            self.link_state.set_tempo(new_bpm);
+                            let _ = self.link_state.set_tempo(new_bpm);
                         }
                         self.rhythm_state.last_tap_time = Some(now);
                     }
@@ -241,7 +241,9 @@ impl LightingConsole {
                         // Go Button: Advance the cue
                         if cc == 116 && value > 64 {
                             // Example: CC #116 when value goes above 64
-                            self.cue_manager.go_to_next_cue();
+                            if let Err(err) = self.cue_manager.go_to_next_cue() {
+                                println!("Error advancing cue: {}", err);
+                            }
                         }
 
                         // K1 Knob: Set the BPM
@@ -286,76 +288,42 @@ impl LightingConsole {
                     }
                 }
 
-                for chase in &current_cue.chases {
-                    // TODO - use the real elapsed time
-                    // TODO - i don't want to use chases anymore or make them mutable.
-                    //let elapsed = Duration::from_secs(1);
-                    //chase.update(elapsed);
+                // apply effect mappings
+                for mapping in &current_cue.effects {
+                    // get all fixtures that use this mapping
+                    let mut affected_fixtures: Vec<&mut Fixture> = self
+                        .fixtures
+                        .iter_mut()
+                        .filter(|f| mapping.fixture_ids.contains(&f.id))
+                        .collect();
 
-                    // Apply chase-level static values
-                    for static_value in chase.get_current_static_values() {
-                        if let Some(fixture) = self
-                            .fixtures
-                            .iter_mut()
-                            .find(|f| f.name == static_value.fixture_name)
-                        {
-                            if let Some(channel) = fixture
-                                .channels
-                                .iter_mut()
-                                .find(|c| c.name == static_value.channel_name)
-                            {
-                                // Smooth transition for static values as well
-                                let current_value = channel.value as f64;
-                                let target_value = static_value.value as f64;
-                                channel.value =
-                                    (current_value + (target_value - current_value)).round() as u8;
-                            }
-                        }
-                    }
+                    // apply the effect to each fixture
+                    for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
+                        for channel_type in &mapping.channel_types {
+                            if let Some(channel) = fixture.channels.iter_mut().find(|c| {
+                                std::mem::discriminant(&c.channel_type)
+                                    == std::mem::discriminant(channel_type)
+                            }) {
+                                let mut effect_params = mapping.effect.params.clone();
 
-                    // Apply chase-level effect mappings
-                    for mapping in chase.get_current_effect_mappings() {
-                        let mut affected_fixtures: Vec<&mut Fixture> = self
-                            .fixtures
-                            .iter_mut()
-                            .filter(|f| mapping.fixture_names.contains(&f.name))
-                            .collect();
-
-                        // if affected fixtures is empty, log a warning and continue
-                        if affected_fixtures.is_empty() {
-                            println!(
-                                "Warning: No fixtures found using mapping for fixtures: {:?}",
-                                mapping.fixture_names.join(", ")
-                            );
-                        }
-
-                        for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
-                            for channel_type in &mapping.channel_types {
-                                if let Some(channel) = fixture.channels.iter_mut().find(|c| {
-                                    std::mem::discriminant(&c.channel_type)
-                                        == std::mem::discriminant(channel_type)
-                                }) {
-                                    let mut effect_params = mapping.effect.params.clone();
-
-                                    // Apply distribution adjustments
-                                    match mapping.distribution {
-                                        EffectDistribution::All => {}
-                                        EffectDistribution::Step(step) => {
-                                            if i % step != 0 {
-                                                continue;
-                                            }
-                                        }
-                                        EffectDistribution::Wave(phase_offset) => {
-                                            effect_params.phase += phase_offset * i as f64;
+                                // Apply distribution adjustments
+                                match mapping.distribution {
+                                    EffectDistribution::All => {}
+                                    EffectDistribution::Step(step) => {
+                                        if i % step != 0 {
+                                            continue;
                                         }
                                     }
-
-                                    channel.value = apply_effect(
-                                        &mapping.effect,
-                                        &self.rhythm_state,
-                                        channel.value,
-                                    );
+                                    EffectDistribution::Wave(phase_offset) => {
+                                        effect_params.phase += phase_offset * i as f64;
+                                    }
                                 }
+
+                                channel.value = apply_effect(
+                                    &mapping.effect,
+                                    &self.rhythm_state,
+                                    channel.value,
+                                );
                             }
                         }
                     }
