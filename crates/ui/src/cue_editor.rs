@@ -217,7 +217,7 @@ impl CueEditor {
                 .add_enabled(path_valid, egui::Button::new("Load Audio"))
                 .clicked()
             {
-                console_lock
+                let _ = console_lock
                     .cue_manager
                     .set_audio_file(cue_list_idx, self.audio_file_path.clone());
                 self.audio_file_path.clear();

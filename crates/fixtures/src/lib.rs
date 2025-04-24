@@ -29,6 +29,7 @@ pub struct FixtureProfile {
     pub sub_fixtures: Option<usize>,
 }
 
+#[derive(Default)]
 pub struct FixtureLibrary {
     pub profiles: HashMap<String, FixtureProfile>,
 }
@@ -368,7 +369,7 @@ impl Fixture {
     pub fn get_dmx_values(&self) -> Vec<u8> {
         let mut values = Vec::new();
         for channel in &self.channels {
-            values.push(channel.value as u8);
+            values.push(channel.value);
         }
         values
     }

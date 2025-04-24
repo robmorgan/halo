@@ -145,12 +145,12 @@ impl OverridesPanel {
                             .insert(button.name.clone(), button.is_active);
 
                         // Apply override to console
-                        let mut console_guard = console.lock();
+                        let mut console_lock = console.lock();
 
                         if button.is_active {
                             // Apply this override
                             for value in &button.values {
-                                if let Some(fixture) = console_guard
+                                if let Some(fixture) = console_lock
                                     .fixtures
                                     .iter_mut()
                                     .find(|f| f.name == value.fixture_name)
@@ -162,17 +162,15 @@ impl OverridesPanel {
                             // Reset channels controlled by this override
                             // This would need custom logic to know what values to reset to
                         }
-                        drop(console);
+                        drop(console_lock);
                     }
 
                     // Handle momentary behavior
-                    if button.is_momentary {
-                        if response.drag_stopped() {
-                            button.is_active = false;
-                            self.active_overrides.insert(button.name.clone(), false);
+                    if button.is_momentary && response.drag_stopped() {
+                        button.is_active = false;
+                        self.active_overrides.insert(button.name.clone(), false);
 
-                            // TODO - Reset values when momentary button is released
-                        }
+                        // TODO - Reset values when momentary button is released
                     }
 
                     ui.add_space(5.0);

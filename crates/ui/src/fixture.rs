@@ -17,18 +17,9 @@ const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [
 /// A panel that shows a grid layout of fixtures with selectable items.
 ///
 /// It has support for fixtures with multiple lights.
+#[derive(Default)]
 pub struct FixtureGrid {
-    fixtures: Vec<Fixture>,
     selected_fixtures: Vec<usize>,
-}
-
-impl Default for FixtureGrid {
-    fn default() -> Self {
-        Self {
-            fixtures: vec![],
-            selected_fixtures: vec![],
-        }
-    }
 }
 
 impl FixtureGrid {

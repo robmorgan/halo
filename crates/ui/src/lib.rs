@@ -121,7 +121,7 @@ impl eframe::App for HaloApp {
         let fixtures;
         {
             let console = self.console.lock();
-            fixtures = console.fixtures.iter().cloned().collect();
+            fixtures = console.fixtures.to_vec();
         }
 
         // Update the programmer with the current fixtures and selection

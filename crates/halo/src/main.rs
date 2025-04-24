@@ -578,12 +578,11 @@ fn main() -> Result<(), anyhow::Error> {
     let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80);
 
     // store the cues in a default cue list
-    let mut cue_lists = Vec::new();
-    cue_lists.push(CueList {
+    let cue_lists = vec![CueList {
         name: "Default".to_string(),
         cues,
         audio_file: None,
-    });
+    }];
 
     // load cue lists
     console.set_cue_lists(cue_lists);
@@ -655,7 +654,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Launch the UI in the main thread
-    halo_ui::run_ui(Arc::new(Mutex::new(console)));
+    let _ = halo_ui::run_ui(Arc::new(Mutex::new(console)));
     Ok(())
 }
 

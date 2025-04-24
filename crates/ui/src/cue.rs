@@ -6,15 +6,8 @@ use halo_core::{Cue, LightingConsole};
 use parking_lot::Mutex;
 
 /// A panel that shows the list of cues.
-pub struct CuePanel {
-    cues: Vec<Cue>,
-}
-
-impl Default for CuePanel {
-    fn default() -> Self {
-        Self { cues: vec![] }
-    }
-}
+#[derive(Default)]
+pub struct CuePanel {}
 
 impl CuePanel {
     pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
