@@ -1,8 +1,8 @@
-use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
-use parking_lot::Mutex;
 use std::sync::Arc;
 
+use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
 use halo_core::LightingConsole;
+use parking_lot::Mutex;
 
 use crate::utils::Theme;
 

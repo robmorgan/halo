@@ -1,15 +1,14 @@
-use cue::CuePanel;
-use eframe::egui;
-use master::{MasterPanel, OverridesPanel};
-use parking_lot::Mutex;
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Instant, SystemTime};
 
+use cue::CuePanel;
 use cue_editor::CueEditor;
+use eframe::egui;
 use fixture::FixtureGrid;
-use halo_core::{Chase, ChaseStep, EffectMapping, EffectType, EventLoop, LightingConsole};
-use halo_fixtures::Fixture;
+use halo_core::{EffectType, EventLoop, LightingConsole};
+use master::{MasterPanel, OverridesPanel};
+use parking_lot::Mutex;
 use patch_panel::PatchPanel;
 use programmer::Programmer;
 use session::SessionPanel;
@@ -121,7 +120,7 @@ impl eframe::App for HaloApp {
         let fixtures;
         {
             let console = self.console.lock();
-            fixtures = console.fixtures.iter().cloned().collect();
+            fixtures = console.fixtures.to_vec();
         }
 
         // Update the programmer with the current fixtures and selection

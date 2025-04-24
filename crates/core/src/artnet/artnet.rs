@@ -1,9 +1,8 @@
+use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::time::SystemTime;
+
 use artnet_protocol::{ArtCommand, Output};
 use log::debug;
-use std::{
-    net::{SocketAddr, ToSocketAddrs, UdpSocket},
-    time::SystemTime,
-};
 
 // The IP of the device running this SW
 const DEVICE_IP: &str = "0.0.0.0";

@@ -1,23 +1,62 @@
-name: Rust
+name: Rust CI
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
   pull_request:
-    branches: ["main"]
+    branches:
+      - main
 
-env:
-  CARGO_TERM_COLOR: always
+permissions:
+  contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  rust-macos-arm64:
+    runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Install ALSA dependencies
-        run: sudo apt-get install -y libasound2-dev
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (Nightly for fmt)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy
+          override: true
+
+      - name: Set Stable as Default (MSRV 1.86.0)
+        if: success()
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: 1.86.0
+          components: clippy
+
+      - name: Cache cargo registry & build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-stable-
+            ${{ runner.os }}-cargo-
+
+      - name: Verify runner architecture
+        run: 'echo "UNAME reports: $(uname -m)"'
+
+      - name: Check formatting
+        run: cargo +nightly fmt --all -- --check
+
+      # TODO - too many warnings right now, so let's comment out
+      #- name: Run linters
+      #  run: cargo clippy -- -D warnings
+
       - name: Build
         run: cargo build --verbose
+
       - name: Run tests
         run: cargo test --verbose

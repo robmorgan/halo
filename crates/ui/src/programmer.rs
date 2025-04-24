@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use halo_core::LightingConsole;
-use halo_fixtures::{Channel, ChannelType, Fixture};
+use halo_fixtures::{Channel, Fixture};
 use parking_lot::Mutex;
-use std::{collections::HashMap, sync::Arc};
 
 // Define the active tab types for the programmer
 #[derive(Clone, Debug, PartialEq)]
@@ -78,29 +80,29 @@ impl ProgrammerState {
         Self::default()
     }
 
-    pub fn toggle_collapsed(&mut self) {
+    pub fn _toggle_collapsed(&mut self) {
         self.collapsed = !self.collapsed;
     }
 
-    pub fn is_collapsed(&self) -> bool {
+    pub fn _is_collapsed(&self) -> bool {
         self.collapsed
     }
 
-    pub fn set_selected_fixtures(&mut self, fixtures: Vec<usize>) {
+    pub fn _set_selected_fixtures(&mut self, fixtures: Vec<usize>) {
         self.selected_fixtures = fixtures;
     }
 
-    pub fn add_selected_fixture(&mut self, fixture_id: usize) {
+    pub fn _add_selected_fixture(&mut self, fixture_id: usize) {
         if !self.selected_fixtures.contains(&fixture_id) {
             self.selected_fixtures.push(fixture_id);
         }
     }
 
-    pub fn remove_selected_fixture(&mut self, fixture_id: usize) {
+    pub fn _remove_selected_fixture(&mut self, fixture_id: usize) {
         self.selected_fixtures.retain(|&id| id != fixture_id);
     }
 
-    pub fn clear_selected_fixtures(&mut self) {
+    pub fn _clear_selected_fixtures(&mut self) {
         self.selected_fixtures.clear();
     }
 
@@ -252,7 +254,7 @@ impl Programmer {
 
             // Update the fixtures based on the programmer's state if preview mode is enabled
             if self.state.preview_mode {
-                self.update_fixtures(&console);
+                self.update_fixtures(console);
             }
         });
     }

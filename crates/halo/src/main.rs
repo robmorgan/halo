@@ -1,18 +1,16 @@
-use anyhow::Ok;
-use clap::Parser;
-use parking_lot::Mutex;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use halo_core::sine_effect;
-use halo_core::square_effect;
-use halo_core::{sawtooth_effect, CueList};
+use anyhow::Ok;
+use clap::Parser;
 use halo_core::{
-    Chase, ChaseStep, Cue, Effect, EffectDistribution, EffectMapping, EffectParams, Interval,
-    LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
+    sawtooth_effect, sine_effect, square_effect, Chase, ChaseStep, Cue, CueList, Effect,
+    EffectDistribution, EffectMapping, EffectParams, Interval, LightingConsole, MidiAction,
+    MidiOverride, NetworkConfig, StaticValue,
 };
 use halo_fixtures::ChannelType;
+use parking_lot::Mutex;
 
 /// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
@@ -580,12 +578,11 @@ fn main() -> Result<(), anyhow::Error> {
     let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80);
 
     // store the cues in a default cue list
-    let mut cue_lists = Vec::new();
-    cue_lists.push(CueList {
+    let cue_lists = vec![CueList {
         name: "Default".to_string(),
         cues,
         audio_file: None,
-    });
+    }];
 
     // load cue lists
     console.set_cue_lists(cue_lists);
@@ -657,7 +654,7 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Launch the UI in the main thread
-    halo_ui::run_ui(Arc::new(Mutex::new(console)));
+    let _ = halo_ui::run_ui(Arc::new(Mutex::new(console)));
     Ok(())
 }
 

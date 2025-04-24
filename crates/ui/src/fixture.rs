@@ -1,9 +1,9 @@
-use eframe::egui::{self, Color32, CornerRadius, Rect, Stroke, Vec2};
-use parking_lot::Mutex;
 use std::sync::Arc;
 
+use eframe::egui::{self, Color32, CornerRadius, Rect, Stroke, Vec2};
 use halo_core::LightingConsole;
-use halo_fixtures::{Fixture, FixtureType};
+use halo_fixtures::FixtureType;
+use parking_lot::Mutex;
 
 const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [
     (FixtureType::MovingHead, Color32::from_rgb(255, 165, 0)), // Orange
@@ -17,18 +17,9 @@ const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [
 /// A panel that shows a grid layout of fixtures with selectable items.
 ///
 /// It has support for fixtures with multiple lights.
+#[derive(Default)]
 pub struct FixtureGrid {
-    fixtures: Vec<Fixture>,
     selected_fixtures: Vec<usize>,
-}
-
-impl Default for FixtureGrid {
-    fn default() -> Self {
-        Self {
-            fixtures: vec![],
-            selected_fixtures: vec![],
-        }
-    }
 }
 
 impl FixtureGrid {

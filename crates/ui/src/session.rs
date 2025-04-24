@@ -1,10 +1,10 @@
-use chrono::{Local, Timelike};
-use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use chrono::{Local, Timelike};
+use eframe::egui::{Align, Color32, FontId, Layout, RichText};
 use halo_core::LightingConsole;
+use parking_lot::Mutex;
 
 enum ClockMode {
     TimeCode,

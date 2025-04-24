@@ -1,5 +1,4 @@
-use crate::Cue;
-use crate::CueList;
+use crate::{Cue, CueList};
 
 pub struct CueManager {
     cue_lists: Vec<CueList>,

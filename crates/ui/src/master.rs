@@ -1,9 +1,10 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Stroke, Vec2};
 use halo_core::{LightingConsole, MidiAction, MidiOverride, StaticValue};
 use halo_fixtures::ChannelType;
 use parking_lot::Mutex;
-use std::collections::HashMap;
-use std::sync::Arc;
 
 // Override button state
 #[derive(Clone, Debug)]
@@ -144,12 +145,12 @@ impl OverridesPanel {
                             .insert(button.name.clone(), button.is_active);
 
                         // Apply override to console
-                        let mut console_guard = console.lock();
+                        let mut console_lock = console.lock();
 
                         if button.is_active {
                             // Apply this override
                             for value in &button.values {
-                                if let Some(fixture) = console_guard
+                                if let Some(fixture) = console_lock
                                     .fixtures
                                     .iter_mut()
                                     .find(|f| f.name == value.fixture_name)
@@ -161,17 +162,15 @@ impl OverridesPanel {
                             // Reset channels controlled by this override
                             // This would need custom logic to know what values to reset to
                         }
-                        drop(console);
+                        drop(console_lock);
                     }
 
                     // Handle momentary behavior
-                    if button.is_momentary {
-                        if response.drag_stopped() {
-                            button.is_active = false;
-                            self.active_overrides.insert(button.name.clone(), false);
+                    if button.is_momentary && response.drag_stopped() {
+                        button.is_active = false;
+                        self.active_overrides.insert(button.name.clone(), false);
 
-                            // TODO - Reset values when momentary button is released
-                        }
+                        // TODO - Reset values when momentary button is released
                     }
 
                     ui.add_space(5.0);
@@ -397,7 +396,8 @@ impl MasterPanel {
             if response.changed() {
                 if fader.name == "Master" {
                     // TODO - Apply master dimmer
-                    // When we are rendering a frame, we'll loop over each fixture and limit its intensity to the master dimmer value.
+                    // When we are rendering a frame, we'll loop over each fixture and limit its
+                    // intensity to the master dimmer value.
                 } else if fader.name == "Smoke %" {
                     // TODO - Apply smoke master
                     // We'll do the same here but limit smoke instead.
