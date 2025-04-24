@@ -13,7 +13,6 @@ enum ActiveProgrammerTab {
     Color,
     Position,
     Beam,
-    Effects,
 }
 
 // Struct to hold the state of the programmer panel
@@ -207,7 +206,6 @@ impl Programmer {
                             ActiveProgrammerTab::Color => "Color",
                             ActiveProgrammerTab::Position => "Position",
                             ActiveProgrammerTab::Beam => "Beam",
-                            ActiveProgrammerTab::Effects => "Effects",
                         };
 
                         ui.label(format!(
@@ -755,6 +753,16 @@ impl Programmer {
         ui.vertical(|ui| {
             ui.set_min_width(200.0);
             ui.heading("EFFECTS");
+
+            // Add a dynamic subtitle based on the active tab
+            let effects_subtitle = match self.state.active_tab {
+                ActiveProgrammerTab::Intensity => "Effects on Intensity",
+                ActiveProgrammerTab::Color => "Effects on Color",
+                ActiveProgrammerTab::Position => "Effects on Position",
+                ActiveProgrammerTab::Beam => "Effects on Beam",
+            };
+            ui.label(effects_subtitle);
+
             ui.add_space(5.0);
 
             // Waveform dropdown
