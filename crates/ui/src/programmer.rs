@@ -752,90 +752,90 @@ impl Programmer {
 
     // Effects panel
     fn show_effects_panel(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.set_min_width(200.0);
-            ui.heading("EFFECTS");
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.set_min_width(200.0);
+                ui.heading("EFFECTS");
 
-            // Add a dynamic subtitle based on the active tab
-            let effects_subtitle = match self.state.active_tab {
-                ActiveProgrammerTab::Intensity => "Effects on Intensity",
-                ActiveProgrammerTab::Color => "Effects on Color",
-                ActiveProgrammerTab::Position => "Effects on Position",
-                ActiveProgrammerTab::Beam => "Effects on Beam",
-            };
-            ui.label(effects_subtitle);
+                // Add a dynamic subtitle based on the active tab
+                let effects_subtitle = match self.state.active_tab {
+                    ActiveProgrammerTab::Intensity => "Effects on Intensity",
+                    ActiveProgrammerTab::Color => "Effects on Color",
+                    ActiveProgrammerTab::Position => "Effects on Position",
+                    ActiveProgrammerTab::Beam => "Effects on Beam",
+                };
+                ui.label(effects_subtitle);
 
-            ui.add_space(5.0);
+                ui.add_space(5.0);
 
-            // Waveform dropdown
-            egui::ComboBox::from_label("Waveform")
-                .selected_text(match self.state.effect_waveform {
-                    0 => "Sine",
-                    1 => "Square",
-                    2 => "Sawtooth",
-                    3 => "Triangle",
-                    _ => "Sine",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.state.effect_waveform, 0, "Sine");
-                    ui.selectable_value(&mut self.state.effect_waveform, 1, "Square");
-                    ui.selectable_value(&mut self.state.effect_waveform, 2, "Sawtooth");
-                    ui.selectable_value(&mut self.state.effect_waveform, 3, "Triangle");
+                // Waveform dropdown
+                egui::ComboBox::from_label("Waveform")
+                    .selected_text(match self.state.effect_waveform {
+                        0 => "Sine",
+                        1 => "Square",
+                        2 => "Sawtooth",
+                        3 => "Triangle",
+                        _ => "Sine",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.state.effect_waveform, 0, "Sine");
+                        ui.selectable_value(&mut self.state.effect_waveform, 1, "Square");
+                        ui.selectable_value(&mut self.state.effect_waveform, 2, "Sawtooth");
+                        ui.selectable_value(&mut self.state.effect_waveform, 3, "Triangle");
+                    });
+
+                // Interval dropdown
+                egui::ComboBox::from_label("Interval")
+                    .selected_text(match self.state.effect_interval {
+                        0 => "Beat",
+                        1 => "Bar",
+                        2 => "Phrase",
+                        _ => "Beat",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.state.effect_interval, 0, "Beat");
+                        ui.selectable_value(&mut self.state.effect_interval, 1, "Bar");
+                        ui.selectable_value(&mut self.state.effect_interval, 2, "Phrase");
+                    });
+
+                ui.add_space(10.0);
+
+                // Effect parameter sliders
+                ui.horizontal(|ui| {
+                    let slider_height = 120.0;
+                    self.vertical_slider(ui, "effect_ratio", "Ratio", 0.0, 2.0, slider_height);
+
+                    ui.add_space(15.0);
+
+                    self.vertical_slider(ui, "effect_phase", "Phase", 0.0, 360.0, slider_height);
                 });
 
-            // Interval dropdown
-            egui::ComboBox::from_label("Interval")
-                .selected_text(match self.state.effect_interval {
-                    0 => "Beat",
-                    1 => "Bar",
-                    2 => "Phrase",
-                    _ => "Beat",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.state.effect_interval, 0, "Beat");
-                    ui.selectable_value(&mut self.state.effect_interval, 1, "Bar");
-                    ui.selectable_value(&mut self.state.effect_interval, 2, "Phrase");
-                });
+                ui.add_space(10.0);
 
-            ui.add_space(10.0);
+                // Distribution dropdown
+                egui::ComboBox::from_label("Distribution")
+                    .selected_text(match self.state.effect_distribution {
+                        0 => "All",
+                        1 => "Step",
+                        2 => "Wave",
+                        _ => "All",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.state.effect_distribution, 0, "All");
+                        ui.selectable_value(&mut self.state.effect_distribution, 1, "Step");
+                        ui.selectable_value(&mut self.state.effect_distribution, 2, "Wave");
+                    });
 
-            // Effect parameter sliders
-            ui.horizontal(|ui| {
-                let slider_height = 120.0;
-                self.vertical_slider(ui, "effect_ratio", "Ratio", 0.0, 2.0, slider_height);
+                ui.add_space(10.0);
 
-                ui.add_space(15.0);
-
-                self.vertical_slider(ui, "effect_phase", "Phase", 0.0, 360.0, slider_height);
+                // Apply effect button
+                if ui.button("Apply Effect").clicked() {
+                    // Apply effect functionality would go here
+                }
             });
-
-            ui.add_space(10.0);
-
-            // Show waveform visualization
-            self.show_waveform_visualization(ui);
-
-            ui.add_space(10.0);
-
-            // Distribution dropdown
-            egui::ComboBox::from_label("Distribution")
-                .selected_text(match self.state.effect_distribution {
-                    0 => "All",
-                    1 => "Step",
-                    2 => "Wave",
-                    _ => "All",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.state.effect_distribution, 0, "All");
-                    ui.selectable_value(&mut self.state.effect_distribution, 1, "Step");
-                    ui.selectable_value(&mut self.state.effect_distribution, 2, "Wave");
-                });
-
-            ui.add_space(10.0);
-
-            // Apply effect button
-            if ui.button("Apply Effect").clicked() {
-                // Apply effect functionality would go here
-            }
+            ui.vertical(|ui| {
+                self.show_waveform_visualization(ui);
+            });
         });
     }
 
