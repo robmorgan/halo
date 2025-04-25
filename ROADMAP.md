@@ -23,7 +23,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Show Save/Load (show struct, handled by UI)
 - [ ] Cues advance to timecode
 - [ ] Blocking cues
-- [ ] Ability to control smoke, strobe and cuelists with Traktor MIDI controller
+- [ ] Ability to control smoke, strobe, flash and cuelists with Traktor MIDI controller
 - [ ] Audio file playback
 
 ## Week 1 (CW10): Core UI Components
