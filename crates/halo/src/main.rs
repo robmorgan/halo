@@ -121,48 +121,48 @@ fn main() -> Result<(), anyhow::Error> {
     // load cue lists
     console.set_cue_lists(cue_lists);
 
-    // Blue Strobe Fast
-    console.add_midi_override(
-        76,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![
-                ("Smoke #1", "Blue", 255),
-                ("Smoke #1", "Strobe", 255),
-            ]),
-        },
-    );
+    // // Blue Strobe Fast
+    // console.add_midi_override(
+    //     76,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Smoke #1", "Blue", 255),
+    //             ("Smoke #1", "Strobe", 255),
+    //         ]),
+    //     },
+    // );
 
-    // Red Strobe Medium w/Half Smoke
-    console.add_midi_override(
-        77,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![
-                ("Smoke #1", "Smoke", 100),
-                ("Smoke #1", "Red", 255),
-                ("Smoke #1", "Strobe", 220),
-            ]),
-        },
-    );
+    // // Red Strobe Medium w/Half Smoke
+    // console.add_midi_override(
+    //     77,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Smoke #1", "Smoke", 100),
+    //             ("Smoke #1", "Red", 255),
+    //             ("Smoke #1", "Strobe", 220),
+    //         ]),
+    //     },
+    // );
 
-    // Blue Strobe Fast w/Full Smoke
-    console.add_midi_override(
-        78,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![
-                ("Smoke #1", "Smoke", 255),
-                ("Smoke #1", "Blue", 255),
-                ("Smoke #1", "Strobe", 255),
-            ]),
-        },
-    );
+    // // Blue Strobe Fast w/Full Smoke
+    // console.add_midi_override(
+    //     78,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Smoke #1", "Smoke", 255),
+    //             ("Smoke #1", "Blue", 255),
+    //             ("Smoke #1", "Strobe", 255),
+    //         ]),
+    //     },
+    // );
 
-    // Full Smoke
-    console.add_midi_override(
-        71,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![("Smoke #1", "Smoke", 255),]),
-        },
-    );
+    // // Full Smoke
+    // console.add_midi_override(
+    //     71,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![("Smoke #1", "Smoke", 255),]),
+    //     },
+    // );
 
     //// Cue Overrides
 

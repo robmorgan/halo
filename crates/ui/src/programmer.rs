@@ -5,7 +5,7 @@ use std::sync::Arc;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
 use halo_core::LightingConsole;
-use halo_fixtures::{Channel, Fixture};
+use halo_fixtures::{Channel, ChannelType, Fixture};
 use parking_lot::Mutex;
 
 // Define the active tab types for the programmer
@@ -190,7 +190,6 @@ impl Programmer {
                         ActiveProgrammerTab::Color => self.show_color_tab(ui),
                         ActiveProgrammerTab::Position => self.show_position_tab(ui),
                         ActiveProgrammerTab::Beam => self.show_beam_tab(ui),
-                        _ => {}
                     });
                     ui.set_min_size(Vec2::new(ui.available_width() - 250.0, 0.0));
 
@@ -295,6 +294,8 @@ impl Programmer {
         if !beam_channels.is_empty() {
             self.update_selected_fixture_channels("beam", console);
         }
+
+        // Effects
     }
 
     // Helper function to draw tab buttons
@@ -475,26 +476,26 @@ impl Programmer {
 
         // For each selected fixture
         for fixture_id in &self.state.selected_fixtures {
-            // Find the fixture in the console by ID
-            if let Some(console_fixture) = console.fixtures.iter_mut().find(|f| f.id == *fixture_id)
-            {
-                // Map parameter name to actual channel name(s)
-                let channel_names = match param_name {
-                    "dimmer" => vec!["Dimmer", "Intensity"],
-                    "red" => vec!["Red", "Color"],
-                    "green" => vec!["Green"],
-                    "blue" => vec!["Blue"],
-                    "white" => vec!["White"],
-                    "pan" => vec!["Pan"],
-                    "tilt" => vec!["Tilt"],
-                    // Add other mappings as needed
-                    _ => vec![param_name],
-                };
+            // Map parameter name to actual channel type
+            let channel_types = match param_name {
+                "intensity" => vec![ChannelType::Dimmer],
+                "dimmer" => vec![ChannelType::Dimmer],
+                "strobe" => vec![ChannelType::Strobe],
+                "red" => vec![ChannelType::Red, ChannelType::Color],
+                "green" => vec![ChannelType::Green],
+                "blue" => vec![ChannelType::Blue],
+                "white" => vec![ChannelType::White],
+                "pan" => vec![ChannelType::Pan],
+                "tilt" => vec![ChannelType::Tilt],
+                // Add other mappings as needed
+                _ => vec![ChannelType::Other(param_name.to_string())],
+            };
 
-                // Try each possible channel name
-                for channel_name in channel_names {
-                    console_fixture.set_channel_value(channel_name, value as u8);
-                }
+            // Add the value to the programmer state
+            for channel_type in channel_types {
+                console
+                    .programmer
+                    .add_value(*fixture_id, channel_type, value as u8);
             }
         }
     }

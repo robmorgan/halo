@@ -302,7 +302,7 @@ pub struct Channel {
     pub value: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ChannelType {
     Dimmer,
     Color,
@@ -360,8 +360,12 @@ impl Fixture {
         }
     }
 
-    pub fn set_channel_value(&mut self, channel_name: &str, value: u8) {
-        if let Some(channel) = self.channels.iter_mut().find(|c| c.name == channel_name) {
+    pub fn set_channel_value(&mut self, channel_type: &ChannelType, value: u8) {
+        if let Some(channel) = self
+            .channels
+            .iter_mut()
+            .find(|c| c.channel_type == *channel_type)
+        {
             channel.value = value;
         }
     }

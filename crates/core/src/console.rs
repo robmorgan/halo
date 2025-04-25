@@ -15,7 +15,11 @@ use crate::artnet::network_config::NetworkConfig;
 use crate::cue::cue_manager::CueManager;
 use crate::effect::effect::get_effect_phase;
 use crate::midi::midi::{MidiMessage, MidiOverride};
-use crate::{ableton_link, artnet, CueList, Effect, EffectDistribution, RhythmState};
+use crate::programmer::Programmer;
+use crate::{
+    ableton_link, artnet, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
+    StaticValue,
+};
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
@@ -32,6 +36,7 @@ pub struct LightingConsole {
     pub fixtures: Vec<Fixture>,
     pub link_state: ableton_link::State,
     pub cue_manager: CueManager,
+    pub programmer: Programmer,
     dmx_output: artnet::artnet::ArtNet,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
@@ -56,6 +61,7 @@ impl LightingConsole {
             fixture_library: FixtureLibrary::new(),
             fixtures: Vec::new(),
             cue_manager: CueManager::new(Vec::new()),
+            programmer: Programmer::new(),
             link_state,
             dmx_output,
             midi_overrides: HashMap::new(),
@@ -276,58 +282,12 @@ impl LightingConsole {
 
         // Is the console currently playing a cue?
         if self.cue_manager.is_playing() {
-            if let Some(current_cue) = self.cue_manager.get_current_cue() {
+            if let Some(current_cue) = self.cue_manager.get_current_cue().cloned() {
                 // Apply cue-level static values first
-                for static_value in &current_cue.static_values {
-                    if let Some(fixture) = self
-                        .fixtures
-                        .iter_mut()
-                        .find(|f| f.name == static_value.fixture_name)
-                    {
-                        fixture.set_channel_value(&static_value.channel_name, static_value.value);
-                    }
-                }
+                self.apply_values(current_cue.static_values);
 
                 // apply effect mappings
-                for mapping in &current_cue.effects {
-                    // get all fixtures that use this mapping
-                    let mut affected_fixtures: Vec<&mut Fixture> = self
-                        .fixtures
-                        .iter_mut()
-                        .filter(|f| mapping.fixture_ids.contains(&f.id))
-                        .collect();
-
-                    // apply the effect to each fixture
-                    for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
-                        for channel_type in &mapping.channel_types {
-                            if let Some(channel) = fixture.channels.iter_mut().find(|c| {
-                                std::mem::discriminant(&c.channel_type)
-                                    == std::mem::discriminant(channel_type)
-                            }) {
-                                let mut effect_params = mapping.effect.params.clone();
-
-                                // Apply distribution adjustments
-                                match mapping.distribution {
-                                    EffectDistribution::All => {}
-                                    EffectDistribution::Step(step) => {
-                                        if i % step != 0 {
-                                            continue;
-                                        }
-                                    }
-                                    EffectDistribution::Wave(phase_offset) => {
-                                        effect_params.phase += phase_offset * i as f64;
-                                    }
-                                }
-
-                                channel.value = apply_effect(
-                                    &mapping.effect,
-                                    &self.rhythm_state,
-                                    channel.value,
-                                );
-                            }
-                        }
-                    }
-                }
+                self.apply_effects(current_cue.effects);
             }
         }
 
@@ -335,21 +295,57 @@ impl LightingConsole {
         self.apply_programmer_values();
     }
 
+    fn apply_values(&mut self, values: Vec<StaticValue>) {
+        for value in &values {
+            if let Some(fixture) = self.fixtures.iter_mut().find(|f| f.id == value.fixture_id) {
+                fixture.set_channel_value(&value.channel_type, value.value);
+            }
+        }
+    }
+
+    fn apply_effects(&mut self, effects: Vec<EffectMapping>) {
+        for mapping in &effects {
+            // get all fixtures that use this mapping
+            let mut affected_fixtures: Vec<&mut Fixture> = self
+                .fixtures
+                .iter_mut()
+                .filter(|f| mapping.fixture_ids.contains(&f.id))
+                .collect();
+
+            // apply the effect to each fixture
+            for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
+                if let Some(channel) = fixture.channels.iter_mut().find(|c| {
+                    std::mem::discriminant(&c.channel_type)
+                        == std::mem::discriminant(&mapping.channel_type)
+                }) {
+                    let mut effect_params = mapping.effect.params.clone();
+
+                    // Apply distribution adjustments
+                    match mapping.distribution {
+                        EffectDistribution::All => {}
+                        EffectDistribution::Step(step) => {
+                            if i % step != 0 {
+                                continue;
+                            }
+                        }
+                        EffectDistribution::Wave(phase_offset) => {
+                            effect_params.phase += phase_offset * i as f64;
+                        }
+                    }
+
+                    channel.value =
+                        apply_effect(&mapping.effect, &self.rhythm_state, channel.value);
+                }
+            }
+        }
+    }
+
     fn apply_programmer_values(&mut self) {
-        // for mapping in &self.programmer_values {
-        //     if let Some(fixture) = self
-        //         .fixtures
-        //         .iter_mut()
-        //         .find(|f| f.name == mapping.fixture_name)
-        //     {
-        //         if let Some(channel) = fixture.channels.iter_mut().find(|c| {
-        //             std::mem::discriminant(&c.channel_type)
-        //                 == std::mem::discriminant(&mapping.channel_type)
-        //         }) {
-        //             channel.value = mapping.value;
-        //         }
-        //     }
-        // }
+        // apply programmer static values
+        self.apply_values(self.programmer.get_values().clone());
+
+        // apply programmer effects
+        self.apply_effects(self.programmer.get_effects().clone());
     }
 
     pub fn render(&self) {

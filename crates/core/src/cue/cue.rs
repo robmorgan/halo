@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use halo_fixtures::ChannelType;
 
@@ -51,8 +51,8 @@ impl Default for Cue {
 
 #[derive(Clone, Debug)]
 pub struct StaticValue {
-    pub fixture_name: String,
-    pub channel_name: String,
+    pub fixture_id: usize,
+    pub channel_type: ChannelType,
     pub value: u8,
 }
 
@@ -60,7 +60,7 @@ pub struct StaticValue {
 pub struct EffectMapping {
     pub effect: Effect,
     pub fixture_ids: Vec<usize>,
-    pub channel_types: Vec<ChannelType>,
+    pub channel_type: ChannelType,
     pub distribution: EffectDistribution,
 }
 
