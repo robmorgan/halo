@@ -317,6 +317,7 @@ pub enum ChannelType {
     Pan,
     Tilt,
     TiltSpeed,
+    Beam,
     Other(String),
 }
 
@@ -336,6 +337,7 @@ impl std::fmt::Display for ChannelType {
             ChannelType::Pan => write!(f, "Pan"),
             ChannelType::Tilt => write!(f, "Tilt"),
             ChannelType::TiltSpeed => write!(f, "TiltSpeed"),
+            ChannelType::Beam => write!(f, "Beam"),
             ChannelType::Other(s) => write!(f, "Other({})", s),
         }
     }

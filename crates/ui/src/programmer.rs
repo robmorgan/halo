@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
-use halo_core::LightingConsole;
+use halo_core::{
+    sawtooth_effect, sine_effect, square_effect, Effect, EffectDistribution, EffectMapping,
+    EffectParams, EffectType, Interval, LightingConsole,
+};
 use halo_fixtures::{Channel, ChannelType, Fixture};
 use parking_lot::Mutex;
 
@@ -296,6 +299,10 @@ impl Programmer {
         }
 
         // Effects
+        if let Some(effect_mapping) = self.create_effect_mapping() {
+            let mut console = console.lock();
+            console.programmer.add_effect(effect_mapping);
+        }
     }
 
     // Helper function to draw tab buttons
@@ -463,7 +470,97 @@ impl Programmer {
         channels
     }
 
-    // Improved update_selected_fixture_channels method
+    fn create_effect_mapping(&self) -> Option<EffectMapping> {
+        if self.state.selected_fixtures.is_empty() {
+            return None;
+        }
+
+        // Map UI waveform to EffectType
+        let effect_type = match self.state.effect_waveform {
+            0 => EffectType::Sine,
+            1 => EffectType::Square,
+            2 => EffectType::Sawtooth,
+            3 => EffectType::Triangle,
+            _ => EffectType::Sine, // Default to sine
+        };
+
+        // Map UI interval to Interval
+        let interval = match self.state.effect_interval {
+            0 => Interval::Beat,
+            1 => Interval::Bar,
+            2 => Interval::Phrase,
+            _ => Interval::Beat, // Default to beat
+        };
+
+        // Choose apply function based on effect type
+        let apply_fn = match effect_type {
+            EffectType::Sine => sine_effect,
+            EffectType::Square => square_effect,
+            EffectType::Sawtooth => sawtooth_effect,
+            EffectType::Triangle => |phase| {
+                if phase < 0.5 {
+                    phase * 2.0
+                } else {
+                    2.0 - phase * 2.0
+                }
+            },
+            _ => sine_effect, // Default
+        };
+
+        // Create effect parameters
+        let effect_ratio = self.state.get_param("effect_ratio");
+        let effect_phase = self.state.get_param("effect_phase") / 360.0; // Convert degrees to 0-1 range
+
+        let effect_params = EffectParams {
+            interval,
+            interval_ratio: effect_ratio as f64,
+            phase: effect_phase as f64,
+        };
+
+        // Create the Effect object
+        let effect = Effect {
+            name: format!("{:?} Effect", effect_type),
+            effect_type,
+            apply: apply_fn,
+            min: 0,
+            max: 255,
+            amplitude: 1.0,
+            frequency: 1.0,
+            offset: 0.0,
+            params: effect_params,
+        };
+
+        // Determine channel type based on active tab
+        let channel_type = match self.state.active_tab {
+            ActiveProgrammerTab::Intensity => ChannelType::Dimmer,
+            ActiveProgrammerTab::Color => ChannelType::Color,
+            ActiveProgrammerTab::Position => {
+                if self.state.effect_waveform % 2 == 0 {
+                    ChannelType::Pan
+                } else {
+                    ChannelType::Tilt
+                }
+            }
+            ActiveProgrammerTab::Beam => ChannelType::Beam,
+        };
+
+        // Map UI distribution to EffectDistribution
+        let distribution = match self.state.effect_distribution {
+            0 => EffectDistribution::All,
+            1 => EffectDistribution::Step(1),
+            2 => EffectDistribution::Wave(30.0), // 30 degree phase offset
+            _ => EffectDistribution::All,
+        };
+
+        // Create and return the EffectMapping
+        Some(EffectMapping {
+            effect,
+            fixture_ids: self.state.selected_fixtures.clone(),
+            channel_type,
+            distribution,
+        })
+    }
+
     fn update_selected_fixture_channels(
         &mut self,
         param_name: &str, // The programmer parameter name (e.g., "dimmer")
