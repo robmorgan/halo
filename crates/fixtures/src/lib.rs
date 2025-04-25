@@ -318,6 +318,8 @@ pub enum ChannelType {
     Tilt,
     TiltSpeed,
     Beam,
+    Focus,
+    Zoom,
     Other(String),
 }
 
@@ -338,6 +340,8 @@ impl std::fmt::Display for ChannelType {
             ChannelType::Tilt => write!(f, "Tilt"),
             ChannelType::TiltSpeed => write!(f, "TiltSpeed"),
             ChannelType::Beam => write!(f, "Beam"),
+            ChannelType::Focus => write!(f, "Focus"),
+            ChannelType::Zoom => write!(f, "Zoom"),
             ChannelType::Other(s) => write!(f, "Other({})", s),
         }
     }
