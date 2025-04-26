@@ -17,14 +17,15 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 - [x] Wire up Effects UI
 - [ ] Checkbox to enable effects UI
-- [ ] Full programmer UI to show current state
+- [x] Full programmer UI to show current state
 - [ ] Save programmer static values to cue
 - [ ] Save programmer effects to cue
 - [ ] Show Save/Load (show struct, handled by UI)
 - [ ] Cues advance to timecode
 - [ ] Blocking cues
-- [ ] Ability to control smoke, strobe, flash and cuelists with Traktor MIDI controller
+- [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
 - [ ] Audio file playback
+- [ ] Toggle cuelists easily in UI.
 
 ## Week 1 (CW10): Core UI Components
 

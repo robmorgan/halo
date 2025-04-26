@@ -6,7 +6,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
 use halo_core::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectDistribution, EffectMapping,
-    EffectParams, EffectType, Interval, LightingConsole,
+    EffectParams, EffectType, Interval, LightingConsole, StaticValue,
 };
 use halo_fixtures::{Channel, ChannelType, Fixture};
 use parking_lot::Mutex;
@@ -22,6 +22,7 @@ enum ActiveProgrammerTab {
 
 // Struct to hold the state of the programmer panel
 pub struct ProgrammerState {
+    pub new_cue_name: String,
     active_tab: ActiveProgrammerTab,
     selected_fixtures: Vec<usize>,
     params: HashMap<String, f32>,
@@ -66,6 +67,7 @@ impl Default for ProgrammerState {
         ];
 
         Self {
+            new_cue_name: String::new(),
             active_tab: ActiveProgrammerTab::Intensity,
             selected_fixtures: vec![],
             params,
@@ -258,6 +260,268 @@ impl Programmer {
             if self.state.preview_mode {
                 self.update_fixtures(console);
             }
+        });
+    }
+
+    pub fn render_full_view(&mut self, ctx: &egui::Context, console: &Arc<Mutex<LightingConsole>>) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical(|ui| {
+                // Header area with global controls
+                ui.horizontal(|ui| {
+                    ui.heading("PROGRAMMER");
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("RECORD").clicked() {
+                            // Record the current programmer state to a cue
+                            let mut console = console.lock();
+                            // Create a new cue from programmer values
+                            if !self.state.new_cue_name.is_empty() {
+                                // Record logic here
+                            }
+                        }
+
+                        if ui.button("CLEAR").clicked() {
+                            // Clear the programmer
+                            let mut console = console.lock();
+                            console.programmer.clear();
+                        }
+
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.state.new_cue_name)
+                                .hint_text("New cue name...")
+                                .desired_width(150.0),
+                        );
+
+                        if ui
+                            .add(egui::Button::new("HIGHLIGHT").selected(self.state.preview_mode))
+                            .clicked()
+                        {
+                            self.state.preview_mode = !self.state.preview_mode;
+                        }
+                    });
+                });
+
+                ui.separator();
+
+                // Get all programmer values from the console
+                let programmer_values: Vec<StaticValue>;
+                let effects: Vec<EffectMapping>;
+                {
+                    let locked_console = console.lock();
+                    programmer_values = locked_console
+                        .programmer
+                        .get_values()
+                        .iter()
+                        .map(|v| StaticValue {
+                            fixture_id: v.fixture_id,
+                            channel_type: v.channel_type.clone(),
+                            value: v.value,
+                        })
+                        .collect();
+
+                    effects = locked_console.programmer.get_effects().clone();
+                }
+
+                // Group values by fixture_id
+                let mut fixture_values: std::collections::HashMap<usize, Vec<StaticValue>> =
+                    std::collections::HashMap::new();
+
+                for value in programmer_values {
+                    fixture_values
+                        .entry(value.fixture_id)
+                        .or_insert_with(Vec::new)
+                        .push(value);
+                }
+
+                // Display fixture groups with their parameter values
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for (fixture_id, values) in fixture_values.iter() {
+                        // Find the actual fixture to get its name
+                        let fixture_name = self
+                            .fixtures
+                            .iter()
+                            .find(|f| f.id == *fixture_id)
+                            .map(|f| f.name.clone())
+                            .unwrap_or_else(|| format!("Fixture #{}", fixture_id));
+
+                        ui.collapsing(format!("{} (ID: {})", fixture_name, fixture_id), |ui| {
+                            self.render_fixture_parameters(ui, values);
+                        });
+                    }
+
+                    // If there are any effects, show them in a separate section
+                    if !effects.is_empty() {
+                        ui.add_space(10.0);
+                        ui.heading("EFFECTS");
+                        ui.separator();
+
+                        for (i, effect) in effects.iter().enumerate() {
+                            ui.collapsing(
+                                format!("Effect #{}: {:?}", i + 1, effect.effect.effect_type),
+                                |ui| {
+                                    self.render_effect_details(ui, effect);
+                                },
+                            );
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    // Helper method to render parameters for a fixture
+    fn render_fixture_parameters(&self, ui: &mut egui::Ui, values: &[StaticValue]) {
+        egui::Grid::new("fixture_params")
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("Parameter");
+                ui.label("Type");
+                ui.label("Value");
+                ui.label("Graphical");
+                ui.end_row();
+
+                for value in values {
+                    // Parameter name
+                    let param_name = match &value.channel_type {
+                        ChannelType::Dimmer => "Dimmer",
+                        ChannelType::Red => "Red",
+                        ChannelType::Green => "Green",
+                        ChannelType::Blue => "Blue",
+                        ChannelType::White => "White",
+                        ChannelType::Pan => "Pan",
+                        ChannelType::Tilt => "Tilt",
+                        ChannelType::Focus => "Focus",
+                        ChannelType::Zoom => "Zoom",
+                        ChannelType::Strobe => "Strobe",
+                        ChannelType::Gobo => "Gobo",
+                        ChannelType::Color => "Color Wheel",
+                        ChannelType::Other(name) => &name,
+                        _ => "Unknown",
+                    };
+
+                    ui.label(param_name);
+                    ui.label(format!("{:?}", value.channel_type));
+                    ui.label(format!("{}", value.value));
+
+                    // Create a graphical representation based on parameter type
+                    let progress = value.value as f32 / 255.0;
+
+                    match value.channel_type {
+                        ChannelType::Red
+                        | ChannelType::Green
+                        | ChannelType::Blue
+                        | ChannelType::White => {
+                            let color = match value.channel_type {
+                                ChannelType::Red => Color32::from_rgb(value.value, 0, 0),
+                                ChannelType::Green => Color32::from_rgb(0, value.value, 0),
+                                ChannelType::Blue => Color32::from_rgb(0, 0, value.value),
+                                ChannelType::White => {
+                                    let v = value.value;
+                                    Color32::from_rgb(v, v, v)
+                                }
+                                _ => Color32::WHITE,
+                            };
+
+                            let rect = ui.available_rect_before_wrap().shrink(2.0);
+                            let response = ui.allocate_rect(rect, egui::Sense::hover());
+
+                            ui.painter().rect_filled(response.rect, 4.0, color);
+                        }
+                        _ => {
+                            // For other parameter types, draw a progress bar
+                            let rect = ui.available_rect_before_wrap().shrink(2.0);
+                            let response = ui.allocate_rect(rect, egui::Sense::hover());
+
+                            // Background
+                            ui.painter()
+                                .rect_filled(response.rect, 4.0, Color32::from_gray(30));
+
+                            // Foreground
+                            let filled_width = response.rect.width() * progress;
+                            let filled_rect = egui::Rect::from_min_size(
+                                response.rect.min,
+                                egui::Vec2::new(filled_width, response.rect.height()),
+                            );
+
+                            ui.painter().rect_filled(
+                                filled_rect,
+                                4.0,
+                                Color32::from_rgb(0, 150, 255),
+                            );
+                        }
+                    }
+
+                    ui.end_row();
+                }
+            });
+    }
+
+    // Helper method to render effect details
+    fn render_effect_details(&self, ui: &mut egui::Ui, effect: &EffectMapping) {
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(format!("Type: {:?}", effect.effect.effect_type));
+                ui.label(format!("Channel Type: {:?}", effect.channel_type));
+                ui.label(format!("Distribution: {:?}", effect.distribution));
+                ui.label(format!("Fixtures: {} fixtures", effect.fixture_ids.len()));
+                ui.label(format!("Amplitude: {:.2}", effect.effect.amplitude));
+                ui.label(format!("Frequency: {:.2}", effect.effect.frequency));
+                ui.label(format!("Offset: {:.2}", effect.effect.offset));
+                ui.label(format!(
+                    "Interval: {:?}, Ratio: {:.2}",
+                    effect.effect.params.interval, effect.effect.params.interval_ratio
+                ));
+            });
+
+            // Add a visual preview of the effect
+            let plot_height = 100.0;
+            let plot_width = 200.0;
+
+            Plot::new(format!("effect_plot_{:?}", effect.effect.effect_type))
+                .height(plot_height)
+                .width(plot_width)
+                .show_axes([false, false])
+                .view_aspect(2.0)
+                .show(ui, |plot_ui| {
+                    // Generate the waveform for this effect
+                    let n_points = 100;
+                    let mut points = Vec::with_capacity(n_points);
+
+                    for i in 0..n_points {
+                        let x = i as f64 / (n_points - 1) as f64 * 2.0 * std::f64::consts::PI;
+                        let phase = effect.effect.params.phase;
+                        let ratio = effect.effect.params.interval_ratio;
+
+                        // This is a simplified version - the actual effect could be more complex
+                        let y = match effect.effect.effect_type {
+                            EffectType::Sine => (x * ratio + phase).sin(),
+                            EffectType::Square => {
+                                if ((x * ratio + phase) % (2.0 * std::f64::consts::PI)).sin() >= 0.0
+                                {
+                                    1.0
+                                } else {
+                                    -1.0
+                                }
+                            }
+                            EffectType::Sawtooth => {
+                                let mut v = ((x * ratio + phase) % (2.0 * std::f64::consts::PI))
+                                    / std::f64::consts::PI
+                                    - 1.0;
+                                if v > 1.0 {
+                                    v -= 2.0
+                                };
+                                v
+                            }
+                            _ => (x * ratio + phase).sin(), // Default
+                        };
+
+                        points.push([x, y]);
+                    }
+
+                    let plot_points = PlotPoints::from(points);
+                    plot_ui
+                        .line(Line::new("", plot_points).color(Color32::from_rgb(100, 200, 255)));
+                });
         });
     }
 
