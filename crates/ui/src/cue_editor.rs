@@ -13,7 +13,7 @@ pub struct CueEditor {
     new_cue_name: String,
     new_fade_time: f64,
     new_timecode: String,
-    audio_file_path: String,
+    audio_file_path: Option<String>,
 }
 
 impl Default for CueEditor {
@@ -25,7 +25,7 @@ impl Default for CueEditor {
             new_cue_name: String::new(),
             new_fade_time: 3.0,
             new_timecode: String::new(),
-            audio_file_path: String::new(),
+            audio_file_path: None,
         }
     }
 }
@@ -194,28 +194,17 @@ impl CueEditor {
         cue_list_idx: usize,
         console: &Arc<Mutex<LightingConsole>>,
     ) {
-        let console_lock = console.lock();
         ui.separator();
         ui.heading("Audio File");
 
-        ui.horizontal(|ui| {
-            let cue_lists = console_lock.cue_manager.get_cue_lists();
-            if cue_list_idx < cue_lists.len() {
-                let audio_file = cue_lists[cue_list_idx]
-                    .audio_file
-                    .as_deref()
-                    .unwrap_or("None");
-                ui.label(format!("Current: {}", audio_file));
-            }
-        });
-        drop(console_lock);
-
         let mut console_lock = console.lock();
         ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut self.audio_file_path);
-            //let path_valid = !self.audio_file_path.is_empty();
+            if let Some(audio_file_path) = &self.audio_file_path {
+                ui.label("Audio File:");
+                ui.monospace(audio_file_path);
+            }
+
             if ui.button("Browse Audio").clicked() {
-                self.audio_file_path.clear();
                 if let Some(cue_id) = &self.selected_cue_list_index {
                     if let Some(path) = FileDialog::new()
                         .add_filter("Audio", &["mp3", "wav", "ogg", "flac"])
@@ -225,10 +214,11 @@ impl CueEditor {
                         // if let Ok(mut audio_manager) = self.audio_manager.lock() {
                         //     let _ = audio_manager.add_track(path, cue_id.clone());
                         // }
-                        self.audio_file_path = path.to_string_lossy().to_string();
+                        let audio_file_path = path.display().to_string();
+                        self.audio_file_path = Some(audio_file_path.clone());
                         let _ = console_lock
                             .cue_manager
-                            .set_audio_file(cue_list_idx, self.audio_file_path.clone());
+                            .set_audio_file(cue_list_idx, audio_file_path);
                     }
                 } else {
                     // Show error or notification that no cue is selected
