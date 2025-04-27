@@ -174,7 +174,7 @@ impl eframe::App for HaloApp {
                 self.cue_editor.render(ctx, &self.console);
             }
             ActiveTab::Programmer => {
-                //self.programmer.show(ui, &self.console)
+                self.programmer.render_full_view(ctx, &self.console);
             }
             ActiveTab::PatchPanel => {
                 //self.patch_panel.show(ui, &self.console)

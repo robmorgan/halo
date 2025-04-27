@@ -15,10 +15,18 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 * Use a hardware mixer for effects. (e.g: DJM-800)
 * Use a MIDI controller for cue and override control (e.g: Novation Launch Control XL)
 
-- [ ] Wire up Effects UI + save to cue
-- [ ] Show Save/Load
+- [x] Wire up Effects UI
+- [ ] Checkbox to enable effects UI
+- [x] Full programmer UI to show current state
+- [ ] Save programmer static values to cue
+- [ ] Save programmer effects to cue
+- [ ] Show Save/Load (show struct, handled by UI)
 - [ ] Cues advance to timecode
-- [ ] Ability to control smoke, strobe and cuelists with Traktor MIDI controller
+- [ ] Blocking cues
+- [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
+- [ ] Audio file playback
+- [ ] Audio interface selection
+- [ ] Toggle cuelists easily in UI.
 
 ## Week 1 (CW10): Core UI Components
 
@@ -44,7 +52,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 **Deliverable:** Functional programmer that can control fixtures panel with fixture selection and effect controls.
 
 - [x] Build parameter controls (intensity, color, position)
-- [ ] Implement parameter value storage and application to fixtures
+- [x] Implement parameter value storage and application to fixtures
 - [x] Add visual feedback for parameter changes
 - [x] We need a color mapping system to translate the RGBW values to single channel values for certain fixtures (e.g: Shehds Spots). Short-cut: would be to map the Red channel for now.
 - [x] Provide a way to hide/collapse the programmer
@@ -53,9 +61,10 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 **Deliverable:** Effects system with basic effects and overrides.
 
-- [ ] Implement effects engine (waveforms, parameters)
+- [x] Implement effects engine (waveforms, parameters)
 - [x] Build effects UI in programmer panel
 - [x] Add override buttons with quick-access functionality
+- [ ] Bounding box for moving head lights
 
 ## Week 5 (CW14): Integration & Polish
 

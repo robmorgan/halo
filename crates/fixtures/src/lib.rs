@@ -302,7 +302,7 @@ pub struct Channel {
     pub value: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ChannelType {
     Dimmer,
     Color,
@@ -317,6 +317,9 @@ pub enum ChannelType {
     Pan,
     Tilt,
     TiltSpeed,
+    Beam,
+    Focus,
+    Zoom,
     Other(String),
 }
 
@@ -336,6 +339,9 @@ impl std::fmt::Display for ChannelType {
             ChannelType::Pan => write!(f, "Pan"),
             ChannelType::Tilt => write!(f, "Tilt"),
             ChannelType::TiltSpeed => write!(f, "TiltSpeed"),
+            ChannelType::Beam => write!(f, "Beam"),
+            ChannelType::Focus => write!(f, "Focus"),
+            ChannelType::Zoom => write!(f, "Zoom"),
             ChannelType::Other(s) => write!(f, "Other({})", s),
         }
     }
@@ -360,8 +366,12 @@ impl Fixture {
         }
     }
 
-    pub fn set_channel_value(&mut self, channel_name: &str, value: u8) {
-        if let Some(channel) = self.channels.iter_mut().find(|c| c.name == channel_name) {
+    pub fn set_channel_value(&mut self, channel_type: &ChannelType, value: u8) {
+        if let Some(channel) = self
+            .channels
+            .iter_mut()
+            .find(|c| c.channel_type == *channel_type)
+        {
             channel.value = value;
         }
     }
