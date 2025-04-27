@@ -333,9 +333,14 @@ impl Programmer {
                         .push(value);
                 }
 
+                // Sort
+                let mut sorted_fixtures: Vec<(usize, Vec<StaticValue>)> =
+                    fixture_values.into_iter().collect();
+                sorted_fixtures.sort_by_key(|(fixture_id, _)| *fixture_id);
+
                 // Display fixture groups with their parameter values
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (fixture_id, values) in fixture_values.iter() {
+                    for (fixture_id, values) in sorted_fixtures.iter() {
                         // Find the actual fixture to get its name
                         let fixture_name = self
                             .fixtures

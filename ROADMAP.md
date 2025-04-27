@@ -16,8 +16,10 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 * Use a MIDI controller for cue and override control (e.g: Novation Launch Control XL)
 
 - [x] Wire up Effects UI
-- [ ] Checkbox to enable effects UI
 - [x] Full programmer UI to show current state
+  - [ ] Checkbox to enable effects UI
+  - [x] Sort fixtures
+  - [ ] Programmer should store values without using preview
 - [ ] Save programmer static values to cue
 - [ ] Save programmer effects to cue
 - [ ] Show Save/Load (show struct, handled by UI)
