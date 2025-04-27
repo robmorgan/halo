@@ -4,6 +4,7 @@ use std::time::Duration;
 use eframe::egui::{self, RichText};
 use halo_core::{Cue, CueList, LightingConsole};
 use parking_lot::Mutex;
+use rfd::FileDialog;
 
 pub struct CueEditor {
     selected_cue_list_index: Option<usize>,
@@ -212,15 +213,28 @@ impl CueEditor {
         let mut console_lock = console.lock();
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut self.audio_file_path);
-            let path_valid = !self.audio_file_path.is_empty();
-            if ui
-                .add_enabled(path_valid, egui::Button::new("Load Audio"))
-                .clicked()
-            {
-                let _ = console_lock
-                    .cue_manager
-                    .set_audio_file(cue_list_idx, self.audio_file_path.clone());
+            //let path_valid = !self.audio_file_path.is_empty();
+            if ui.button("Browse Audio").clicked() {
                 self.audio_file_path.clear();
+                if let Some(cue_id) = &self.selected_cue_list_index {
+                    if let Some(path) = FileDialog::new()
+                        .add_filter("Audio", &["mp3", "wav", "ogg", "flac"])
+                        .set_title("Select Audio File")
+                        .pick_file()
+                    {
+                        // if let Ok(mut audio_manager) = self.audio_manager.lock() {
+                        //     let _ = audio_manager.add_track(path, cue_id.clone());
+                        // }
+                        self.audio_file_path = path.to_string_lossy().to_string();
+                        let _ = console_lock
+                            .cue_manager
+                            .set_audio_file(cue_list_idx, self.audio_file_path.clone());
+                    }
+                } else {
+                    // Show error or notification that no cue is selected
+                    // TODO - show message modal
+                    ui.label("Please select a cue first");
+                }
             }
         });
         drop(console_lock);

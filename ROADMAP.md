@@ -25,6 +25,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Blocking cues
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
 - [ ] Audio file playback
+- [ ] Audio interface selection
 - [ ] Toggle cuelists easily in UI.
 
 ## Week 1 (CW10): Core UI Components
