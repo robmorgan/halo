@@ -24,6 +24,9 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Save programmer effects to cue
 - [ ] Show Save/Load (show struct, handled by UI)
 - [ ] Cues advance to timecode
+- [ ] Lighting Engine
+  - [ ] Tracking functionality (copy params to stage, show footer counts)
+  - [ ] Fade time on cues and fixtures
 - [ ] Subfixtures
 - [ ] Blocking cues
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
