@@ -135,6 +135,35 @@ impl CueManager {
     }
 
     // Playback Control
+
+    /// Selects the previous cue list if available
+    pub fn select_previous_cue_list(&mut self) -> Result<(), String> {
+        if self.current_cue_list > 0 {
+            self.current_cue_list = self.current_cue_list - 1;
+            Ok(())
+        } else if !self.cue_lists.is_empty() {
+            // Wrap around to the last cue list
+            self.current_cue_list = self.cue_lists.len() - 1;
+            Ok(())
+        } else {
+            Err("No cue lists available".to_string())
+        }
+    }
+
+    /// Selects the next cue list if available
+    pub fn select_next_cue_list(&mut self) -> Result<(), String> {
+        if self.current_cue_list + 1 < self.cue_lists.len() {
+            self.current_cue_list = self.current_cue_list + 1;
+            Ok(())
+        } else if !self.cue_lists.is_empty() {
+            // Wrap around to the first cue list
+            self.current_cue_list = 0;
+            Ok(())
+        } else {
+            Err("No cue lists available".to_string())
+        }
+    }
+
     pub fn go_to_next_cue(&mut self) -> Result<&Cue, String> {
         if self.current_cue_list >= self.cue_lists.len() {
             return Err("Invalid cue list index".to_string());

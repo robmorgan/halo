@@ -33,50 +33,31 @@ impl ShowManager {
         show
     }
 
-    pub fn save_show(&mut self, console: &LightingConsole) -> Result<PathBuf> {
-        let show = if let Some(show) = &mut self.current_show {
-            // Update with latest console state
-            show.fixtures = console.fixtures.clone();
-            show.cue_lists = console.cue_manager.get_cue_lists().clone();
-            show.modified_at = SystemTime::now();
-            show.clone()
-        } else {
-            // Create a new show if none exists
-            Show::from_console(console, "Untitled Show".to_string())
-        };
-
+    pub fn save_show(&mut self, show: &Show) -> Result<PathBuf> {
         let path = if let Some(path) = &self.current_path {
             path.clone()
         } else {
             // Create a new file path based on show name
             let sanitized_name = show.name.replace(" ", "_").to_lowercase();
             self.shows_directory
-                .join(format!("{}.halo", sanitized_name))
+                .join(format!("{}.json", sanitized_name))
         };
 
         // Save to disk
         let file = File::create(&path)?;
         to_writer_pretty(file, &show)?;
 
-        self.current_show = Some(show);
+        self.current_show = Some(show.clone());
         self.current_path = Some(path.clone());
 
         Ok(path)
     }
 
-    pub fn save_show_as(
-        &mut self,
-        console: &LightingConsole,
-        name: String,
-        path: PathBuf,
-    ) -> Result<PathBuf> {
-        let mut show = Show::from_console(console, name);
-        show.modified_at = SystemTime::now();
-
+    pub fn save_show_as(&mut self, show: &Show, path: PathBuf) -> Result<PathBuf> {
         let file = File::create(&path)?;
         to_writer_pretty(file, &show)?;
 
-        self.current_show = Some(show);
+        self.current_show = Some(show.clone());
         self.current_path = Some(path.clone());
 
         Ok(path)
@@ -92,17 +73,6 @@ impl ShowManager {
         Ok(show)
     }
 
-    pub fn apply_show_to_console(&self, console: &mut LightingConsole) -> Result<()> {
-        if let Some(show) = &self.current_show {
-            // Apply show data to console
-            console.fixtures = show.fixtures.clone();
-            console.cue_manager.set_cue_lists(show.cue_lists.clone());
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("No show is currently loaded"))
-        }
-    }
-
     pub fn list_shows(&self) -> Result<Vec<PathBuf>> {
         let entries = fs::read_dir(&self.shows_directory)?;
 
@@ -111,7 +81,7 @@ impl ShowManager {
             let entry = entry?;
             let path = entry.path();
 
-            if path.is_file() && path.extension().map_or(false, |ext| ext == "halo") {
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
                 shows.push(path);
             }
         }

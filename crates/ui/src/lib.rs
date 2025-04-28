@@ -56,7 +56,6 @@ pub struct HaloApp {
     effect_offset: f32,
     selected_effect_type: EffectType,
     temp_color_value: [f32; 3], // RGB for color picker
-    patch_panel: PatchPanel,
     fps: u32,
     overrides_panel: OverridesPanel,
     master_panel: MasterPanel,
@@ -66,6 +65,7 @@ pub struct HaloApp {
     programmer: programmer::Programmer,
     timeline: timeline::Timeline,
     cue_editor: cue_editor::CueEditor,
+    patch_panel: PatchPanel,
     show_panel: show_panel::ShowPanel,
 }
 
@@ -101,7 +101,6 @@ impl HaloApp {
             effect_offset: 0.5,
             selected_effect_type: EffectType::Sine,
             temp_color_value: [0.5, 0.5, 0.5],
-            patch_panel: PatchPanel::new(),
             fps: 60,
             overrides_panel: OverridesPanel::new(),
             master_panel: MasterPanel::new(),
@@ -111,6 +110,7 @@ impl HaloApp {
             programmer: Programmer::new(),
             timeline: Timeline::new(),
             cue_editor: CueEditor::new(),
+            patch_panel: PatchPanel::new(),
             show_panel: ShowPanel::new(),
         }
     }
@@ -151,6 +151,7 @@ impl eframe::App for HaloApp {
         match self.active_tab {
             ActiveTab::Dashboard => {
                 egui::SidePanel::right("right_panel").show(ctx, |ui| {
+                    ui.set_min_width(400.0);
                     self.session_panel.render(ui, &self.console);
                     ui.separator();
                     self.cue_panel.render(ui, &self.console);
@@ -183,7 +184,7 @@ impl eframe::App for HaloApp {
                 self.programmer.render_full_view(ctx, &self.console);
             }
             ActiveTab::PatchPanel => {
-                //self.patch_panel.show(ui, &self.console)
+                self.patch_panel.render(ctx, &self.console);
             }
             ActiveTab::ShowManager => {
                 egui::CentralPanel::default().show(ctx, |ui| {

@@ -22,12 +22,20 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
   - [ ] Bidirectional clear selected fixtures on fixture grid
 - [x] Save programmer static values to cue
 - [x] Save programmer effects to cue
-- [ ] Show Save/Load (show struct, handled by UI)
+- [x] Show Save
+- [ ] Show Load
+  - [ ] CLI path
 - [ ] Cues advance to timecode
+- [ ] Lighting Engine
+  - [ ] Tracking functionality (copy params to stage, show footer counts)
+  - [ ] Fade time on cues and fixtures
 - [ ] Subfixtures
 - [ ] Blocking cues
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
 - [ ] Audio file playback
+- [ ] Settings
+  - [ ] Audio interface selection
+  - [ ] MIDI controller / Traktor
 - [ ] Toggle cuelists easily in UI.
 
 ## Week 1 (CW10): Core UI Components
@@ -74,7 +82,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 - [ ] Show saving and loading
 - [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
-- [ ] Add patch panel functionality
+- [x] Add patch panel functionality
 - [ ] Add settings modal functionality (audio device, dmx, fixture library)
 - [ ] Final UI polish and documentation
 

@@ -36,6 +36,12 @@ pub struct FixtureProfile {
     pub sub_fixtures: Option<usize>,
 }
 
+impl std::fmt::Display for FixtureProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.manufacturer, self.model)
+    }
+}
+
 #[derive(Default)]
 pub struct FixtureLibrary {
     pub profiles: HashMap<String, FixtureProfile>,

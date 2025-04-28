@@ -13,9 +13,70 @@ impl CuePanel {
     pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
         ui.heading("Cues");
 
-        let console_guard = console.lock();
+        let current_list;
+        {
+            let console_lock = console.lock();
+            current_list = console_lock.cue_manager.get_current_cue_list().cloned();
+            drop(console_lock);
+        }
+
+        if let Some(current_list) = current_list {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Current List:");
+
+                    // Left arrow button
+                    if ui.button("←").clicked() {
+                        let mut console_lock = console.lock();
+                        if let Err(err) = console_lock.cue_manager.select_previous_cue_list() {
+                            println!("Error switching to previous cue list: {}", err);
+                        }
+                        drop(console_lock);
+                    }
+
+                    ui.strong(egui::RichText::new(&current_list.name).size(16.0));
+
+                    // Right arrow button
+                    if ui.button("→").clicked() {
+                        let mut console_lock = console.lock();
+                        if let Err(err) = console_lock.cue_manager.select_next_cue_list() {
+                            println!("Error switching to next cue list: {}", err);
+                        }
+                        drop(console_lock);
+                    }
+                });
+                ui.add_space(5.0);
+                ui.horizontal(|ui| {
+                    ui.label("Audio:");
+                    ui.strong(
+                        egui::RichText::new(
+                            &current_list
+                                .audio_file
+                                .clone()
+                                .map(|path| {
+                                    // Extract just the filename from the path
+                                    let filename = std::path::Path::new(&path)
+                                        .file_name()
+                                        .and_then(|name| name.to_str())
+                                        .unwrap_or(&path);
+
+                                    // Truncate to 50 characters if longer
+                                    if filename.len() > 50 {
+                                        format!("{}...", &filename[..47])
+                                    } else {
+                                        filename.to_string()
+                                    }
+                                })
+                                .unwrap_or_else(|| "None".to_string()),
+                        )
+                        .size(16.0),
+                    );
+                });
+            });
+        }
 
         // Cue Playback Controls
+        // TODO - make these appear when hovering over a cue.
         ui.horizontal(|ui| {
             if ui.button("GO").clicked() {
                 // do nothing
@@ -30,12 +91,13 @@ impl CuePanel {
         });
 
         // Display cues with progress bars
-        let cues = console_guard.cue_manager.get_current_cues();
+        let console_lock = console.lock();
+        let cues = console_lock.cue_manager.get_current_cues();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             for cue in cues {
                 ui.horizontal(|ui| {
-                    let is_playing = console_guard.cue_manager.is_cue_playing(cue.id);
+                    let is_playing = console_lock.cue_manager.is_cue_playing(cue.id);
                     let active_color = if is_playing {
                         egui::Color32::from_rgb(100, 200, 100)
                     } else {
@@ -50,7 +112,7 @@ impl CuePanel {
                     );
 
                     // Progress bar
-                    let progress = console_guard.cue_manager.get_current_cue_progress();
+                    let progress = console_lock.cue_manager.get_current_cue_progress();
                     let progress_response = ui.add(
                         egui::ProgressBar::new(progress)
                             .desired_width(200.0)
@@ -72,8 +134,7 @@ impl CuePanel {
                 });
             }
         });
-
-        drop(console_guard);
+        drop(console_lock);
     }
 
     fn format_duration(duration: Duration) -> String {

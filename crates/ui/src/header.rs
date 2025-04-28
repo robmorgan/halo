@@ -7,58 +7,58 @@ use std::sync::Arc;
 pub fn render(
     ui: &mut eframe::egui::Ui,
     active_tab: &mut ActiveTab,
-    _console: &Arc<Mutex<LightingConsole>>,
+    console: &Arc<Mutex<LightingConsole>>,
 ) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
-            // TODO
-            // let mut console = self.console.lock();
-            // if let Some(path) = rfd::FileDialog::new().set_title("New Show").save_file() {
-            //     let name = path
-            //         .file_stem()
-            //         .unwrap_or_default()
-            //         .to_string_lossy()
-            //         .to_string();
-            //     let _ = console.new_show(name);
-            // }
+            if let Some(path) = rfd::FileDialog::new().set_title("New Show").save_file() {
+                let mut console_lock = console.lock();
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let _ = console_lock.new_show(name);
+                drop(console_lock);
+            }
             ui.close_menu();
         }
 
         if ui.button("Open Show...").clicked() {
-            // TODO
-            // let mut console = self.console.lock();
-            // if let Some(path) = rfd::FileDialog::new()
-            //     .add_filter("Halo Show", &["halo"])
-            //     .set_title("Open Show")
-            //     .pick_file()
-            // {
-            //     let _ = console.load_show(&path);
-            // }
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Halo Show", &["json"])
+                .set_title("Open Show")
+                .pick_file()
+            {
+                let mut console_lock = console.lock();
+                let _ = console_lock.load_show(&path);
+                drop(console_lock);
+            }
             ui.close_menu();
         }
 
         if ui.button("Save Show").clicked() {
-            // TODO
-            // let mut console = self.console.lock();
-            // let _ = console.save_show();
+            let mut console_lock = console.lock();
+            let _ = console_lock.save_show();
+            drop(console_lock);
             ui.close_menu();
         }
 
         if ui.button("Save Show As...").clicked() {
-            // TODO
-            // let mut console = self.console.lock();
-            // if let Some(path) = rfd::FileDialog::new()
-            //     .add_filter("Halo Show", &["halo"])
-            //     .set_title("Save Show As")
-            //     .save_file()
-            // {
-            //     let name = path
-            //         .file_stem()
-            //         .unwrap_or_default()
-            //         .to_string_lossy()
-            //         .to_string();
-            //     let _ = console.save_show_as(name, path);
-            // }
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Halo Show", &["json"])
+                .set_title("Save Show As")
+                .save_file()
+            {
+                let mut console_lock = console.lock();
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let _ = console_lock.save_show_as(name, path);
+                drop(console_lock);
+            }
             ui.close_menu();
         }
 
@@ -94,6 +94,12 @@ pub fn render(
     });
     // Tab selector
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if ui
+            .selectable_label(matches!(active_tab, ActiveTab::ShowManager), "Shows")
+            .clicked()
+        {
+            *active_tab = ActiveTab::ShowManager;
+        }
         if ui
             .selectable_label(matches!(active_tab, ActiveTab::PatchPanel), "Patch")
             .clicked()

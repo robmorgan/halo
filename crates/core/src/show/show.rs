@@ -27,11 +27,4 @@ impl Show {
             version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
-
-    pub fn from_console(console: &LightingConsole, name: String) -> Self {
-        let mut show = Self::new(name);
-        show.fixtures = console.fixtures.clone();
-        show.cue_lists = console.cue_manager.get_cue_lists().clone();
-        show
-    }
 }

@@ -11,6 +11,12 @@ enum ClockMode {
     System,
 }
 
+enum PlaybackState {
+    Stopped,
+    Playing,
+    Holding,
+}
+
 struct TimeCode {
     hours: u32,
     minutes: u32,
@@ -36,6 +42,9 @@ pub struct SessionPanel {
     // Ableton Link state
     link_enabled: bool,
     link_peers: u64,
+
+    // Playback state
+    playback_state: PlaybackState,
 }
 
 impl Default for SessionPanel {
@@ -52,12 +61,13 @@ impl Default for SessionPanel {
             bpm: 120.0,
             link_enabled: false,
             link_peers: 0,
+            playback_state: PlaybackState::Stopped,
         }
     }
 }
 
 impl SessionPanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, _console: &Arc<Mutex<LightingConsole>>) {
+    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
         // Update clock
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_update);
@@ -114,6 +124,8 @@ impl SessionPanel {
 
             // Clock display
             ui.group(|ui| {
+                ui.set_min_width(ui.available_width());
+
                 let clock_text = match self.clock_mode {
                     ClockMode::TimeCode => {
                         format!(
@@ -146,66 +158,69 @@ impl SessionPanel {
             ui.add_space(10.0);
 
             // BPM controls
-            ui.group(|ui| {
-                ui.label("Master BPM");
-                ui.horizontal(|ui| {
-                    if ui.button("-").clicked() {
-                        self.bpm = (self.bpm - 0.1).max(20.0);
-                    }
-
-                    let bpm_text = format!("{:.1}", self.bpm);
-                    let font_id = FontId::monospace(24.0);
-                    ui.colored_label(
-                        Color32::from_rgb(255, 215, 0),
-                        RichText::new(bpm_text).font(font_id),
-                    );
-
-                    if ui.button("+").clicked() {
-                        self.bpm = (self.bpm + 0.1).min(999.0);
-                    }
-                });
-
-                ui.horizontal(|ui| {
-                    if ui.button("-1.0").clicked() {
-                        self.bpm = (self.bpm - 1.0).max(1.0);
-                    }
-                    if ui.button("+1.0").clicked() {
-                        self.bpm = (self.bpm + 1.0).min(999.0);
-                    }
-                });
-            });
-
-            ui.add_space(10.0);
-
-            // Ableton Link
-            ui.group(|ui| {
-                ui.label("Ableton Link");
-                ui.horizontal(|ui| {
-                    let link_text = if self.link_enabled {
-                        "LINK ●"
-                    } else {
-                        "LINK ○"
-                    };
-                    let link_color = if self.link_enabled {
-                        Color32::from_rgb(66, 133, 244)
-                    } else {
-                        ui.style().visuals.text_color()
-                    };
-
-                    if ui
-                        .button(RichText::new(link_text).color(link_color))
-                        .clicked()
-                    {
-                        self.link_enabled = !self.link_enabled;
-                        if self.link_enabled {
-                            // Simulate peers connecting
-                            self.link_peers = (rand::random::<u64>() % 3) + 1;
-                        } else {
-                            self.link_peers = 0;
-                        }
-                    }
-
+            ui.horizontal(|ui| {
+                ui.group(|ui| {
                     ui.vertical(|ui| {
+                        ui.label("Master BPM");
+
+                        ui.horizontal(|ui| {
+                            if ui.button("-").clicked() {
+                                self.bpm = (self.bpm - 0.1).max(20.0);
+                            }
+
+                            let bpm_text = format!("{:.1}", self.bpm);
+                            let font_id = FontId::monospace(24.0);
+                            ui.colored_label(
+                                Color32::from_rgb(255, 215, 0),
+                                RichText::new(bpm_text).font(font_id),
+                            );
+
+                            if ui.button("+").clicked() {
+                                self.bpm = (self.bpm + 0.1).min(999.0);
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            if ui.button("-1.0").clicked() {
+                                self.bpm = (self.bpm - 1.0).max(1.0);
+                            }
+                            if ui.button("+1.0").clicked() {
+                                self.bpm = (self.bpm + 1.0).min(999.0);
+                            }
+                        });
+                    });
+                });
+
+                ui.add_space(10.0);
+
+                // Ableton Link
+                ui.group(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label("Ableton Link");
+                        let link_text = if self.link_enabled {
+                            "LINK ●"
+                        } else {
+                            "LINK ○"
+                        };
+                        let link_color = if self.link_enabled {
+                            Color32::from_rgb(66, 133, 244)
+                        } else {
+                            ui.style().visuals.text_color()
+                        };
+
+                        if ui
+                            .button(RichText::new(link_text).color(link_color))
+                            .clicked()
+                        {
+                            self.link_enabled = !self.link_enabled;
+                            if self.link_enabled {
+                                // Simulate peers connecting
+                                self.link_peers = (rand::random::<u64>() % 3) + 1;
+                            } else {
+                                self.link_peers = 0;
+                            }
+                        }
+
                         let status_text = if self.link_enabled {
                             "Connected"
                         } else {
@@ -224,6 +239,78 @@ impl SessionPanel {
                         };
                         ui.label(peers_text);
                     });
+                });
+            });
+
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.set_min_width(ui.available_width());
+                    // Create large buttons with current state colors
+                    let button_height = 60.0;
+                    let button_width = ui.available_width() / 3.0 - 10.0;
+
+                    // Play button
+                    let play_text =
+                        RichText::new("▶ PLAY")
+                            .size(18.0)
+                            .color(match self.playback_state {
+                                PlaybackState::Playing => Color32::from_rgb(120, 255, 120),
+                                _ => ui.style().visuals.text_color(),
+                            });
+
+                    let play_button = ui.add_sized(
+                        [button_width, button_height],
+                        eframe::egui::Button::new(play_text),
+                    );
+
+                    if play_button.clicked() {
+                        self.playback_state = PlaybackState::Playing;
+                        let mut console_lock = console.lock();
+                        // Add actual play implementation here
+                        // For example: console_lock.play();
+                    }
+
+                    // Hold button
+                    let hold_text =
+                        RichText::new("⏸ HOLD")
+                            .size(18.0)
+                            .color(match self.playback_state {
+                                PlaybackState::Holding => Color32::from_rgb(255, 215, 0),
+                                _ => ui.style().visuals.text_color(),
+                            });
+
+                    let hold_button = ui.add_sized(
+                        [button_width, button_height],
+                        eframe::egui::Button::new(hold_text),
+                    );
+
+                    if hold_button.clicked() {
+                        self.playback_state = PlaybackState::Holding;
+                        let mut console_lock = console.lock();
+                        // Add actual hold implementation here
+                        // For example: console_lock.pause();
+                    }
+
+                    // Stop button
+                    let stop_text =
+                        RichText::new("⏹ STOP")
+                            .size(18.0)
+                            .color(match self.playback_state {
+                                PlaybackState::Stopped => Color32::from_rgb(255, 100, 100),
+                                _ => ui.style().visuals.text_color(),
+                            });
+
+                    let stop_button = ui.add_sized(
+                        [button_width, button_height],
+                        eframe::egui::Button::new(stop_text),
+                    );
+
+                    if stop_button.clicked() {
+                        self.playback_state = PlaybackState::Stopped;
+                        let mut console_lock = console.lock();
+                        // Add actual stop implementation here
+                        // For example: console_lock.stop();
+                    }
                 });
             });
         });

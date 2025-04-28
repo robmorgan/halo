@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use halo_fixtures::{Fixture, FixtureLibrary};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
@@ -33,6 +33,7 @@ const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 pub struct LightingConsole {
     // is the event loop running?
     is_running: bool,
+    show_name: String,
     tempo: f64,
     fixture_library: FixtureLibrary,
     pub fixtures: Vec<Fixture>,
@@ -64,6 +65,7 @@ impl LightingConsole {
 
         Ok(LightingConsole {
             is_running: true,
+            show_name: "Untitled Show".to_string(),
             tempo: bpm,
             fixture_library: FixtureLibrary::new(),
             fixtures: Vec::new(),
@@ -410,33 +412,38 @@ impl LightingConsole {
     }
 
     pub fn new_show(&mut self, name: String) -> Result<(), anyhow::Error> {
-        let show = self.show_manager.new_show(name);
+        let _ = self.show_manager.new_show(name);
         Ok(())
     }
 
-    // TODO - implement properly
     pub fn save_show(&mut self) -> Result<PathBuf, anyhow::Error> {
-        //let show = Show::new("Untitled");
-        //self.show_manager.save_show(&show)
-        Ok(PathBuf::new())
+        let result = self.show_manager.save_show(&self.get_show().clone())?;
+        Ok(result)
     }
 
-    // TODO - implement properly
-    pub fn save_show_as(
-        &mut self,
-        _name: String,
-        _path: PathBuf,
-    ) -> Result<PathBuf, anyhow::Error> {
-        //let console = self.clone();
-        //self.show_manager.save_show_as(&console, name, path)
-        Ok(PathBuf::new())
+    pub fn save_show_as(&mut self, name: String, path: PathBuf) -> Result<PathBuf, anyhow::Error> {
+        self.show_name = name;
+        let result = self
+            .show_manager
+            .save_show_as(&self.get_show().clone(), path)?;
+
+        Ok(result)
     }
 
     pub fn load_show(&mut self, path: &Path) -> Result<(), anyhow::Error> {
-        // TODO - load show
         let show = self.show_manager.load_show(path)?;
-        //self.show_manager.apply_show_to_console(self)?;
+        // TODO - we'll probably want to lookup fixtures here
+        self.fixtures = show.fixtures.clone();
+        self.cue_manager.set_cue_lists(show.cue_lists.clone());
         Ok(())
+    }
+
+    pub fn get_show(&self) -> Show {
+        let mut show = Show::new(self.show_name.clone());
+        show.fixtures = self.fixtures.clone();
+        show.cue_lists = self.cue_manager.get_cue_lists().clone();
+        show.modified_at = SystemTime::now();
+        show
     }
 
     fn display_status(
