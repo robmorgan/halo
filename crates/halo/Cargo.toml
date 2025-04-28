@@ -28,3 +28,4 @@ clap = { version = "4.5.23", features = ["derive"] }
 crossterm = "0.28.1"
 eframe = "0.31.0"
 parking_lot = "0.12.3"
+rfd = "0.15.3"

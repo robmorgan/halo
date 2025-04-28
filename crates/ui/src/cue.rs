@@ -35,7 +35,8 @@ impl CuePanel {
         egui::ScrollArea::vertical().show(ui, |ui| {
             for cue in cues {
                 ui.horizontal(|ui| {
-                    let active_color = if cue.is_playing {
+                    let is_playing = console_guard.cue_manager.is_cue_playing(cue.id);
+                    let active_color = if is_playing {
                         egui::Color32::from_rgb(100, 200, 100)
                     } else {
                         egui::Color32::from_rgb(150, 150, 150)
@@ -44,13 +45,14 @@ impl CuePanel {
                     ui.label(egui::RichText::new(&cue.name).color(active_color).strong());
 
                     ui.label(
-                        egui::RichText::new(Self::format_duration(cue.start_time))
+                        egui::RichText::new(Self::format_duration(cue.fade_time))
                             .color(active_color),
                     );
 
                     // Progress bar
+                    let progress = console_guard.cue_manager.get_current_cue_progress();
                     let progress_response = ui.add(
-                        egui::ProgressBar::new(cue.progress)
+                        egui::ProgressBar::new(progress)
                             .desired_width(200.0)
                             .desired_height(30.0)
                             .corner_radius(0.0),
@@ -63,7 +65,7 @@ impl CuePanel {
                             progress_response.layer_id,
                             egui::Id::new("duration_tooltip"),
                             |ui| {
-                                ui.label(format!("Duration: {}s", cue.duration.as_secs()));
+                                ui.label(format!("Duration: {}s", cue.fade_time.as_secs()));
                             },
                         );
                     }

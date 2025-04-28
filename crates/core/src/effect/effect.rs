@@ -1,12 +1,12 @@
 use std::f64::consts::PI;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{Interval, RhythmState};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Effect {
-    pub name: String,
     pub effect_type: EffectType,
-    pub apply: fn(f64) -> f64, // Takes a phase (0.0 to 1.0) and returns a value (0.0 to 1.0)
     pub min: u8,
     pub max: u8,
     pub amplitude: f32,
@@ -18,12 +18,31 @@ pub struct Effect {
     // pub paused: bool,
 }
 
+impl Effect {
+    // Takes a phase (0.0 to 1.0) and returns a value (0.0 to 1.0)
+    pub fn apply(&self, phase: f64) -> f64 {
+        // Apply based on the effect type
+        let apply_fn = match self.effect_type {
+            EffectType::Sine => sine_effect,
+            EffectType::Square => square_effect,
+            EffectType::Sawtooth => sawtooth_effect,
+            EffectType::Triangle => |phase| {
+                if phase < 0.5 {
+                    phase * 2.0
+                } else {
+                    2.0 - phase * 2.0
+                }
+            },
+            _ => sine_effect, // Default
+        };
+        (apply_fn)(phase)
+    }
+}
+
 impl Default for Effect {
     fn default() -> Self {
         Self {
-            name: "".to_string(),
             effect_type: EffectType::Sine,
-            apply: |_| 0.0,
             min: 0,
             max: 255,
             amplitude: 1.0,
@@ -35,7 +54,7 @@ impl Default for Effect {
 }
 
 // Effect types
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum EffectType {
     Sine,
     Sawtooth,
@@ -58,7 +77,7 @@ impl EffectType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EffectParams {
     pub interval: Interval,
     pub interval_ratio: f64,
@@ -85,16 +104,8 @@ pub fn get_effect_phase(rhythm: &RhythmState, params: &EffectParams) -> f64 {
     (base_phase * params.interval_ratio + params.phase) % 1.0
 }
 
-pub fn linear_effect(phase: f64) -> f64 {
-    phase
-}
-
 pub fn sine_effect(phase: f64) -> f64 {
     (phase * 2.0 * PI).sin() * 0.5 + 0.5
-}
-
-pub fn cosine_effect(phase: f64) -> f64 {
-    (phase * 2.0 * PI).cos() * 0.5 + 0.5
 }
 
 pub fn square_effect(phase: f64) -> f64 {

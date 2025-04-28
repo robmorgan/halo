@@ -1,10 +1,14 @@
-use crate::{Cue, CueList};
+use std::time::Duration;
+
+use crate::{Cue, CueList, EffectMapping, StaticValue};
 
 pub struct CueManager {
     cue_lists: Vec<CueList>,
     current_cue_list: usize,
     current_cue: usize,
     is_playing: bool,
+    start_time: Duration,
+    progress: f32,
 }
 
 impl CueManager {
@@ -14,6 +18,22 @@ impl CueManager {
             current_cue_list: 0,
             current_cue: 0,
             is_playing: false,
+            start_time: Duration::ZERO,
+            progress: 0.0,
+        }
+    }
+
+    pub fn update(&mut self, current_time: Duration) {
+        if self.is_playing {
+            if let Some(current_cue) = self.get_current_cue() {
+                let elapsed_fade_time = current_time - current_cue.fade_time;
+                if elapsed_fade_time < current_cue.fade_time {
+                    self.progress =
+                        elapsed_fade_time.as_secs_f32() / current_cue.fade_time.as_secs_f32();
+                } else {
+                    self.progress = 1.0;
+                }
+            }
         }
     }
 
@@ -26,8 +46,8 @@ impl CueManager {
         self.cue_lists.len() - 1 // Return the index of the new cue list
     }
 
-    pub fn get_cue_lists(&self) -> &[CueList] {
-        &self.cue_lists
+    pub fn get_cue_lists(&self) -> Vec<CueList> {
+        self.cue_lists.clone()
     }
 
     pub fn get_cue_list(&self, index: usize) -> Option<&CueList> {
@@ -36,6 +56,14 @@ impl CueManager {
 
     pub fn get_cue_list_mut(&mut self, index: usize) -> Option<&mut CueList> {
         self.cue_lists.get_mut(index)
+    }
+
+    pub fn get_current_cue_list(&self) -> Option<&CueList> {
+        self.cue_lists.get(self.current_cue_list)
+    }
+
+    pub fn get_current_cue_list_idx(&self) -> usize {
+        self.current_cue_list
     }
 
     pub fn remove_cue_list(&mut self, index: usize) -> Result<CueList, String> {
@@ -69,6 +97,22 @@ impl CueManager {
 
     pub fn get_cue(&self, cue_idx: usize) -> Option<&Cue> {
         self.cue_lists[self.current_cue_list].cues.get(cue_idx)
+    }
+
+    pub fn get_current_cue_idx(&self) -> Option<usize> {
+        if self.current_cue_list >= self.cue_lists.len() {
+            return None;
+        }
+
+        Some(self.current_cue)
+    }
+
+    pub fn is_cue_playing(&self, cue_id: usize) -> bool {
+        self.cue_lists[self.current_cue_list].cues[self.current_cue].id == cue_id
+    }
+
+    pub fn get_current_cue_progress(&self) -> f32 {
+        self.progress
     }
 
     pub fn get_cue_mut(&mut self, cue_idx: usize) -> Option<&mut Cue> {
@@ -171,17 +215,17 @@ impl CueManager {
         cue_list.cues.iter().collect()
     }
 
-    pub fn get_next_cue_idx(&self) -> Option<usize> {
-        if self.current_cue_list >= self.cue_lists.len() {
-            return None;
+    pub fn get_next_cue_id(&self) -> Option<usize> {
+        let cue_list = self.get_current_cue_list()?;
+
+        if cue_list.cues.is_empty() {
+            return Some(1);
         }
 
-        let cue_list = &self.cue_lists[self.current_cue_list];
-        if self.current_cue >= cue_list.cues.len() {
-            return None;
-        }
+        // Find the maximum ID in the current cue list
+        let max_id = cue_list.cues.iter().map(|cue| cue.id).max().unwrap_or(0);
 
-        Some((self.current_cue + 1) % cue_list.cues.len())
+        Some(max_id + 1)
     }
 
     pub fn stop_playback(&mut self) {
@@ -190,5 +234,26 @@ impl CueManager {
 
     pub fn is_playing(&self) -> bool {
         self.is_playing
+    }
+
+    pub fn record(
+        &mut self,
+        cue_name: String,
+        cue_list_idx: usize,
+        fade_time: f32,
+        values: Vec<StaticValue>,
+        effects: Vec<EffectMapping>,
+    ) {
+        if let Some(id) = self.get_next_cue_id() {
+            self.cue_lists[cue_list_idx].cues.push(Cue {
+                id,
+                name: cue_name,
+                fade_time: Duration::from_secs_f32(fade_time),
+                static_values: values,
+                effects,
+                timecode: None,
+                is_blocking: false,
+            });
+        }
     }
 }
