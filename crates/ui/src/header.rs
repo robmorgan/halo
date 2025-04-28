@@ -1,23 +1,78 @@
-use eframe::egui;
-
 use crate::ActiveTab;
+use eframe::egui;
+use halo_core::LightingConsole;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
-pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    active_tab: &mut ActiveTab,
+    _console: &Arc<Mutex<LightingConsole>>,
+) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
-            // TODO: Implement new show functionality
-            // self.selected_fixture_index = None;
-            // self.selected_cue_index = None;
-            // self.selected_chase_index = None;
-            // self.selected_step_index = None;
+            // TODO
+            // let mut console = self.console.lock();
+            // if let Some(path) = rfd::FileDialog::new().set_title("New Show").save_file() {
+            //     let name = path
+            //         .file_stem()
+            //         .unwrap_or_default()
+            //         .to_string_lossy()
+            //         .to_string();
+            //     let _ = console.new_show(name);
+            // }
+            ui.close_menu();
         }
+
+        if ui.button("Open Show...").clicked() {
+            // TODO
+            // let mut console = self.console.lock();
+            // if let Some(path) = rfd::FileDialog::new()
+            //     .add_filter("Halo Show", &["halo"])
+            //     .set_title("Open Show")
+            //     .pick_file()
+            // {
+            //     let _ = console.load_show(&path);
+            // }
+            ui.close_menu();
+        }
+
         if ui.button("Save Show").clicked() {
-            // TODO: Implement save functionality
+            // TODO
+            // let mut console = self.console.lock();
+            // let _ = console.save_show();
+            ui.close_menu();
         }
-        if ui.button("Load Show").clicked() {
-            // TODO: Implement load functionality
+
+        if ui.button("Save Show As...").clicked() {
+            // TODO
+            // let mut console = self.console.lock();
+            // if let Some(path) = rfd::FileDialog::new()
+            //     .add_filter("Halo Show", &["halo"])
+            //     .set_title("Save Show As")
+            //     .save_file()
+            // {
+            //     let name = path
+            //         .file_stem()
+            //         .unwrap_or_default()
+            //         .to_string_lossy()
+            //         .to_string();
+            //     let _ = console.save_show_as(name, path);
+            // }
+            ui.close_menu();
         }
+
+        ui.separator();
+
+        if ui.button("Show Manager").clicked() {
+            *active_tab = ActiveTab::ShowManager;
+            ui.close_menu();
+        }
+
+        ui.separator();
+
         if ui.button("Quit").clicked() {
+            // TODO - add are you sure? modal.
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     });

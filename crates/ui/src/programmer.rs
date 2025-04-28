@@ -5,14 +5,16 @@ use std::sync::Arc;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
 use halo_core::{
-    sawtooth_effect, sine_effect, square_effect, Effect, EffectDistribution, EffectMapping,
-    EffectParams, EffectType, Interval, LightingConsole, StaticValue,
+    Effect, EffectDistribution, EffectMapping, EffectParams, EffectType, Interval, LightingConsole,
+    StaticValue,
 };
 use halo_fixtures::{Channel, ChannelType, Fixture};
 use parking_lot::Mutex;
 
+use crate::fader::render_vertical_fader;
+
 // Define the active tab types for the programmer
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum ActiveProgrammerTab {
     Intensity,
     Color,
@@ -20,16 +22,36 @@ enum ActiveProgrammerTab {
     Beam,
 }
 
-// Struct to hold the state of the programmer panel
+/// TabEffectConfig stores the state of the effect configuration for a specific tab
+#[derive(Clone, Debug, PartialEq)]
+struct TabEffectConfig {
+    effect_waveform: usize,
+    effect_interval: usize,
+    effect_distribution: usize,
+    effect_ratio: f32,
+    effect_phase: f32,
+}
+
+impl Default for TabEffectConfig {
+    fn default() -> Self {
+        Self {
+            effect_waveform: 0,
+            effect_interval: 0,
+            effect_distribution: 0,
+            effect_ratio: 1.0,
+            effect_phase: 0.0,
+        }
+    }
+}
+
+/// ProgrammerState holds the state of the programmer panel
 pub struct ProgrammerState {
     pub new_cue_name: String,
     active_tab: ActiveProgrammerTab,
     selected_fixtures: Vec<usize>,
     params: HashMap<String, f32>,
     color_presets: Vec<Color32>,
-    effect_waveform: usize,
-    effect_interval: usize,
-    effect_distribution: usize,
+    tab_effects: HashMap<ActiveProgrammerTab, TabEffectConfig>,
     preview_mode: bool,
     collapsed: bool,
 }
@@ -37,6 +59,7 @@ pub struct ProgrammerState {
 impl Default for ProgrammerState {
     fn default() -> Self {
         let mut params = HashMap::new();
+        let mut tab_effects = HashMap::new();
 
         // Initialize default parameter values
         params.insert("dimmer".to_string(), 100.0);
@@ -51,8 +74,12 @@ impl Default for ProgrammerState {
         params.insert("zoom".to_string(), 75.0);
         params.insert("gobo_rotation".to_string(), 0.0);
         params.insert("gobo_selection".to_string(), 2.0);
-        params.insert("effect_ratio".to_string(), 1.0);
-        params.insert("effect_phase".to_string(), 0.0);
+
+        // Initialize tab-specific effect configurations
+        tab_effects.insert(ActiveProgrammerTab::Intensity, TabEffectConfig::default());
+        tab_effects.insert(ActiveProgrammerTab::Color, TabEffectConfig::default());
+        tab_effects.insert(ActiveProgrammerTab::Position, TabEffectConfig::default());
+        tab_effects.insert(ActiveProgrammerTab::Beam, TabEffectConfig::default());
 
         // Initialize color presets
         let color_presets = vec![
@@ -72,9 +99,7 @@ impl Default for ProgrammerState {
             selected_fixtures: vec![],
             params,
             color_presets,
-            effect_waveform: 0,
-            effect_interval: 0,
-            effect_distribution: 0,
+            tab_effects,
             preview_mode: false,
             collapsed: false,
         }
@@ -201,7 +226,7 @@ impl Programmer {
                     ui.separator();
 
                     // Effects panel on the right
-                    self.show_effects_panel(ui);
+                    self.show_effects_panel(ui, console);
                 });
             } else {
                 // When collapsed, show a compact summary of selected fixtures and active parameters
@@ -256,10 +281,15 @@ impl Programmer {
                 });
             }
 
-            // Update the fixtures based on the programmer's state if preview mode is enabled
-            if self.state.preview_mode {
-                self.update_fixtures(console);
-            }
+            // Update programmer state based on parameter values
+            self.update_fixtures(console);
+
+            // Update preview mode based on button state
+            let mut console_lock = console.lock();
+            console_lock
+                .programmer
+                .set_preview_mode(self.state.preview_mode);
+            drop(console_lock);
         });
     }
 
@@ -273,17 +303,20 @@ impl Programmer {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("RECORD").clicked() {
                             // Record the current programmer state to a cue
-                            let mut console = console.lock();
-                            // Create a new cue from programmer values
                             if !self.state.new_cue_name.is_empty() {
-                                // Record logic here
+                                let mut console_lock = console.lock();
+                                console_lock.record_cue(self.state.new_cue_name.clone(), 0.0);
+                                drop(console_lock);
                             }
                         }
 
                         if ui.button("CLEAR").clicked() {
                             // Clear the programmer
-                            let mut console = console.lock();
-                            console.programmer.clear();
+                            let mut console_lock = console.lock();
+                            console_lock.programmer.clear();
+                            drop(console_lock);
+
+                            // TODO - deselect fixtures also
                         }
 
                         ui.add(
@@ -291,13 +324,6 @@ impl Programmer {
                                 .hint_text("New cue name...")
                                 .desired_width(150.0),
                         );
-
-                        if ui
-                            .add(egui::Button::new("HIGHLIGHT").selected(self.state.preview_mode))
-                            .clicked()
-                        {
-                            self.state.preview_mode = !self.state.preview_mode;
-                        }
                     });
                 });
 
@@ -307,8 +333,8 @@ impl Programmer {
                 let programmer_values: Vec<StaticValue>;
                 let effects: Vec<EffectMapping>;
                 {
-                    let locked_console = console.lock();
-                    programmer_values = locked_console
+                    let console_lock = console.lock();
+                    programmer_values = console_lock
                         .programmer
                         .get_values()
                         .iter()
@@ -319,7 +345,7 @@ impl Programmer {
                         })
                         .collect();
 
-                    effects = locked_console.programmer.get_effects().clone();
+                    effects = console_lock.programmer.get_effects().clone();
                 }
 
                 // Group values by fixture_id
@@ -361,12 +387,9 @@ impl Programmer {
                         ui.separator();
 
                         for (i, effect) in effects.iter().enumerate() {
-                            ui.collapsing(
-                                format!("Effect #{}: {:?}", i + 1, effect.effect.effect_type),
-                                |ui| {
-                                    self.render_effect_details(ui, effect);
-                                },
-                            );
+                            ui.collapsing(format!("Effect #{}: {}", i + 1, effect.name), |ui| {
+                                self.render_effect_details(ui, effect);
+                            });
                         }
                     }
                 });
@@ -566,12 +589,6 @@ impl Programmer {
         if !beam_channels.is_empty() {
             self.update_selected_fixture_channels("beam", console);
         }
-
-        // Effects
-        if let Some(effect_mapping) = self.create_effect_mapping() {
-            let mut console = console.lock();
-            console.programmer.add_effect(effect_mapping);
-        }
     }
 
     // Helper function to draw tab buttons
@@ -739,13 +756,22 @@ impl Programmer {
         channels
     }
 
-    fn create_effect_mapping(&self) -> Option<EffectMapping> {
+    fn create_effect_mapping(
+        &self,
+        console: &Arc<Mutex<LightingConsole>>,
+    ) -> Option<EffectMapping> {
         if self.state.selected_fixtures.is_empty() {
             return None;
         }
 
+        // Get the current tab's effect config
+        let tab_effect = match self.state.tab_effects.get(&self.state.active_tab) {
+            Some(config) => config,
+            None => return None,
+        };
+
         // Map UI waveform to EffectType
-        let effect_type = match self.state.effect_waveform {
+        let effect_type = match tab_effect.effect_waveform {
             0 => EffectType::Sine,
             1 => EffectType::Square,
             2 => EffectType::Sawtooth,
@@ -754,31 +780,16 @@ impl Programmer {
         };
 
         // Map UI interval to Interval
-        let interval = match self.state.effect_interval {
+        let interval = match tab_effect.effect_interval {
             0 => Interval::Beat,
             1 => Interval::Bar,
             2 => Interval::Phrase,
             _ => Interval::Beat, // Default to beat
         };
 
-        // Choose apply function based on effect type
-        let apply_fn = match effect_type {
-            EffectType::Sine => sine_effect,
-            EffectType::Square => square_effect,
-            EffectType::Sawtooth => sawtooth_effect,
-            EffectType::Triangle => |phase| {
-                if phase < 0.5 {
-                    phase * 2.0
-                } else {
-                    2.0 - phase * 2.0
-                }
-            },
-            _ => sine_effect, // Default
-        };
-
         // Create effect parameters
-        let effect_ratio = self.state.get_param("effect_ratio");
-        let effect_phase = self.state.get_param("effect_phase") / 360.0; // Convert degrees to 0-1 range
+        let effect_ratio = tab_effect.effect_ratio;
+        let effect_phase = tab_effect.effect_phase / 360.0; // Convert degrees to 0-1 range
 
         let effect_params = EffectParams {
             interval,
@@ -788,9 +799,7 @@ impl Programmer {
 
         // Create the Effect object
         let effect = Effect {
-            name: format!("{:?} Effect", effect_type),
             effect_type,
-            apply: apply_fn,
             min: 0,
             max: 255,
             amplitude: 1.0,
@@ -804,7 +813,7 @@ impl Programmer {
             ActiveProgrammerTab::Intensity => ChannelType::Dimmer,
             ActiveProgrammerTab::Color => ChannelType::Color,
             ActiveProgrammerTab::Position => {
-                if self.state.effect_waveform % 2 == 0 {
+                if tab_effect.effect_waveform % 2 == 0 {
                     ChannelType::Pan
                 } else {
                     ChannelType::Tilt
@@ -814,15 +823,42 @@ impl Programmer {
         };
 
         // Map UI distribution to EffectDistribution
-        let distribution = match self.state.effect_distribution {
+        let distribution = match tab_effect.effect_distribution {
             0 => EffectDistribution::All,
             1 => EffectDistribution::Step(1),
             2 => EffectDistribution::Wave(30.0), // 30 degree phase offset
             _ => EffectDistribution::All,
         };
 
+        let console_lock = console.lock();
+        let fixtures = console_lock.fixtures.iter().collect::<Vec<&Fixture>>();
+
+        // Extract names of selected fixtures
+        let selected_fixture_names: Vec<String> = fixtures
+            .iter()
+            .filter(|fixture| self.state.selected_fixtures.contains(&fixture.id))
+            .map(|fixture| fixture.name.clone())
+            .collect();
+
+        drop(console_lock);
+
+        // Join the names for display, limit to first few if there are many
+        let fixture_names_display = if selected_fixture_names.len() <= 3 {
+            selected_fixture_names.join(", ")
+        } else {
+            format!(
+                "{} and {} more",
+                selected_fixture_names[0..2].join(", "),
+                selected_fixture_names.len() - 2
+            )
+        };
+
+        // Create a name based on the selected fixtures
+        let name = format!("{:?} Effect on {}", effect_type, fixture_names_display);
+
         // Create and return the EffectMapping
         Some(EffectMapping {
+            name,
             effect,
             fixture_ids: self.state.selected_fixtures.clone(),
             channel_type,
@@ -1118,7 +1154,7 @@ impl Programmer {
     }
 
     // Effects panel
-    fn show_effects_panel(&mut self, ui: &mut egui::Ui) {
+    fn show_effects_panel(&mut self, ui: &mut egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_min_width(200.0);
@@ -1135,82 +1171,108 @@ impl Programmer {
 
                 ui.add_space(5.0);
 
-                // Waveform dropdown
-                egui::ComboBox::from_label("Waveform")
-                    .selected_text(match self.state.effect_waveform {
-                        0 => "Sine",
-                        1 => "Square",
-                        2 => "Sawtooth",
-                        3 => "Triangle",
-                        _ => "Sine",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.state.effect_waveform, 0, "Sine");
-                        ui.selectable_value(&mut self.state.effect_waveform, 1, "Square");
-                        ui.selectable_value(&mut self.state.effect_waveform, 2, "Sawtooth");
-                        ui.selectable_value(&mut self.state.effect_waveform, 3, "Triangle");
+                // Clone the current tab's effect config
+                let tab_effect_mut = self.state.tab_effects.get_mut(&self.state.active_tab);
+
+                if let Some(tab_effect) = tab_effect_mut {
+                    // Waveform dropdown
+                    egui::ComboBox::from_label("Waveform")
+                        .selected_text(match tab_effect.effect_waveform {
+                            0 => "Sine",
+                            1 => "Square",
+                            2 => "Sawtooth",
+                            3 => "Triangle",
+                            _ => "Sine",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut tab_effect.effect_waveform, 0, "Sine");
+                            ui.selectable_value(&mut tab_effect.effect_waveform, 1, "Square");
+                            ui.selectable_value(&mut tab_effect.effect_waveform, 2, "Sawtooth");
+                            ui.selectable_value(&mut tab_effect.effect_waveform, 3, "Triangle");
+                        });
+
+                    // Interval dropdown
+                    egui::ComboBox::from_label("Interval")
+                        .selected_text(match tab_effect.effect_interval {
+                            0 => "Beat",
+                            1 => "Bar",
+                            2 => "Phrase",
+                            _ => "Beat",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut tab_effect.effect_interval, 0, "Beat");
+                            ui.selectable_value(&mut tab_effect.effect_interval, 1, "Bar");
+                            ui.selectable_value(&mut tab_effect.effect_interval, 2, "Phrase");
+                        });
+
+                    ui.add_space(10.0);
+
+                    // Effect parameter sliders
+                    ui.horizontal(|ui| {
+                        let slider_height = 120.0;
+
+                        // Use custom sliders for ratio and phase
+                        ui.vertical(|ui| {
+                            ui.label("Ratio");
+                            let mut ratio = tab_effect.effect_ratio;
+                            if render_vertical_fader(ui, &mut ratio, 0.0, 2.0, slider_height) {
+                                tab_effect.effect_ratio = ratio;
+                            }
+                        });
+
+                        ui.add_space(15.0);
+
+                        ui.vertical(|ui| {
+                            ui.label("Phase");
+                            let mut phase = tab_effect.effect_phase;
+                            if render_vertical_fader(ui, &mut phase, 0.0, 360.0, slider_height) {
+                                tab_effect.effect_phase = phase;
+                            }
+                        });
                     });
 
-                // Interval dropdown
-                egui::ComboBox::from_label("Interval")
-                    .selected_text(match self.state.effect_interval {
-                        0 => "Beat",
-                        1 => "Bar",
-                        2 => "Phrase",
-                        _ => "Beat",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.state.effect_interval, 0, "Beat");
-                        ui.selectable_value(&mut self.state.effect_interval, 1, "Bar");
-                        ui.selectable_value(&mut self.state.effect_interval, 2, "Phrase");
-                    });
+                    ui.add_space(10.0);
 
-                ui.add_space(10.0);
+                    // Distribution dropdown
+                    egui::ComboBox::from_label("Distribution")
+                        .selected_text(match tab_effect.effect_distribution {
+                            0 => "All",
+                            1 => "Step",
+                            2 => "Wave",
+                            _ => "All",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut tab_effect.effect_distribution, 0, "All");
+                            ui.selectable_value(&mut tab_effect.effect_distribution, 1, "Step");
+                            ui.selectable_value(&mut tab_effect.effect_distribution, 2, "Wave");
+                        });
 
-                // Effect parameter sliders
-                ui.horizontal(|ui| {
-                    let slider_height = 120.0;
-                    self.vertical_slider(ui, "effect_ratio", "Ratio", 0.0, 2.0, slider_height);
-
-                    ui.add_space(15.0);
-
-                    self.vertical_slider(ui, "effect_phase", "Phase", 0.0, 360.0, slider_height);
-                });
-
-                ui.add_space(10.0);
-
-                // Distribution dropdown
-                egui::ComboBox::from_label("Distribution")
-                    .selected_text(match self.state.effect_distribution {
-                        0 => "All",
-                        1 => "Step",
-                        2 => "Wave",
-                        _ => "All",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.state.effect_distribution, 0, "All");
-                        ui.selectable_value(&mut self.state.effect_distribution, 1, "Step");
-                        ui.selectable_value(&mut self.state.effect_distribution, 2, "Wave");
-                    });
-
-                ui.add_space(10.0);
-
-                // Apply effect button
-                if ui.button("Apply Effect").clicked() {
-                    // Apply effect functionality would go here
+                    // Apply Effects Button
+                    if ui.button("Apply Effects").clicked() {
+                        if let Some(effect_mapping) = self.create_effect_mapping(console) {
+                            let mut console_lock = console.lock();
+                            console_lock.programmer.add_effect(effect_mapping);
+                            drop(console_lock);
+                        }
+                    }
                 }
+                ui.add_space(10.0);
             });
+
             ui.vertical(|ui| {
-                self.show_waveform_visualization(ui);
+                let tab_effect_opt = self.state.tab_effects.get(&self.state.active_tab);
+                if let Some(tab_effect) = tab_effect_opt {
+                    self.show_waveform_visualization(ui, tab_effect);
+                }
             });
         });
     }
 
-    fn show_waveform_visualization(&self, ui: &mut egui::Ui) {
-        // Get effect parameters
-        let waveform_type = self.state.effect_waveform;
-        let ratio = self.state.get_param("effect_ratio");
-        let phase_degrees = self.state.get_param("effect_phase");
+    fn show_waveform_visualization(&self, ui: &mut egui::Ui, tab_effect: &TabEffectConfig) {
+        // Get effect parameters from the current tab's effect config
+        let waveform_type = tab_effect.effect_waveform;
+        let ratio = tab_effect.effect_ratio;
+        let phase_degrees = tab_effect.effect_phase;
         let phase_radians = phase_degrees * PI as f32 / 180.0;
 
         // Generate points for the selected waveform

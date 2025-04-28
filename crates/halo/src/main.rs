@@ -54,44 +54,6 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Destination: {}", network_config.get_destination());
     println!("Port: {}", network_config.port);
 
-    let effects = vec![
-        Effect {
-            name: "Beat-synced Sine".to_string(),
-            apply: sine_effect,
-            min: 0,
-            max: 255,
-            params: EffectParams {
-                interval: Interval::Beat,
-                interval_ratio: 1.0, // Twice as fast
-                phase: 0.25,         // Quarter phase offset
-            },
-            ..Default::default()
-        },
-        Effect {
-            name: "Bar-synced Square".to_string(),
-            apply: square_effect,
-            min: 0,
-            max: 255,
-            params: EffectParams {
-                interval: Interval::Bar,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        Effect {
-            name: "Phrase-synced Sawtooth".to_string(),
-            apply: sawtooth_effect,
-            min: 0,
-            max: 255,
-            params: EffectParams {
-                interval: Interval::Beat,
-                interval_ratio: 1.0, // Twice as fast
-                phase: 0.0,          // Quarter phase offset
-            },
-            ..Default::default()
-        },
-    ];
-
     // Create the console
     let mut console = LightingConsole::new(80., network_config.clone()).unwrap();
     console.load_fixture_library();

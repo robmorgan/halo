@@ -5,13 +5,7 @@ use crate::{EffectMapping, StaticValue};
 pub struct Programmer {
     values: Vec<StaticValue>,
     effects: Vec<EffectMapping>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ProgrammerValue {
-    pub fixture_id: usize,
-    pub channel_type: ChannelType,
-    pub value: u8,
+    preview_mode: bool,
 }
 
 impl Programmer {
@@ -19,6 +13,7 @@ impl Programmer {
         Self {
             values: Vec::new(),
             effects: Vec::new(),
+            preview_mode: false,
         }
     }
 
@@ -45,6 +40,14 @@ impl Programmer {
 
     pub fn get_effects(&self) -> &Vec<EffectMapping> {
         &self.effects
+    }
+
+    pub fn set_preview_mode(&mut self, preview_mode: bool) {
+        self.preview_mode = preview_mode;
+    }
+
+    pub fn get_preview_mode(&self) -> bool {
+        self.preview_mode
     }
 
     pub fn clear(&mut self) {

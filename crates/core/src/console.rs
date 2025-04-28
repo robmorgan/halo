@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{stdout, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -16,9 +17,10 @@ use crate::cue::cue_manager::CueManager;
 use crate::effect::effect::get_effect_phase;
 use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::programmer::Programmer;
+use crate::show::show::Show;
 use crate::{
     ableton_link, artnet, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
-    StaticValue,
+    ShowManager, StaticValue,
 };
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
@@ -37,6 +39,7 @@ pub struct LightingConsole {
     pub link_state: ableton_link::State,
     pub cue_manager: CueManager,
     pub programmer: Programmer,
+    pub show_manager: ShowManager,
     dmx_output: artnet::artnet::ArtNet,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
@@ -45,6 +48,8 @@ pub struct LightingConsole {
     _midi_connection: Option<MidiInputConnection<()>>, // Keep connection alive
     _midi_output: Option<MidiOutputConnection>,
     rhythm_state: RhythmState,
+    start_time: Option<Instant>,
+    elapsed: Duration,
 }
 
 impl LightingConsole {
@@ -55,6 +60,8 @@ impl LightingConsole {
 
         let (override_tx, override_rx) = channel();
 
+        let show_manager = ShowManager::new()?;
+
         Ok(LightingConsole {
             is_running: true,
             tempo: bpm,
@@ -62,6 +69,7 @@ impl LightingConsole {
             fixtures: Vec::new(),
             cue_manager: CueManager::new(Vec::new()),
             programmer: Programmer::new(),
+            show_manager,
             link_state,
             dmx_output,
             midi_overrides: HashMap::new(),
@@ -79,6 +87,8 @@ impl LightingConsole {
                 last_tap_time: Option::None,
                 tap_count: 0,
             },
+            start_time: None,
+            elapsed: Duration::ZERO,
         })
     }
 
@@ -106,6 +116,7 @@ impl LightingConsole {
         let fixture = Fixture {
             id,
             name: name.to_string(),
+            profile_id: profile.id.clone(),
             profile: profile.clone(),
             channels: profile.channel_layout.clone(),
             universe,
@@ -289,6 +300,12 @@ impl LightingConsole {
                 // apply effect mappings
                 self.apply_effects(current_cue.effects);
             }
+
+            self.start_time = Some(Instant::now() - self.elapsed);
+            if let Some(start) = self.start_time {
+                self.elapsed = start.elapsed();
+                self.cue_manager.update(self.elapsed);
+            }
         }
 
         // Render any values from the programmer
@@ -341,17 +358,32 @@ impl LightingConsole {
     }
 
     fn apply_programmer_values(&mut self) {
-        // apply programmer static values
-        self.apply_values(self.programmer.get_values().clone());
+        if self.programmer.get_preview_mode() {
+            // apply programmer static values
+            self.apply_values(self.programmer.get_values().clone());
 
-        // apply programmer effects
-        self.apply_effects(self.programmer.get_effects().clone());
+            // apply programmer effects
+            self.apply_effects(self.programmer.get_effects().clone());
+        }
     }
 
     pub fn render(&self) {
         // Send DMX data
         let dmx_data = self.generate_dmx_data();
         self.dmx_output.send_data(1, dmx_data);
+    }
+
+    pub fn record_cue(&mut self, cue_name: String, fade_time: f32) {
+        let cue_list_idx = self.cue_manager.get_current_cue_list_idx();
+        let programmer_values = self.programmer.get_values();
+        let effects = self.programmer.get_effects();
+        self.cue_manager.record(
+            cue_name,
+            cue_list_idx,
+            fade_time,
+            programmer_values.clone(),
+            effects.clone(),
+        );
     }
 
     fn update_rhythm_state(&mut self, beat_time: f64) {
@@ -375,6 +407,36 @@ impl LightingConsole {
             dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
         }
         dmx_data
+    }
+
+    pub fn new_show(&mut self, name: String) -> Result<(), anyhow::Error> {
+        let show = self.show_manager.new_show(name);
+        Ok(())
+    }
+
+    // TODO - implement properly
+    pub fn save_show(&mut self) -> Result<PathBuf, anyhow::Error> {
+        //let show = Show::new("Untitled");
+        //self.show_manager.save_show(&show)
+        Ok(PathBuf::new())
+    }
+
+    // TODO - implement properly
+    pub fn save_show_as(
+        &mut self,
+        _name: String,
+        _path: PathBuf,
+    ) -> Result<PathBuf, anyhow::Error> {
+        //let console = self.clone();
+        //self.show_manager.save_show_as(&console, name, path)
+        Ok(PathBuf::new())
+    }
+
+    pub fn load_show(&mut self, path: &Path) -> Result<(), anyhow::Error> {
+        // TODO - load show
+        let show = self.show_manager.load_show(path)?;
+        //self.show_manager.apply_show_to_console(self)?;
+        Ok(())
     }
 
     fn display_status(
@@ -402,7 +464,7 @@ impl LightingConsole {
 
 fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u8) -> u8 {
     let phase = get_effect_phase(rhythm, &effect.params);
-    let target_value = (effect.apply)(phase);
+    let target_value = effect.apply(phase);
     let target_dmx = (target_value * (effect.max - effect.min) as f64 + effect.min as f64) as f64;
 
     // Smooth transition

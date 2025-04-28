@@ -17,13 +17,14 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 - [x] Wire up Effects UI
 - [x] Full programmer UI to show current state
-  - [ ] Checkbox to enable effects UI
   - [x] Sort fixtures
-  - [ ] Programmer should store values without using preview
-- [ ] Save programmer static values to cue
-- [ ] Save programmer effects to cue
+  - [x] Programmer should store values without using preview
+  - [ ] Bidirectional clear selected fixtures on fixture grid
+- [x] Save programmer static values to cue
+- [x] Save programmer effects to cue
 - [ ] Show Save/Load (show struct, handled by UI)
 - [ ] Cues advance to timecode
+- [ ] Subfixtures
 - [ ] Blocking cues
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
 - [ ] Audio file playback
@@ -83,3 +84,4 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Bring back a headless console mode with keyboard input
 - [ ] 2D fixture visualization with different fixture types
 - [ ] Sequences/Chases with looping functionality
+- [ ] Show autosave

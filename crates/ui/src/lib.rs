@@ -12,10 +12,12 @@ use parking_lot::Mutex;
 use patch_panel::PatchPanel;
 use programmer::Programmer;
 use session::SessionPanel;
+use show_panel::ShowPanel;
 use timeline::Timeline;
 
 mod cue;
 mod cue_editor;
+mod fader;
 mod fixture;
 mod footer;
 mod header;
@@ -23,6 +25,7 @@ mod master;
 mod patch_panel;
 mod programmer;
 mod session;
+mod show_panel;
 mod timeline;
 mod utils;
 
@@ -31,6 +34,7 @@ pub enum ActiveTab {
     Programmer,
     CueEditor,
     PatchPanel,
+    ShowManager,
 }
 pub struct HaloApp {
     pub console: Arc<Mutex<LightingConsole>>,
@@ -62,6 +66,7 @@ pub struct HaloApp {
     programmer: programmer::Programmer,
     timeline: timeline::Timeline,
     cue_editor: cue_editor::CueEditor,
+    show_panel: show_panel::ShowPanel,
 }
 
 impl HaloApp {
@@ -106,6 +111,7 @@ impl HaloApp {
             programmer: Programmer::new(),
             timeline: Timeline::new(),
             cue_editor: CueEditor::new(),
+            show_panel: ShowPanel::new(),
         }
     }
 }
@@ -131,7 +137,7 @@ impl eframe::App for HaloApp {
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                header::render(ui, &mut self.active_tab);
+                header::render(ui, &mut self.active_tab, &self.console);
             });
         });
 
@@ -178,6 +184,11 @@ impl eframe::App for HaloApp {
             }
             ActiveTab::PatchPanel => {
                 //self.patch_panel.show(ui, &self.console)
+            }
+            ActiveTab::ShowManager => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    self.show_panel.show(ui, &self.console);
+                });
             }
         }
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, Color32, RichText};
 use halo_core::{Cue, CueList, LightingConsole};
 use parking_lot::Mutex;
 
@@ -132,9 +132,12 @@ impl CueEditor {
                         cue_list_idx,
                         Cue {
                             name: std::mem::take(&mut self.new_cue_name),
-                            fade_time: self.new_fade_time,
-                            timecode: std::mem::take(&mut self.new_timecode),
-                            duration: Duration::from_secs_f64(self.new_fade_time),
+                            fade_time: Duration::from_secs_f64(self.new_fade_time),
+                            timecode: if self.new_timecode.is_empty() {
+                                None
+                            } else {
+                                Some(self.new_timecode.clone())
+                            },
                             ..Default::default()
                         },
                     );
@@ -165,6 +168,8 @@ impl CueEditor {
                 ui.strong("Name");
                 ui.strong("Fade Time");
                 ui.strong("Timecode");
+                ui.strong("Static Values");
+                ui.strong("Effects");
                 ui.end_row();
 
                 // Cues
@@ -177,9 +182,18 @@ impl CueEditor {
                             self.selected_cue_index = Some(idx);
                         }
 
+                        // get the current timecode as a string or default to "None"
+                        let timecode_text = if let Some(tc) = &cue.timecode {
+                            RichText::new(tc).color(Color32::from_rgb(0, 150, 255))
+                        } else {
+                            RichText::new("None").color(Color32::from_gray(120))
+                        };
+
                         ui.label(&cue.name);
-                        ui.label(format!("{:.1} s", cue.fade_time));
-                        ui.label(&cue.timecode);
+                        ui.label(format!("{:.1} s", cue.fade_time.as_secs_f64()));
+                        ui.label(timecode_text);
+                        ui.label(format!("{}", cue.static_values.len()));
+                        ui.label(format!("{}", cue.effects.len()));
                         ui.end_row();
                     }
                 }

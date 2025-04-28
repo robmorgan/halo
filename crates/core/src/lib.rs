@@ -6,6 +6,7 @@ pub use effect::effect::{
 };
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
 pub use rhythm::rhythm::{Interval, RhythmState};
+pub use show::show_manager::ShowManager;
 
 mod ableton_link;
 mod artnet;
@@ -15,3 +16,4 @@ mod effect;
 mod midi;
 mod programmer;
 mod rhythm;
+mod show;
