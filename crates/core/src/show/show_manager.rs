@@ -2,9 +2,6 @@ use anyhow::Result;
 use serde_json::{from_reader, to_writer_pretty};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
-
-use crate::LightingConsole;
 
 use super::show::Show;
 

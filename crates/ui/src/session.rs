@@ -3,18 +3,12 @@ use std::time::{Duration, Instant};
 
 use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use halo_core::LightingConsole;
+use halo_core::{LightingConsole, PlaybackState};
 use parking_lot::Mutex;
 
 enum ClockMode {
     TimeCode,
     System,
-}
-
-enum PlaybackState {
-    Stopped,
-    Playing,
-    Holding,
 }
 
 struct TimeCode {
@@ -266,8 +260,8 @@ impl SessionPanel {
                     if play_button.clicked() {
                         self.playback_state = PlaybackState::Playing;
                         let mut console_lock = console.lock();
-                        // Add actual play implementation here
-                        // For example: console_lock.play();
+                        let _ = console_lock.cue_manager.go();
+                        drop(console_lock);
                     }
 
                     // Hold button
@@ -287,8 +281,8 @@ impl SessionPanel {
                     if hold_button.clicked() {
                         self.playback_state = PlaybackState::Holding;
                         let mut console_lock = console.lock();
-                        // Add actual hold implementation here
-                        // For example: console_lock.pause();
+                        let _ = console_lock.cue_manager.hold();
+                        drop(console_lock);
                     }
 
                     // Stop button
@@ -308,11 +302,15 @@ impl SessionPanel {
                     if stop_button.clicked() {
                         self.playback_state = PlaybackState::Stopped;
                         let mut console_lock = console.lock();
-                        // Add actual stop implementation here
-                        // For example: console_lock.stop();
+                        let _ = console_lock.cue_manager.stop();
+                        drop(console_lock);
                     }
                 });
             });
         });
+    }
+
+    pub fn set_playback_state(&mut self, state: PlaybackState) {
+        self.playback_state = state;
     }
 }

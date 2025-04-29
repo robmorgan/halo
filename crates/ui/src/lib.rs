@@ -129,6 +129,16 @@ impl eframe::App for HaloApp {
             fixtures = console.fixtures.to_vec();
         }
 
+        // Get the playback state from the console
+        let playback_state;
+        {
+            let console = self.console.lock();
+            playback_state = console.cue_manager.get_playback_state();
+        }
+
+        // Update the session panel with the current playback state
+        self.session_panel.set_playback_state(playback_state);
+
         // Update the programmer with the current fixtures and selection
         self.programmer.set_fixtures(fixtures);
         self.programmer

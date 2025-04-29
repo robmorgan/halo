@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use crate::ableton_link::ClockState;
 use crate::artnet::artnet::ArtNet;
 use crate::artnet::network_config::NetworkConfig;
-use crate::cue::cue_manager::CueManager;
+use crate::cue::cue_manager::{CueManager, PlaybackState};
 use crate::effect::effect::get_effect_phase;
 use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::programmer::Programmer;
@@ -294,7 +294,7 @@ impl LightingConsole {
         self.update_rhythm_state(beat_time);
 
         // Is the console currently playing a cue?
-        if self.cue_manager.is_playing() {
+        if self.cue_manager.get_playback_state() == PlaybackState::Playing {
             if let Some(current_cue) = self.cue_manager.get_current_cue().cloned() {
                 // Apply cue-level static values first
                 self.apply_values(current_cue.static_values);

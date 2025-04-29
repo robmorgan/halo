@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use halo_fixtures::Fixture;
 
-use crate::{CueList, LightingConsole};
+use crate::CueList;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Show {

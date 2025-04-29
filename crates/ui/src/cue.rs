@@ -75,21 +75,6 @@ impl CuePanel {
             });
         }
 
-        // Cue Playback Controls
-        // TODO - make these appear when hovering over a cue.
-        ui.horizontal(|ui| {
-            if ui.button("GO").clicked() {
-                // do nothing
-            }
-            if ui.button("HOLD").clicked() {
-                // do nothing
-            }
-
-            if ui.button("STOP").clicked() {
-                // do nothing
-            }
-        });
-
         // Display cues with progress bars
         let console_lock = console.lock();
         let cues = console_lock.cue_manager.get_current_cues();
@@ -97,8 +82,8 @@ impl CuePanel {
         egui::ScrollArea::vertical().show(ui, |ui| {
             for cue in cues {
                 ui.horizontal(|ui| {
-                    let is_playing = console_lock.cue_manager.is_cue_playing(cue.id);
-                    let active_color = if is_playing {
+                    let is_active = console_lock.cue_manager.is_cue_active(cue.id);
+                    let active_color = if is_active {
                         egui::Color32::from_rgb(100, 200, 100)
                     } else {
                         egui::Color32::from_rgb(150, 150, 150)
