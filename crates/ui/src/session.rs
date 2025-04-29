@@ -249,9 +249,9 @@ impl SessionPanel {
                     let button_height = 60.0;
                     let button_width = ui.available_width() / 3.0 - 10.0;
 
-                    // Play button
+                    // Go button
                     let play_text =
-                        RichText::new("▶ PLAY")
+                        RichText::new("▶ GO")
                             .size(18.0)
                             .color(match self.playback_state {
                                 PlaybackState::Playing => Color32::from_rgb(120, 255, 120),
