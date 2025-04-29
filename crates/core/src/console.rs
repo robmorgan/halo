@@ -20,7 +20,7 @@ use crate::programmer::Programmer;
 use crate::show::show::Show;
 use crate::{
     ableton_link, artnet, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
-    ShowManager, StaticValue,
+    ShowManager, StaticValue, TimeCodeManager,
 };
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
@@ -41,6 +41,7 @@ pub struct LightingConsole {
     pub cue_manager: CueManager,
     pub programmer: Programmer,
     pub show_manager: ShowManager,
+    pub timecode_manager: TimeCodeManager,
     dmx_output: artnet::artnet::ArtNet,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
@@ -72,6 +73,7 @@ impl LightingConsole {
             cue_manager: CueManager::new(Vec::new()),
             programmer: Programmer::new(),
             show_manager,
+            timecode_manager: TimeCodeManager::new(),
             link_state,
             dmx_output,
             midi_overrides: HashMap::new(),
@@ -312,6 +314,14 @@ impl LightingConsole {
 
         // Render any values from the programmer
         self.apply_programmer_values();
+
+        // Update the timecode
+        self.timecode_manager.update();
+
+        // Check if we need to trigger any timecode cues
+        if self.cue_manager.get_playback_state() == PlaybackState::Playing {
+            self.check_timecode_cues();
+        }
     }
 
     fn apply_values(&mut self, values: Vec<StaticValue>) {
@@ -366,6 +376,31 @@ impl LightingConsole {
 
             // apply programmer effects
             self.apply_effects(self.programmer.get_effects().clone());
+        }
+    }
+
+    fn check_timecode_cues(&mut self) {
+        let current_time = self.timecode.to_seconds();
+
+        // Check each cue list for cues that should be triggered
+        for cue_list in self.cue_manager.get_cue_lists_mut() {
+            for cue in &cue_list.cues {
+                // Check if cue has a timecode and if it matches current time
+                if let Some(timecode) = &cue.timecode {
+                    let mut tc = TimeCode::default();
+                    if tc.from_string(timecode).is_ok() {
+                        let cue_time = tc.to_seconds();
+
+                        // Trigger cue if the time matches (within 1 frame tolerance)
+                        let frame_duration = 1.0 / self.timecode.frame_rate as f64;
+                        if (current_time >= cue_time) && (current_time < cue_time + frame_duration)
+                        {
+                            let _ = self.cue_manager.go_to_cue(&cue.name);
+                            break; // Only trigger one cue per update
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -8,6 +8,8 @@ pub use effect::effect::{
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
 pub use rhythm::rhythm::{Interval, RhythmState};
 pub use show::show_manager::ShowManager;
+pub use timecode::timecode::TimeCode;
+pub use timecode::timecode_manager::TimeCodeManager;
 
 mod ableton_link;
 mod artnet;
@@ -18,3 +20,4 @@ mod midi;
 mod programmer;
 mod rhythm;
 mod show;
+mod timecode;
