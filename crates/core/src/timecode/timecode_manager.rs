@@ -25,8 +25,8 @@ impl TimeCodeManager {
         self.timecode.reset();
     }
 
-    pub fn get_timecode(&self) -> &TimeCode {
-        &self.timecode
+    pub fn get_timecode(&self) -> TimeCode {
+        self.timecode
     }
 
     pub fn set_timecode_frame_rate(&mut self, frame_rate: u32) {

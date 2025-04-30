@@ -122,27 +122,22 @@ impl eframe::App for HaloApp {
         self.last_update = now;
         self.current_time = SystemTime::now();
 
-        // Get the currently patched fixtures from the console
-        let fixtures;
+        // Get items from the console
         {
             let console = self.console.lock();
-            fixtures = console.fixtures.to_vec();
+            let fixtures = console.fixtures.to_vec();
+            let playback_state = console.cue_manager.get_playback_state();
+            let timecode = console.timecode_manager.get_timecode().clone();
+
+            // Update the session panel with the current playback state and time
+            self.session_panel.set_playback_state(playback_state);
+            self.session_panel.set_timecode(timecode);
+
+            // Update the programmer with the current fixtures and selection
+            self.programmer.set_fixtures(fixtures);
+            self.programmer
+                .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
         }
-
-        // Get the playback state from the console
-        let playback_state;
-        {
-            let console = self.console.lock();
-            playback_state = console.cue_manager.get_playback_state();
-        }
-
-        // Update the session panel with the current playback state
-        self.session_panel.set_playback_state(playback_state);
-
-        // Update the programmer with the current fixtures and selection
-        self.programmer.set_fixtures(fixtures);
-        self.programmer
-            .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
 
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {

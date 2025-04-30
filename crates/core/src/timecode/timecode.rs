@@ -1,7 +1,6 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use chrono::{Local, Timelike};
-
+#[derive(Clone, Debug, Copy)]
 pub struct TimeCode {
     pub hours: u32,
     pub minutes: u32,

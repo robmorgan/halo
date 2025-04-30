@@ -1,21 +1,14 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use halo_core::{LightingConsole, PlaybackState};
+use halo_core::{LightingConsole, PlaybackState, TimeCode};
 use parking_lot::Mutex;
 
 enum ClockMode {
     TimeCode,
     System,
-}
-
-struct TimeCode {
-    hours: u32,
-    minutes: u32,
-    seconds: u32,
-    frames: u32,
 }
 
 /// A panel that shows the current session overview.
@@ -45,12 +38,7 @@ impl Default for SessionPanel {
     fn default() -> Self {
         Self {
             clock_mode: ClockMode::TimeCode,
-            timecode: TimeCode {
-                hours: 0,
-                minutes: 0,
-                seconds: 0,
-                frames: 0,
-            },
+            timecode: TimeCode::default(),
             last_update: Instant::now(),
             bpm: 120.0,
             link_enabled: false,
@@ -62,38 +50,6 @@ impl Default for SessionPanel {
 
 impl SessionPanel {
     pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
-        // Update clock
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.last_update);
-
-        if elapsed > Duration::from_millis(33) {
-            // ~30fps update
-            self.last_update = now;
-
-            match self.clock_mode {
-                ClockMode::TimeCode => {
-                    // Update timecode (at 30fps)
-                    // TODO - in the future we'll allow the user to set the frame rate
-                    self.timecode.frames += 1;
-                    if self.timecode.frames >= 30 {
-                        self.timecode.frames = 0;
-                        self.timecode.seconds += 1;
-                    }
-                    if self.timecode.seconds >= 60 {
-                        self.timecode.seconds = 0;
-                        self.timecode.minutes += 1;
-                    }
-                    if self.timecode.minutes >= 60 {
-                        self.timecode.minutes = 0;
-                        self.timecode.hours += 1;
-                    }
-                }
-                ClockMode::System => {
-                    // System clock is updated when displayed
-                }
-            }
-        }
-
         // Session UI
         ui.vertical(|ui| {
             // Top row - header and mode toggle
@@ -248,8 +204,8 @@ impl SessionPanel {
                         RichText::new("▶ GO")
                             .size(18.0)
                             .color(match self.playback_state {
-                                PlaybackState::Playing => Color32::from_rgb(120, 255, 120),
-                                _ => ui.style().visuals.text_color(),
+                                PlaybackState::Playing => ui.style().visuals.text_color(),
+                                _ => Color32::from_rgb(120, 255, 120),
                             });
 
                     let play_button = ui.add_sized(
@@ -260,7 +216,7 @@ impl SessionPanel {
                     if play_button.clicked() {
                         self.playback_state = PlaybackState::Playing;
                         let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.go();
+                        let _ = console_lock.go();
                         drop(console_lock);
                     }
 
@@ -269,8 +225,8 @@ impl SessionPanel {
                         RichText::new("⏸ HOLD")
                             .size(18.0)
                             .color(match self.playback_state {
-                                PlaybackState::Holding => Color32::from_rgb(255, 215, 0),
-                                _ => ui.style().visuals.text_color(),
+                                PlaybackState::Holding => ui.style().visuals.text_color(),
+                                _ => Color32::from_rgb(255, 215, 0),
                             });
 
                     let hold_button = ui.add_sized(
@@ -290,8 +246,8 @@ impl SessionPanel {
                         RichText::new("⏹ STOP")
                             .size(18.0)
                             .color(match self.playback_state {
-                                PlaybackState::Stopped => Color32::from_rgb(255, 100, 100),
-                                _ => ui.style().visuals.text_color(),
+                                PlaybackState::Stopped => ui.style().visuals.text_color(),
+                                _ => Color32::from_rgb(255, 100, 100),
                             });
 
                     let stop_button = ui.add_sized(
@@ -312,5 +268,9 @@ impl SessionPanel {
 
     pub fn set_playback_state(&mut self, state: PlaybackState) {
         self.playback_state = state;
+    }
+
+    pub fn set_timecode(&mut self, timecode: TimeCode) {
+        self.timecode = timecode;
     }
 }

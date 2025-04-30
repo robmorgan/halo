@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::{Cue, CueList, EffectMapping, StaticValue};
 
@@ -14,7 +14,7 @@ pub struct CueManager {
     current_cue_list: usize,
     current_cue: usize,
     playback_state: PlaybackState,
-    start_time: Duration,
+    current_cue_start_time: Option<Instant>,
     progress: f32,
 }
 
@@ -25,7 +25,7 @@ impl CueManager {
             current_cue_list: 0,
             current_cue: 0,
             playback_state: PlaybackState::Stopped,
-            start_time: Duration::ZERO,
+            current_cue_start_time: None,
             progress: 0.0,
         }
     }
@@ -33,12 +33,14 @@ impl CueManager {
     pub fn update(&mut self, current_time: Duration) {
         if self.playback_state == PlaybackState::Playing {
             if let Some(current_cue) = self.get_current_cue() {
-                let elapsed_fade_time = current_time - current_cue.fade_time;
-                if elapsed_fade_time < current_cue.fade_time {
-                    self.progress =
-                        elapsed_fade_time.as_secs_f32() / current_cue.fade_time.as_secs_f32();
-                } else {
-                    self.progress = 1.0;
+                if let Some(start_time) = self.current_cue_start_time {
+                    let elapsed_cue_time = current_time - start_time.elapsed();
+                    if elapsed_cue_time < current_cue.fade_time {
+                        self.progress =
+                            elapsed_cue_time.as_secs_f32() / current_cue.fade_time.as_secs_f32();
+                    } else {
+                        self.progress = 1.0;
+                    }
                 }
             }
         }
@@ -171,9 +173,9 @@ impl CueManager {
         }
     }
 
-    pub fn go(&mut self) -> Result<&Cue, String> {
+    pub fn go(&mut self, elapsed: Duration) -> Result<&Cue, String> {
         self.playback_state = PlaybackState::Playing;
-        self.go_to_next_cue()
+        self.go_to_next_cue(elapsed)
     }
 
     pub fn hold(&mut self) -> Result<&Cue, String> {
@@ -188,7 +190,7 @@ impl CueManager {
             .ok_or_else(|| "No current cue".to_string())
     }
 
-    pub fn go_to_next_cue(&mut self) -> Result<&Cue, String> {
+    pub fn go_to_next_cue(&mut self, elapsed: Duration) -> Result<&Cue, String> {
         if self.current_cue_list >= self.cue_lists.len() {
             return Err("Invalid cue list index".to_string());
         }
@@ -200,6 +202,7 @@ impl CueManager {
 
         self.current_cue += 1;
         self.playback_state = PlaybackState::Playing;
+        self.current_cue_start_time = Some(Instant::now() - elapsed);
         self.get_current_cue()
             .ok_or_else(|| "No current cue".to_string())
     }

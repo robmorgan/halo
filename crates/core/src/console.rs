@@ -19,8 +19,8 @@ use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::programmer::Programmer;
 use crate::show::show::Show;
 use crate::{
-    ableton_link, artnet, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
-    ShowManager, StaticValue, TimeCodeManager,
+    ableton_link, artnet, Cue, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
+    ShowManager, StaticValue, TimeCode, TimeCodeManager,
 };
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
@@ -51,7 +51,7 @@ pub struct LightingConsole {
     _midi_output: Option<MidiOutputConnection>,
     rhythm_state: RhythmState,
     start_time: Option<Instant>,
-    elapsed: Duration,
+    pub elapsed: Duration,
 }
 
 impl LightingConsole {
@@ -262,7 +262,7 @@ impl LightingConsole {
                         // Go Button: Advance the cue
                         if cc == 116 && value > 64 {
                             // Example: CC #116 when value goes above 64
-                            if let Err(err) = self.cue_manager.go_to_next_cue() {
+                            if let Err(err) = self.cue_manager.go_to_next_cue(self.elapsed) {
                                 println!("Error advancing cue: {}", err);
                             }
                         }
@@ -380,11 +380,13 @@ impl LightingConsole {
     }
 
     fn check_timecode_cues(&mut self) {
-        let current_time = self.timecode.to_seconds();
+        let current_time = self.timecode_manager.get_timecode().to_seconds();
 
-        // Check each cue list for cues that should be triggered
-        for cue_list in self.cue_manager.get_cue_lists_mut() {
-            for cue in &cue_list.cues {
+        // check the current cue list for cues that should be triggered
+        let current_cue_list_idx = self.cue_manager.get_current_cue_list_idx();
+        let current_cue_list = self.cue_manager.get_cue_list(current_cue_list_idx);
+        if let Some(cue_list) = current_cue_list {
+            for (cue_idx, cue) in cue_list.cues.iter().enumerate() {
                 // Check if cue has a timecode and if it matches current time
                 if let Some(timecode) = &cue.timecode {
                     let mut tc = TimeCode::default();
@@ -392,10 +394,11 @@ impl LightingConsole {
                         let cue_time = tc.to_seconds();
 
                         // Trigger cue if the time matches (within 1 frame tolerance)
-                        let frame_duration = 1.0 / self.timecode.frame_rate as f64;
+                        let frame_duration =
+                            1.0 / self.timecode_manager.get_timecode().frame_rate as f64;
                         if (current_time >= cue_time) && (current_time < cue_time + frame_duration)
                         {
-                            let _ = self.cue_manager.go_to_cue(&cue.name);
+                            let _ = self.cue_manager.go_to_cue(current_cue_list_idx, cue_idx);
                             break; // Only trigger one cue per update
                         }
                     }
@@ -408,6 +411,10 @@ impl LightingConsole {
         // Send DMX data
         let dmx_data = self.generate_dmx_data();
         self.dmx_output.send_data(1, dmx_data);
+    }
+
+    pub fn go(&mut self) -> Result<&Cue, String> {
+        self.cue_manager.go(self.elapsed)
     }
 
     pub fn record_cue(&mut self, cue_name: String, fade_time: f32) {
