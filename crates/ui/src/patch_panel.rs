@@ -182,6 +182,7 @@ impl PatchPanel {
                         .min_col_width(80.0)
                         .show(ui, |ui| {
                             // Header
+                            ui.strong("ID");
                             ui.strong("Fixture");
                             ui.strong("Profile");
                             ui.strong("Channels");
@@ -195,7 +196,7 @@ impl PatchPanel {
                             let search_lowercase = self.search_text.to_lowercase();
 
                             // Rows
-                            let mut console_lock = console.lock();
+                            let console_lock = console.lock();
                             for (idx, fixture) in console_lock.fixtures.iter().enumerate() {
                                 // Skip if doesn't match search or isn't in current universe
                                 if (!self.search_text.is_empty()
@@ -204,6 +205,9 @@ impl PatchPanel {
                                 {
                                     continue;
                                 }
+
+                                // Fixture ID
+                                ui.label(format!("{}", idx));
 
                                 // Fixture name
                                 ui.label(&fixture.name);

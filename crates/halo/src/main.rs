@@ -8,6 +8,7 @@ use halo_core::{
     sawtooth_effect, sine_effect, square_effect, Cue, CueList, Effect, EffectParams, Interval,
     LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
 };
+use halo_fixtures::ChannelType;
 use parking_lot::Mutex;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -110,8 +111,12 @@ fn main() -> Result<(), anyhow::Error> {
                 name: "Cue 3".to_string(),
                 fade_time: Duration::from_secs(5),
                 is_blocking: false,
-                timecode: Some("00:00:15:00".to_string()),
-                static_values: vec![],
+                timecode: Some("00:00:16:10".to_string()),
+                static_values: static_values![
+                    (1, ChannelType::Dimmer, 255),
+                    (1, ChannelType::Color, 255),
+                    (1, ChannelType::Strobe, 180),
+                ],
                 effects: vec![],
             },
         ],
@@ -198,8 +203,8 @@ macro_rules! static_values {
         vec![
             $(
                 StaticValue {
-                    fixture_name: $fixture.to_string(),
-                    channel_name: $channel.to_string(),
+                    fixture_id: $fixture,
+                    channel_type: $channel,
                     value: $value,
                 },
             )*

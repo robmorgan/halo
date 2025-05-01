@@ -23,9 +23,9 @@ use crate::{
     ShowManager, StaticValue,
 };
 
-const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
-const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
-const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
+const _TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
+const _TARGET_DELTA: f64 = 1.0 / _TARGET_FREQUENCY;
+const _TARGET_DURATION: f64 = 1.0 / _TARGET_FREQUENCY;
 
 // TODO - bounding box for Rals dancefloor.
 // One for spots and one for washes.
@@ -50,6 +50,10 @@ pub struct LightingConsole {
     _midi_output: Option<MidiOutputConnection>,
     rhythm_state: RhythmState,
 }
+
+// TODO - ideally remove these one day, when we have a better way of communicating between threads
+unsafe impl Send for LightingConsole {}
+unsafe impl Sync for LightingConsole {}
 
 impl LightingConsole {
     pub fn new(bpm: f64, network_config: NetworkConfig) -> Result<Self, anyhow::Error> {
