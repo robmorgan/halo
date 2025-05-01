@@ -29,7 +29,7 @@ impl TimeCodeManager {
         self.timecode
     }
 
-    pub fn set_timecode_frame_rate(&mut self, frame_rate: u32) {
+    pub fn set_timecode_frame_rate(&mut self, frame_rate: u8) {
         self.timecode.set_frame_rate(frame_rate);
     }
 

@@ -127,11 +127,12 @@ impl eframe::App for HaloApp {
             let console = self.console.lock();
             let fixtures = console.fixtures.to_vec();
             let playback_state = console.cue_manager.get_playback_state();
-            let timecode = console.timecode_manager.get_timecode().clone();
 
             // Update the session panel with the current playback state and time
             self.session_panel.set_playback_state(playback_state);
-            self.session_panel.set_timecode(timecode);
+            if let Some(timecode) = console.cue_manager.current_timecode {
+                self.session_panel.set_timecode(timecode);
+            }
 
             // Update the programmer with the current fixtures and selection
             self.programmer.set_fixtures(fixtures);

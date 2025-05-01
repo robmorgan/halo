@@ -41,7 +41,6 @@ pub struct LightingConsole {
     pub cue_manager: CueManager,
     pub programmer: Programmer,
     pub show_manager: ShowManager,
-    pub timecode_manager: TimeCodeManager,
     dmx_output: artnet::artnet::ArtNet,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
@@ -50,8 +49,6 @@ pub struct LightingConsole {
     _midi_connection: Option<MidiInputConnection<()>>, // Keep connection alive
     _midi_output: Option<MidiOutputConnection>,
     rhythm_state: RhythmState,
-    start_time: Option<Instant>,
-    pub elapsed: Duration,
 }
 
 impl LightingConsole {
@@ -73,7 +70,6 @@ impl LightingConsole {
             cue_manager: CueManager::new(Vec::new()),
             programmer: Programmer::new(),
             show_manager,
-            timecode_manager: TimeCodeManager::new(),
             link_state,
             dmx_output,
             midi_overrides: HashMap::new(),
@@ -91,8 +87,6 @@ impl LightingConsole {
                 last_tap_time: Option::None,
                 tap_count: 0,
             },
-            start_time: None,
-            elapsed: Duration::ZERO,
         })
     }
 
@@ -262,7 +256,7 @@ impl LightingConsole {
                         // Go Button: Advance the cue
                         if cc == 116 && value > 64 {
                             // Example: CC #116 when value goes above 64
-                            if let Err(err) = self.cue_manager.go_to_next_cue(self.elapsed) {
+                            if let Err(err) = self.cue_manager.go() {
                                 println!("Error advancing cue: {}", err);
                             }
                         }
@@ -304,24 +298,13 @@ impl LightingConsole {
                 // apply effect mappings
                 self.apply_effects(current_cue.effects);
             }
-
-            self.start_time = Some(Instant::now() - self.elapsed);
-            if let Some(start) = self.start_time {
-                self.elapsed = start.elapsed();
-                self.cue_manager.update(self.elapsed);
-            }
         }
 
         // Render any values from the programmer
         self.apply_programmer_values();
 
-        // Update the timecode
-        self.timecode_manager.update();
-
-        // Check if we need to trigger any timecode cues
-        if self.cue_manager.get_playback_state() == PlaybackState::Playing {
-            self.check_timecode_cues();
-        }
+        // Update the Cue Manager
+        self.cue_manager.update();
     }
 
     fn apply_values(&mut self, values: Vec<StaticValue>) {
@@ -379,34 +362,6 @@ impl LightingConsole {
         }
     }
 
-    fn check_timecode_cues(&mut self) {
-        let current_time = self.timecode_manager.get_timecode().to_seconds();
-
-        // check the current cue list for cues that should be triggered
-        let current_cue_list_idx = self.cue_manager.get_current_cue_list_idx();
-        let current_cue_list = self.cue_manager.get_cue_list(current_cue_list_idx);
-        if let Some(cue_list) = current_cue_list {
-            for (cue_idx, cue) in cue_list.cues.iter().enumerate() {
-                // Check if cue has a timecode and if it matches current time
-                if let Some(timecode) = &cue.timecode {
-                    let mut tc = TimeCode::default();
-                    if tc.from_string(timecode).is_ok() {
-                        let cue_time = tc.to_seconds();
-
-                        // Trigger cue if the time matches (within 1 frame tolerance)
-                        let frame_duration =
-                            1.0 / self.timecode_manager.get_timecode().frame_rate as f64;
-                        if (current_time >= cue_time) && (current_time < cue_time + frame_duration)
-                        {
-                            let _ = self.cue_manager.go_to_cue(current_cue_list_idx, cue_idx);
-                            break; // Only trigger one cue per update
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub fn render(&self) {
         // Send DMX data
         let dmx_data = self.generate_dmx_data();
@@ -414,7 +369,7 @@ impl LightingConsole {
     }
 
     pub fn go(&mut self) -> Result<&Cue, String> {
-        self.cue_manager.go(self.elapsed)
+        self.cue_manager.go()
     }
 
     pub fn record_cue(&mut self, cue_name: String, fade_time: f32) {

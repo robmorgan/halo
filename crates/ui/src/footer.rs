@@ -4,7 +4,7 @@ use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
 use halo_core::LightingConsole;
 use parking_lot::Mutex;
 
-use crate::utils::Theme;
+use crate::utils::theme::Theme;
 
 pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>, fps: u32) {
     let theme = Theme::default();

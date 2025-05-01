@@ -1,10 +1,10 @@
-use std::net::IpAddr;
 use std::sync::Arc;
+use std::{net::IpAddr, time::Duration};
 
 use anyhow::Ok;
 use clap::Parser;
 use halo_core::{
-    sawtooth_effect, sine_effect, square_effect, CueList, Effect, EffectParams, Interval,
+    sawtooth_effect, sine_effect, square_effect, Cue, CueList, Effect, EffectParams, Interval,
     LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
 };
 use parking_lot::Mutex;
@@ -76,7 +76,26 @@ fn main() -> Result<(), anyhow::Error> {
     // store the cues in a default cue list
     let cue_lists = vec![CueList {
         name: "Default".to_string(),
-        cues: vec![],
+        cues: vec![
+            Cue {
+                id: 0,
+                name: "Cue 1".to_string(),
+                fade_time: Duration::from_secs(3),
+                is_blocking: false,
+                timecode: Some("00:00:00:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
+            Cue {
+                id: 1,
+                name: "Cue 2".to_string(),
+                fade_time: Duration::from_secs(5),
+                is_blocking: false,
+                timecode: Some("00:00:10:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
+        ],
         audio_file: None,
     }];
 

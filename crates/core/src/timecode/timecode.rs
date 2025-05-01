@@ -2,11 +2,11 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, Copy)]
 pub struct TimeCode {
-    pub hours: u32,
-    pub minutes: u32,
-    pub seconds: u32,
-    pub frames: u32,
-    pub frame_rate: u32,
+    pub hours: u8,
+    pub minutes: u8,
+    pub seconds: u8,
+    pub frames: u8,
+    pub frame_rate: u8,
     last_update: Instant,
 }
 
@@ -57,8 +57,25 @@ impl TimeCode {
         self.last_update = Instant::now();
     }
 
-    pub fn set_frame_rate(&mut self, frame_rate: u32) {
+    pub fn set_frame_rate(&mut self, frame_rate: u8) {
         self.frame_rate = frame_rate;
+    }
+
+    /// Create a timecode from seconds
+    pub fn from_seconds(total_seconds: f64, frame_rate: u8) -> Self {
+        let hours = (total_seconds / 3600.0) as u8;
+        let minutes = ((total_seconds % 3600.0) / 60.0) as u8;
+        let seconds = (total_seconds % 60.0) as u8;
+        let frames = ((total_seconds % 1.0) * frame_rate as f64) as u8;
+
+        Self {
+            hours,
+            minutes,
+            seconds,
+            frames,
+            frame_rate,
+            last_update: Instant::now(),
+        }
     }
 
     pub fn to_seconds(&self) -> f64 {

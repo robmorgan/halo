@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant, SystemTime};
 
-use crate::{Cue, CueList, EffectMapping, StaticValue};
+use crate::{Cue, CueList, EffectMapping, StaticValue, TimeCode};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PlaybackState {
@@ -14,7 +14,17 @@ pub struct CueManager {
     current_cue_list: usize,
     current_cue: usize,
     playback_state: PlaybackState,
+    /// Current timecode
+    pub current_timecode: Option<TimeCode>,
+    /// Current Cue start time reference point
     current_cue_start_time: Option<Instant>,
+    /// Current elapsed time in seconds
+    elapsed_time: f64,
+    /// Last update time
+    pub last_update: Instant,
+    /// Original start time marker for resume
+    original_start_time: Option<Instant>,
+    /// Current cue progress
     progress: f32,
 }
 
@@ -25,25 +35,33 @@ impl CueManager {
             current_cue_list: 0,
             current_cue: 0,
             playback_state: PlaybackState::Stopped,
+            current_timecode: None,
             current_cue_start_time: None,
+            elapsed_time: 0.0,
+            last_update: Instant::now(),
+            original_start_time: None,
             progress: 0.0,
         }
     }
 
-    pub fn update(&mut self, current_time: Duration) {
-        if self.playback_state == PlaybackState::Playing {
-            if let Some(current_cue) = self.get_current_cue() {
-                if let Some(start_time) = self.current_cue_start_time {
-                    let elapsed_cue_time = current_time - start_time.elapsed();
-                    if elapsed_cue_time < current_cue.fade_time {
-                        self.progress =
-                            elapsed_cue_time.as_secs_f32() / current_cue.fade_time.as_secs_f32();
-                    } else {
-                        self.progress = 1.0;
-                    }
-                }
-            }
+    pub fn update(&mut self) {
+        if self.playback_state != PlaybackState::Playing {
+            return;
         }
+
+        let now = Instant::now();
+
+        if let Some(start) = self.current_cue_start_time {
+            self.elapsed_time = start.elapsed().as_secs_f64();
+        }
+
+        self.update_timecode();
+        self.last_update = now;
+    }
+
+    pub fn update_timecode(&mut self) {
+        // Using 30fps as default
+        self.current_timecode = Some(TimeCode::from_seconds(self.elapsed_time, 30));
     }
 
     pub fn set_cue_lists(&mut self, cue_lists: Vec<CueList>) {
@@ -173,9 +191,8 @@ impl CueManager {
         }
     }
 
-    pub fn go(&mut self, elapsed: Duration) -> Result<&Cue, String> {
-        self.playback_state = PlaybackState::Playing;
-        self.go_to_next_cue(elapsed)
+    pub fn go(&mut self) -> Result<&Cue, String> {
+        self.go_to_next_cue()
     }
 
     pub fn hold(&mut self) -> Result<&Cue, String> {
@@ -190,7 +207,7 @@ impl CueManager {
             .ok_or_else(|| "No current cue".to_string())
     }
 
-    pub fn go_to_next_cue(&mut self, elapsed: Duration) -> Result<&Cue, String> {
+    pub fn go_to_next_cue(&mut self) -> Result<&Cue, String> {
         if self.current_cue_list >= self.cue_lists.len() {
             return Err("Invalid cue list index".to_string());
         }
@@ -200,9 +217,11 @@ impl CueManager {
             return Err("No next cue".to_string());
         }
 
-        self.current_cue += 1;
         self.playback_state = PlaybackState::Playing;
-        self.current_cue_start_time = Some(Instant::now() - elapsed);
+        self.current_cue += 1;
+        self.current_cue_start_time = Some(Instant::now());
+        self.original_start_time = self.current_cue_start_time;
+        self.last_update = Instant::now();
         self.get_current_cue()
             .ok_or_else(|| "No current cue".to_string())
     }
