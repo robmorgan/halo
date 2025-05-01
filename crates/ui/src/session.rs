@@ -216,7 +216,7 @@ impl SessionPanel {
                     if play_button.clicked() {
                         self.playback_state = PlaybackState::Playing;
                         let mut console_lock = console.lock();
-                        let _ = console_lock.go();
+                        let _ = console_lock.cue_manager.go();
                         drop(console_lock);
                     }
 

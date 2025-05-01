@@ -203,6 +203,10 @@ impl CueManager {
 
     pub fn stop(&mut self) -> Result<&Cue, String> {
         self.playback_state = PlaybackState::Stopped;
+        self.elapsed_time = 0.0;
+        self.current_cue_start_time = None;
+        self.original_start_time = None;
+        self.update_timecode();
         self.get_current_cue()
             .ok_or_else(|| "No current cue".to_string())
     }

@@ -368,10 +368,6 @@ impl LightingConsole {
         self.dmx_output.send_data(1, dmx_data);
     }
 
-    pub fn go(&mut self) -> Result<&Cue, String> {
-        self.cue_manager.go()
-    }
-
     pub fn record_cue(&mut self, cue_name: String, fade_time: f32) {
         let cue_list_idx = self.cue_manager.get_current_cue_list_idx();
         let programmer_values = self.programmer.get_values();
