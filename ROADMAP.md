@@ -25,7 +25,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Show Save
 - [ ] Show Load
   - [ ] CLI path
-- [ ] Cues advance to timecode
+- [x] Cues advance to timecode
 - [ ] Lighting Engine
   - [ ] Tracking functionality (copy params to stage, show footer counts)
   - [ ] Fade time on cues and fixtures
@@ -36,7 +36,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Settings
   - [ ] Audio interface selection
   - [ ] MIDI controller / Traktor
-- [ ] Toggle cuelists easily in UI.
+- [x] Toggle cuelists easily in UI.
 
 ## Week 1 (CW10): Core UI Components
 
