@@ -1,5 +1,6 @@
+use std::net::IpAddr;
+use std::path::Path;
 use std::sync::Arc;
-use std::{net::IpAddr, path::Path};
 
 use anyhow::Ok;
 use clap::Parser;

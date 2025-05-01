@@ -1,9 +1,10 @@
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 
 pub struct AudioPlayer {
     _stream: OutputStream,
