@@ -53,7 +53,7 @@ impl ShowPanel {
             if ui.button("Save As...").clicked() {
                 // Use native file dialog
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Halo Show", &["halo"])
+                    .add_filter("Halo Show", &["json"])
                     .set_directory("~")
                     .save_file()
                 {
@@ -166,7 +166,7 @@ impl ShowPanel {
                         if ui.button("Browse...").clicked() {
                             // Use native file dialog for more options
                             if let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Halo Show", &["halo"])
+                                .add_filter("Halo Show", &["json"])
                                 .set_directory("~")
                                 .pick_file()
                             {
