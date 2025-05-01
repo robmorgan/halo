@@ -1,15 +1,13 @@
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
 use halo_core::{
-    sawtooth_effect, sine_effect, square_effect, Chase, ChaseStep, Cue, CueList, Effect,
-    EffectDistribution, EffectMapping, EffectParams, Interval, LightingConsole, MidiAction,
-    MidiOverride, NetworkConfig, StaticValue,
+    sawtooth_effect, sine_effect, square_effect, Cue, CueList, Effect, EffectParams, Interval,
+    LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
 };
-use halo_fixtures::ChannelType;
 use parking_lot::Mutex;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -57,507 +55,6 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Destination: {}", network_config.get_destination());
     println!("Port: {}", network_config.port);
 
-    let effects = vec![
-        Effect {
-            name: "Beat-synced Sine".to_string(),
-            apply: sine_effect,
-            min: 0,
-            max: 255,
-            params: EffectParams {
-                interval: Interval::Beat,
-                interval_ratio: 1.0, // Twice as fast
-                phase: 0.25,         // Quarter phase offset
-            },
-            ..Default::default()
-        },
-        Effect {
-            name: "Bar-synced Square".to_string(),
-            apply: square_effect,
-            min: 0,
-            max: 255,
-            params: EffectParams {
-                interval: Interval::Bar,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        Effect {
-            name: "Phrase-synced Sawtooth".to_string(),
-            apply: sawtooth_effect,
-            min: 0,
-            max: 255,
-            params: EffectParams {
-                interval: Interval::Beat,
-                interval_ratio: 1.0, // Twice as fast
-                phase: 0.0,          // Quarter phase offset
-            },
-            ..Default::default()
-        },
-    ];
-
-    let cues = vec![
-        Cue {
-            name: "Alternating PAR Chase".to_string(),
-            duration: Duration::new(10, 0),
-            static_values: static_values![
-                // Set both PARs to full intensity on the Dimmer channel
-                ("Left PAR", "Dimmer", 255),
-                ("Right PAR", "Dimmer", 255),
-                // Set both PARs to white
-                ("Left PAR", "White", 255),
-                ("Right PAR", "White", 255),
-                // Set both spots to full intensity on the Dimmer channel
-                ("Left Spot", "Dimmer", 255),
-                ("Right Spot", "Dimmer", 255),
-                // Set the left spot to blue and the right to purple
-                ("Left Spot", "Color", 50),
-                ("Right Spot", "Color", 90),
-                // Set both washes to full intensity on the Dimmer channel
-                //("Left Wash", "Dimmer", 255),
-                //("Right Wash", "Dimmer", 255),
-                // Set the left wash to blue and the right to purple
-                ("Left Wash", "Red", 50),
-                ("Right Wash", "Blue", 50),
-            ],
-            chases: vec![Chase {
-                name: "Slow Dance Floor Sweep".to_string(),
-                current_step: 0,
-                current_step_elapsed: 0.0,
-                accumulated_beats: 0.0,
-                last_step_change: Instant::now(),
-                steps: vec![ChaseStep {
-                    duration: Duration::new(1, 0),
-                    effect_mappings: vec![
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Pan Sweep".to_string(),
-                                apply: sine_effect,
-                                min: 160,
-                                max: 200,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 2.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
-                            channel_types: vec![ChannelType::Pan],
-                            distribution: EffectDistribution::Step(1),
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Tilt Movement".to_string(),
-                                apply: sine_effect,
-                                min: 60,
-                                max: 70,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 2.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Left Spot".to_string(), "Left Wash".to_string()],
-                            channel_types: vec![ChannelType::Tilt],
-                            distribution: EffectDistribution::All,
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Pan Sweep".to_string(),
-                                apply: sine_effect,
-                                min: 160,
-                                max: 200,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 1.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![ChannelType::Pan],
-                            distribution: EffectDistribution::Step(1),
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Tilt Movement".to_string(),
-                                apply: sine_effect,
-                                min: 40,
-                                max: 50,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 1.0,
-                                    phase: 180.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![ChannelType::Tilt],
-                            distribution: EffectDistribution::Step(1),
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Pan Sweep".to_string(),
-                                apply: sine_effect,
-                                min: 130,
-                                max: 175,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 1.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Right Wash".to_string()],
-                            channel_types: vec![ChannelType::Pan],
-                            distribution: EffectDistribution::All,
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Tilt Movement".to_string(),
-                                apply: sine_effect,
-                                min: 5,
-                                max: 10,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 1.0,
-                                    phase: 180.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Right Wash".to_string()],
-                            channel_types: vec![ChannelType::Tilt],
-                            distribution: EffectDistribution::All,
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Dimmer Sidechain".to_string(),
-                                apply: sine_effect,
-                                min: 0,
-                                max: 255,
-                                params: EffectParams {
-                                    interval: Interval::Beat,
-                                    interval_ratio: 1.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Left Wash".to_string(), "Right Wash".to_string()],
-                            channel_types: vec![ChannelType::Dimmer],
-                            distribution: EffectDistribution::Step(1),
-                        },
-                    ],
-                    static_values: vec![
-                        StaticValue {
-                            fixture_name: "Left Spot".to_string(),
-                            channel_name: "Dimmer".to_string(),
-                            value: 125,
-                        },
-                        StaticValue {
-                            fixture_name: "Right Spot".to_string(),
-                            channel_name: "Dimmer".to_string(),
-                            value: 255,
-                        },
-                    ],
-                }],
-                loop_count: None, // Infinite loop
-            }],
-            ..Default::default()
-        },
-        Cue {
-            name: "Dance Floor Spot Sweep".to_string(),
-            duration: Duration::new(10, 0),
-            static_values: static_values![
-                // Set both PARs to full intensity on the Dimmer channel
-                ("Left PAR", "Dimmer", 255),
-                ("Right PAR", "Dimmer", 255),
-                // Set both spots to full intensity on the Dimmer channel
-                ("Left Spot", "Dimmer", 255),
-                ("Right Spot", "Dimmer", 255),
-                // Set the left spot to blue and the right to purple
-                ("Left Spot", "Color", 50),
-                ("Right Spot", "Color", 90),
-            ],
-            chases: vec![Chase {
-                name: "Dance Floor Spot Sweep".to_string(),
-                current_step: 0,
-                current_step_elapsed: 0.0,
-                accumulated_beats: 0.0,
-                last_step_change: Instant::now(),
-                steps: vec![ChaseStep {
-                    duration: Duration::new(1, 0),
-                    effect_mappings: vec![
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Pan Sweep".to_string(),
-                                apply: sine_effect,
-                                min: 160,
-                                max: 200,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 2.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Left Spot".to_string()],
-                            channel_types: vec![ChannelType::Pan],
-                            distribution: EffectDistribution::Step(1),
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Tilt Movement".to_string(),
-                                apply: sine_effect,
-                                min: 60,
-                                max: 70,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 2.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Left Spot".to_string()],
-                            channel_types: vec![ChannelType::Tilt],
-                            distribution: EffectDistribution::All,
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Pan Sweep".to_string(),
-                                apply: sine_effect,
-                                min: 160,
-                                max: 200,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 1.0,
-                                    phase: 0.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![ChannelType::Pan],
-                            distribution: EffectDistribution::Step(1),
-                        },
-                        EffectMapping {
-                            effect: Effect {
-                                name: "Tilt Movement".to_string(),
-                                apply: sine_effect,
-                                min: 40,
-                                max: 50,
-                                params: EffectParams {
-                                    interval: Interval::Phrase,
-                                    interval_ratio: 1.0,
-                                    phase: 180.0,
-                                },
-                                ..Default::default()
-                            },
-                            fixture_names: vec!["Right Spot".to_string()],
-                            channel_types: vec![ChannelType::Tilt],
-                            distribution: EffectDistribution::Step(1),
-                        },
-                    ],
-                    static_values: vec![
-                        StaticValue {
-                            fixture_name: "Left Spot".to_string(),
-                            channel_name: "Dimmer".to_string(),
-                            value: 125,
-                        },
-                        StaticValue {
-                            fixture_name: "Right Spot".to_string(),
-                            channel_name: "Dimmer".to_string(),
-                            value: 255,
-                        },
-                    ],
-                }],
-                loop_count: None, // Infinite loop
-            }],
-            ..Default::default()
-        },
-        Cue {
-            name: "Complex Chase with Static Values".to_string(),
-            duration: Duration::new(10, 0),
-            static_values: vec![
-                StaticValue {
-                    fixture_name: "Left Wash".to_string(),
-                    channel_name: "Color".to_string(),
-                    value: 127,
-                },
-                StaticValue {
-                    fixture_name: "Left Wash".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 127,
-                },
-                StaticValue {
-                    fixture_name: "Right Wash".to_string(),
-                    channel_name: "Color".to_string(),
-                    value: 127,
-                },
-                StaticValue {
-                    fixture_name: "Right Wash".to_string(),
-                    channel_name: "Dimmer".to_string(),
-                    value: 127,
-                },
-                StaticValue {
-                    fixture_name: "Left PAR".to_string(),
-                    channel_name: "Red".to_string(),
-                    value: 127,
-                },
-                StaticValue {
-                    fixture_name: "Right PAR".to_string(),
-                    channel_name: "Red".to_string(),
-                    value: 127,
-                },
-            ],
-            chases: vec![
-                Chase {
-                    name: "Moving Head Chase".to_string(),
-                    current_step: 0,
-                    current_step_elapsed: 0.0,
-                    accumulated_beats: 0.0,
-                    last_step_change: Instant::now(),
-                    steps: vec![
-                        ChaseStep {
-                            //duration: 5.0,
-                            duration: Duration::new(1, 0),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[0].clone(), // Beat-Synced Sine Wave,
-                                fixture_names: vec![
-                                    "Left Wash".to_string(),
-                                    "Right Wash".to_string(),
-                                ],
-                                channel_types: vec![ChannelType::Tilt],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                StaticValue {
-                                    fixture_name: "Left Wash".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 255,
-                                },
-                                StaticValue {
-                                    fixture_name: "Right Wash".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 255,
-                                },
-                            ],
-                        },
-                        ChaseStep {
-                            duration: Duration::new(1, 0),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[0].clone(), // Beat-Synced Sine Wave,
-                                fixture_names: vec![
-                                    "Left Wash".to_string(),
-                                    "Right Wash".to_string(),
-                                ],
-                                channel_types: vec![ChannelType::Tilt],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                StaticValue {
-                                    fixture_name: "Left Wash".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 0,
-                                },
-                                StaticValue {
-                                    fixture_name: "Right Wash".to_string(),
-                                    channel_name: "Dimmer".to_string(),
-                                    value: 0,
-                                },
-                            ],
-                        },
-                    ],
-                    loop_count: None, // Infinite loop
-                },
-                Chase {
-                    name: "PAR Chase".to_string(),
-                    current_step: 0,
-                    current_step_elapsed: 0.0,
-                    accumulated_beats: 0.0,
-                    last_step_change: Instant::now(),
-                    steps: vec![
-                        ChaseStep {
-                            //duration: 5.0, // Matches the total duration of the Moving Head Chase
-                            duration: Duration::new(1, 500),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[1].clone(), // Beat-Synced Square Wave,
-                                fixture_names: vec![
-                                    "Left PAR".to_string(),
-                                    "Right PAR".to_string(),
-                                ],
-                                channel_types: vec![ChannelType::Dimmer],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                StaticValue {
-                                    fixture_name: "Left PAR".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 255,
-                                },
-                                StaticValue {
-                                    fixture_name: "Right PAR".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 0,
-                                },
-                            ],
-                        },
-                        ChaseStep {
-                            //duration: 5.0, // Matches the total duration of the Moving Head Chase
-                            duration: Duration::new(1, 500),
-                            effect_mappings: vec![EffectMapping {
-                                effect: effects[1].clone(), // Beat-Synced Square Wave,
-                                fixture_names: vec![
-                                    "Left PAR".to_string(),
-                                    "Right PAR".to_string(),
-                                ],
-                                channel_types: vec![ChannelType::Dimmer],
-                                distribution: EffectDistribution::All,
-                            }],
-                            static_values: vec![
-                                StaticValue {
-                                    fixture_name: "Left PAR".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 0,
-                                },
-                                StaticValue {
-                                    fixture_name: "Right PAR".to_string(),
-                                    channel_name: "Red".to_string(),
-                                    value: 255,
-                                },
-                            ],
-                        },
-                    ],
-                    loop_count: None, // Infinite loop
-                },
-            ],
-            ..Default::default()
-        },
-        Cue {
-            name: "Pinspot Purple".to_string(),
-            duration: Duration::new(10, 0),
-            static_values: static_values![
-                // Set the Pinspot to Deep Purple
-                ("Pinspot", "Dimmer", 255),
-                ("Pinspot", "Red", 147),
-                ("Pinspot", "Blue", 211),
-                ("Pinspot", "White", 20),
-            ],
-            chases: vec![],
-            ..Default::default()
-        },
-        Cue {
-            name: "Pinspot Gradient".to_string(),
-            duration: Duration::new(10, 0),
-            static_values: static_values![
-                ("Pinspot", "Dimmer", 255),
-                ("Pinspot", "Function", 200),
-                ("Pinspot", "Speed", 20),
-            ],
-            chases: vec![],
-            ..Default::default()
-        },
-    ];
-
     // Create the console
     let mut console = LightingConsole::new(80., network_config.clone()).unwrap();
     console.load_fixture_library();
@@ -580,55 +77,92 @@ fn main() -> Result<(), anyhow::Error> {
     // store the cues in a default cue list
     let cue_lists = vec![CueList {
         name: "Default".to_string(),
-        cues,
+        cues: vec![
+            Cue {
+                id: 0,
+                name: "Arm".to_string(),
+                fade_time: Duration::from_secs(3),
+                is_blocking: false,
+                timecode: Some("00:00:00:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
+            Cue {
+                id: 1,
+                name: "Cue 1".to_string(),
+                fade_time: Duration::from_secs(3),
+                is_blocking: false,
+                timecode: Some("00:00:01:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
+            Cue {
+                id: 2,
+                name: "Cue 2".to_string(),
+                fade_time: Duration::from_secs(5),
+                is_blocking: false,
+                timecode: Some("00:00:10:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
+            Cue {
+                id: 3,
+                name: "Cue 3".to_string(),
+                fade_time: Duration::from_secs(5),
+                is_blocking: false,
+                timecode: Some("00:00:15:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
+        ],
         audio_file: None,
     }];
 
     // load cue lists
     console.set_cue_lists(cue_lists);
 
-    // Blue Strobe Fast
-    console.add_midi_override(
-        76,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![
-                ("Smoke #1", "Blue", 255),
-                ("Smoke #1", "Strobe", 255),
-            ]),
-        },
-    );
+    // // Blue Strobe Fast
+    // console.add_midi_override(
+    //     76,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Smoke #1", "Blue", 255),
+    //             ("Smoke #1", "Strobe", 255),
+    //         ]),
+    //     },
+    // );
 
-    // Red Strobe Medium w/Half Smoke
-    console.add_midi_override(
-        77,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![
-                ("Smoke #1", "Smoke", 100),
-                ("Smoke #1", "Red", 255),
-                ("Smoke #1", "Strobe", 220),
-            ]),
-        },
-    );
+    // // Red Strobe Medium w/Half Smoke
+    // console.add_midi_override(
+    //     77,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Smoke #1", "Smoke", 100),
+    //             ("Smoke #1", "Red", 255),
+    //             ("Smoke #1", "Strobe", 220),
+    //         ]),
+    //     },
+    // );
 
-    // Blue Strobe Fast w/Full Smoke
-    console.add_midi_override(
-        78,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![
-                ("Smoke #1", "Smoke", 255),
-                ("Smoke #1", "Blue", 255),
-                ("Smoke #1", "Strobe", 255),
-            ]),
-        },
-    );
+    // // Blue Strobe Fast w/Full Smoke
+    // console.add_midi_override(
+    //     78,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![
+    //             ("Smoke #1", "Smoke", 255),
+    //             ("Smoke #1", "Blue", 255),
+    //             ("Smoke #1", "Strobe", 255),
+    //         ]),
+    //     },
+    // );
 
-    // Full Smoke
-    console.add_midi_override(
-        71,
-        MidiOverride {
-            action: MidiAction::StaticValues(static_values![("Smoke #1", "Smoke", 255),]),
-        },
-    );
+    // // Full Smoke
+    // console.add_midi_override(
+    //     71,
+    //     MidiOverride {
+    //         action: MidiAction::StaticValues(static_values![("Smoke #1", "Smoke", 255),]),
+    //     },
+    // );
 
     //// Cue Overrides
 

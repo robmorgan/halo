@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, Color32, RichText};
 use halo_core::{Cue, CueList, LightingConsole};
 use parking_lot::Mutex;
+use rfd::FileDialog;
 
 pub struct CueEditor {
     selected_cue_list_index: Option<usize>,
@@ -12,7 +13,7 @@ pub struct CueEditor {
     new_cue_name: String,
     new_fade_time: f64,
     new_timecode: String,
-    audio_file_path: String,
+    audio_file_path: Option<String>,
 }
 
 impl Default for CueEditor {
@@ -23,8 +24,8 @@ impl Default for CueEditor {
             new_cue_list_name: String::new(),
             new_cue_name: String::new(),
             new_fade_time: 3.0,
-            new_timecode: String::new(),
-            audio_file_path: String::new(),
+            new_timecode: "00:00:00:00".to_string(),
+            audio_file_path: None,
         }
     }
 }
@@ -132,9 +133,12 @@ impl CueEditor {
                         cue_list_idx,
                         Cue {
                             name: std::mem::take(&mut self.new_cue_name),
-                            fade_time: self.new_fade_time,
-                            timecode: std::mem::take(&mut self.new_timecode),
-                            duration: Duration::from_secs_f64(self.new_fade_time),
+                            fade_time: Duration::from_secs_f64(self.new_fade_time),
+                            timecode: if self.new_timecode.is_empty() {
+                                None
+                            } else {
+                                Some(self.new_timecode.clone())
+                            },
                             ..Default::default()
                         },
                     );
@@ -165,6 +169,8 @@ impl CueEditor {
                 ui.strong("Name");
                 ui.strong("Fade Time");
                 ui.strong("Timecode");
+                ui.strong("Static Values");
+                ui.strong("Effects");
                 ui.end_row();
 
                 // Cues
@@ -177,9 +183,18 @@ impl CueEditor {
                             self.selected_cue_index = Some(idx);
                         }
 
+                        // get the current timecode as a string or default to "None"
+                        let timecode_text = if let Some(tc) = &cue.timecode {
+                            RichText::new(tc).color(Color32::from_rgb(0, 150, 255))
+                        } else {
+                            RichText::new("None").color(Color32::from_gray(120))
+                        };
+
                         ui.label(&cue.name);
-                        ui.label(format!("{:.1} s", cue.fade_time));
-                        ui.label(&cue.timecode);
+                        ui.label(format!("{:.1} s", cue.fade_time.as_secs_f64()));
+                        ui.label(timecode_text);
+                        ui.label(format!("{}", cue.static_values.len()));
+                        ui.label(format!("{}", cue.effects.len()));
                         ui.end_row();
                     }
                 }
@@ -193,34 +208,37 @@ impl CueEditor {
         cue_list_idx: usize,
         console: &Arc<Mutex<LightingConsole>>,
     ) {
-        let console_lock = console.lock();
         ui.separator();
         ui.heading("Audio File");
 
-        ui.horizontal(|ui| {
-            let cue_lists = console_lock.cue_manager.get_cue_lists();
-            if cue_list_idx < cue_lists.len() {
-                let audio_file = cue_lists[cue_list_idx]
-                    .audio_file
-                    .as_deref()
-                    .unwrap_or("None");
-                ui.label(format!("Current: {}", audio_file));
-            }
-        });
-        drop(console_lock);
-
         let mut console_lock = console.lock();
         ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut self.audio_file_path);
-            let path_valid = !self.audio_file_path.is_empty();
-            if ui
-                .add_enabled(path_valid, egui::Button::new("Load Audio"))
-                .clicked()
-            {
-                let _ = console_lock
-                    .cue_manager
-                    .set_audio_file(cue_list_idx, self.audio_file_path.clone());
-                self.audio_file_path.clear();
+            if let Some(audio_file_path) = &self.audio_file_path {
+                ui.label("Audio File:");
+                ui.monospace(audio_file_path);
+            }
+
+            if ui.button("Browse Audio").clicked() {
+                if let Some(cue_id) = &self.selected_cue_list_index {
+                    if let Some(path) = FileDialog::new()
+                        .add_filter("Audio", &["mp3", "wav", "ogg", "flac"])
+                        .set_title("Select Audio File")
+                        .pick_file()
+                    {
+                        // if let Ok(mut audio_manager) = self.audio_manager.lock() {
+                        //     let _ = audio_manager.add_track(path, cue_id.clone());
+                        // }
+                        let audio_file_path = path.display().to_string();
+                        self.audio_file_path = Some(audio_file_path.clone());
+                        let _ = console_lock
+                            .cue_manager
+                            .set_audio_file(cue_list_idx, audio_file_path);
+                    }
+                } else {
+                    // Show error or notification that no cue is selected
+                    // TODO - show message modal
+                    ui.label("Please select a cue first");
+                }
             }
         });
         drop(console_lock);
@@ -241,7 +259,7 @@ impl CueEditor {
                     .default_open(true)
                     .show(ui, |ui| {
                         ui.label(format!("Static Values: {}", cue.static_values.len()));
-                        ui.label(format!("Chases: {}", cue.chases.len()));
+                        ui.label(format!("Effects: {}", cue.effects.len()));
 
                         if ui.button("Edit Cue").clicked() {
                             // This would open the detailed cue editor

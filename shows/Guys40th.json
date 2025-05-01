@@ -1,0 +1,77 @@
+{
+  "name": "Guys40th",
+  "created_at": {
+    "secs_since_epoch": 1745897720,
+    "nanos_since_epoch": 949569000
+  },
+  "modified_at": {
+    "secs_since_epoch": 1745897720,
+    "nanos_since_epoch": 949595000
+  },
+  "fixtures": [
+    {
+      "id": 0,
+      "name": "Left PAR",
+      "profile_id": "shehds-rgbw-par",
+      "universe": 1,
+      "start_address": 1
+    },
+    {
+      "id": 1,
+      "name": "Right PAR",
+      "profile_id": "shehds-rgbw-par",
+      "universe": 1,
+      "start_address": 9
+    },
+    {
+      "id": 2,
+      "name": "Left Spot",
+      "profile_id": "shehds-led-spot-60w",
+      "universe": 1,
+      "start_address": 18
+    },
+    {
+      "id": 3,
+      "name": "Right Spot",
+      "profile_id": "shehds-led-spot-60w",
+      "universe": 1,
+      "start_address": 28
+    },
+    {
+      "id": 4,
+      "name": "Left Wash",
+      "profile_id": "shehds-led-wash-7x18w-rgbwa-uv",
+      "universe": 1,
+      "start_address": 38
+    },
+    {
+      "id": 5,
+      "name": "Right Wash",
+      "profile_id": "shehds-led-wash-7x18w-rgbwa-uv",
+      "universe": 1,
+      "start_address": 48
+    },
+    {
+      "id": 6,
+      "name": "Smoke #1",
+      "profile_id": "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
+      "universe": 1,
+      "start_address": 69
+    },
+    {
+      "id": 7,
+      "name": "Pinspot",
+      "profile_id": "shehds-mini-led-pinspot-10w",
+      "universe": 1,
+      "start_address": 83
+    }
+  ],
+  "cue_lists": [
+    {
+      "name": "Default",
+      "cues": [],
+      "audio_file": null
+    }
+  ],
+  "version": "0.1.0"
+}

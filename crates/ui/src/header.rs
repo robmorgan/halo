@@ -1,23 +1,80 @@
+use std::sync::Arc;
+
 use eframe::egui;
+use halo_core::LightingConsole;
+use parking_lot::Mutex;
 
 use crate::ActiveTab;
 
-pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    active_tab: &mut ActiveTab,
+    console: &Arc<Mutex<LightingConsole>>,
+) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
-            // TODO: Implement new show functionality
-            // self.selected_fixture_index = None;
-            // self.selected_cue_index = None;
-            // self.selected_chase_index = None;
-            // self.selected_step_index = None;
+            if let Some(path) = rfd::FileDialog::new().set_title("New Show").save_file() {
+                let mut console_lock = console.lock();
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let _ = console_lock.new_show(name);
+                drop(console_lock);
+            }
+            ui.close_menu();
         }
+
+        if ui.button("Open Show...").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Halo Show", &["json"])
+                .set_title("Open Show")
+                .pick_file()
+            {
+                let mut console_lock = console.lock();
+                let _ = console_lock.load_show(&path);
+                drop(console_lock);
+            }
+            ui.close_menu();
+        }
+
         if ui.button("Save Show").clicked() {
-            // TODO: Implement save functionality
+            let mut console_lock = console.lock();
+            let _ = console_lock.save_show();
+            drop(console_lock);
+            ui.close_menu();
         }
-        if ui.button("Load Show").clicked() {
-            // TODO: Implement load functionality
+
+        if ui.button("Save Show As...").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Halo Show", &["json"])
+                .set_title("Save Show As")
+                .save_file()
+            {
+                let mut console_lock = console.lock();
+                let name = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let _ = console_lock.save_show_as(name, path);
+                drop(console_lock);
+            }
+            ui.close_menu();
         }
+
+        ui.separator();
+
+        if ui.button("Show Manager").clicked() {
+            *active_tab = ActiveTab::ShowManager;
+            ui.close_menu();
+        }
+
+        ui.separator();
+
         if ui.button("Quit").clicked() {
+            // TODO - add are you sure? modal.
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     });
@@ -39,6 +96,12 @@ pub fn render(ui: &mut eframe::egui::Ui, active_tab: &mut ActiveTab) {
     });
     // Tab selector
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if ui
+            .selectable_label(matches!(active_tab, ActiveTab::ShowManager), "Shows")
+            .clicked()
+        {
+            *active_tab = ActiveTab::ShowManager;
+        }
         if ui
             .selectable_label(matches!(active_tab, ActiveTab::PatchPanel), "Patch")
             .clicked()

@@ -8,5 +8,12 @@
     ".vscode-insiders",
     "dist"
   ],
-  "cSpell.words": ["ableton", "artnet", "robmorgan", "timecode"]
+  "cSpell.words": [
+    "ableton",
+    "artnet",
+    "robmorgan",
+    "timecode",
+    "egui",
+    "eframe"
+  ]
 }

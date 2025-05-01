@@ -71,7 +71,7 @@ impl OverridesPanel {
     }
 
     // Update override button state
-    pub fn set_override_active(&mut self, name: &str, active: bool) {
+    pub fn _set_override_active(&mut self, name: &str, active: bool) {
         if let Some(state) = self.active_overrides.get_mut(name) {
             *state = active;
         }
@@ -89,7 +89,7 @@ impl OverridesPanel {
     }
 
     // Apply overrides to the console
-    pub fn apply_overrides(&self, console: &mut LightingConsole) {
+    pub fn _apply_overrides(&self, console: &mut LightingConsole) {
         for button in &self.buttons {
             if button.is_active {
                 for value in &button.values {
@@ -97,9 +97,9 @@ impl OverridesPanel {
                     if let Some(fixture) = console
                         .fixtures
                         .iter_mut()
-                        .find(|f| f.name == value.fixture_name)
+                        .find(|f| f.id == value.fixture_id)
                     {
-                        fixture.set_channel_value(&value.channel_name, value.value);
+                        fixture.set_channel_value(&value.channel_type, value.value);
                     }
                 }
             }
@@ -107,7 +107,7 @@ impl OverridesPanel {
     }
 
     // Register MIDI overrides with the console
-    pub fn register_midi_overrides(&self, console: &mut LightingConsole) {
+    pub fn _register_midi_overrides(&self, console: &mut LightingConsole) {
         for button in &self.buttons {
             if let Some(midi_key) = button.midi_key {
                 let override_config = MidiOverride {
@@ -153,9 +153,9 @@ impl OverridesPanel {
                                 if let Some(fixture) = console_lock
                                     .fixtures
                                     .iter_mut()
-                                    .find(|f| f.name == value.fixture_name)
+                                    .find(|f| f.id == value.fixture_id)
                                 {
-                                    fixture.set_channel_value(&value.channel_name, value.value);
+                                    fixture.set_channel_value(&value.channel_type, value.value);
                                 }
                             }
                         } else {

@@ -12,10 +12,12 @@ use parking_lot::Mutex;
 use patch_panel::PatchPanel;
 use programmer::Programmer;
 use session::SessionPanel;
+use show_panel::ShowPanel;
 use timeline::Timeline;
 
 mod cue;
 mod cue_editor;
+mod fader;
 mod fixture;
 mod footer;
 mod header;
@@ -23,6 +25,7 @@ mod master;
 mod patch_panel;
 mod programmer;
 mod session;
+mod show_panel;
 mod timeline;
 mod utils;
 
@@ -31,6 +34,7 @@ pub enum ActiveTab {
     Programmer,
     CueEditor,
     PatchPanel,
+    ShowManager,
 }
 pub struct HaloApp {
     pub console: Arc<Mutex<LightingConsole>>,
@@ -52,7 +56,6 @@ pub struct HaloApp {
     effect_offset: f32,
     selected_effect_type: EffectType,
     temp_color_value: [f32; 3], // RGB for color picker
-    patch_panel: PatchPanel,
     fps: u32,
     overrides_panel: OverridesPanel,
     master_panel: MasterPanel,
@@ -62,6 +65,8 @@ pub struct HaloApp {
     programmer: programmer::Programmer,
     timeline: timeline::Timeline,
     cue_editor: cue_editor::CueEditor,
+    patch_panel: PatchPanel,
+    show_panel: show_panel::ShowPanel,
 }
 
 impl HaloApp {
@@ -96,7 +101,6 @@ impl HaloApp {
             effect_offset: 0.5,
             selected_effect_type: EffectType::Sine,
             temp_color_value: [0.5, 0.5, 0.5],
-            patch_panel: PatchPanel::new(),
             fps: 60,
             overrides_panel: OverridesPanel::new(),
             master_panel: MasterPanel::new(),
@@ -106,6 +110,8 @@ impl HaloApp {
             programmer: Programmer::new(),
             timeline: Timeline::new(),
             cue_editor: CueEditor::new(),
+            patch_panel: PatchPanel::new(),
+            show_panel: ShowPanel::new(),
         }
     }
 }
@@ -116,22 +122,28 @@ impl eframe::App for HaloApp {
         self.last_update = now;
         self.current_time = SystemTime::now();
 
-        // Get the currently patched fixtures from the console
-        let fixtures;
+        // Get items from the console
         {
             let console = self.console.lock();
-            fixtures = console.fixtures.to_vec();
-        }
+            let fixtures = console.fixtures.to_vec();
+            let playback_state = console.cue_manager.get_playback_state();
 
-        // Update the programmer with the current fixtures and selection
-        self.programmer.set_fixtures(fixtures);
-        self.programmer
-            .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
+            // Update the session panel with the current playback state and time
+            self.session_panel.set_playback_state(playback_state);
+            if let Some(timecode) = console.cue_manager.current_timecode {
+                self.session_panel.set_timecode(timecode);
+            }
+
+            // Update the programmer with the current fixtures and selection
+            self.programmer.set_fixtures(fixtures);
+            self.programmer
+                .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
+        }
 
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                header::render(ui, &mut self.active_tab);
+                header::render(ui, &mut self.active_tab, &self.console);
             });
         });
 
@@ -145,6 +157,7 @@ impl eframe::App for HaloApp {
         match self.active_tab {
             ActiveTab::Dashboard => {
                 egui::SidePanel::right("right_panel").show(ctx, |ui| {
+                    ui.set_min_width(400.0);
                     self.session_panel.render(ui, &self.console);
                     ui.separator();
                     self.cue_panel.render(ui, &self.console);
@@ -174,10 +187,15 @@ impl eframe::App for HaloApp {
                 self.cue_editor.render(ctx, &self.console);
             }
             ActiveTab::Programmer => {
-                //self.programmer.show(ui, &self.console)
+                self.programmer.render_full_view(ctx, &self.console);
             }
             ActiveTab::PatchPanel => {
-                //self.patch_panel.show(ui, &self.console)
+                self.patch_panel.render(ctx, &self.console);
+            }
+            ActiveTab::ShowManager => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    self.show_panel.show(ui, &self.console);
+                });
             }
         }
 

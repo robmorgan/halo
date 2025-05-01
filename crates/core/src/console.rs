@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::io::{stdout, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use halo_fixtures::{Fixture, FixtureLibrary};
 use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
@@ -12,10 +13,15 @@ use parking_lot::Mutex;
 use crate::ableton_link::ClockState;
 use crate::artnet::artnet::ArtNet;
 use crate::artnet::network_config::NetworkConfig;
-use crate::cue::cue_manager::CueManager;
+use crate::cue::cue_manager::{CueManager, PlaybackState};
 use crate::effect::effect::get_effect_phase;
 use crate::midi::midi::{MidiMessage, MidiOverride};
-use crate::{ableton_link, artnet, CueList, Effect, EffectDistribution, RhythmState};
+use crate::programmer::Programmer;
+use crate::show::show::Show;
+use crate::{
+    ableton_link, artnet, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
+    ShowManager, StaticValue,
+};
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
 const TARGET_DELTA: f64 = 1.0 / TARGET_FREQUENCY;
@@ -27,11 +33,14 @@ const TARGET_DURATION: f64 = 1.0 / TARGET_FREQUENCY;
 pub struct LightingConsole {
     // is the event loop running?
     is_running: bool,
+    show_name: String,
     tempo: f64,
     fixture_library: FixtureLibrary,
     pub fixtures: Vec<Fixture>,
     pub link_state: ableton_link::State,
     pub cue_manager: CueManager,
+    pub programmer: Programmer,
+    pub show_manager: ShowManager,
     dmx_output: artnet::artnet::ArtNet,
     midi_overrides: HashMap<u8, MidiOverride>, // Key is MIDI note number
     active_overrides: HashMap<u8, (bool, u8)>, // Stores (active, velocity)
@@ -50,12 +59,17 @@ impl LightingConsole {
 
         let (override_tx, override_rx) = channel();
 
+        let show_manager = ShowManager::new()?;
+
         Ok(LightingConsole {
             is_running: true,
+            show_name: "Untitled Show".to_string(),
             tempo: bpm,
             fixture_library: FixtureLibrary::new(),
             fixtures: Vec::new(),
             cue_manager: CueManager::new(Vec::new()),
+            programmer: Programmer::new(),
+            show_manager,
             link_state,
             dmx_output,
             midi_overrides: HashMap::new(),
@@ -87,11 +101,11 @@ impl LightingConsole {
         profile_name: &str,
         universe: u8,
         address: u16,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         let profile = self
             .fixture_library
             .profiles
-            .get(&profile_name.to_string())
+            .get(profile_name)
             .ok_or_else(|| format!("Profile {} not found", profile_name))?;
 
         // Assign a new ID to the fixture
@@ -100,6 +114,7 @@ impl LightingConsole {
         let fixture = Fixture {
             id,
             name: name.to_string(),
+            profile_id: profile.id.clone(),
             profile: profile.clone(),
             channels: profile.channel_layout.clone(),
             universe,
@@ -107,7 +122,7 @@ impl LightingConsole {
         };
 
         self.fixtures.push(fixture);
-        Ok(())
+        Ok(id)
     }
 
     pub fn set_cue_lists(&mut self, cue_lists: Vec<CueList>) {
@@ -220,7 +235,7 @@ impl LightingConsole {
                         if let Some(last_time) = self.rhythm_state.last_tap_time {
                             let interval = now.duration_since(last_time).as_secs_f64();
                             let new_bpm = 60.0 / interval;
-                            self.link_state.set_tempo(new_bpm);
+                            let _ = self.link_state.set_tempo(new_bpm);
                         }
                         self.rhythm_state.last_tap_time = Some(now);
                     }
@@ -241,7 +256,9 @@ impl LightingConsole {
                         // Go Button: Advance the cue
                         if cc == 116 && value > 64 {
                             // Example: CC #116 when value goes above 64
-                            self.cue_manager.go_to_next_cue();
+                            if let Err(err) = self.cue_manager.go() {
+                                println!("Error advancing cue: {}", err);
+                            }
                         }
 
                         // K1 Knob: Set the BPM
@@ -273,121 +290,95 @@ impl LightingConsole {
         self.update_rhythm_state(beat_time);
 
         // Is the console currently playing a cue?
-        if self.cue_manager.is_playing() {
-            if let Some(current_cue) = self.cue_manager.get_current_cue() {
+        if self.cue_manager.get_playback_state() == PlaybackState::Playing {
+            if let Some(current_cue) = self.cue_manager.get_current_cue().cloned() {
                 // Apply cue-level static values first
-                for static_value in &current_cue.static_values {
-                    if let Some(fixture) = self
-                        .fixtures
-                        .iter_mut()
-                        .find(|f| f.name == static_value.fixture_name)
-                    {
-                        fixture.set_channel_value(&static_value.channel_name, static_value.value);
-                    }
-                }
+                self.apply_values(current_cue.static_values);
 
-                for chase in &current_cue.chases {
-                    // TODO - use the real elapsed time
-                    // TODO - i don't want to use chases anymore or make them mutable.
-                    //let elapsed = Duration::from_secs(1);
-                    //chase.update(elapsed);
-
-                    // Apply chase-level static values
-                    for static_value in chase.get_current_static_values() {
-                        if let Some(fixture) = self
-                            .fixtures
-                            .iter_mut()
-                            .find(|f| f.name == static_value.fixture_name)
-                        {
-                            if let Some(channel) = fixture
-                                .channels
-                                .iter_mut()
-                                .find(|c| c.name == static_value.channel_name)
-                            {
-                                // Smooth transition for static values as well
-                                let current_value = channel.value as f64;
-                                let target_value = static_value.value as f64;
-                                channel.value =
-                                    (current_value + (target_value - current_value)).round() as u8;
-                            }
-                        }
-                    }
-
-                    // Apply chase-level effect mappings
-                    for mapping in chase.get_current_effect_mappings() {
-                        let mut affected_fixtures: Vec<&mut Fixture> = self
-                            .fixtures
-                            .iter_mut()
-                            .filter(|f| mapping.fixture_names.contains(&f.name))
-                            .collect();
-
-                        // if affected fixtures is empty, log a warning and continue
-                        if affected_fixtures.is_empty() {
-                            println!(
-                                "Warning: No fixtures found using mapping for fixtures: {:?}",
-                                mapping.fixture_names.join(", ")
-                            );
-                        }
-
-                        for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
-                            for channel_type in &mapping.channel_types {
-                                if let Some(channel) = fixture.channels.iter_mut().find(|c| {
-                                    std::mem::discriminant(&c.channel_type)
-                                        == std::mem::discriminant(channel_type)
-                                }) {
-                                    let mut effect_params = mapping.effect.params.clone();
-
-                                    // Apply distribution adjustments
-                                    match mapping.distribution {
-                                        EffectDistribution::All => {}
-                                        EffectDistribution::Step(step) => {
-                                            if i % step != 0 {
-                                                continue;
-                                            }
-                                        }
-                                        EffectDistribution::Wave(phase_offset) => {
-                                            effect_params.phase += phase_offset * i as f64;
-                                        }
-                                    }
-
-                                    channel.value = apply_effect(
-                                        &mapping.effect,
-                                        &self.rhythm_state,
-                                        channel.value,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
+                // apply effect mappings
+                self.apply_effects(current_cue.effects);
             }
         }
 
         // Render any values from the programmer
         self.apply_programmer_values();
+
+        // Update the Cue Manager
+        self.cue_manager.update();
+    }
+
+    fn apply_values(&mut self, values: Vec<StaticValue>) {
+        for value in &values {
+            if let Some(fixture) = self.fixtures.iter_mut().find(|f| f.id == value.fixture_id) {
+                fixture.set_channel_value(&value.channel_type, value.value);
+            }
+        }
+    }
+
+    fn apply_effects(&mut self, effects: Vec<EffectMapping>) {
+        for mapping in &effects {
+            // get all fixtures that use this mapping
+            let mut affected_fixtures: Vec<&mut Fixture> = self
+                .fixtures
+                .iter_mut()
+                .filter(|f| mapping.fixture_ids.contains(&f.id))
+                .collect();
+
+            // apply the effect to each fixture
+            for (i, fixture) in affected_fixtures.iter_mut().enumerate() {
+                if let Some(channel) = fixture.channels.iter_mut().find(|c| {
+                    std::mem::discriminant(&c.channel_type)
+                        == std::mem::discriminant(&mapping.channel_type)
+                }) {
+                    let mut effect_params = mapping.effect.params.clone();
+
+                    // Apply distribution adjustments
+                    match mapping.distribution {
+                        EffectDistribution::All => {}
+                        EffectDistribution::Step(step) => {
+                            if i % step != 0 {
+                                continue;
+                            }
+                        }
+                        EffectDistribution::Wave(phase_offset) => {
+                            effect_params.phase += phase_offset * i as f64;
+                        }
+                    }
+
+                    channel.value =
+                        apply_effect(&mapping.effect, &self.rhythm_state, channel.value);
+                }
+            }
+        }
     }
 
     fn apply_programmer_values(&mut self) {
-        // for mapping in &self.programmer_values {
-        //     if let Some(fixture) = self
-        //         .fixtures
-        //         .iter_mut()
-        //         .find(|f| f.name == mapping.fixture_name)
-        //     {
-        //         if let Some(channel) = fixture.channels.iter_mut().find(|c| {
-        //             std::mem::discriminant(&c.channel_type)
-        //                 == std::mem::discriminant(&mapping.channel_type)
-        //         }) {
-        //             channel.value = mapping.value;
-        //         }
-        //     }
-        // }
+        if self.programmer.get_preview_mode() {
+            // apply programmer static values
+            self.apply_values(self.programmer.get_values().clone());
+
+            // apply programmer effects
+            self.apply_effects(self.programmer.get_effects().clone());
+        }
     }
 
     pub fn render(&self) {
         // Send DMX data
         let dmx_data = self.generate_dmx_data();
         self.dmx_output.send_data(1, dmx_data);
+    }
+
+    pub fn record_cue(&mut self, cue_name: String, fade_time: f32) {
+        let cue_list_idx = self.cue_manager.get_current_cue_list_idx();
+        let programmer_values = self.programmer.get_values();
+        let effects = self.programmer.get_effects();
+        self.cue_manager.record(
+            cue_name,
+            cue_list_idx,
+            fade_time,
+            programmer_values.clone(),
+            effects.clone(),
+        );
     }
 
     fn update_rhythm_state(&mut self, beat_time: f64) {
@@ -411,6 +402,41 @@ impl LightingConsole {
             dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
         }
         dmx_data
+    }
+
+    pub fn new_show(&mut self, name: String) -> Result<(), anyhow::Error> {
+        let _ = self.show_manager.new_show(name);
+        Ok(())
+    }
+
+    pub fn save_show(&mut self) -> Result<PathBuf, anyhow::Error> {
+        let result = self.show_manager.save_show(&self.get_show().clone())?;
+        Ok(result)
+    }
+
+    pub fn save_show_as(&mut self, name: String, path: PathBuf) -> Result<PathBuf, anyhow::Error> {
+        self.show_name = name;
+        let result = self
+            .show_manager
+            .save_show_as(&self.get_show().clone(), path)?;
+
+        Ok(result)
+    }
+
+    pub fn load_show(&mut self, path: &Path) -> Result<(), anyhow::Error> {
+        let show = self.show_manager.load_show(path)?;
+        // TODO - we'll probably want to lookup fixtures here
+        self.fixtures = show.fixtures.clone();
+        self.cue_manager.set_cue_lists(show.cue_lists.clone());
+        Ok(())
+    }
+
+    pub fn get_show(&self) -> Show {
+        let mut show = Show::new(self.show_name.clone());
+        show.fixtures = self.fixtures.clone();
+        show.cue_lists = self.cue_manager.get_cue_lists().clone();
+        show.modified_at = SystemTime::now();
+        show
     }
 
     fn display_status(
@@ -438,7 +464,7 @@ impl LightingConsole {
 
 fn apply_effect(effect: &Effect, rhythm: &RhythmState, current_value: u8) -> u8 {
     let phase = get_effect_phase(rhythm, &effect.params);
-    let target_value = (effect.apply)(phase);
+    let target_value = effect.apply(phase);
     let target_dmx = (target_value * (effect.max - effect.min) as f64 + effect.min as f64) as f64;
 
     // Smooth transition

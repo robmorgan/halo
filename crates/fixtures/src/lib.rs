@@ -1,17 +1,23 @@
 use std::collections::HashMap;
 
-#[derive(Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Fixture {
     pub id: usize,
     pub name: String,
+    pub profile_id: String,
+    #[serde(skip)]
     pub profile: FixtureProfile,
+    #[serde(skip)] // Channels are copied from the profile during initialization
     pub channels: Vec<Channel>,
     pub universe: u8,
     pub start_address: u16,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum FixtureType {
+    #[default]
     MovingHead,
     PAR,
     LEDBar,
@@ -20,13 +26,20 @@ pub enum FixtureType {
     Smoke,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct FixtureProfile {
+    pub id: String,
     pub fixture_type: FixtureType,
     pub manufacturer: String,
     pub model: String,
     pub channel_layout: Vec<Channel>,
     pub sub_fixtures: Option<usize>,
+}
+
+impl std::fmt::Display for FixtureProfile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.manufacturer, self.model)
+    }
 }
 
 #[derive(Default)]
@@ -42,6 +55,7 @@ impl FixtureLibrary {
         profiles.insert(
             "shehds-rgbw-par".to_string(),
             FixtureProfile {
+                id: "shehds-rgbw-par".to_string(),
                 fixture_type: FixtureType::PAR,
                 manufacturer: "Shehds".to_string(),
                 model: "LED Flat PAR 12x3W RGBW".to_string(),
@@ -94,6 +108,7 @@ impl FixtureLibrary {
         profiles.insert(
             "shehds-led-spot-60w".to_string(),
             FixtureProfile {
+                id: "shehds-led-spot-60w".to_string(),
                 fixture_type: FixtureType::MovingHead,
                 manufacturer: "Shehds".to_string(),
                 model: "LED Spot 60W Lighting".to_string(),
@@ -151,6 +166,7 @@ impl FixtureLibrary {
         profiles.insert(
             "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
             FixtureProfile {
+                id: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
                 fixture_type: FixtureType::Wash,
                 manufacturer: "Shehds".to_string(),
                 model: "LED Wash 7x18W RGBWA+UV".to_string(),
@@ -214,6 +230,7 @@ impl FixtureLibrary {
         profiles.insert(
             "shehds-mini-led-pinspot-10w".to_string(),
             FixtureProfile {
+                id: "shehds-mini-led-pinspot-10w".to_string(),
                 fixture_type: FixtureType::Pinspot,
                 manufacturer: "Shehds".to_string(),
                 model: "Mini LED Pinspot 10W".to_string(),
@@ -241,6 +258,7 @@ impl FixtureLibrary {
         profiles.insert(
             "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
             FixtureProfile {
+                id: "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
                 fixture_type: FixtureType::Smoke,
                 manufacturer: "DL Geyser".to_string(),
                 model: "DL Geyser 1000 LED Smoke Machine".to_string(),
@@ -302,7 +320,7 @@ pub struct Channel {
     pub value: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ChannelType {
     Dimmer,
     Color,
@@ -317,6 +335,9 @@ pub enum ChannelType {
     Pan,
     Tilt,
     TiltSpeed,
+    Beam,
+    Focus,
+    Zoom,
     Other(String),
 }
 
@@ -336,6 +357,9 @@ impl std::fmt::Display for ChannelType {
             ChannelType::Pan => write!(f, "Pan"),
             ChannelType::Tilt => write!(f, "Tilt"),
             ChannelType::TiltSpeed => write!(f, "TiltSpeed"),
+            ChannelType::Beam => write!(f, "Beam"),
+            ChannelType::Focus => write!(f, "Focus"),
+            ChannelType::Zoom => write!(f, "Zoom"),
             ChannelType::Other(s) => write!(f, "Other({})", s),
         }
     }
@@ -353,6 +377,7 @@ impl Fixture {
         Fixture {
             id,
             name: name.to_string(),
+            profile_id: profile.id.clone(),
             profile: profile.clone(),
             channels,
             universe,
@@ -360,8 +385,12 @@ impl Fixture {
         }
     }
 
-    pub fn set_channel_value(&mut self, channel_name: &str, value: u8) {
-        if let Some(channel) = self.channels.iter_mut().find(|c| c.name == channel_name) {
+    pub fn set_channel_value(&mut self, channel_type: &ChannelType, value: u8) {
+        if let Some(channel) = self
+            .channels
+            .iter_mut()
+            .find(|c| c.channel_type == *channel_type)
+        {
             channel.value = value;
         }
     }
