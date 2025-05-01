@@ -1,8 +1,10 @@
-use crate::ActiveTab;
+use std::sync::Arc;
+
 use eframe::egui;
 use halo_core::LightingConsole;
 use parking_lot::Mutex;
-use std::sync::Arc;
+
+use crate::ActiveTab;
 
 pub fn render(
     ui: &mut eframe::egui::Ui,

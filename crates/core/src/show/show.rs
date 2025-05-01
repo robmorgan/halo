@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 use halo_fixtures::Fixture;
+use serde::{Deserialize, Serialize};
 
 use crate::CueList;
 

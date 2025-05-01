@@ -1,5 +1,6 @@
+use std::net::IpAddr;
 use std::sync::Arc;
-use std::{net::IpAddr, time::Duration};
+use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;

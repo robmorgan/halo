@@ -1,7 +1,7 @@
 // This needs the following added to Cargo.toml:
 //
 //      egui_extras = { version = "*", features = ["all_loaders"] }
-//      image = { version = "0.25", features = ["jpeg", "png"] } # Add the types you want support for
+//      image = { version = "0.25", features = ["jpeg", "png"] } # Add the types you want support
 //
 // And Rust 2024 Nightly, which you decided not to use just yet purely to show an icon.
 
