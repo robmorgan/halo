@@ -56,6 +56,28 @@ impl CueManager {
         }
 
         self.update_timecode();
+
+        // Check if we need to advance to the next cue based on timecode
+        if let Some(current_tc) = &self.current_timecode {
+            if let Some((next_cue_idx, next_cue_tc)) = self.get_next_timecode_cue() {
+                // If current time has reached or passed the next cue's timecode
+                if current_tc.to_seconds() >= next_cue_tc.to_seconds() {
+                    // Go to the specific cue
+                    let _ = self.go_to_cue(self.current_cue_list, next_cue_idx);
+                }
+            }
+        }
+
+        // Calculate cue progress for visual feedback
+        if let Some(current_cue) = self.get_current_cue() {
+            if current_cue.fade_time.as_secs_f64() > 0.0 {
+                self.progress =
+                    (self.elapsed_time / current_cue.fade_time.as_secs_f64()).min(1.0) as f32;
+            } else {
+                self.progress = 1.0;
+            }
+        }
+
         self.last_update = now;
     }
 
@@ -189,6 +211,27 @@ impl CueManager {
         } else {
             Err("No cue lists available".to_string())
         }
+    }
+
+    // Gets the next cue with a timecode after the current cue
+    fn get_next_timecode_cue(&self) -> Option<(usize, TimeCode)> {
+        if self.current_cue_list >= self.cue_lists.len() {
+            return None;
+        }
+
+        let cue_list = &self.cue_lists[self.current_cue_list];
+
+        // Look for the next cue with a timecode after the current cue
+        for (index, cue) in cue_list.cues.iter().enumerate().skip(self.current_cue + 1) {
+            if let Some(tc_str) = &cue.timecode {
+                let mut parsed_tc = TimeCode::default();
+                if parsed_tc.from_string(tc_str).is_ok() {
+                    return Some((index, parsed_tc));
+                }
+            }
+        }
+
+        None
     }
 
     pub fn go(&mut self) -> Result<&Cue, String> {

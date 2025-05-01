@@ -97,7 +97,12 @@ impl CuePanel {
                     );
 
                     // Progress bar
-                    let progress = console_lock.cue_manager.get_current_cue_progress();
+                    let progress = if is_active {
+                        console_lock.cue_manager.get_current_cue_progress()
+                    } else {
+                        0.0
+                    };
+
                     let progress_response = ui.add(
                         egui::ProgressBar::new(progress)
                             .desired_width(200.0)
