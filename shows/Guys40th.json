@@ -1,12 +1,12 @@
 {
-  "name": "Guys40th",
+  "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1745897720,
-    "nanos_since_epoch": 949569000
+    "secs_since_epoch": 1746093770,
+    "nanos_since_epoch": 287885000
   },
   "modified_at": {
-    "secs_since_epoch": 1745897720,
-    "nanos_since_epoch": 949595000
+    "secs_since_epoch": 1746093770,
+    "nanos_since_epoch": 287906000
   },
   "fixtures": [
     {
@@ -63,14 +63,155 @@
       "name": "Pinspot",
       "profile_id": "shehds-mini-led-pinspot-10w",
       "universe": 1,
-      "start_address": 83
+      "start_address": 80
     }
   ],
   "cue_lists": [
     {
       "name": "Default",
-      "cues": [],
-      "audio_file": null
+      "cues": [
+        {
+          "id": 0,
+          "name": "Arm",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:00:00",
+          "is_blocking": false
+        },
+        {
+          "id": 1,
+          "name": "Cue 1",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:01:00",
+          "is_blocking": false
+        },
+        {
+          "id": 2,
+          "name": "Cue 2",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:10:00",
+          "is_blocking": false
+        },
+        {
+          "id": 3,
+          "name": "Cue 3",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Strobe",
+              "value": 180
+            }
+          ],
+          "effects": [],
+          "timecode": "00:00:16:10",
+          "is_blocking": false
+        },
+        {
+          "id": 4,
+          "name": "Chorus",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Strobe",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 127
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 127
+            }
+          ],
+          "effects": [],
+          "timecode": "00:01:20:00",
+          "is_blocking": false
+        },
+        {
+          "id": 5,
+          "name": "Drop",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 80
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Strobe",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 127
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 127
+            }
+          ],
+          "effects": [],
+          "timecode": "00:04:02:00",
+          "is_blocking": false
+        }
+      ],
+      "audio_file": "/Users/rjm/Downloads/beatport_tracks_2025-04/LISA - BORN AGAIN feat. Doja Cat & RAYE (Purple Disco Machine Remix).mp3"
     }
   ],
   "version": "0.1.0"

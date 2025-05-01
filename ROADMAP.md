@@ -23,8 +23,8 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Save programmer static values to cue
 - [x] Save programmer effects to cue
 - [x] Show Save
-- [ ] Show Load
-  - [ ] CLI path
+- [x] Show Load
+  - [x] CLI path
 - [x] Cues advance to timecode
 - [ ] Lighting Engine
   - [ ] Tracking functionality (copy params to stage, show footer counts)
@@ -32,7 +32,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Subfixtures
 - [ ] Blocking cues
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
-- [ ] Audio file playback
+- [x] Audio file playback
 - [ ] Settings
   - [ ] Audio interface selection
   - [ ] MIDI controller / Traktor
@@ -52,8 +52,8 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 **Deliverable:** Working fixture display, cue activation, and basic timeline.
 
 - [x] Build fixture grid with selection functionality
-- [ ] Implement cue activation and progress tracking
-- [ ] Add basic cue functionality (play, stop, pause)
+- [x] Implement cue activation and progress tracking
+- [x] Add basic cue functionality (play, stop, pause)
 - [x] Add timeline UI with position indicator and playback controls
 - [x] Build cue editor and manager
 

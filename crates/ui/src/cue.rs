@@ -2,12 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui;
-use halo_core::LightingConsole;
+use halo_core::{LightingConsole, PlaybackState};
 use parking_lot::Mutex;
 
 /// A panel that shows the list of cues.
 #[derive(Default)]
-pub struct CuePanel {}
+pub struct CuePanel {
+    playback_state: PlaybackState,
+}
 
 impl CuePanel {
     pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
@@ -71,6 +73,27 @@ impl CuePanel {
                         )
                         .size(16.0),
                     );
+                });
+
+                // Add audio transport controls
+                ui.horizontal(|ui| {
+                    if ui.button("▶").clicked() {
+                        let mut console_lock = console.lock();
+                        let _ = console_lock.cue_manager.play_audio();
+                        drop(console_lock);
+                    }
+
+                    if ui.button("⏸").clicked() {
+                        let mut console_lock = console.lock();
+                        let _ = console_lock.cue_manager.pause_audio();
+                        drop(console_lock);
+                    }
+
+                    if ui.button("⏹").clicked() {
+                        let mut console_lock = console.lock();
+                        let _ = console_lock.cue_manager.stop_audio();
+                        drop(console_lock);
+                    }
                 });
             });
         }
@@ -187,6 +210,10 @@ impl CuePanel {
             }
         });
         drop(console_lock);
+    }
+
+    pub fn set_playback_state(&mut self, state: PlaybackState) {
+        self.playback_state = state;
     }
 
     fn format_duration(duration: Duration) -> String {

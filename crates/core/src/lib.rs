@@ -1,4 +1,5 @@
 pub use artnet::network_config::NetworkConfig;
+pub use audio::audio_player::AudioPlayer;
 pub use console::{EventLoop, LightingConsole};
 pub use cue::cue::{Cue, CueList, EffectDistribution, EffectMapping, StaticValue};
 pub use cue::cue_manager::{CueManager, PlaybackState};
@@ -12,6 +13,7 @@ pub use timecode::timecode::TimeCode;
 
 mod ableton_link;
 mod artnet;
+mod audio;
 mod console;
 mod cue;
 mod effect;

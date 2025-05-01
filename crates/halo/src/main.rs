@@ -1,13 +1,10 @@
 use std::net::IpAddr;
+use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{
-    sawtooth_effect, sine_effect, square_effect, Cue, CueList, Effect, EffectParams, Interval,
-    LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
-};
+use halo_core::{CueList, LightingConsole, MidiAction, MidiOverride, NetworkConfig};
 use parking_lot::Mutex;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -34,6 +31,10 @@ struct Args {
     /// Whether to enable MIDI support
     #[arg(short, long)]
     enable_midi: bool,
+
+    /// Path to the show JSON file
+    #[arg(long, default_value = "show.json")]
+    show_file: String,
 }
 
 fn parse_ip(s: &str) -> Result<IpAddr, String> {
@@ -77,44 +78,7 @@ fn main() -> Result<(), anyhow::Error> {
     // store the cues in a default cue list
     let cue_lists = vec![CueList {
         name: "Default".to_string(),
-        cues: vec![
-            Cue {
-                id: 0,
-                name: "Arm".to_string(),
-                fade_time: Duration::from_secs(3),
-                is_blocking: false,
-                timecode: Some("00:00:00:00".to_string()),
-                static_values: vec![],
-                effects: vec![],
-            },
-            Cue {
-                id: 1,
-                name: "Cue 1".to_string(),
-                fade_time: Duration::from_secs(3),
-                is_blocking: false,
-                timecode: Some("00:00:01:00".to_string()),
-                static_values: vec![],
-                effects: vec![],
-            },
-            Cue {
-                id: 2,
-                name: "Cue 2".to_string(),
-                fade_time: Duration::from_secs(5),
-                is_blocking: false,
-                timecode: Some("00:00:10:00".to_string()),
-                static_values: vec![],
-                effects: vec![],
-            },
-            Cue {
-                id: 3,
-                name: "Cue 3".to_string(),
-                fade_time: Duration::from_secs(5),
-                is_blocking: false,
-                timecode: Some("00:00:15:00".to_string()),
-                static_values: vec![],
-                effects: vec![],
-            },
-        ],
+        cues: vec![],
         audio_file: None,
     }];
 
@@ -187,6 +151,12 @@ fn main() -> Result<(), anyhow::Error> {
         console.init_mpk49_midi()?;
     }
 
+    // Check if a show file was provided
+    if !args.show_file.is_empty() {
+        let path = Path::new(&args.show_file);
+        console.load_show(path)?;
+    }
+
     // Launch the UI in the main thread
     let _ = halo_ui::run_ui(Arc::new(Mutex::new(console)));
     Ok(())
@@ -198,8 +168,8 @@ macro_rules! static_values {
         vec![
             $(
                 StaticValue {
-                    fixture_name: $fixture.to_string(),
-                    channel_name: $channel.to_string(),
+                    fixture_id: $fixture,
+                    channel_type: $channel,
                     value: $value,
                 },
             )*
