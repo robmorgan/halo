@@ -1,12 +1,12 @@
 {
   "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1746093559,
-    "nanos_since_epoch": 869922000
+    "secs_since_epoch": 1746093770,
+    "nanos_since_epoch": 287885000
   },
   "modified_at": {
-    "secs_since_epoch": 1746093559,
-    "nanos_since_epoch": 869938000
+    "secs_since_epoch": 1746093770,
+    "nanos_since_epoch": 287906000
   },
   "fixtures": [
     {
@@ -211,7 +211,7 @@
           "is_blocking": false
         }
       ],
-      "audio_file": null
+      "audio_file": "/Users/rjm/Downloads/beatport_tracks_2025-04/LISA - BORN AGAIN feat. Doja Cat & RAYE (Purple Disco Machine Remix).mp3"
     }
   ],
   "version": "0.1.0"
