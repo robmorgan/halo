@@ -75,7 +75,23 @@ impl CuePanel {
             });
         }
 
-        // Display cues with progress bars
+        // Column headers for cue list
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Cue").strong());
+            ui.add_space(80.0); // Adjust spacing based on your UI needs
+
+            ui.label(egui::RichText::new("Timecode").strong());
+            ui.add_space(60.0);
+
+            ui.label(egui::RichText::new("Duration").strong());
+            ui.add_space(40.0);
+
+            ui.label(egui::RichText::new("Progress").strong());
+        });
+        ui.separator();
+
+        // Display cues with neat alignment and timecode
         let console_lock = console.lock();
         let cues = console_lock.cue_manager.get_current_cues();
 
@@ -89,11 +105,41 @@ impl CuePanel {
                         egui::Color32::from_rgb(150, 150, 150)
                     };
 
-                    ui.label(egui::RichText::new(&cue.name).color(active_color).strong());
+                    // Cue name with fixed width
+                    ui.scope(|ui| {
+                        ui.style_mut().spacing.item_spacing.x = 0.0;
+                        ui.add_sized(
+                            [100.0, 20.0],
+                            egui::Label::new(
+                                egui::RichText::new(&cue.name).color(active_color).strong(),
+                            ),
+                        );
+                    });
 
-                    ui.label(
-                        egui::RichText::new(Self::format_duration(cue.fade_time))
-                            .color(active_color),
+                    // Timecode marker (estimated position in the timeline)
+                    let timecode = if let Some(timecode) = &cue.timecode {
+                        timecode
+                    } else {
+                        &"N/A".to_string()
+                    };
+
+                    ui.add_sized(
+                        [100.0, 20.0],
+                        egui::Label::new(
+                            egui::RichText::new(timecode)
+                                .color(active_color)
+                                .monospace(),
+                        ),
+                    );
+
+                    // Duration with fixed width
+                    ui.add_sized(
+                        [80.0, 20.0],
+                        egui::Label::new(
+                            egui::RichText::new(Self::format_duration(cue.fade_time))
+                                .color(active_color)
+                                .monospace(),
+                        ),
                     );
 
                     // Progress bar
@@ -107,21 +153,37 @@ impl CuePanel {
                         egui::ProgressBar::new(progress)
                             .desired_width(200.0)
                             .desired_height(30.0)
-                            .corner_radius(0.0),
+                            .corner_radius(0.0)
+                            .animate(is_active)
+                            .fill(if is_active {
+                                egui::Color32::from_rgb(75, 2, 245)
+                            } else {
+                                egui::Color32::from_rgb(100, 100, 100)
+                            }),
                     );
 
-                    // Show duration on hover
+                    // Show detailed info on hover
                     if progress_response.hovered() {
                         egui::show_tooltip(
                             ui.ctx(),
                             progress_response.layer_id,
-                            egui::Id::new("duration_tooltip"),
+                            egui::Id::new("cue_tooltip"),
                             |ui| {
-                                ui.label(format!("Duration: {}s", cue.fade_time.as_secs()));
+                                ui.vertical(|ui| {
+                                    ui.label(format!("Cue: {}", cue.name));
+                                    ui.label(format!("Duration: {}s", cue.fade_time.as_secs()));
+                                    ui.label(format!("Progress: {:.1}%", progress * 100.0));
+                                    if is_active {
+                                        ui.label("Status: Active");
+                                    } else {
+                                        ui.label("Status: Inactive");
+                                    }
+                                });
                             },
                         );
                     }
                 });
+                ui.add_space(2.0); // Spacing between cue rows
             }
         });
         drop(console_lock);
