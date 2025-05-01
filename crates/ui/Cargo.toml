@@ -7,9 +7,9 @@ edition = "2021"
 [dependencies]
 halo-core = { path = "../core" }
 halo-fixtures = { path = "../fixtures" }
-eframe = "0.31.0"
-rand = "0.9.0"
-chrono = "0.4.40"
+eframe = "0.31.1"
+rand = "0.9.1"
+chrono = "0.4.41"
 parking_lot = "0.12.3"
 egui_plot = "0.32.1"
 rfd = "0.15.3"
