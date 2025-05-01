@@ -429,9 +429,30 @@ impl LightingConsole {
 
     pub fn load_show(&mut self, path: &Path) -> Result<(), anyhow::Error> {
         let show = self.show_manager.load_show(path)?;
-        // TODO - we'll probably want to lookup fixtures here
-        self.fixtures = show.fixtures.clone();
+
+        // Create a new vector for fixtures with properly linked profiles
+        let mut linked_fixtures = Vec::new();
+
+        // For each fixture in the loaded show
+        for mut fixture in show.fixtures {
+            // Look up the profile by ID in the fixture library
+            if let Some(profile) = self.fixture_library.profiles.get(&fixture.profile_id) {
+                // Set the profile field with the one from the library
+                fixture.profile = profile.clone();
+                fixture.channels = profile.channel_layout.clone();
+                linked_fixtures.push(fixture);
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Fixture profile '{}' not found in library",
+                    fixture.profile_id
+                ));
+            }
+        }
+
+        self.fixtures = linked_fixtures;
         self.cue_manager.set_cue_lists(show.cue_lists.clone());
+        self.show_name = show.name;
+
         Ok(())
     }
 
