@@ -84,16 +84,17 @@ OPTIONS:
 
 Here is the current roadmap (to be expanded upon later):
 
-|  #  | Step                                                      | Status |
-| :-: | --------------------------------------------------------- | :----: |
-|  1  | Terminal-based lighting engine                            |   ✅   |
-|  2  | Functional UI with basic show features                    |   ⌛️   |
-|  3  | Timecode support                                          |   ❌   |
-|  4  | Pixel engine                                              |   ❌   |
-|  5  | Better MIDI Support (full control)                        |   ❌   |
-|  6  | Richer UI features -- RDM, config, pixel effects          |   ❌   |
-|  7  | OSC / Web Support?                                        |   ❌   |
-|  N  | Fancy features (to be expanded upon later)                |   ❌   |
+|  #   | Step                                                      | Status |
+| :-:  | --------------------------------------------------------- | :----: |
+|  1   | Terminal-based lighting engine                            |   ✅   |
+|  2   | Functional UI with basic show features                    |   ⌛️   |
+|  3a  | Internal Timecode support                                 |   ✅   |
+|  3b  | External Timecode support                                 |   ✅   |
+|  4   | Pixel engine                                              |   ❌   |
+|  5   | Better MIDI Support (full control)                        |   ❌   |
+|  6   | Richer UI features -- RDM, config, pixel effects          |   ❌   |
+|  7   | OSC / Web Support?                                        |   ❌   |
+|  N   | Fancy features (to be expanded upon later)                |   ❌   |
 
 ## License
 
