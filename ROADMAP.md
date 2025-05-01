@@ -32,7 +32,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [ ] Subfixtures
 - [ ] Blocking cues
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
-- [ ] Audio file playback
+- [x] Audio file playback
 - [ ] Settings
   - [ ] Audio interface selection
   - [ ] MIDI controller / Traktor

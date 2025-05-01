@@ -45,6 +45,7 @@ impl AudioPlayer {
         // Add the source to the sink
         sink.append(source);
         sink.set_volume(self.volume);
+        sink.pause();
 
         // Store the sink and current file
         self.sink = Some(sink);
