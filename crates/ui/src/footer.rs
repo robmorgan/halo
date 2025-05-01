@@ -47,7 +47,7 @@ pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>, 
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(12.0);
-            ui.label(RichText::new("Halo v0.2").size(12.0).color(theme.text_dim));
+            ui.label(RichText::new("Halo v0.3").size(12.0).color(theme.text_dim));
         });
     });
 }
