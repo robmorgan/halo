@@ -23,8 +23,8 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Save programmer static values to cue
 - [x] Save programmer effects to cue
 - [x] Show Save
-- [ ] Show Load
-  - [ ] CLI path
+- [x] Show Load
+  - [x] CLI path
 - [x] Cues advance to timecode
 - [ ] Lighting Engine
   - [ ] Tracking functionality (copy params to stage, show footer counts)

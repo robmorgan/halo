@@ -1,14 +1,9 @@
-use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::{net::IpAddr, path::Path};
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{
-    sawtooth_effect, sine_effect, square_effect, Cue, CueList, Effect, EffectParams, Interval,
-    LightingConsole, MidiAction, MidiOverride, NetworkConfig, StaticValue,
-};
-use halo_fixtures::ChannelType;
+use halo_core::{CueList, LightingConsole, MidiAction, MidiOverride, NetworkConfig};
 use parking_lot::Mutex;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -35,6 +30,10 @@ struct Args {
     /// Whether to enable MIDI support
     #[arg(short, long)]
     enable_midi: bool,
+
+    /// Path to the show JSON file
+    #[arg(long, default_value = "show.json")]
+    show_file: String,
 }
 
 fn parse_ip(s: &str) -> Result<IpAddr, String> {
@@ -149,6 +148,12 @@ fn main() -> Result<(), anyhow::Error> {
     // Check if MIDI support is enabled
     if args.enable_midi {
         console.init_mpk49_midi()?;
+    }
+
+    // Check if a show file was provided
+    if !args.show_file.is_empty() {
+        let path = Path::new(&args.show_file);
+        console.load_show(path)?;
     }
 
     // Launch the UI in the main thread
