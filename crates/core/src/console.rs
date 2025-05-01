@@ -19,8 +19,8 @@ use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::programmer::Programmer;
 use crate::show::show::Show;
 use crate::{
-    ableton_link, artnet, Cue, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
-    ShowManager, StaticValue, TimeCode, TimeCodeManager,
+    ableton_link, artnet, CueList, Effect, EffectDistribution, EffectMapping, RhythmState,
+    ShowManager, StaticValue,
 };
 
 const TARGET_FREQUENCY: f64 = 44.0; // 44Hz DMX Spec (every 25ms)
