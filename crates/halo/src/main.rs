@@ -104,6 +104,15 @@ fn main() -> Result<(), anyhow::Error> {
                 static_values: vec![],
                 effects: vec![],
             },
+            Cue {
+                id: 3,
+                name: "Cue 3".to_string(),
+                fade_time: Duration::from_secs(5),
+                is_blocking: false,
+                timecode: Some("00:00:15:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
         ],
         audio_file: None,
     }];

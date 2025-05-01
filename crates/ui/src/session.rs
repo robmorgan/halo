@@ -225,8 +225,8 @@ impl SessionPanel {
                         RichText::new("⏸ HOLD")
                             .size(18.0)
                             .color(match self.playback_state {
-                                PlaybackState::Holding => ui.style().visuals.text_color(),
-                                _ => Color32::from_rgb(255, 215, 0),
+                                PlaybackState::Playing => Color32::from_rgb(255, 215, 0),
+                                _ => ui.style().visuals.text_color(),
                             });
 
                     let hold_button = ui.add_sized(

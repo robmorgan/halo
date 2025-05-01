@@ -14,12 +14,16 @@ pub struct CueManager {
     current_cue_list: usize,
     current_cue: usize,
     playback_state: PlaybackState,
+    /// Show start time
+    pub show_start_time: Option<Instant>,
+    /// Show elapsed time in seconds
+    pub show_elapsed_time: f64,
     /// Current timecode
     pub current_timecode: Option<TimeCode>,
     /// Current Cue start time reference point
     current_cue_start_time: Option<Instant>,
     /// Current elapsed time in seconds
-    elapsed_time: f64,
+    current_cue_elapsed_time: f64,
     /// Last update time
     pub last_update: Instant,
     /// Original start time marker for resume
@@ -35,9 +39,11 @@ impl CueManager {
             current_cue_list: 0,
             current_cue: 0,
             playback_state: PlaybackState::Stopped,
+            show_start_time: None,
+            show_elapsed_time: 0.0,
             current_timecode: None,
             current_cue_start_time: None,
-            elapsed_time: 0.0,
+            current_cue_elapsed_time: 0.0,
             last_update: Instant::now(),
             original_start_time: None,
             progress: 0.0,
@@ -51,8 +57,14 @@ impl CueManager {
 
         let now = Instant::now();
 
-        if let Some(start) = self.current_cue_start_time {
-            self.elapsed_time = start.elapsed().as_secs_f64();
+        // Show Elapsed Time
+        if let Some(show_start_time) = self.show_start_time {
+            self.show_elapsed_time = show_start_time.elapsed().as_secs_f64();
+        }
+
+        // Cue Elapsed Time
+        if let Some(cue_start_time) = self.current_cue_start_time {
+            self.current_cue_elapsed_time = cue_start_time.elapsed().as_secs_f64();
         }
 
         self.update_timecode();
@@ -71,8 +83,9 @@ impl CueManager {
         // Calculate cue progress for visual feedback
         if let Some(current_cue) = self.get_current_cue() {
             if current_cue.fade_time.as_secs_f64() > 0.0 {
-                self.progress =
-                    (self.elapsed_time / current_cue.fade_time.as_secs_f64()).min(1.0) as f32;
+                self.progress = (self.current_cue_elapsed_time
+                    / current_cue.fade_time.as_secs_f64())
+                .min(1.0) as f32;
             } else {
                 self.progress = 1.0;
             }
@@ -83,7 +96,7 @@ impl CueManager {
 
     pub fn update_timecode(&mut self) {
         // Using 30fps as default
-        self.current_timecode = Some(TimeCode::from_seconds(self.elapsed_time, 30));
+        self.current_timecode = Some(TimeCode::from_seconds(self.show_elapsed_time, 30));
     }
 
     pub fn set_cue_lists(&mut self, cue_lists: Vec<CueList>) {
@@ -246,9 +259,12 @@ impl CueManager {
 
     pub fn stop(&mut self) -> Result<&Cue, String> {
         self.playback_state = PlaybackState::Stopped;
-        self.elapsed_time = 0.0;
+        self.progress = 0.0;
+        self.show_elapsed_time = 0.0;
+        self.current_cue_elapsed_time = 0.0;
         self.current_cue_start_time = None;
         self.original_start_time = None;
+        self.current_cue = 0;
         self.update_timecode();
         self.get_current_cue()
             .ok_or_else(|| "No current cue".to_string())
@@ -264,11 +280,14 @@ impl CueManager {
             return Err("No next cue".to_string());
         }
 
-        self.playback_state = PlaybackState::Playing;
+        self.progress = 0.0;
         self.current_cue += 1;
+        self.show_start_time = Some(Instant::now());
         self.current_cue_start_time = Some(Instant::now());
         self.original_start_time = self.current_cue_start_time;
         self.last_update = Instant::now();
+        self.playback_state = PlaybackState::Playing;
+
         self.get_current_cue()
             .ok_or_else(|| "No current cue".to_string())
     }
@@ -305,6 +324,9 @@ impl CueManager {
 
         self.current_cue_list = cue_list_idx;
         self.current_cue = cue_idx;
+        self.current_cue_start_time = Some(Instant::now());
+        self.original_start_time = self.current_cue_start_time;
+        self.last_update = Instant::now();
         self.playback_state = PlaybackState::Playing;
 
         self.get_current_cue()
