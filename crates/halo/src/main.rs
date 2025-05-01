@@ -79,7 +79,7 @@ fn main() -> Result<(), anyhow::Error> {
         cues: vec![
             Cue {
                 id: 0,
-                name: "Cue 1".to_string(),
+                name: "Arm".to_string(),
                 fade_time: Duration::from_secs(3),
                 is_blocking: false,
                 timecode: Some("00:00:00:00".to_string()),
@@ -88,6 +88,15 @@ fn main() -> Result<(), anyhow::Error> {
             },
             Cue {
                 id: 1,
+                name: "Cue 1".to_string(),
+                fade_time: Duration::from_secs(3),
+                is_blocking: false,
+                timecode: Some("00:00:01:00".to_string()),
+                static_values: vec![],
+                effects: vec![],
+            },
+            Cue {
+                id: 2,
                 name: "Cue 2".to_string(),
                 fade_time: Duration::from_secs(5),
                 is_blocking: false,
