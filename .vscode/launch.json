@@ -16,7 +16,7 @@
           "kind": "bin"
         }
       },
-      "args": ["--source-ip", "127.0.0.1"],
+      "args": ["--source-ip", "127.0.0.1", "--show-file", "shows/Guys40th.json"],
       "env": {
         "RUST_BACKTRACE": "1"
       },

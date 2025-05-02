@@ -218,7 +218,12 @@
             {
               "fixture_id": 0,
               "channel_type": "Dimmer",
-              "value": 150
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
             },
             {
               "fixture_id": 0,
@@ -228,7 +233,7 @@
             {
               "fixture_id": 0,
               "channel_type": "FunctionSpeed",
-              "value": 10
+              "value": 100
             }
           ],
           "effects": [],

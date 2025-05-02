@@ -30,6 +30,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
   - [ ] Tracking functionality (copy params to stage, show footer counts)
   - [ ] Blocking cues
   - [ ] Fade time on cues and fixtures
+  - [ ] UI: Master BPM should control effects
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
 - [x] Audio file playback
 - [x] Toggle cuelists easily in UI.

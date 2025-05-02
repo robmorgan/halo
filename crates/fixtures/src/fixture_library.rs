@@ -376,7 +376,7 @@ impl FixtureLibrary {
                 manufacturer: "Hyulights".to_string(),
                 model: "LED RGBW PAR Light".to_string(),
                 channel_layout: channel_layout![
-                    ("Intensity", ChannelType::Dimmer),
+                    ("Dimmer", ChannelType::Dimmer),
                     ("Red", ChannelType::Red),
                     ("Green", ChannelType::Green),
                     ("Blue", ChannelType::Blue),
@@ -384,11 +384,8 @@ impl FixtureLibrary {
                     ("Amber", ChannelType::Amber),
                     ("UV", ChannelType::UV),
                     ("Strobe", ChannelType::Strobe),
-                    ("Function", ChannelType::Other("Function".to_string())),
-                    (
-                        "Function Speed",
-                        ChannelType::Other("FunctionSpeed".to_string())
-                    ),
+                    ("Function", ChannelType::Function),
+                    ("Function Speed", ChannelType::FunctionSpeed),
                 ],
             },
         );
@@ -422,6 +419,8 @@ pub enum ChannelType {
     Beam,
     Focus,
     Zoom,
+    Function,
+    FunctionSpeed,
     Other(String),
 }
 
@@ -444,6 +443,8 @@ impl std::fmt::Display for ChannelType {
             ChannelType::Beam => write!(f, "Beam"),
             ChannelType::Focus => write!(f, "Focus"),
             ChannelType::Zoom => write!(f, "Zoom"),
+            ChannelType::Function => write!(f, "Function"),
+            ChannelType::FunctionSpeed => write!(f, "FunctionSpeed"),
             ChannelType::Other(s) => write!(f, "Other({})", s),
         }
     }
