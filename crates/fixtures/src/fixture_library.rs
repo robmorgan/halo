@@ -304,9 +304,9 @@ impl FixtureLibrary {
                     // 171-220: Run change.
                     // 221-240: Sound 1 mode.
                     // 241-255: Sound 2 mode.
-                    ("Function", ChannelType::Other("Function".to_string())),
+                    ("Function", ChannelType::Function),
                     // From slow to fast
-                    ("Speed", ChannelType::Other("FunctionSpeed".to_string())),
+                    ("Speed", ChannelType::FunctionSpeed),
                     ("Dimmer", ChannelType::Dimmer),
                     ("Red", ChannelType::Red),
                     ("Green", ChannelType::Green),
