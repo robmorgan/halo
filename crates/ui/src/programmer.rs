@@ -30,6 +30,8 @@ struct TabEffectConfig {
     effect_distribution: usize,
     effect_ratio: f32,
     effect_phase: f32,
+    effect_step_value: usize,
+    effect_wave_offset: f64,
 }
 
 impl Default for TabEffectConfig {
@@ -40,6 +42,8 @@ impl Default for TabEffectConfig {
             effect_distribution: 0,
             effect_ratio: 1.0,
             effect_phase: 0.0,
+            effect_step_value: 1,
+            effect_wave_offset: 30.0,
         }
     }
 }
@@ -825,8 +829,8 @@ impl Programmer {
         // Map UI distribution to EffectDistribution
         let distribution = match tab_effect.effect_distribution {
             0 => EffectDistribution::All,
-            1 => EffectDistribution::Step(1),
-            2 => EffectDistribution::Wave(30.0), // 30 degree phase offset
+            1 => EffectDistribution::Step(tab_effect.effect_step_value),
+            2 => EffectDistribution::Wave(tab_effect.effect_wave_offset),
             _ => EffectDistribution::All,
         };
 
@@ -1246,6 +1250,47 @@ impl Programmer {
                             ui.selectable_value(&mut tab_effect.effect_distribution, 1, "Step");
                             ui.selectable_value(&mut tab_effect.effect_distribution, 2, "Wave");
                         });
+
+                    // After the Distribution dropdown
+                    ui.add_space(10.0);
+
+                    // Only show appropriate input field based on selected distribution
+                    match tab_effect.effect_distribution {
+                        1 => {
+                            // Step distribution
+                            ui.horizontal(|ui| {
+                                ui.label("Step Value:");
+                                let mut step_value = tab_effect.effect_step_value as i32;
+                                if ui
+                                    .add(
+                                        egui::DragValue::new(&mut step_value)
+                                            .clamp_range(1..=16)
+                                            .speed(0.1),
+                                    )
+                                    .changed()
+                                {
+                                    tab_effect.effect_step_value = step_value.max(1) as usize;
+                                }
+                            });
+                        }
+                        2 => {
+                            // Wave distribution
+                            ui.horizontal(|ui| {
+                                ui.label("Wave Offset:");
+                                let mut wave_offset = tab_effect.effect_wave_offset;
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut wave_offset, 0.0..=180.0)
+                                            .suffix("°"),
+                                    )
+                                    .changed()
+                                {
+                                    tab_effect.effect_wave_offset = wave_offset;
+                                }
+                            });
+                        }
+                        _ => {}
+                    }
 
                     // Apply Effects Button
                     if ui.button("Apply Effects").clicked() {

@@ -340,8 +340,25 @@ impl LightingConsole {
                     match mapping.distribution {
                         EffectDistribution::All => {}
                         EffectDistribution::Step(step) => {
-                            if i % step != 0 {
-                                continue;
+                            if step == 0 {
+                                continue; // Avoid division by zero
+                            }
+
+                            if step == 1 {
+                                // For Step(1), use beat phase to alternate
+                                // This creates an oscillation between odd/even fixtures on each beat
+                                let beat_phase = self.rhythm_state.beat_phase;
+                                let is_on_beat = beat_phase < 0.5;
+
+                                // Apply to odd or even fixtures based on beat phase
+                                if (fixture.id % 2 == 0) != is_on_beat {
+                                    continue;
+                                }
+                            } else {
+                                // For other steps, use the standard modulo approach
+                                if fixture.id % step != 0 {
+                                    continue;
+                                }
                             }
                         }
                         EffectDistribution::Wave(phase_offset) => {

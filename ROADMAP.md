@@ -77,7 +77,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 **Deliverable:** Complete, integrated application ready for testing.
 
-- [ ] Show saving and loading
+- [x] Show saving and loading
 - [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
 - [x] Add patch panel functionality
 - [ ] Add settings modal functionality (audio device, midi device, dmx, fixture library)
