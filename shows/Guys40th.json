@@ -1,12 +1,12 @@
 {
   "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1746160507,
-    "nanos_since_epoch": 316165000
+    "secs_since_epoch": 1746173511,
+    "nanos_since_epoch": 612367000
   },
   "modified_at": {
-    "secs_since_epoch": 1746160507,
-    "nanos_since_epoch": 316195000
+    "secs_since_epoch": 1746173511,
+    "nanos_since_epoch": 612392000
   },
   "fixtures": [
     {
@@ -191,6 +191,31 @@
         }
       ],
       "audio_file": "/Users/rjm/Downloads/beatport_tracks_2025-04/LISA - BORN AGAIN feat. Doja Cat & RAYE (Purple Disco Machine Remix).mp3"
+    },
+    {
+      "name": "Intro",
+      "cues": [],
+      "audio_file": "/Users/rjm/Downloads/master/Intro - MakeLuv-RideOnTime-PW.wav"
+    },
+    {
+      "name": "Build",
+      "cues": [],
+      "audio_file": "/Users/rjm/Downloads/master/Lolas Theme x Gimme x Hung Up.wav"
+    },
+    {
+      "name": "Slow to Fast",
+      "cues": [],
+      "audio_file": "/Users/rjm/Downloads/master/Cold Heart vs Born Again vs EDN vs Hot Stuff.wav"
+    },
+    {
+      "name": "Finale",
+      "cues": [],
+      "audio_file": "/Users/rjm/Downloads/master/Daft Punk - One More Time (Official Audio).wav"
+    },
+    {
+      "name": "Encore",
+      "cues": [],
+      "audio_file": "/Users/rjm/Downloads/master/The Horses (Remastered).wav"
     }
   ],
   "version": "0.1.0"
