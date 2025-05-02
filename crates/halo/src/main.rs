@@ -33,8 +33,8 @@ struct Args {
     enable_midi: bool,
 
     /// Path to the show JSON file
-    #[arg(long, default_value = "show.json")]
-    show_file: String,
+    #[arg(long)]
+    show_file: Option<String>,
 }
 
 fn parse_ip(s: &str) -> Result<IpAddr, String> {
@@ -152,8 +152,8 @@ fn main() -> Result<(), anyhow::Error> {
     }
 
     // Check if a show file was provided
-    if !args.show_file.is_empty() {
-        let path = Path::new(&args.show_file);
+    if let Some(show_file) = args.show_file {
+        let path = Path::new(&show_file);
         console.load_show(path)?;
     }
 
