@@ -16,6 +16,9 @@ pub struct CueEditor {
     audio_file_path: Option<String>,
     editing_timecode_cue_index: Option<usize>,
     editing_timecode_value: String,
+    editing_name_cue_index: Option<usize>,
+    editing_name_value: String,
+    editing_fade_time_cue_index: Option<usize>,
 }
 
 impl Default for CueEditor {
@@ -30,6 +33,9 @@ impl Default for CueEditor {
             audio_file_path: None,
             editing_timecode_cue_index: None,
             editing_timecode_value: String::new(),
+            editing_name_cue_index: None,
+            editing_name_value: String::new(),
+            editing_fade_time_cue_index: None,
         }
     }
 }
@@ -160,9 +166,13 @@ impl CueEditor {
         console: &Arc<Mutex<LightingConsole>>,
         cue_list_idx: usize,
     ) {
+        // Add state for editing
+        let mut delete_cue_idx: Option<usize> = None;
+        let mut cue_reorder: Option<(usize, bool)> = None; // (idx, is_move_up)
+
         egui::Grid::new("cues_grid")
             .striped(true)
-            .num_columns(4)
+            .num_columns(8) // Increased to account for new columns
             .spacing([10.0, 6.0])
             .show(ui, |ui| {
                 let cue_list = {
@@ -177,6 +187,8 @@ impl CueEditor {
                 ui.strong("Timecode");
                 ui.strong("Static Values");
                 ui.strong("Effects");
+                ui.strong("Order"); // New column for reordering
+                ui.strong("Actions"); // New column for delete button
                 ui.end_row();
 
                 // Cues
@@ -189,8 +201,81 @@ impl CueEditor {
                             self.selected_cue_index = Some(idx);
                         }
 
-                        ui.label(&cue.name);
-                        ui.label(format!("{:.1} s", cue.fade_time.as_secs_f64()));
+                        // Name field - with editable functionality
+                        // Check if this cue's name is being edited
+                        if self.editing_name_cue_index == Some(idx) {
+                            // Show text edit for editing the name
+                            let response = ui.text_edit_singleline(&mut self.editing_name_value);
+
+                            // If user presses Enter or clicks elsewhere, save the changes
+                            if response.lost_focus()
+                                || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                if !self.editing_name_value.is_empty() {
+                                    let mut console_lock = console.lock();
+                                    if let Some(cue_list) =
+                                        console_lock.cue_manager.get_cue_list_mut(cue_list_idx)
+                                    {
+                                        if idx < cue_list.cues.len() {
+                                            cue_list.cues[idx].name =
+                                                self.editing_name_value.clone();
+                                        }
+                                    }
+                                    drop(console_lock);
+                                }
+                                self.editing_name_cue_index = None;
+                            }
+                        } else {
+                            // Display name as clickable for editing
+                            if ui
+                                .add(egui::Label::new(&cue.name).sense(egui::Sense::click()))
+                                .clicked()
+                            {
+                                self.editing_name_cue_index = Some(idx);
+                                self.editing_name_value = cue.name.clone();
+                            }
+                        }
+
+                        // Fade time field - with editable functionality
+                        if self.editing_fade_time_cue_index == Some(idx) {
+                            let mut fade_time_secs = cue.fade_time.as_secs_f64();
+                            let response = ui.add(
+                                egui::DragValue::new(&mut fade_time_secs)
+                                    .speed(0.1)
+                                    .clamp_range(0.1..=30.0)
+                                    .suffix(" s"),
+                            );
+
+                            if response.lost_focus()
+                                || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                let mut console_lock = console.lock();
+                                if let Some(cue_list) =
+                                    console_lock.cue_manager.get_cue_list_mut(cue_list_idx)
+                                {
+                                    if idx < cue_list.cues.len() {
+                                        cue_list.cues[idx].fade_time =
+                                            Duration::from_secs_f64(fade_time_secs);
+                                    }
+                                }
+                                drop(console_lock);
+                                self.editing_fade_time_cue_index = None;
+                            }
+                        } else {
+                            // Display fade time as clickable for editing
+                            if ui
+                                .add(
+                                    egui::Label::new(format!(
+                                        "{:.1} s",
+                                        cue.fade_time.as_secs_f64()
+                                    ))
+                                    .sense(egui::Sense::click()),
+                                )
+                                .clicked()
+                            {
+                                self.editing_fade_time_cue_index = Some(idx);
+                            }
+                        }
 
                         // Check if this cue's timecode is being edited
                         if self.editing_timecode_cue_index == Some(idx) {
@@ -241,10 +326,79 @@ impl CueEditor {
 
                         ui.label(format!("{}", cue.static_values.len()));
                         ui.label(format!("{}", cue.effects.len()));
+
+                        // Reordering buttons
+                        ui.horizontal(|ui| {
+                            let up_enabled = idx > 0;
+                            let down_enabled = idx < cue_list.cues.len() - 1;
+
+                            if ui.add_enabled(up_enabled, egui::Button::new("↑")).clicked() {
+                                cue_reorder = Some((idx, true)); // Move up
+                            }
+                            if ui
+                                .add_enabled(down_enabled, egui::Button::new("↓"))
+                                .clicked()
+                            {
+                                cue_reorder = Some((idx, false)); // Move down
+                            }
+                        });
+
+                        // Delete button
+                        if ui.button("🗑").clicked() {
+                            delete_cue_idx = Some(idx);
+                        }
+
                         ui.end_row();
                     }
                 }
             });
+
+        // Handle cue deletion outside the grid to avoid borrowing issues
+        if let Some(idx) = delete_cue_idx {
+            let mut console_lock = console.lock();
+            if let Some(cue_list) = console_lock.cue_manager.get_cue_list_mut(cue_list_idx) {
+                if idx < cue_list.cues.len() {
+                    cue_list.cues.remove(idx);
+                    // Reset selection if the selected cue was deleted
+                    if self.selected_cue_index == Some(idx) {
+                        self.selected_cue_index = None;
+                    } else if let Some(selected_idx) = self.selected_cue_index {
+                        if selected_idx > idx {
+                            // Adjust selection index if we deleted a cue before the selected one
+                            self.selected_cue_index = Some(selected_idx - 1);
+                        }
+                    }
+                }
+            }
+            drop(console_lock);
+        }
+
+        // Handle cue reordering
+        if let Some((idx, is_move_up)) = cue_reorder {
+            let mut console_lock = console.lock();
+            if let Some(cue_list) = console_lock.cue_manager.get_cue_list_mut(cue_list_idx) {
+                if is_move_up && idx > 0 {
+                    // Move cue up
+                    cue_list.cues.swap(idx, idx - 1);
+                    // Update selection if needed
+                    if self.selected_cue_index == Some(idx) {
+                        self.selected_cue_index = Some(idx - 1);
+                    } else if self.selected_cue_index == Some(idx - 1) {
+                        self.selected_cue_index = Some(idx);
+                    }
+                } else if !is_move_up && idx < cue_list.cues.len() - 1 {
+                    // Move cue down
+                    cue_list.cues.swap(idx, idx + 1);
+                    // Update selection if needed
+                    if self.selected_cue_index == Some(idx) {
+                        self.selected_cue_index = Some(idx + 1);
+                    } else if self.selected_cue_index == Some(idx + 1) {
+                        self.selected_cue_index = Some(idx);
+                    }
+                }
+            }
+            drop(console_lock);
+        }
     }
 
     fn render_audio_section(
