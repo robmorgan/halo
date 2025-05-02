@@ -26,7 +26,6 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Show Load
   - [x] CLI path
 - [x] Cues advance to timecode
-- [ ] - [ ] Subfixtures
 - [ ] Lighting Engine
   - [ ] Tracking functionality (copy params to stage, show footer counts)
   - [ ] Blocking cues
