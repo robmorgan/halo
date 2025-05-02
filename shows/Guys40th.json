@@ -1,12 +1,12 @@
 {
   "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1746173511,
-    "nanos_since_epoch": 612367000
+    "secs_since_epoch": 1746173797,
+    "nanos_since_epoch": 665897000
   },
   "modified_at": {
-    "secs_since_epoch": 1746173511,
-    "nanos_since_epoch": 612392000
+    "secs_since_epoch": 1746173797,
+    "nanos_since_epoch": 665917000
   },
   "fixtures": [
     {
@@ -194,7 +194,48 @@
     },
     {
       "name": "Intro",
-      "cues": [],
+      "cues": [
+        {
+          "id": 0,
+          "name": "Arm",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:00:00",
+          "is_blocking": false
+        },
+        {
+          "id": 1,
+          "name": "Make Luv",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 150
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Function",
+              "value": 201
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "FunctionSpeed",
+              "value": 10
+            }
+          ],
+          "effects": [],
+          "timecode": "00:00:01:00",
+          "is_blocking": false
+        }
+      ],
       "audio_file": "/Users/rjm/Downloads/master/Intro - MakeLuv-RideOnTime-PW.wav"
     },
     {
