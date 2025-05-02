@@ -329,6 +329,7 @@ impl FixtureLibrary {
         // 8	Effects	White White FX Spd	50%
         // 12	Intensity	White Dimmer	100%
 
+        // https://personalities.avolites.com/?mainPage=Main.asp&LightName=LED+RGBW+4in1+48+Partition+Strobe+Light&Manufacturer=Unknown
         profiles.insert(
             "hyulights-led-rgbw-4in1-48-partition-strobe".to_string(),
             FixtureProfile {
