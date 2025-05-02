@@ -291,7 +291,6 @@ impl FixtureLibrary {
                 channel_layout: channel_layout![
                     ("Tilt", ChannelType::Tilt),
                     ("Tilt Speed", ChannelType::TiltSpeed),
-                    ("Dimmer", ChannelType::Dimmer),
                     // 0-50: no effect
                     // 51-100: color selection mode
                     // 101-150: Jump mode
@@ -308,6 +307,7 @@ impl FixtureLibrary {
                     ("Function", ChannelType::Other("Function".to_string())),
                     // From slow to fast
                     ("Speed", ChannelType::Other("FunctionSpeed".to_string())),
+                    ("Dimmer", ChannelType::Dimmer),
                     ("Red", ChannelType::Red),
                     ("Green", ChannelType::Green),
                     ("Blue", ChannelType::Blue),
