@@ -1,12 +1,12 @@
 {
   "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1746093770,
-    "nanos_since_epoch": 287885000
+    "secs_since_epoch": 1746160507,
+    "nanos_since_epoch": 316165000
   },
   "modified_at": {
-    "secs_since_epoch": 1746093770,
-    "nanos_since_epoch": 287906000
+    "secs_since_epoch": 1746160507,
+    "nanos_since_epoch": 316195000
   },
   "fixtures": [
     {
@@ -64,6 +64,41 @@
       "profile_id": "shehds-mini-led-pinspot-10w",
       "universe": 1,
       "start_address": 80
+    },
+    {
+      "id": 8,
+      "name": "LED PAR",
+      "profile_id": "hyulights-led-rgbw-par",
+      "universe": 1,
+      "start_address": 1
+    },
+    {
+      "id": 9,
+      "name": "Left LED Beam",
+      "profile_id": "shehds-led-bar-beam-8x12w",
+      "universe": 1,
+      "start_address": 12
+    },
+    {
+      "id": 10,
+      "name": "Right LED Beam",
+      "profile_id": "shehds-led-bar-beam-8x12w",
+      "universe": 1,
+      "start_address": 22
+    },
+    {
+      "id": 11,
+      "name": "Left Strobe",
+      "profile_id": "hyulights-led-rgbw-4in1-48-partition-strobe",
+      "universe": 1,
+      "start_address": 32
+    },
+    {
+      "id": 12,
+      "name": "Right Strobe",
+      "profile_id": "hyulights-led-rgbw-4in1-48-partition-strobe",
+      "universe": 1,
+      "start_address": 42
     }
   ],
   "cue_lists": [
