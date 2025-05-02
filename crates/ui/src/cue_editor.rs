@@ -14,6 +14,8 @@ pub struct CueEditor {
     new_fade_time: f64,
     new_timecode: String,
     audio_file_path: Option<String>,
+    editing_timecode_cue_index: Option<usize>,
+    editing_timecode_value: String,
 }
 
 impl Default for CueEditor {
@@ -26,6 +28,8 @@ impl Default for CueEditor {
             new_fade_time: 3.0,
             new_timecode: "00:00:00:00".to_string(),
             audio_file_path: None,
+            editing_timecode_cue_index: None,
+            editing_timecode_value: String::new(),
         }
     }
 }
@@ -161,8 +165,10 @@ impl CueEditor {
             .num_columns(4)
             .spacing([10.0, 6.0])
             .show(ui, |ui| {
-                let console_lock = console.lock();
-                let cue_list = console_lock.cue_manager.get_cue_list(cue_list_idx);
+                let cue_list = {
+                    let console_lock = console.lock();
+                    console_lock.cue_manager.get_cue_list(cue_list_idx).cloned()
+                };
 
                 // Header
                 ui.strong("ID");
@@ -183,22 +189,61 @@ impl CueEditor {
                             self.selected_cue_index = Some(idx);
                         }
 
-                        // get the current timecode as a string or default to "None"
-                        let timecode_text = if let Some(tc) = &cue.timecode {
-                            RichText::new(tc).color(Color32::from_rgb(0, 150, 255))
-                        } else {
-                            RichText::new("None").color(Color32::from_gray(120))
-                        };
-
                         ui.label(&cue.name);
                         ui.label(format!("{:.1} s", cue.fade_time.as_secs_f64()));
-                        ui.label(timecode_text);
+
+                        // Check if this cue's timecode is being edited
+                        if self.editing_timecode_cue_index == Some(idx) {
+                            // Show text edit for editing the timecode
+                            let response =
+                                ui.text_edit_singleline(&mut self.editing_timecode_value);
+
+                            // If user presses Enter or clicks elsewhere, save the changes
+                            if response.lost_focus()
+                                || ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                let mut console_lock = console.lock();
+                                if let Some(cue_list) =
+                                    console_lock.cue_manager.get_cue_list_mut(cue_list_idx)
+                                {
+                                    if idx < cue_list.cues.len() {
+                                        // Update the timecode
+                                        if self.editing_timecode_value.is_empty() {
+                                            cue_list.cues[idx].timecode = None;
+                                        } else {
+                                            cue_list.cues[idx].timecode =
+                                                Some(self.editing_timecode_value.clone());
+                                        }
+                                    }
+                                }
+                                drop(console_lock);
+
+                                self.editing_timecode_cue_index = None;
+                            }
+                        } else {
+                            // Display the timecode as a clickable label
+                            let timecode_text = if let Some(tc) = &cue.timecode {
+                                RichText::new(tc).color(Color32::from_rgb(0, 150, 255))
+                            } else {
+                                RichText::new("None").color(Color32::from_gray(120))
+                            };
+
+                            if ui
+                                .add(egui::Label::new(timecode_text).sense(egui::Sense::click()))
+                                .clicked()
+                            {
+                                // Start editing this timecode
+                                self.editing_timecode_cue_index = Some(idx);
+                                self.editing_timecode_value =
+                                    cue.timecode.clone().unwrap_or_default();
+                            }
+                        }
+
                         ui.label(format!("{}", cue.static_values.len()));
                         ui.label(format!("{}", cue.effects.len()));
                         ui.end_row();
                     }
                 }
-                drop(console_lock);
             });
     }
 
