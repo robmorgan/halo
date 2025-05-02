@@ -1,12 +1,12 @@
 {
   "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1746181673,
-    "nanos_since_epoch": 271739000
+    "secs_since_epoch": 1746183327,
+    "nanos_since_epoch": 740136000
   },
   "modified_at": {
-    "secs_since_epoch": 1746181673,
-    "nanos_since_epoch": 271758000
+    "secs_since_epoch": 1746183327,
+    "nanos_since_epoch": 740154000
   },
   "fixtures": [
     {
@@ -239,9 +239,102 @@
           "effects": [],
           "timecode": "00:00:01:00",
           "is_blocking": false
+        },
+        {
+          "id": 2,
+          "name": "Ride on Time - Piano",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 100
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 95
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 100
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 144
+            }
+          ],
+          "effects": [],
+          "timecode": null,
+          "is_blocking": false
         }
       ],
-      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Intro - MakeLuv-RideOnTime-PW.wav"
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Ride on Time (Massive Mix)-yHS4If-jHCU.mp3"
     },
     {
       "name": "Build",
