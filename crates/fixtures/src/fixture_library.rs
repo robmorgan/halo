@@ -393,8 +393,6 @@ impl FixtureLibrary {
                     ("Green", ChannelType::Green),
                     ("Blue", ChannelType::Blue),
                     ("White", ChannelType::White),
-                    ("Amber", ChannelType::Amber),
-                    ("UV", ChannelType::UV),
                     ("Strobe", ChannelType::Strobe),
                     ("Function", ChannelType::Function),
                     ("Function Speed", ChannelType::FunctionSpeed),
