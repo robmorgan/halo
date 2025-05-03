@@ -348,7 +348,7 @@
             {
               "fixture_id": 2,
               "channel_type": "Tilt",
-              "value": 0
+              "value": 255
             }
           ],
           "effects": [],
@@ -431,7 +431,7 @@
             {
               "fixture_id": 2,
               "channel_type": "Tilt",
-              "value": 0
+              "value": 255
             }
           ],
           "effects": [
@@ -450,10 +450,7 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                1,
-                2
-              ],
+              "fixture_ids": [1, 2],
               "channel_type": "Dimmer",
               "distribution": {
                 "Step": 1
@@ -542,15 +539,15 @@
               "value": 180
             },
             {
-              "fixture_id": 2,
-              "channel_type": "Tilt",
-              "value": 130
-            },
-            {
               "fixture_id": 1,
               "channel_type": "Tilt",
               "value": 130
             }
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 130
+            },
           ],
           "effects": [
             {
@@ -568,10 +565,7 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                2,
-                1
-              ],
+              "fixture_ids": [2, 1],
               "channel_type": "Dimmer",
               "distribution": {
                 "Step": 1
