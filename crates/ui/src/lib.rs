@@ -124,7 +124,7 @@ impl eframe::App for HaloApp {
 
         // Get items from the console
         {
-            let console = self.console.lock();
+            let mut console = self.console.lock();
             let fixtures = console.fixtures.to_vec();
             let playback_state = console.cue_manager.get_playback_state();
 
@@ -138,6 +138,9 @@ impl eframe::App for HaloApp {
             self.programmer.set_fixtures(fixtures);
             self.programmer
                 .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
+
+            // Update the console with the current bpm
+            console.set_bpm(self.session_panel.bpm);
         }
 
         // Header

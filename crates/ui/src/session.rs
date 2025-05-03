@@ -21,10 +21,9 @@ pub struct SessionPanel {
     // Clock state
     clock_mode: ClockMode,
     timecode: TimeCode,
-    last_update: Instant,
 
     // BPM state
-    bpm: f64,
+    pub bpm: f64,
 
     // Ableton Link state
     link_enabled: bool,
@@ -39,7 +38,6 @@ impl Default for SessionPanel {
         Self {
             clock_mode: ClockMode::TimeCode,
             timecode: TimeCode::default(),
-            last_update: Instant::now(),
             bpm: 120.0,
             link_enabled: false,
             link_peers: 0,
