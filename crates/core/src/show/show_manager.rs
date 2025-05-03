@@ -31,6 +31,10 @@ impl ShowManager {
         show
     }
 
+    pub fn get_current_path(&self) -> Option<PathBuf> {
+        self.current_path.clone()
+    }
+
     pub fn save_show(&mut self, show: &Show) -> Result<PathBuf> {
         let path = if let Some(path) = &self.current_path {
             path.clone()

@@ -430,6 +430,13 @@ impl LightingConsole {
         Ok(())
     }
 
+    pub fn reload_show(&mut self) -> Result<(), anyhow::Error> {
+        if let Some(current_path) = self.show_manager.get_current_path() {
+            let _ = self.load_show(&current_path);
+        }
+        Ok(())
+    }
+
     pub fn save_show(&mut self) -> Result<PathBuf, anyhow::Error> {
         let result = self.show_manager.save_show(&self.get_show().clone())?;
         Ok(result)
