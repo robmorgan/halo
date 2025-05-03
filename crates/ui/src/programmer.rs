@@ -905,9 +905,15 @@ impl Programmer {
 
             // Add the value to the programmer state
             for channel_type in channel_types {
+                // Scale percentage values to DMX range (0-255)
+                let dmx_value = match param_name {
+                    "dimmer" | "strobe" => ((value / 100.0) * 255.0).round() as u8,
+                    _ => value as u8, // Keep other values as they are
+                };
+
                 console
                     .programmer
-                    .add_value(*fixture_id, channel_type, value as u8);
+                    .add_value(*fixture_id, channel_type, dmx_value);
             }
         }
     }
