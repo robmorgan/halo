@@ -992,7 +992,7 @@
             {
               "fixture_id": 2,
               "channel_type": "Tilt",
-              "value": 255
+              "value": 0
             }
           ],
           "effects": [
@@ -1115,12 +1115,12 @@
             {
               "fixture_id": 1,
               "channel_type": "Tilt",
-              "value": 0
+              "value": 100
             },
             {
               "fixture_id": 2,
               "channel_type": "Tilt",
-              "value": 255
+              "value": 100
             }
           ],
           "effects": [],
@@ -1135,6 +1135,16 @@
             "nanos": 0
           },
           "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Strobe",
+              "value": 0
+            },
             {
               "fixture_id": 1,
               "channel_type": "Dimmer",
