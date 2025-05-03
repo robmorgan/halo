@@ -1,12 +1,12 @@
 {
   "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1746237934,
-    "nanos_since_epoch": 34203000
+    "secs_since_epoch": 1746242889,
+    "nanos_since_epoch": 99394000
   },
   "modified_at": {
-    "secs_since_epoch": 1746237934,
-    "nanos_since_epoch": 34226000
+    "secs_since_epoch": 1746242889,
+    "nanos_since_epoch": 99422000
   },
   "fixtures": [
     {
@@ -202,6 +202,54 @@
           "effects": [],
           "timecode": "00:04:02:00",
           "is_blocking": false
+        },
+        {
+          "id": 6,
+          "name": "PAR Strobe",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Strobe",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "White",
+              "value": 255
+            }
+          ],
+          "effects": [],
+          "timecode": null,
+          "is_blocking": false
         }
       ],
       "audio_file": null
@@ -295,12 +343,12 @@
             {
               "fixture_id": 1,
               "channel_type": "Tilt",
-              "value": 230
+              "value": 0
             },
             {
               "fixture_id": 2,
               "channel_type": "Tilt",
-              "value": 230
+              "value": 0
             }
           ],
           "effects": [],
@@ -318,12 +366,12 @@
             {
               "fixture_id": 1,
               "channel_type": "Dimmer",
-              "value": 100
+              "value": 255
             },
             {
               "fixture_id": 2,
               "channel_type": "Dimmer",
-              "value": 100
+              "value": 255
             },
             {
               "fixture_id": 1,
@@ -377,23 +425,13 @@
             },
             {
               "fixture_id": 1,
-              "channel_type": "Pan",
-              "value": 180
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Pan",
-              "value": 180
-            },
-            {
-              "fixture_id": 1,
               "channel_type": "Tilt",
-              "value": 230
+              "value": 0
             },
             {
               "fixture_id": 2,
               "channel_type": "Tilt",
-              "value": 230
+              "value": 0
             }
           ],
           "effects": [
@@ -412,7 +450,10 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [1, 2],
+              "fixture_ids": [
+                1,
+                2
+              ],
               "channel_type": "Dimmer",
               "distribution": {
                 "Step": 1
@@ -527,7 +568,10 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [2, 1],
+              "fixture_ids": [
+                2,
+                1
+              ],
               "channel_type": "Dimmer",
               "distribution": {
                 "Step": 1
