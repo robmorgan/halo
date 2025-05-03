@@ -261,6 +261,7 @@ impl Programmer {
                                 let r = self.state.get_param("red").round() as u8;
                                 let g = self.state.get_param("green").round() as u8;
                                 let b = self.state.get_param("blue").round() as u8;
+                                //let w = self.state.get_param("white").round() as u8;
                                 let color_preview = Color32::from_rgb(r, g, b);
 
                                 ui.label("RGB:");
@@ -572,6 +573,12 @@ impl Programmer {
             self.update_selected_fixture_channels("dimmer", console);
         }
 
+        // Strobe
+        let strobe_channels = self.get_selected_fixture_channels("strobe");
+        if !strobe_channels.is_empty() {
+            self.update_selected_fixture_channels("strobe", console);
+        }
+
         // Color
         let color_channels = self.get_selected_fixture_channels("color");
         if !color_channels.is_empty() {
@@ -728,10 +735,9 @@ impl Programmer {
                     let channel_name = channel.name.to_lowercase();
                     let matches = match channel_type {
                         "intensity" => {
-                            channel_name.contains("dimmer")
-                                || channel_name.contains("intensity")
-                                || channel_name.contains("strobe")
+                            channel_name.contains("dimmer") || channel_name.contains("intensity")
                         }
+                        "strobe" => channel_name.contains("strobe"),
                         "color" => {
                             channel_name.contains("red")
                                 || channel_name.contains("green")

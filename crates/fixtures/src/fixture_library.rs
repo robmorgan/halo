@@ -330,6 +330,38 @@ impl FixtureLibrary {
         // 12	Intensity	White Dimmer	100%
 
         // https://personalities.avolites.com/?mainPage=Main.asp&LightName=LED+RGBW+4in1+48+Partition+Strobe+Light&Manufacturer=Unknown
+        // 12-channel variant
+        // profiles.insert(
+        //     "hyulights-led-rgbw-4in1-48-partition-strobe".to_string(),
+        //     FixtureProfile {
+        //         id: "hyulights-led-rgbw-4in1-48-partition-strobe".to_string(),
+        //         fixture_type: FixtureType::LEDBar,
+        //         manufacturer: "Hyulights".to_string(),
+        //         model: "200W LED RGBW 4in1 48 Partition Strobe Light".to_string(),
+        //         channel_layout: channel_layout![
+        //             ("Dimmer", ChannelType::Dimmer),
+        //             ("RGB Strobe", ChannelType::Other("RGBStrobe".to_string())),
+        //             ("Effect FX", ChannelType::Other("Function".to_string())),
+        //             (
+        //                 "Effect FX Speed",
+        //                 ChannelType::Other("FunctionSpeed".to_string())
+        //             ),
+        //             ("Color", ChannelType::Color),
+        //             ("Strobe", ChannelType::Strobe),
+        //             ("White FX", ChannelType::Other("WhiteFunction".to_string())),
+        //             (
+        //                 "White FX Speed",
+        //                 ChannelType::Other("WhiteFunctionSpeed".to_string())
+        //             ),
+        //             ("Red", ChannelType::Red),
+        //             ("Green", ChannelType::Green),
+        //             ("Blue", ChannelType::Blue),
+        //             ("White", ChannelType::White),
+        //         ],
+        //     },
+        // );
+
+        // 6-channel variant
         profiles.insert(
             "hyulights-led-rgbw-4in1-48-partition-strobe".to_string(),
             FixtureProfile {
@@ -338,32 +370,11 @@ impl FixtureLibrary {
                 manufacturer: "Hyulights".to_string(),
                 model: "200W LED RGBW 4in1 48 Partition Strobe Light".to_string(),
                 channel_layout: channel_layout![
-                    ("Intensity", ChannelType::Dimmer),
-                    (
-                        "Intensity RGB Shutter",
-                        ChannelType::Other("IntensityRGBShutter".to_string())
-                    ),
-                    ("Effect FX", ChannelType::Other("Function".to_string())),
-                    (
-                        "Effect FX Speed",
-                        ChannelType::Other("FunctionSpeed".to_string())
-                    ),
-                    (
-                        "Effect Color FX",
-                        ChannelType::Other("FunctionColor".to_string())
-                    ),
+                    ("Dimmer", ChannelType::Dimmer),
+                    ("Strobe", ChannelType::Strobe),
                     ("Red", ChannelType::Red),
                     ("Green", ChannelType::Green),
                     ("Blue", ChannelType::Blue),
-                    (
-                        "Intensity White Shutter",
-                        ChannelType::Other("IntensityWhiteShutter".to_string())
-                    ),
-                    ("White FX", ChannelType::Other("WhiteFunction".to_string())),
-                    (
-                        "White FX Speed",
-                        ChannelType::Other("WhiteFunctionSpeed".to_string())
-                    ),
                     ("White", ChannelType::White),
                 ],
             },
