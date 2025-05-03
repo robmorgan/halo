@@ -1,12 +1,12 @@
 {
   "name": "Untitled Show",
   "created_at": {
-    "secs_since_epoch": 1746183327,
-    "nanos_since_epoch": 740136000
+    "secs_since_epoch": 1746237934,
+    "nanos_since_epoch": 34203000
   },
   "modified_at": {
-    "secs_since_epoch": 1746183327,
-    "nanos_since_epoch": 740154000
+    "secs_since_epoch": 1746237934,
+    "nanos_since_epoch": 34226000
   },
   "fixtures": [
     {
@@ -43,6 +43,20 @@
       "profile_id": "hyulights-led-rgbw-4in1-48-partition-strobe",
       "universe": 1,
       "start_address": 42
+    },
+    {
+      "id": 5,
+      "name": "Left Spot",
+      "profile_id": "shehds-led-spot-60w",
+      "universe": 1,
+      "start_address": 50
+    },
+    {
+      "id": 6,
+      "name": "Right Spot",
+      "profile_id": "shehds-led-spot-60w",
+      "universe": 1,
+      "start_address": 60
     }
   ],
   "cue_lists": [
@@ -190,7 +204,7 @@
           "is_blocking": false
         }
       ],
-      "audio_file": "/Users/rjm/Downloads/beatport_tracks_2025-04/LISA - BORN AGAIN feat. Doja Cat & RAYE (Purple Disco Machine Remix).mp3"
+      "audio_file": null
     },
     {
       "name": "Intro",
@@ -239,10 +253,63 @@
           "effects": [],
           "timecode": "00:00:01:00",
           "is_blocking": false
+        }
+      ],
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/11 - Make Luv (Extended Mix).mp3"
+    },
+    {
+      "name": "Start",
+      "cues": [
+        {
+          "id": 0,
+          "name": "Arm",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:00:00",
+          "is_blocking": false
+        },
+        {
+          "id": 0,
+          "name": "Intro",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:01:00",
+          "is_blocking": false
+        },
+        {
+          "id": 1,
+          "name": "Tilt Beams",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 230
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 230
+            }
+          ],
+          "effects": [],
+          "timecode": "00:00:13:00",
+          "is_blocking": false
         },
         {
           "id": 2,
-          "name": "Ride on Time - Piano",
+          "name": "Beams Cycle on DJ",
           "fade_time": {
             "secs": 0,
             "nanos": 0
@@ -254,46 +321,21 @@
               "value": 100
             },
             {
-              "fixture_id": 1,
-              "channel_type": "Red",
-              "value": 255
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Color",
-              "value": 255
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Green",
-              "value": 0
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Blue",
-              "value": 0
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "White",
-              "value": 0
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Pan",
-              "value": 180
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Tilt",
-              "value": 95
-            },
-            {
               "fixture_id": 2,
               "channel_type": "Dimmer",
               "value": 100
             },
             {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
               "fixture_id": 2,
               "channel_type": "Red",
               "value": 255
@@ -304,8 +346,18 @@
               "value": 255
             },
             {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 127
+            },
+            {
               "fixture_id": 2,
               "channel_type": "Green",
+              "value": 127
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
               "value": 0
             },
             {
@@ -314,7 +366,127 @@
               "value": 0
             },
             {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
               "fixture_id": 2,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 230
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 230
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.9956380128860474,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [1, 2],
+              "channel_type": "Dimmer",
+              "distribution": {
+                "Step": 1
+              }
+            }
+          ],
+          "timecode": "00:00:20:00",
+          "is_blocking": false
+        },
+        {
+          "id": 3,
+          "name": "Purple Cycle - Center",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 139
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 139
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 139
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 139
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
               "channel_type": "White",
               "value": 0
             },
@@ -324,9 +496,69 @@
               "value": 180
             },
             {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
               "fixture_id": 2,
               "channel_type": "Tilt",
-              "value": 144
+              "value": 130
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 130
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.02734375,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [2, 1],
+              "channel_type": "Dimmer",
+              "distribution": {
+                "Step": 1
+              }
+            }
+          ],
+          "timecode": "00:00:25:00",
+          "is_blocking": false
+        },
+        {
+          "id": 4,
+          "name": "Strobe",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 3,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 3,
+              "channel_type": "Strobe",
+              "value": 243
+            },
+            {
+              "fixture_id": 3,
+              "channel_type": "White",
+              "value": 255
             }
           ],
           "effects": [],
@@ -334,7 +566,7 @@
           "is_blocking": false
         }
       ],
-      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Ride on Time (Massive Mix)-yHS4If-jHCU.mp3"
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Ride on Time x PW.wav"
     },
     {
       "name": "Build",
