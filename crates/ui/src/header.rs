@@ -39,6 +39,12 @@ pub fn render(
             ui.close_menu();
         }
 
+        if ui.button("Reload Show").clicked() {
+            let mut console_lock = console.lock();
+            let _ = console_lock.reload_show();
+            drop(console_lock);
+        }
+
         if ui.button("Save Show").clicked() {
             let mut console_lock = console.lock();
             let _ = console_lock.save_show();

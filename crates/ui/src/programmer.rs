@@ -30,6 +30,8 @@ struct TabEffectConfig {
     effect_distribution: usize,
     effect_ratio: f32,
     effect_phase: f32,
+    effect_step_value: usize,
+    effect_wave_offset: f64,
 }
 
 impl Default for TabEffectConfig {
@@ -40,6 +42,8 @@ impl Default for TabEffectConfig {
             effect_distribution: 0,
             effect_ratio: 1.0,
             effect_phase: 0.0,
+            effect_step_value: 1,
+            effect_wave_offset: 30.0,
         }
     }
 }
@@ -568,6 +572,12 @@ impl Programmer {
             self.update_selected_fixture_channels("dimmer", console);
         }
 
+        // Strobe
+        let strobe_channels = self.get_selected_fixture_channels("strobe");
+        if !strobe_channels.is_empty() {
+            self.update_selected_fixture_channels("strobe", console);
+        }
+
         // Color
         let color_channels = self.get_selected_fixture_channels("color");
         if !color_channels.is_empty() {
@@ -724,10 +734,9 @@ impl Programmer {
                     let channel_name = channel.name.to_lowercase();
                     let matches = match channel_type {
                         "intensity" => {
-                            channel_name.contains("dimmer")
-                                || channel_name.contains("intensity")
-                                || channel_name.contains("strobe")
+                            channel_name.contains("dimmer") || channel_name.contains("intensity")
                         }
+                        "strobe" => channel_name.contains("strobe"),
                         "color" => {
                             channel_name.contains("red")
                                 || channel_name.contains("green")
@@ -825,8 +834,8 @@ impl Programmer {
         // Map UI distribution to EffectDistribution
         let distribution = match tab_effect.effect_distribution {
             0 => EffectDistribution::All,
-            1 => EffectDistribution::Step(1),
-            2 => EffectDistribution::Wave(30.0), // 30 degree phase offset
+            1 => EffectDistribution::Step(tab_effect.effect_step_value),
+            2 => EffectDistribution::Wave(tab_effect.effect_wave_offset),
             _ => EffectDistribution::All,
         };
 
@@ -895,9 +904,15 @@ impl Programmer {
 
             // Add the value to the programmer state
             for channel_type in channel_types {
+                // Scale percentage values to DMX range (0-255)
+                let dmx_value = match param_name {
+                    "dimmer" | "strobe" => ((value / 100.0) * 255.0).round() as u8,
+                    _ => value as u8, // Keep other values as they are
+                };
+
                 console
                     .programmer
-                    .add_value(*fixture_id, channel_type, value as u8);
+                    .add_value(*fixture_id, channel_type, dmx_value);
             }
         }
     }
@@ -1246,6 +1261,47 @@ impl Programmer {
                             ui.selectable_value(&mut tab_effect.effect_distribution, 1, "Step");
                             ui.selectable_value(&mut tab_effect.effect_distribution, 2, "Wave");
                         });
+
+                    // After the Distribution dropdown
+                    ui.add_space(10.0);
+
+                    // Only show appropriate input field based on selected distribution
+                    match tab_effect.effect_distribution {
+                        1 => {
+                            // Step distribution
+                            ui.horizontal(|ui| {
+                                ui.label("Step Value:");
+                                let mut step_value = tab_effect.effect_step_value as i32;
+                                if ui
+                                    .add(
+                                        egui::DragValue::new(&mut step_value)
+                                            .clamp_range(1..=16)
+                                            .speed(0.1),
+                                    )
+                                    .changed()
+                                {
+                                    tab_effect.effect_step_value = step_value.max(1) as usize;
+                                }
+                            });
+                        }
+                        2 => {
+                            // Wave distribution
+                            ui.horizontal(|ui| {
+                                ui.label("Wave Offset:");
+                                let mut wave_offset = tab_effect.effect_wave_offset;
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut wave_offset, 0.0..=180.0)
+                                            .suffix("°"),
+                                    )
+                                    .changed()
+                                {
+                                    tab_effect.effect_wave_offset = wave_offset;
+                                }
+                            });
+                        }
+                        _ => {}
+                    }
 
                     // Apply Effects Button
                     if ui.button("Apply Effects").clicked() {

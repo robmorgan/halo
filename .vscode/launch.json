@@ -16,7 +16,37 @@
           "kind": "bin"
         }
       },
-      "args": ["--source-ip", "127.0.0.1"],
+      "args": [
+        "--source-ip",
+        "127.0.0.1",
+        "--show-file",
+        "shows/Guys40th.json"
+      ],
+      "env": {
+        "RUST_BACKTRACE": "1"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug halo v3 -ode",
+      "cwd": "${workspaceFolder}",
+      "cargo": {
+        "args": ["build", "--bin=halo", "--package=halo"],
+        "filter": {
+          "name": "halo",
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "--source-ip",
+        "10.8.45.1",
+        "--dest-ip",
+        "10.8.45.8",
+        "--show-file",
+        "shows/Guys40th.json"
+      ],
       "env": {
         "RUST_BACKTRACE": "1"
       },

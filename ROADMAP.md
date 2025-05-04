@@ -28,14 +28,11 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Cues advance to timecode
 - [ ] Lighting Engine
   - [ ] Tracking functionality (copy params to stage, show footer counts)
+  - [ ] Blocking cues
   - [ ] Fade time on cues and fixtures
-- [ ] Subfixtures
-- [ ] Blocking cues
+  - [ ] UI: Master BPM should control effects
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller
 - [x] Audio file playback
-- [ ] Settings
-  - [ ] Audio interface selection
-  - [ ] MIDI controller / Traktor
 - [x] Toggle cuelists easily in UI.
 
 ## Week 1 (CW10): Core UI Components
@@ -80,10 +77,10 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 **Deliverable:** Complete, integrated application ready for testing.
 
-- [ ] Show saving and loading
+- [x] Show saving and loading
 - [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
 - [x] Add patch panel functionality
-- [ ] Add settings modal functionality (audio device, dmx, fixture library)
+- [ ] Add settings modal functionality (audio device, midi device, dmx, fixture library)
 - [ ] Final UI polish and documentation
 
 ## Future
