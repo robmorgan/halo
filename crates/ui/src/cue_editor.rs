@@ -172,7 +172,7 @@ impl CueEditor {
 
         egui::Grid::new("cues_grid")
             .striped(true)
-            .num_columns(8) // Increased to account for new columns
+            .num_columns(8)
             .spacing([10.0, 6.0])
             .show(ui, |ui| {
                 let cue_list = {
@@ -187,8 +187,8 @@ impl CueEditor {
                 ui.strong("Timecode");
                 ui.strong("Static Values");
                 ui.strong("Effects");
-                ui.strong("Order"); // New column for reordering
-                ui.strong("Actions"); // New column for delete button
+                ui.strong("Order");
+                ui.strong("Actions");
                 ui.end_row();
 
                 // Cues

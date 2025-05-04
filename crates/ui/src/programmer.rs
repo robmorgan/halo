@@ -261,7 +261,6 @@ impl Programmer {
                                 let r = self.state.get_param("red").round() as u8;
                                 let g = self.state.get_param("green").round() as u8;
                                 let b = self.state.get_param("blue").round() as u8;
-                                //let w = self.state.get_param("white").round() as u8;
                                 let color_preview = Color32::from_rgb(r, g, b);
 
                                 ui.label("RGB:");
