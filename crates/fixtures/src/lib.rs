@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 pub use fixture_library::{Channel, ChannelType, FixtureLibrary, FixtureProfile};
+use serde::{Deserialize, Serialize};
 
 mod fixture_library;
 

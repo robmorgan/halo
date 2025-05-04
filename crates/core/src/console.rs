@@ -346,7 +346,8 @@ impl LightingConsole {
 
                             if step == 1 {
                                 // For Step(1), use beat phase to alternate
-                                // This creates an oscillation between odd/even fixtures on each beat
+                                // This creates an oscillation between odd/even fixtures on each
+                                // beat
                                 let beat_phase = self.rhythm_state.beat_phase;
                                 let is_on_beat = beat_phase < 0.5;
 
