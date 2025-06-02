@@ -10,6 +10,6 @@ halo-fixtures = { path = "../fixtures" }
 eframe = "0.31.1"
 rand = "0.9.1"
 chrono = "0.4.41"
-parking_lot = "0.12.3"
+parking_lot = "0.12.4"
 egui_plot = "0.32.1"
 rfd = "0.15.3"
