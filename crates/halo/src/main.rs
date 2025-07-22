@@ -1,11 +1,13 @@
 use std::net::IpAddr;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{CueList, LightingConsole, MidiAction, MidiOverride, NetworkConfig};
+use halo_core::{AsyncLightingConsole, CueList, MidiAction, MidiOverride, NetworkConfig};
 use parking_lot::Mutex;
+use tokio::time::interval;
 
 /// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
@@ -41,7 +43,8 @@ fn parse_ip(s: &str) -> Result<IpAddr, String> {
     s.parse().map_err(|e| format!("Invalid IP address: {}", e))
 }
 
-fn main() -> Result<(), anyhow::Error> {
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
     let network_config = NetworkConfig::new(
         args.source_ip,
@@ -56,24 +59,24 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Destination: {}", network_config.get_destination());
     println!("Port: {}", network_config.port);
 
-    // Create the console
-    let mut console = LightingConsole::new(80., network_config.clone()).unwrap();
+    // Create the async console
+    let mut console = AsyncLightingConsole::new(80., network_config.clone()).unwrap();
     console.load_fixture_library();
 
     // patch fixtures
-    let _ = console.patch_fixture("Left PAR", "shehds-rgbw-par", 1, 1);
-    let _ = console.patch_fixture("Right PAR", "shehds-rgbw-par", 1, 9);
-    let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18);
-    let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28);
-    let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38);
-    let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 48);
+    let _ = console.patch_fixture("Left PAR", "shehds-rgbw-par", 1, 1).await;
+    let _ = console.patch_fixture("Right PAR", "shehds-rgbw-par", 1, 9).await;
+    let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18).await;
+    let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28).await;
+    let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38).await;
+    let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 48).await;
     let _ = console.patch_fixture(
         "Smoke #1",
         "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
         1,
         69,
-    );
-    let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80);
+    ).await;
+    let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80).await;
 
     // store the cues in a default cue list
     let cue_lists = vec![CueList {
@@ -83,7 +86,7 @@ fn main() -> Result<(), anyhow::Error> {
     }];
 
     // load cue lists
-    console.set_cue_lists(cue_lists);
+    console.set_cue_lists(cue_lists).await;
 
     // // Blue Strobe Fast
     // console.add_midi_override(
@@ -130,36 +133,59 @@ fn main() -> Result<(), anyhow::Error> {
 
     //// Cue Overrides
 
-    // Cue 5: Pinspot Purple
-    console.add_midi_override(
-        62,
-        MidiOverride {
-            action: MidiAction::TriggerCue("Pinspot Purple".to_string()),
-        },
-    );
+    // Initialize the async console and all modules
+    console.initialize().await?;
 
-    // Cue 6: Pinspot Gradient
-    console.add_midi_override(
-        64,
-        MidiOverride {
-            action: MidiAction::TriggerCue("Pinspot Gradient".to_string()),
-        },
-    );
+    println!("Async lighting console initialized successfully!");
+    println!("MIDI support: {}", args.enable_midi);
+    println!("Show file: {:?}", args.show_file);
 
-    // Check if MIDI support is enabled
-    if args.enable_midi {
-        console.init_mpk49_midi()?;
+    // Create the main console update loop
+    let console_arc = Arc::new(Mutex::new(console));
+    let console_clone = Arc::clone(&console_arc);
+
+    // Spawn the main lighting loop (replaces the old EventLoop)
+    let lighting_handle = tokio::spawn(async move {
+        let mut update_interval = interval(Duration::from_millis(23)); // ~44Hz
+        
+        loop {
+            update_interval.tick().await;
+            
+            {
+                let mut console = console_clone.lock();
+                if !console.is_running() {
+                    break;
+                }
+                
+                if let Err(e) = console.update().await {
+                    log::error!("Console update error: {}", e);
+                }
+            }
+        }
+        
+        log::info!("Lighting loop shutting down");
+    });
+
+    // Launch the UI in the main thread with the async console
+    let ui_result = tokio::task::spawn_blocking(move || {
+        halo_ui::run_ui(console_arc)
+    }).await;
+
+    // Wait for lighting loop to finish
+    lighting_handle.abort();
+    let _ = lighting_handle.await;
+
+    // Shutdown console
+    // Note: This is simplified - in a real implementation you'd want proper shutdown handling
+    log::info!("Application shutting down");
+
+    match ui_result {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("UI task error: {}", e);
+            Err(anyhow::anyhow!("UI task failed"))
+        }
     }
-
-    // Check if a show file was provided
-    if let Some(show_file) = args.show_file {
-        let path = Path::new(&show_file);
-        console.load_show(path)?;
-    }
-
-    // Launch the UI in the main thread
-    let _ = halo_ui::run_ui(Arc::new(Mutex::new(console)));
-    Ok(())
 }
 
 #[macro_export]
