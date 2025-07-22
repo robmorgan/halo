@@ -18,3 +18,5 @@ serde_json = "1.0.141"
 dirs = "6.0"
 chrono = "0.4"
 rodio = "0.21.1"
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
