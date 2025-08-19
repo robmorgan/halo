@@ -1,22 +1,21 @@
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use halo_fixtures::{Fixture, FixtureLibrary};
 
 use crate::artnet::network_config::NetworkConfig;
 use crate::cue::cue_manager::{CueManager, PlaybackState};
-use crate::midi::midi::{MidiAction, MidiMessage, MidiOverride};
+use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::modules::{
     AudioModule, DmxModule, MidiModule, ModuleEvent, ModuleId, ModuleManager, ModuleMessage,
     SmpteModule,
 };
 use crate::programmer::Programmer;
 use crate::show::show_manager::ShowManager;
-use crate::{ableton_link, CueList, RhythmState, StaticValue};
+use crate::{ableton_link, CueList, RhythmState};
 
 pub struct LightingConsole {
     // Core components
@@ -636,7 +635,7 @@ impl SyncLightingConsole {
 
     pub fn record_cue(&mut self, name: String, fade_time: f64) -> Result<(), anyhow::Error> {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let console = self.inner.lock().unwrap();
             let programmer = console.programmer.read().await;
             let values = programmer.get_values().clone();
             drop(programmer);
@@ -671,7 +670,7 @@ impl SyncLightingConsole {
 
     pub fn set_programmer_preview_mode(&mut self, preview_mode: bool) {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let console = self.inner.lock().unwrap();
             let mut programmer = console.programmer.write().await;
             programmer.set_preview_mode(preview_mode);
         });
@@ -679,7 +678,7 @@ impl SyncLightingConsole {
 
     pub fn clear_programmer(&mut self) {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let console = self.inner.lock().unwrap();
             let mut programmer = console.programmer.write().await;
             programmer.clear();
         });
@@ -687,7 +686,7 @@ impl SyncLightingConsole {
 
     pub fn add_programmer_effect(&mut self, effect: crate::EffectMapping) {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let console = self.inner.lock().unwrap();
             let mut programmer = console.programmer.write().await;
             programmer.add_effect(effect);
         });
@@ -717,7 +716,7 @@ impl SyncLightingConsole {
     /// Apply master fader to fixtures
     pub fn apply_master_fader(&mut self, master_value: f32) {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let console = self.inner.lock().unwrap();
             let mut fixtures = console.fixtures.write().await;
 
             for fixture in fixtures.iter_mut() {
@@ -736,7 +735,7 @@ impl SyncLightingConsole {
     /// Apply smoke fader to fixtures
     pub fn apply_smoke_fader(&mut self, smoke_value: f32) {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let console = self.inner.lock().unwrap();
             let mut fixtures = console.fixtures.write().await;
 
             for fixture in fixtures.iter_mut() {

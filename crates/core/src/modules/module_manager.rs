@@ -54,7 +54,7 @@ impl ModuleManager {
         }
 
         // Start each module in its own async task
-        let mut modules_to_start = std::mem::take(&mut self.modules);
+        let modules_to_start = std::mem::take(&mut self.modules);
         
         for (id, mut module) in modules_to_start {
             let (event_tx, event_rx) = mpsc::channel(1000);

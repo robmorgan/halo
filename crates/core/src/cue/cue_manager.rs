@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::{AudioPlayer, Cue, CueList, EffectMapping, StaticValue, TimeCode};
+use crate::{Cue, CueList, EffectMapping, StaticValue, TimeCode};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum PlaybackState {
