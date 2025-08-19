@@ -30,3 +30,4 @@ eframe = "0.32.0"
 parking_lot = "0.12.4"
 rfd = "0.15.4"
 tokio = { version = "1.0", features = ["full"] }
+rodio = "0.17.1"

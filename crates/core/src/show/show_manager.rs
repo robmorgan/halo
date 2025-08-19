@@ -91,3 +91,13 @@ impl ShowManager {
         Ok(shows)
     }
 }
+
+impl Clone for ShowManager {
+    fn clone(&self) -> Self {
+        Self {
+            shows_directory: self.shows_directory.clone(),
+            current_show: self.current_show.clone(),
+            current_path: self.current_path.clone(),
+        }
+    }
+}

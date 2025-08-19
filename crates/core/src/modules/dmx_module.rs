@@ -45,7 +45,7 @@ impl AsyncModule for DmxModule {
         let artnet = ArtNet::new(self.network_config.mode.clone())?;
         self.artnet = Some(artnet);
         
-        self.status.insert("mode".to_string(), self.network_config.get_mode_string());
+        self.status.insert("mode".to_string(), self.network_config.get_mode_string().to_string());
         self.status.insert("destination".to_string(), self.network_config.get_destination());
         self.status.insert("status".to_string(), "initialized".to_string());
         

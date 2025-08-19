@@ -18,7 +18,7 @@ impl CuePanel {
         let current_list;
         {
             let console_lock = console.lock();
-            current_list = console_lock.cue_manager.get_current_cue_list().cloned();
+            current_list = console_lock.cue_manager().get_current_cue_list().cloned();
             drop(console_lock);
         }
 
@@ -30,7 +30,7 @@ impl CuePanel {
                     // Left arrow button
                     if ui.button("←").clicked() {
                         let mut console_lock = console.lock();
-                        if let Err(err) = console_lock.cue_manager.select_previous_cue_list() {
+                        if let Err(err) = console_lock.cue_manager().select_previous_cue_list() {
                             println!("Error switching to previous cue list: {}", err);
                         }
                         drop(console_lock);
@@ -41,7 +41,7 @@ impl CuePanel {
                     // Right arrow button
                     if ui.button("→").clicked() {
                         let mut console_lock = console.lock();
-                        if let Err(err) = console_lock.cue_manager.select_next_cue_list() {
+                        if let Err(err) = console_lock.cue_manager().select_next_cue_list() {
                             println!("Error switching to next cue list: {}", err);
                         }
                         drop(console_lock);
@@ -75,26 +75,7 @@ impl CuePanel {
                     );
                 });
 
-                // Add audio transport controls
-                ui.horizontal(|ui| {
-                    if ui.button("▶").clicked() {
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.play_audio();
-                        drop(console_lock);
-                    }
-
-                    if ui.button("⏸").clicked() {
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.pause_audio();
-                        drop(console_lock);
-                    }
-
-                    if ui.button("⏹").clicked() {
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.stop_audio();
-                        drop(console_lock);
-                    }
-                });
+                // Audio controls are now handled by the audio module
             });
         }
 
@@ -116,12 +97,12 @@ impl CuePanel {
 
         // Display cues with neat alignment and timecode
         let console_lock = console.lock();
-        let cues = console_lock.cue_manager.get_current_cues();
+        let cues = console_lock.cue_manager().get_current_cues();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             for cue in cues {
                 ui.horizontal(|ui| {
-                    let is_active = console_lock.cue_manager.is_cue_active(cue.id);
+                    let is_active = console_lock.cue_manager().is_cue_active(cue.id);
                     let active_color = if is_active {
                         egui::Color32::from_rgb(100, 200, 100)
                     } else {
@@ -167,7 +148,7 @@ impl CuePanel {
 
                     // Progress bar
                     let progress = if is_active {
-                        console_lock.cue_manager.get_current_cue_progress()
+                        console_lock.cue_manager().get_current_cue_progress()
                     } else {
                         0.0
                     };

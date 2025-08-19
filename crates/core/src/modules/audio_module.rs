@@ -5,11 +5,10 @@ use std::io::BufReader;
 use std::path::Path;
 use tokio::sync::mpsc;
 
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use super::traits::{AsyncModule, ModuleEvent, ModuleId, ModuleMessage};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 
 pub struct AudioModule {
-    _stream: Option<OutputStream>,
     stream_handle: Option<OutputStreamHandle>,
     sink: Option<Sink>,
     current_file: Option<String>,
@@ -20,7 +19,6 @@ pub struct AudioModule {
 impl AudioModule {
     pub fn new() -> Self {
         Self {
-            _stream: None,
             stream_handle: None,
             sink: None,
             current_file: None,
@@ -38,12 +36,13 @@ impl AudioModule {
                 .map_err(|e| format!("Failed to create audio sink: {}", e))?;
 
             // Open the audio file
-            let file = File::open(&path).map_err(|e| format!("Failed to open audio file: {}", e))?;
+            let file =
+                File::open(&path).map_err(|e| format!("Failed to open audio file: {}", e))?;
             let reader = BufReader::new(file);
 
             // Decode the audio file
-            let source = Decoder::new(reader)
-                .map_err(|e| format!("Failed to decode audio file: {}", e))?;
+            let source =
+                Decoder::new(reader).map_err(|e| format!("Failed to decode audio file: {}", e))?;
 
             // Add the source to the sink
             sink.append(source);
@@ -53,9 +52,10 @@ impl AudioModule {
             // Store the sink and current file
             self.sink = Some(sink);
             self.current_file = Some(path_str.clone());
-            
+
             self.status.insert("current_file".to_string(), path_str);
-            self.status.insert("status".to_string(), "loaded".to_string());
+            self.status
+                .insert("status".to_string(), "loaded".to_string());
 
             Ok(())
         } else {
@@ -66,7 +66,8 @@ impl AudioModule {
     async fn play(&mut self) -> Result<(), String> {
         if let Some(sink) = &self.sink {
             sink.play();
-            self.status.insert("playback_state".to_string(), "playing".to_string());
+            self.status
+                .insert("playback_state".to_string(), "playing".to_string());
             Ok(())
         } else {
             Err("No audio file loaded".to_string())
@@ -76,7 +77,8 @@ impl AudioModule {
     async fn pause(&mut self) -> Result<(), String> {
         if let Some(sink) = &self.sink {
             sink.pause();
-            self.status.insert("playback_state".to_string(), "paused".to_string());
+            self.status
+                .insert("playback_state".to_string(), "paused".to_string());
             Ok(())
         } else {
             Err("No audio file loaded".to_string())
@@ -86,7 +88,8 @@ impl AudioModule {
     async fn stop(&mut self) -> Result<(), String> {
         if let Some(sink) = &self.sink {
             sink.stop();
-            self.status.insert("playback_state".to_string(), "stopped".to_string());
+            self.status
+                .insert("playback_state".to_string(), "stopped".to_string());
             Ok(())
         } else {
             Err("No audio file loaded".to_string())
@@ -98,7 +101,8 @@ impl AudioModule {
         if let Some(sink) = &self.sink {
             sink.set_volume(self.volume);
         }
-        self.status.insert("volume".to_string(), format!("{:.2}", self.volume));
+        self.status
+            .insert("volume".to_string(), format!("{:.2}", self.volume));
     }
 
     fn is_playing(&self) -> bool {
@@ -118,17 +122,21 @@ impl AsyncModule for AudioModule {
 
     async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Initializing Audio module");
-        
+
         let (stream, stream_handle) = OutputStream::try_default()
             .map_err(|e| format!("Failed to open audio output stream: {}", e))?;
 
-        self._stream = Some(stream);
+        // Drop the stream immediately to avoid Send issues
+        drop(stream);
         self.stream_handle = Some(stream_handle);
-        
-        self.status.insert("volume".to_string(), format!("{:.2}", self.volume));
-        self.status.insert("status".to_string(), "initialized".to_string());
-        self.status.insert("playback_state".to_string(), "idle".to_string());
-        
+
+        self.status
+            .insert("volume".to_string(), format!("{:.2}", self.volume));
+        self.status
+            .insert("status".to_string(), "initialized".to_string());
+        self.status
+            .insert("playback_state".to_string(), "idle".to_string());
+
         Ok(())
     }
 
@@ -138,9 +146,11 @@ impl AsyncModule for AudioModule {
         tx: mpsc::Sender<ModuleMessage>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Audio module started");
-        
-        let _ = tx.send(ModuleMessage::Status("Audio module running".to_string())).await;
-        
+
+        let _ = tx
+            .send(ModuleMessage::Status("Audio module running".to_string()))
+            .await;
+
         while let Some(event) = rx.recv().await {
             match event {
                 ModuleEvent::AudioPlay { file_path } => {
@@ -152,9 +162,12 @@ impl AsyncModule for AudioModule {
                                 log::error!("{}", error_msg);
                                 let _ = tx.send(ModuleMessage::Error(error_msg)).await;
                             } else {
-                                let _ = tx.send(ModuleMessage::Status(format!(
-                                    "Playing audio: {}", file_path
-                                ))).await;
+                                let _ = tx
+                                    .send(ModuleMessage::Status(format!(
+                                        "Playing audio: {}",
+                                        file_path
+                                    )))
+                                    .await;
                             }
                         }
                         Err(e) => {
@@ -164,39 +177,46 @@ impl AsyncModule for AudioModule {
                         }
                     }
                 }
-                
+
                 ModuleEvent::AudioPause => {
                     if let Err(e) = self.pause().await {
                         let error_msg = format!("Failed to pause audio: {}", e);
                         log::error!("{}", error_msg);
                         let _ = tx.send(ModuleMessage::Error(error_msg)).await;
                     } else {
-                        let _ = tx.send(ModuleMessage::Status("Audio paused".to_string())).await;
+                        let _ = tx
+                            .send(ModuleMessage::Status("Audio paused".to_string()))
+                            .await;
                     }
                 }
-                
+
                 ModuleEvent::AudioStop => {
                     if let Err(e) = self.stop().await {
                         let error_msg = format!("Failed to stop audio: {}", e);
                         log::error!("{}", error_msg);
                         let _ = tx.send(ModuleMessage::Error(error_msg)).await;
                     } else {
-                        let _ = tx.send(ModuleMessage::Status("Audio stopped".to_string())).await;
+                        let _ = tx
+                            .send(ModuleMessage::Status("Audio stopped".to_string()))
+                            .await;
                     }
                 }
-                
+
                 ModuleEvent::AudioSetVolume(volume) => {
                     self.set_volume(volume).await;
-                    let _ = tx.send(ModuleMessage::Status(format!(
-                        "Volume set to {:.2}", volume
-                    ))).await;
+                    let _ = tx
+                        .send(ModuleMessage::Status(format!(
+                            "Volume set to {:.2}",
+                            volume
+                        )))
+                        .await;
                 }
-                
+
                 ModuleEvent::Shutdown => {
                     log::info!("Audio module received shutdown signal");
                     break;
                 }
-                
+
                 _ => {
                     // Audio module ignores other events
                 }
@@ -211,7 +231,8 @@ impl AsyncModule for AudioModule {
         if let Some(sink) = &self.sink {
             sink.stop();
         }
-        self.status.insert("status".to_string(), "shutdown".to_string());
+        self.status
+            .insert("status".to_string(), "shutdown".to_string());
         log::info!("Audio module shutdown complete");
         Ok(())
     }

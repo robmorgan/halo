@@ -59,11 +59,12 @@ impl ModuleManager {
         for (id, mut module) in modules_to_start {
             let (event_tx, event_rx) = mpsc::channel(1000);
             let message_tx = self.message_sender.clone();
+            let module_id = id.clone();
             
             let handle = tokio::spawn(async move {
                 if let Err(e) = module.run(event_rx, message_tx.clone()).await {
                     let _ = message_tx.send(ModuleMessage::Error(format!(
-                        "Module {:?} error: {}", id, e
+                        "Module {:?} error: {}", module_id, e
                     ))).await;
                 }
             });
