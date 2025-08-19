@@ -97,7 +97,8 @@ impl CuePanel {
 
         // Display cues with neat alignment and timecode
         let console_lock = console.lock();
-        let cues = console_lock.cue_manager().get_current_cues();
+        let cue_manager = console_lock.cue_manager();
+        let cues = cue_manager.get_current_cues();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             for cue in cues {
@@ -168,23 +169,18 @@ impl CuePanel {
 
                     // Show detailed info on hover
                     if progress_response.hovered() {
-                        egui::show_tooltip(
-                            ui.ctx(),
-                            progress_response.layer_id,
-                            egui::Id::new("cue_tooltip"),
-                            |ui| {
-                                ui.vertical(|ui| {
-                                    ui.label(format!("Cue: {}", cue.name));
-                                    ui.label(format!("Duration: {}s", cue.fade_time.as_secs()));
-                                    ui.label(format!("Progress: {:.1}%", progress * 100.0));
-                                    if is_active {
-                                        ui.label("Status: Active");
-                                    } else {
-                                        ui.label("Status: Inactive");
-                                    }
-                                });
-                            },
-                        );
+                        egui::Tooltip::new(&progress_response).ui(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.label(format!("Cue: {}", cue.name));
+                                ui.label(format!("Duration: {}s", cue.fade_time.as_secs()));
+                                ui.label(format!("Progress: {:.1}%", progress * 100.0));
+                                if is_active {
+                                    ui.label("Status: Active");
+                                } else {
+                                    ui.label("Status: Inactive");
+                                }
+                            });
+                        });
                     }
                 });
                 ui.add_space(2.0); // Spacing between cue rows

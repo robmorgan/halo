@@ -2,6 +2,7 @@ use halo_fixtures::ChannelType;
 
 use crate::{EffectMapping, StaticValue};
 
+#[derive(Clone)]
 pub struct Programmer {
     values: Vec<StaticValue>,
     effects: Vec<EffectMapping>,

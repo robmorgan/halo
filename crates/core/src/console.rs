@@ -626,6 +626,89 @@ impl SyncLightingConsole {
         })
     }
 
+    pub fn programmer(&self) -> Programmer {
+        self.runtime.block_on(async {
+            let console = self.inner.lock().unwrap();
+            let programmer = console.programmer.read().await;
+            programmer.clone()
+        })
+    }
+
+    pub fn record_cue(&mut self, name: String, fade_time: f64) -> Result<(), anyhow::Error> {
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().unwrap();
+            let programmer = console.programmer.read().await;
+            let values = programmer.get_values().clone();
+            drop(programmer);
+
+            let mut cue_manager = console.cue_manager.write().await;
+            // For now, add to the first cue list (index 0)
+            // TODO: Allow specifying which cue list to add to
+            if cue_manager.get_cue_lists().is_empty() {
+                cue_manager.add_cue_list(crate::CueList {
+                    name: "Main".to_string(),
+                    cues: vec![],
+                    audio_file: None,
+                });
+            }
+
+            let cue = crate::Cue {
+                id: 0, // Will be assigned by the cue manager
+                name,
+                fade_time: std::time::Duration::from_secs_f64(fade_time),
+                static_values: values,
+                effects: vec![],
+                timecode: None,
+                is_blocking: false,
+            };
+
+            cue_manager
+                .add_cue(0, cue)
+                .map(|_| ())
+                .map_err(|e| anyhow::anyhow!("Failed to add cue: {}", e))
+        })
+    }
+
+    pub fn set_programmer_preview_mode(&mut self, preview_mode: bool) {
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().unwrap();
+            let mut programmer = console.programmer.write().await;
+            programmer.set_preview_mode(preview_mode);
+        });
+    }
+
+    pub fn clear_programmer(&mut self) {
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().unwrap();
+            let mut programmer = console.programmer.write().await;
+            programmer.clear();
+        });
+    }
+
+    pub fn add_programmer_effect(&mut self, effect: crate::EffectMapping) {
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().unwrap();
+            let mut programmer = console.programmer.write().await;
+            programmer.add_effect(effect);
+        });
+    }
+
+    pub fn get_programmer_values(&self) -> Vec<crate::StaticValue> {
+        self.runtime.block_on(async {
+            let console = self.inner.lock().unwrap();
+            let programmer = console.programmer.read().await;
+            programmer.get_values().clone()
+        })
+    }
+
+    pub fn get_programmer_effects(&self) -> Vec<crate::EffectMapping> {
+        self.runtime.block_on(async {
+            let console = self.inner.lock().unwrap();
+            let programmer = console.programmer.read().await;
+            programmer.get_effects().clone()
+        })
+    }
+
     pub fn is_running(&self) -> bool {
         let console = self.inner.lock().unwrap();
         console.is_running()

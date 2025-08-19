@@ -70,7 +70,7 @@ impl CueEditor {
                     .clicked()
                 {
                     let mut console_lock = console.lock();
-                    console_lock.cue_manager.add_cue_list(CueList {
+                    console_lock.cue_manager().add_cue_list(CueList {
                         name: std::mem::take(&mut self.new_cue_list_name),
                         cues: Vec::new(),
                         audio_file: None,
@@ -84,7 +84,7 @@ impl CueEditor {
             // List of cue lists
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let console_lock = console.lock();
-                let cue_lists = console_lock.cue_manager.get_cue_lists();
+                let cue_lists = console_lock.cue_manager().get_cue_lists();
 
                 for (idx, cue_list) in cue_lists.iter().enumerate() {
                     let is_selected = self.selected_cue_list_index == Some(idx);
@@ -139,7 +139,7 @@ impl CueEditor {
                 {
                     // Need to get a mutable lock for modifying the console
                     let mut console_lock = console.lock();
-                    let _ = console_lock.cue_manager.add_cue(
+                    let _ = console_lock.cue_manager().add_cue(
                         cue_list_idx,
                         Cue {
                             name: std::mem::take(&mut self.new_cue_name),
@@ -177,7 +177,7 @@ impl CueEditor {
             .show(ui, |ui| {
                 let cue_list = {
                     let console_lock = console.lock();
-                    console_lock.cue_manager.get_cue_list(cue_list_idx).cloned()
+                    console_lock.cue_manager().get_cue_list(cue_list_idx).cloned()
                 };
 
                 // Header
@@ -214,7 +214,7 @@ impl CueEditor {
                                 if !self.editing_name_value.is_empty() {
                                     let mut console_lock = console.lock();
                                     if let Some(cue_list) =
-                                        console_lock.cue_manager.get_cue_list_mut(cue_list_idx)
+                                        console_lock.cue_manager().get_cue_list_mut(cue_list_idx)
                                     {
                                         if idx < cue_list.cues.len() {
                                             cue_list.cues[idx].name =
@@ -242,7 +242,7 @@ impl CueEditor {
                             let response = ui.add(
                                 egui::DragValue::new(&mut fade_time_secs)
                                     .speed(0.1)
-                                    .clamp_range(0.1..=30.0)
+                                    .range(0.1..=30.0)
                                     .suffix(" s"),
                             );
 

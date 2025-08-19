@@ -142,7 +142,7 @@ impl eframe::App for HaloApp {
 
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 header::render(ui, &mut self.active_tab, &self.console);
             });
         });

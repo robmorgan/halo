@@ -95,7 +95,7 @@ impl OverridesPanel {
                 for value in &button.values {
                     // Find the fixture and set the channel value
                     if let Some(fixture) = console
-                        .fixtures
+                        .fixtures()
                         .iter_mut()
                         .find(|f| f.id == value.fixture_id)
                     {
@@ -151,7 +151,7 @@ impl OverridesPanel {
                             // Apply this override
                             for value in &button.values {
                                 if let Some(fixture) = console_lock
-                                    .fixtures
+                                    .fixtures()
                                     .iter_mut()
                                     .find(|f| f.id == value.fixture_id)
                                 {

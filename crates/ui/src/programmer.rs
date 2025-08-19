@@ -290,9 +290,7 @@ impl Programmer {
 
             // Update preview mode based on button state
             let mut console_lock = console.lock();
-            console_lock
-                .programmer
-                .set_preview_mode(self.state.preview_mode);
+            console_lock.set_programmer_preview_mode(self.state.preview_mode);
             drop(console_lock);
         });
     }
@@ -317,7 +315,7 @@ impl Programmer {
                         if ui.button("CLEAR").clicked() {
                             // Clear the programmer
                             let mut console_lock = console.lock();
-                            console_lock.programmer.clear();
+                            console_lock.clear_programmer();
                             drop(console_lock);
 
                             // TODO - deselect fixtures also
@@ -339,8 +337,7 @@ impl Programmer {
                 {
                     let console_lock = console.lock();
                     programmer_values = console_lock
-                        .programmer
-                        .get_values()
+                        .get_programmer_values()
                         .iter()
                         .map(|v| StaticValue {
                             fixture_id: v.fixture_id,
@@ -349,7 +346,7 @@ impl Programmer {
                         })
                         .collect();
 
-                    effects = console_lock.programmer.get_effects().clone();
+                    effects = console_lock.get_programmer_effects();
                 }
 
                 // Group values by fixture_id
@@ -1275,7 +1272,7 @@ impl Programmer {
                                 if ui
                                     .add(
                                         egui::DragValue::new(&mut step_value)
-                                            .clamp_range(1..=16)
+                                            .range(1..=16)
                                             .speed(0.1),
                                     )
                                     .changed()

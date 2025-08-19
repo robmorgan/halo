@@ -60,8 +60,8 @@ impl PatchPanel {
 
         // Update DMX addresses for existing fixtures
         for (idx, address) in self.dmx_addresses.iter().enumerate() {
-            if idx < console_lock.fixtures.len() {
-                let fixture = &mut console_lock.fixtures[idx];
+            if idx < console_lock.fixtures().len() {
+                let fixture = &mut console_lock.fixtures()[idx];
                 fixture.start_address = *address;
                 fixture.universe = self.selected_universe;
             }
@@ -82,11 +82,11 @@ impl PatchPanel {
         // Reset the new fixture form
         self.new_fixture_data.name = String::new();
         self.new_fixture_data.start_address =
-            self.find_next_available_address(&console_lock.fixtures);
+            self.find_next_available_address(&console_lock.fixtures());
 
         // Update local DMX addresses
-        if self.dmx_addresses.len() < console_lock.fixtures.len() {
-            self.dmx_addresses.resize(console_lock.fixtures.len(), 1);
+        if self.dmx_addresses.len() < console_lock.fixtures().len() {
+            self.dmx_addresses.resize(console_lock.fixtures().len(), 1);
         }
 
         drop(console_lock);

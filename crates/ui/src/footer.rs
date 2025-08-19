@@ -13,7 +13,7 @@ pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>, 
     {
         let mut console = console.lock();
         fixture_count = console.fixtures().len();
-        clock = console.link_state.get_clock_state();
+        clock = console.get_link_state().get_clock_state();
         drop(console);
     }
 

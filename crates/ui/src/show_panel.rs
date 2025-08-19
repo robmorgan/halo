@@ -58,7 +58,7 @@ impl ShowPanel {
                     .save_file()
                 {
                     let mut console_lock = console.lock();
-                    if let Err(err) = console_lock.show_manager.load_show(&path) {
+                    if let Err(err) = console_lock.show_manager().load_show(&path) {
                         self.error_message = Some(format!("Error saving show: {}", err));
                     }
                 }
@@ -68,7 +68,7 @@ impl ShowPanel {
                 self.load_dialog_open = true;
                 // Refresh available shows
                 let console_lock = console.lock();
-                match console_lock.show_manager.list_shows() {
+                match console_lock.show_manager().list_shows() {
                     Ok(shows) => {
                         self.available_shows = shows;
                         self.show_names = self
@@ -154,7 +154,7 @@ impl ShowPanel {
                         {
                             if let Some(path) = &self.selected_show_path {
                                 let mut console_lock = console.lock();
-                                if let Err(err) = console_lock.show_manager.load_show(path) {
+                                if let Err(err) = console_lock.show_manager().load_show(path) {
                                     self.error_message =
                                         Some(format!("Error loading show: {}", err));
                                 } else {

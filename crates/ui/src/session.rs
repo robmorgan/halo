@@ -214,7 +214,7 @@ impl SessionPanel {
                     if play_button.clicked() {
                         self.playback_state = PlaybackState::Playing;
                         let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.go();
+                        let _ = console_lock.cue_manager().go();
                         drop(console_lock);
                     }
 
@@ -235,7 +235,7 @@ impl SessionPanel {
                     if hold_button.clicked() {
                         self.playback_state = PlaybackState::Holding;
                         let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.hold();
+                        let _ = console_lock.cue_manager().hold();
                         drop(console_lock);
                     }
 
@@ -256,7 +256,7 @@ impl SessionPanel {
                     if stop_button.clicked() {
                         self.playback_state = PlaybackState::Stopped;
                         let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.stop();
+                        let _ = console_lock.cue_manager().stop();
                         drop(console_lock);
                     }
                 });
