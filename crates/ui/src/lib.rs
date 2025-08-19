@@ -1,19 +1,20 @@
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
+use console_adapter::ConsoleAdapter;
 use cue::CuePanel;
 use cue_editor::CueEditor;
 use eframe::egui;
 use fixture::FixtureGrid;
-use halo_core::{EffectType, SyncLightingConsole as LightingConsole};
+use halo_core::EffectType;
 use master::{MasterPanel, OverridesPanel};
-use parking_lot::Mutex;
 use patch_panel::PatchPanel;
 use programmer::Programmer;
 use session::SessionPanel;
 use show_panel::ShowPanel;
 use timeline::Timeline;
 
+mod console_adapter;
 mod cue;
 mod cue_editor;
 mod fader;
@@ -36,7 +37,7 @@ pub enum ActiveTab {
     ShowManager,
 }
 pub struct HaloApp {
-    pub console: Arc<Mutex<LightingConsole>>,
+    pub console: Arc<ConsoleAdapter>,
     last_update: Instant,
     current_time: SystemTime,
     active_tab: ActiveTab,
@@ -68,10 +69,7 @@ pub struct HaloApp {
 }
 
 impl HaloApp {
-    fn new(_cc: &eframe::CreationContext<'_>, console: Arc<Mutex<LightingConsole>>) -> Self {
-        // The async console handles its own event loop internally
-        // No need for a separate event loop thread
-
+    fn new(_cc: &eframe::CreationContext<'_>, console: Arc<ConsoleAdapter>) -> Self {
         Self {
             console,
             last_update: Instant::now(),
@@ -112,32 +110,26 @@ impl eframe::App for HaloApp {
         self.last_update = now;
         self.current_time = SystemTime::now();
 
-        // Update the console
-        {
-            let mut console = self.console.lock();
-            console.update();
+        // Process any pending events from the console
+        self.console.process_events();
+
+        // Get the current state from the console
+        let state = self.console.get_state();
+
+        // Update the session panel with the current playback state and time
+        self.session_panel.set_playback_state(state.playback_state);
+        if let Some(timecode) = state.timecode {
+            self.session_panel.set_timecode(timecode);
         }
 
-        // Get items from the console
-        {
-            let mut console = self.console.lock();
-            let fixtures = console.fixtures();
-            let cue_manager = console.cue_manager();
-            let playback_state = cue_manager.get_playback_state();
+        // Update the programmer with the current fixtures and selection
+        self.programmer.set_fixtures(state.fixtures.clone());
+        self.programmer
+            .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
 
-            // Update the session panel with the current playback state and time
-            self.session_panel.set_playback_state(playback_state);
-            if let Some(timecode) = cue_manager.current_timecode {
-                self.session_panel.set_timecode(timecode);
-            }
-
-            // Update the programmer with the current fixtures and selection
-            self.programmer.set_fixtures(fixtures);
-            self.programmer
-                .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
-
-            // Update the console with the current bpm
-            console.set_bpm(self.session_panel.bpm);
+        // Update the console with the current bpm if it changed
+        if (self.session_panel.bpm - state.bpm).abs() > 0.001 {
+            let _ = self.console.set_bpm(self.session_panel.bpm);
         }
 
         // Header
@@ -204,7 +196,7 @@ impl eframe::App for HaloApp {
     }
 }
 
-pub fn run_ui(console: Arc<Mutex<LightingConsole>>) -> eframe::Result {
+pub fn run_ui(console: Arc<ConsoleAdapter>) -> eframe::Result {
     let native_options = eframe::NativeOptions {
         // initial_window_size: Some(egui::vec2(400.0, 200.0)),
         // min_window_size: Some(egui::vec2(300.0, 150.0)),

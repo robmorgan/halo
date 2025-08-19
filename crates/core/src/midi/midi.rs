@@ -1,11 +1,13 @@
 use crate::StaticValue;
 
+#[derive(Debug, Clone)]
 pub enum MidiAction {
     StaticValues(Vec<StaticValue>),
     TriggerCue(String), // Cue name to trigger
 }
 
 // Represent a MIDI override (could be from keys, pads, or controls)
+#[derive(Debug, Clone)]
 pub struct MidiOverride {
     pub action: MidiAction,
 }

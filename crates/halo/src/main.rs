@@ -5,9 +5,8 @@ use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{LightingConsole, CueList, MidiAction, MidiOverride, NetworkConfig};
-use parking_lot::Mutex;
-use tokio::time::interval;
+use halo_core::{ConsoleCommand, ConsoleEvent, ConsoleHandle, LightingConsole, CueList, MidiAction, MidiOverride, NetworkConfig};
+use tokio::sync::mpsc;
 
 /// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
@@ -59,34 +58,15 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("Destination: {}", network_config.get_destination());
     println!("Port: {}", network_config.port);
 
+    // Create channels for communication
+    let (command_tx, command_rx) = mpsc::unbounded_channel::<ConsoleCommand>();
+    let (event_tx, event_rx) = mpsc::unbounded_channel::<ConsoleEvent>();
+
+    // Create the console handle for sending commands
+    let console_handle = ConsoleHandle::new(command_tx.clone());
+
     // Create the async console
-    let mut console = LightingConsole::new(80., network_config.clone()).unwrap();
-    console.load_fixture_library();
-
-    // patch fixtures
-    let _ = console.patch_fixture("Left PAR", "shehds-rgbw-par", 1, 1).await;
-    let _ = console.patch_fixture("Right PAR", "shehds-rgbw-par", 1, 9).await;
-    let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18).await;
-    let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28).await;
-    let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38).await;
-    let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 48).await;
-    let _ = console.patch_fixture(
-        "Smoke #1",
-        "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
-        1,
-        69,
-    ).await;
-    let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80).await;
-
-    // store the cues in a default cue list
-    let cue_lists = vec![CueList {
-        name: "Default".to_string(),
-        cues: vec![],
-        audio_file: None,
-    }];
-
-    // load cue lists
-    console.set_cue_lists(cue_lists).await;
+    let console = LightingConsole::new(80., network_config.clone()).unwrap();
 
     // // Blue Strobe Fast
     // console.add_midi_override(
@@ -133,54 +113,103 @@ async fn main() -> Result<(), anyhow::Error> {
 
     //// Cue Overrides
 
-    // Initialize the async console and all modules
-    console.initialize().await?;
-
-    println!("Async lighting console initialized successfully!");
+    println!("Starting lighting console with channel-based communication...");
     println!("MIDI support: {}", args.enable_midi);
     println!("Show file: {:?}", args.show_file);
 
-    // Create the main console update loop
-    let console_arc = Arc::new(Mutex::new(console));
-    let console_clone = Arc::clone(&console_arc);
-
-    // Spawn the main lighting loop (replaces the old EventLoop)
-    let lighting_handle = tokio::spawn(async move {
-        let mut update_interval = interval(Duration::from_millis(23)); // ~44Hz
-        
-        loop {
-            update_interval.tick().await;
-            
-            {
-                let mut console = console_clone.lock();
-                if !console.is_running() {
-                    break;
-                }
-                
-                if let Err(e) = console.update().await {
-                    log::error!("Console update error: {}", e);
-                }
-            }
+    // Spawn the console task with channel communication
+    let console_handle_for_task = console_handle.clone();
+    let console_task = tokio::spawn(async move {
+        // Run the console with channels
+        if let Err(e) = console.run_with_channels(command_rx, event_tx).await {
+            log::error!("Console error: {}", e);
         }
-        
-        log::info!("Lighting loop shutting down");
     });
 
-    // Launch the UI in the main thread with the async console
+    // Send initialization commands
+    console_handle.send_command(ConsoleCommand::Initialize)?;
+    
+    // Allow time for initialization
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Patch fixtures via commands
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Left PAR".to_string(),
+        profile_name: "shehds-rgbw-par".to_string(),
+        universe: 1,
+        address: 1,
+    })?;
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Right PAR".to_string(),
+        profile_name: "shehds-rgbw-par".to_string(),
+        universe: 1,
+        address: 9,
+    })?;
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Left Spot".to_string(),
+        profile_name: "shehds-led-spot-60w".to_string(),
+        universe: 1,
+        address: 18,
+    })?;
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Right Spot".to_string(),
+        profile_name: "shehds-led-spot-60w".to_string(),
+        universe: 1,
+        address: 28,
+    })?;
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Left Wash".to_string(),
+        profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
+        universe: 1,
+        address: 38,
+    })?;
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Right Wash".to_string(),
+        profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
+        universe: 1,
+        address: 48,
+    })?;
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Smoke #1".to_string(),
+        profile_name: "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
+        universe: 1,
+        address: 69,
+    })?;
+    console_handle.send_command(ConsoleCommand::PatchFixture {
+        name: "Pinspot".to_string(),
+        profile_name: "shehds-mini-led-pinspot-10w".to_string(),
+        universe: 1,
+        address: 80,
+    })?;
+
+    // Set up cue lists
+    let cue_lists = vec![CueList {
+        name: "Default".to_string(),
+        cues: vec![],
+        audio_file: None,
+    }];
+    console_handle.send_command(ConsoleCommand::SetCueLists { cue_lists })?;
+
+    // Launch the UI in the main thread with the channel-based console adapter
     // Temporarily disabled due to UI compilation issues
+    // let ui_console_adapter = Arc::new(halo_ui::console_adapter::ConsoleAdapter::new(
+    //     console_handle.clone(),
+    //     event_rx,
+    // ));
     // let ui_result = tokio::task::spawn_blocking(move || {
-    //     halo_ui::run_ui(console_arc)
+    //     halo_ui::run_ui(ui_console_adapter)
     // }).await;
 
-    // Wait for lighting loop to finish
-    lighting_handle.abort();
-    let _ = lighting_handle.await;
+    // For now, just wait for a bit then shutdown
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    
+    // Send shutdown command
+    console_handle.send_command(ConsoleCommand::Shutdown)?;
+    
+    // Wait for console task to finish
+    let _ = console_task.await;
 
-    // Shutdown console
-    // Note: This is simplified - in a real implementation you'd want proper shutdown handling
     log::info!("Application shutting down");
-
-    // Temporarily return success since UI is disabled
     Ok(())
 }
 

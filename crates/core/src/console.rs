@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
@@ -8,14 +9,16 @@ use halo_fixtures::{Fixture, FixtureLibrary};
 
 use crate::artnet::network_config::NetworkConfig;
 use crate::cue::cue_manager::{CueManager, PlaybackState};
+use crate::messages::{ConsoleCommand, ConsoleEvent};
 use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::modules::{
     AudioModule, DmxModule, MidiModule, ModuleEvent, ModuleId, ModuleManager, ModuleMessage,
     SmpteModule,
 };
 use crate::programmer::Programmer;
+use crate::rhythm::rhythm::RhythmState;
 use crate::show::show_manager::ShowManager;
-use crate::{ableton_link, CueList, RhythmState};
+use crate::{ableton_link, CueList};
 
 pub struct LightingConsole {
     // Core components
@@ -125,7 +128,7 @@ impl LightingConsole {
         message: ModuleMessage,
         rhythm_state: &Arc<RwLock<RhythmState>>,
         cue_manager: &Arc<RwLock<CueManager>>,
-        fixtures: &Arc<RwLock<Vec<Fixture>>>,
+        _fixtures: &Arc<RwLock<Vec<Fixture>>>,
     ) {
         match message {
             ModuleMessage::Event(event) => {
@@ -149,7 +152,7 @@ impl LightingConsole {
 
     async fn handle_midi_input(
         midi_msg: MidiMessage,
-        rhythm_state: &Arc<RwLock<RhythmState>>,
+        _rhythm_state: &Arc<RwLock<RhythmState>>,
         cue_manager: &Arc<RwLock<CueManager>>,
     ) {
         match midi_msg {
@@ -478,6 +481,345 @@ impl LightingConsole {
             .map_err(|e| anyhow::anyhow!(e))?;
         Ok(())
     }
+
+    /// Process a command from the UI
+    pub async fn process_command(
+        &mut self,
+        command: ConsoleCommand,
+        event_tx: &mpsc::UnboundedSender<ConsoleEvent>,
+    ) -> Result<(), anyhow::Error> {
+        use ConsoleCommand::*;
+
+        match command {
+            Initialize => {
+                self.initialize().await?;
+                let _ = event_tx.send(ConsoleEvent::Initialized);
+            }
+            Shutdown => {
+                self.shutdown().await?;
+                let _ = event_tx.send(ConsoleEvent::ShutdownComplete);
+            }
+            Update => {
+                self.update().await?;
+            }
+
+            // Show management
+            NewShow { name } => {
+                self.new_show(name.clone()).await?;
+                let _ = event_tx.send(ConsoleEvent::ShowCreated { name });
+            }
+            LoadShow { path } => {
+                self.load_show(&path).await?;
+                let show = self.get_show().await;
+                let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+            }
+            SaveShow => {
+                let path = self.save_show().await?;
+                let _ = event_tx.send(ConsoleEvent::ShowSaved { path });
+            }
+            SaveShowAs { name, path } => {
+                let saved_path = self.save_show_as(name, path).await?;
+                let _ = event_tx.send(ConsoleEvent::ShowSaved { path: saved_path });
+            }
+            ReloadShow => {
+                self.reload_show().await?;
+                let show = self.get_show().await;
+                let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+            }
+
+            // Fixture management
+            PatchFixture {
+                name,
+                profile_name,
+                universe,
+                address,
+            } => {
+                let fixture_id = self
+                    .patch_fixture(&name, &profile_name, universe, address)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let fixtures = self.fixtures.read().await;
+                if let Some(fixture) = fixtures.get(fixture_id) {
+                    let _ = event_tx.send(ConsoleEvent::FixturePatched {
+                        fixture_id,
+                        fixture: fixture.clone(),
+                    });
+                }
+            }
+            UnpatchFixture { fixture_id } => {
+                // TODO: Implement unpatch_fixture method
+                let _ = event_tx.send(ConsoleEvent::FixtureUnpatched { fixture_id });
+            }
+            UpdateFixtureChannels {
+                fixture_id,
+                channel_values,
+            } => {
+                // TODO: Implement fixture channel update
+                let _ = event_tx.send(ConsoleEvent::FixtureValuesChanged {
+                    fixture_id,
+                    values: channel_values,
+                });
+            }
+
+            // Cue management
+            SetCueLists { cue_lists } => {
+                self.set_cue_lists(cue_lists.clone()).await;
+                let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+            }
+            PlayCue {
+                list_index,
+                cue_index,
+            } => {
+                let _ = self
+                    .cue_manager
+                    .write()
+                    .await
+                    .go_to_cue(list_index, cue_index);
+                let _ = event_tx.send(ConsoleEvent::CueStarted {
+                    list_index,
+                    cue_index,
+                });
+            }
+            StopCue { list_index } => {
+                let _ = self.cue_manager.write().await.stop();
+                let _ = event_tx.send(ConsoleEvent::CueStopped { list_index });
+            }
+            PauseCue { list_index: _ } => {
+                let _ = self.cue_manager.write().await.hold();
+                let state = self.cue_manager.read().await.get_playback_state();
+                let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+            }
+            ResumeCue { list_index: _ } => {
+                let _ = self.cue_manager.write().await.go();
+                let state = self.cue_manager.read().await.get_playback_state();
+                let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+            }
+            GoToCue {
+                list_index,
+                cue_index,
+            } => {
+                let _ = self
+                    .cue_manager
+                    .write()
+                    .await
+                    .go_to_cue(list_index, cue_index);
+                let _ = event_tx.send(ConsoleEvent::CueStarted {
+                    list_index,
+                    cue_index,
+                });
+            }
+            NextCue { list_index: _ } => {
+                let _ = self.cue_manager.write().await.go_to_next_cue();
+            }
+            PrevCue { list_index: _ } => {
+                let _ = self.cue_manager.write().await.go_to_previous_cue();
+            }
+
+            // Playback control
+            Play => {
+                let _ = self.cue_manager.write().await.go();
+                let state = self.cue_manager.read().await.get_playback_state();
+                let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+            }
+            Stop => {
+                let _ = self.cue_manager.write().await.stop();
+                let state = self.cue_manager.read().await.get_playback_state();
+                let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+            }
+            Pause => {
+                let _ = self.cue_manager.write().await.hold();
+                let state = self.cue_manager.read().await.get_playback_state();
+                let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+            }
+            Resume => {
+                let _ = self.cue_manager.write().await.go();
+                let state = self.cue_manager.read().await.get_playback_state();
+                let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+            }
+            SetPlaybackRate { rate: _ } => {
+                // TODO: Implement playback rate control
+            }
+
+            // Tempo and timing
+            SetBpm { bpm } => {
+                self.set_bpm(bpm);
+                let _ = event_tx.send(ConsoleEvent::BpmChanged { bpm });
+            }
+            TapTempo => {
+                // TODO: Implement tap tempo
+                let bpm = self.tempo;
+                let _ = event_tx.send(ConsoleEvent::BpmChanged { bpm });
+            }
+            SetTimecode { timecode } => {
+                self.cue_manager.write().await.current_timecode = Some(timecode);
+                let _ = event_tx.send(ConsoleEvent::TimecodeUpdated { timecode });
+            }
+
+            // MIDI
+            AddMidiOverride {
+                note,
+                override_config,
+            } => {
+                self.add_midi_override(note, override_config);
+                let _ = event_tx.send(ConsoleEvent::MidiOverrideAdded { note });
+            }
+            RemoveMidiOverride { note } => {
+                self.midi_overrides.remove(&note);
+                let _ = event_tx.send(ConsoleEvent::MidiOverrideRemoved { note });
+            }
+            ProcessMidiMessage { message } => {
+                // TODO: Process MIDI message
+                let _ = event_tx.send(ConsoleEvent::MidiMessageReceived { message });
+            }
+
+            // Audio
+            PlayAudio { file_path } => {
+                self.play_audio(file_path.clone()).await?;
+                let _ = event_tx.send(ConsoleEvent::AudioStarted { file_path });
+            }
+            StopAudio => {
+                // TODO: Implement stop_audio method
+                let _ = event_tx.send(ConsoleEvent::AudioStopped);
+            }
+            SetAudioVolume { volume } => {
+                self.set_audio_volume(volume).await?;
+                let _ = event_tx.send(ConsoleEvent::AudioVolumeChanged { volume });
+            }
+
+            // Effects
+            ApplyEffect {
+                fixture_ids: _,
+                channel_type: _,
+                effect_type: _,
+                frequency: _,
+                amplitude: _,
+                offset: _,
+            } => {
+                // TODO: Implement apply_effect method
+            }
+            ClearEffect {
+                fixture_ids: _,
+                channel_type: _,
+            } => {
+                // TODO: Implement clear_effect method
+            }
+
+            // Programmer
+            SetProgrammerValue {
+                fixture_id: _,
+                channel: _,
+                value: _,
+            } => {
+                // TODO: Implement programmer channel value setting
+            }
+            ClearProgrammer => {
+                self.programmer.write().await.clear();
+            }
+            RecordProgrammerToCue {
+                list_index: _,
+                cue_index: _,
+            } => {
+                // TODO: Implement record_programmer_to_cue method
+            }
+
+            // Query commands
+            QueryFixtures => {
+                let fixtures = self.fixtures.read().await.clone();
+                let _ = event_tx.send(ConsoleEvent::FixturesList { fixtures });
+            }
+            QueryCueLists => {
+                let cue_lists = self.cue_manager.read().await.get_cue_lists().clone();
+                let _ = event_tx.send(ConsoleEvent::CueListsList { cue_lists });
+            }
+            QueryPlaybackState => {
+                let state = self.cue_manager.read().await.get_playback_state();
+                let _ = event_tx.send(ConsoleEvent::CurrentPlaybackState { state });
+            }
+            QueryRhythmState => {
+                let rhythm_guard = self.rhythm_state.read().await;
+                let state = RhythmState {
+                    beat_phase: rhythm_guard.beat_phase,
+                    bar_phase: rhythm_guard.bar_phase,
+                    phrase_phase: rhythm_guard.phrase_phase,
+                    beats_per_bar: rhythm_guard.beats_per_bar,
+                    bars_per_phrase: rhythm_guard.bars_per_phrase,
+                    last_tap_time: rhythm_guard.last_tap_time,
+                    tap_count: rhythm_guard.tap_count,
+                };
+                let _ = event_tx.send(ConsoleEvent::CurrentRhythmState { state });
+            }
+            QueryShow => {
+                let show = self.get_show().await;
+                let _ = event_tx.send(ConsoleEvent::CurrentShow { show });
+            }
+            QueryLinkState => {
+                let enabled = self.link_state.link.is_enabled();
+                let num_peers = self.link_state.link.num_peers();
+                let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Run the console with channel-based communication
+    pub async fn run_with_channels(
+        mut self,
+        mut command_rx: mpsc::UnboundedReceiver<ConsoleCommand>,
+        event_tx: mpsc::UnboundedSender<ConsoleEvent>,
+    ) -> Result<(), anyhow::Error> {
+        // Initialize the console
+        self.initialize().await?;
+        let _ = event_tx.send(ConsoleEvent::Initialized);
+
+        // Start the update loop
+        let mut update_interval = tokio::time::interval(std::time::Duration::from_millis(23)); // ~44Hz
+
+        loop {
+            tokio::select! {
+                // Process commands from UI
+                Some(command) = command_rx.recv() => {
+                    if let ConsoleCommand::Shutdown = command {
+                        self.shutdown().await?;
+                        let _ = event_tx.send(ConsoleEvent::ShutdownComplete);
+                        break;
+                    }
+
+                    if let Err(e) = self.process_command(command, &event_tx).await {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Command processing error: {}", e)
+                        });
+                    }
+                }
+
+                // Regular update tick
+                _ = update_interval.tick() => {
+                    if let Err(e) = self.update().await {
+                        log::error!("Update error: {}", e);
+                    }
+
+                    // Send periodic state updates
+                    if let Some(timecode) = self.cue_manager.read().await.current_timecode {
+                        let _ = event_tx.send(ConsoleEvent::TimecodeUpdated { timecode });
+                    }
+
+                    let rhythm_guard = self.rhythm_state.read().await;
+                    let rhythm_state = RhythmState {
+                        beat_phase: rhythm_guard.beat_phase,
+                        bar_phase: rhythm_guard.bar_phase,
+                        phrase_phase: rhythm_guard.phrase_phase,
+                        beats_per_bar: rhythm_guard.beats_per_bar,
+                        bars_per_phrase: rhythm_guard.bars_per_phrase,
+                        last_tap_time: rhythm_guard.last_tap_time,
+                        tap_count: rhythm_guard.tap_count,
+                    };
+                    let _ = event_tx.send(ConsoleEvent::RhythmStateUpdated { state: rhythm_state });
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Synchronous wrapper around the async LightingConsole for UI compatibility
@@ -611,7 +953,7 @@ impl SyncLightingConsole {
     }
 
     pub fn get_link_state(&self) -> ableton_link::State {
-        let console = self.inner.lock().unwrap();
+        let _console = self.inner.lock().unwrap();
         // Since ableton_link::State doesn't implement Clone, we'll need to handle this differently
         // For now, return a default state - this is a temporary fix
         ableton_link::State::new(120.0)

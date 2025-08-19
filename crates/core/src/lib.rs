@@ -7,8 +7,10 @@ pub use cue::cue_manager::{CueManager, PlaybackState};
 pub use effect::effect::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectParams, EffectType,
 };
+pub use messages::{ConsoleCommand, ConsoleEvent, ConsoleHandle};
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
 pub use rhythm::rhythm::{Interval, RhythmState};
+pub use show::show::Show;
 pub use show::show_manager::ShowManager;
 pub use timecode::timecode::TimeCode;
 
@@ -25,6 +27,7 @@ mod console;
 
 mod cue;
 mod effect;
+pub mod messages;
 mod midi;
 mod modules;
 mod programmer;
