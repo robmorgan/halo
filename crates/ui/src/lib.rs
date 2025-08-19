@@ -2,32 +2,23 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use console_adapter::ConsoleAdapter;
-use cue::CuePanel;
-use cue_editor::CueEditor;
 use eframe::egui;
-use fixture::FixtureGrid;
-use halo_core::EffectType;
-use master::{MasterPanel, OverridesPanel};
-use patch_panel::PatchPanel;
-use programmer::Programmer;
-use session::SessionPanel;
-use show_panel::ShowPanel;
-use timeline::Timeline;
 
-mod console_adapter;
-mod cue;
-mod cue_editor;
-mod fader;
-mod fixture;
+
+pub mod console_adapter;
 mod footer;
 mod header;
-mod master;
-mod patch_panel;
-mod programmer;
-mod session;
-mod show_panel;
-mod timeline;
 mod utils;
+// mod cue;
+// mod cue_editor;
+// mod fader;
+// mod fixture;
+// mod master;
+// mod patch_panel;
+// mod programmer;
+// mod session;
+// mod show_panel;
+// mod timeline;
 
 pub enum ActiveTab {
     Dashboard,
@@ -36,36 +27,21 @@ pub enum ActiveTab {
     PatchPanel,
     ShowManager,
 }
+
 pub struct HaloApp {
     pub console: Arc<ConsoleAdapter>,
     last_update: Instant,
     current_time: SystemTime,
     active_tab: ActiveTab,
-    selected_fixture_index: Option<usize>,
-    selected_cue_index: Option<usize>,
-    selected_chase_index: Option<usize>,
-    selected_step_index: Option<usize>,
-    new_fixture_name: String,
-    new_channel_name: String,
-    new_cue_name: String,
-    new_chase_name: String,
-    step_duration_ms: u64,
-    effect_frequency: f32,
-    effect_amplitude: f32,
-    effect_offset: f32,
-    selected_effect_type: EffectType,
-    temp_color_value: [f32; 3], // RGB for color picker
     fps: u32,
-    overrides_panel: OverridesPanel,
-    master_panel: MasterPanel,
-    fixture_grid: fixture::FixtureGrid,
-    session_panel: session::SessionPanel,
-    cue_panel: cue::CuePanel,
-    programmer: programmer::Programmer,
-    timeline: timeline::Timeline,
-    cue_editor: cue_editor::CueEditor,
-    patch_panel: PatchPanel,
-    show_panel: show_panel::ShowPanel,
+}
+
+pub struct HaloAppSync {
+    pub console: Arc<parking_lot::Mutex<halo_core::SyncLightingConsole>>,
+    last_update: Instant,
+    current_time: SystemTime,
+    active_tab: ActiveTab,
+    fps: u32,
 }
 
 impl HaloApp {
@@ -75,32 +51,104 @@ impl HaloApp {
             last_update: Instant::now(),
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
-            selected_fixture_index: None,
-            selected_cue_index: None,
-            selected_chase_index: None,
-            selected_step_index: None,
-            new_fixture_name: String::new(),
-            new_channel_name: String::new(),
-            new_cue_name: String::new(),
-            new_chase_name: String::new(),
-            step_duration_ms: 1000,
-            effect_frequency: 1.0,
-            effect_amplitude: 1.0,
-            effect_offset: 0.5,
-            selected_effect_type: EffectType::Sine,
-            temp_color_value: [0.5, 0.5, 0.5],
             fps: 60,
-            overrides_panel: OverridesPanel::new(),
-            master_panel: MasterPanel::new(),
-            fixture_grid: FixtureGrid::default(),
-            session_panel: SessionPanel::default(),
-            cue_panel: CuePanel::default(),
-            programmer: Programmer::new(),
-            timeline: Timeline::new(),
-            cue_editor: CueEditor::new(),
-            patch_panel: PatchPanel::new(),
-            show_panel: ShowPanel::new(),
         }
+    }
+}
+
+impl HaloAppSync {
+    fn new(_cc: &eframe::CreationContext<'_>, console: Arc<parking_lot::Mutex<halo_core::SyncLightingConsole>>) -> Self {
+        Self {
+            console,
+            last_update: Instant::now(),
+            current_time: SystemTime::now(),
+            active_tab: ActiveTab::Dashboard,
+            fps: 60,
+        }
+    }
+}
+
+impl eframe::App for HaloAppSync {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let now = Instant::now();
+        self.last_update = now;
+        self.current_time = SystemTime::now();
+
+        // Get the current state from the console
+        let console_lock = self.console.lock();
+        let fixtures = console_lock.fixtures().len();
+        let cue_manager = console_lock.cue_manager();
+        let playback_state = cue_manager.get_playback_state();
+        drop(console_lock);
+        
+        // Use a default BPM for now
+        let bpm = 120.0;
+
+        // Header
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                // Simplified header for sync console
+                ui.menu_button("File", |ui| {
+                    if ui.button("Quit").clicked() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
+            });
+        });
+
+        // Bottom UI
+        egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(format!("FPS: {}", self.fps));
+                ui.label(format!("Fixtures: {}", fixtures));
+                ui.label(format!("BPM: {:.1}", bpm));
+                ui.label(format!("State: {:?}", playback_state));
+            });
+        });
+
+        // Main content
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Halo Lighting Console (Sync Mode)");
+            ui.label("Message passing architecture enabled");
+            ui.label(format!("Active Fixtures: {}", fixtures));
+            
+            ui.add_space(20.0);
+            
+            // Basic controls
+            ui.horizontal(|ui| {
+                if ui.button("Play").clicked() {
+                    let mut console_lock = self.console.lock();
+                    console_lock.cue_manager().go();
+                }
+                if ui.button("Stop").clicked() {
+                    let mut console_lock = self.console.lock();
+                    console_lock.cue_manager().stop();
+                }
+                if ui.button("Pause").clicked() {
+                    let mut console_lock = self.console.lock();
+                    console_lock.cue_manager().hold();
+                }
+            });
+            
+            ui.add_space(10.0);
+            
+            // BPM control
+            ui.horizontal(|ui| {
+                ui.label("BPM:");
+                if ui.button("-").clicked() {
+                    let mut console_lock = self.console.lock();
+                    console_lock.set_bpm(bpm - 1.0);
+                }
+                ui.label(format!("{:.1}", bpm));
+                if ui.button("+").clicked() {
+                    let mut console_lock = self.console.lock();
+                    console_lock.set_bpm(bpm + 1.0);
+                }
+            });
+        });
+
+        // Request a repaint
+        ctx.request_repaint();
     }
 }
 
@@ -116,22 +164,6 @@ impl eframe::App for HaloApp {
         // Get the current state from the console
         let state = self.console.get_state();
 
-        // Update the session panel with the current playback state and time
-        self.session_panel.set_playback_state(state.playback_state);
-        if let Some(timecode) = state.timecode {
-            self.session_panel.set_timecode(timecode);
-        }
-
-        // Update the programmer with the current fixtures and selection
-        self.programmer.set_fixtures(state.fixtures.clone());
-        self.programmer
-            .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
-
-        // Update the console with the current bpm if it changed
-        if (self.session_panel.bpm - state.bpm).abs() > 0.001 {
-            let _ = self.console.set_bpm(self.session_panel.bpm);
-        }
-
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
@@ -141,8 +173,6 @@ impl eframe::App for HaloApp {
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            self.programmer.show(ui, &self.console);
-            self.timeline.show(ui);
             footer::render(ui, &self.console, self.fps);
         });
 
@@ -150,43 +180,72 @@ impl eframe::App for HaloApp {
             ActiveTab::Dashboard => {
                 egui::SidePanel::right("right_panel").show(ctx, |ui| {
                     ui.set_min_width(400.0);
-                    self.session_panel.render(ui, &self.console);
-                    ui.separator();
-                    self.cue_panel.render(ui, &self.console);
+                    ui.heading("Session Info");
+                    ui.label(format!("Fixtures: {}", state.fixtures.len()));
+                    ui.label(format!("BPM: {:.1}", state.bpm));
+                    ui.label(format!("Playback: {:?}", state.playback_state));
+                    ui.label(format!("Link Enabled: {}", state.link_enabled));
+                    ui.label(format!("Link Peers: {}", state.link_peers));
                 });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading("Halo Lighting Console");
+                    ui.label("Message passing architecture enabled");
+                    ui.label(format!("Active Fixtures: {}", state.fixtures.len()));
+                    ui.label(format!("Cue Lists: {}", state.cue_lists.len()));
+                    
+                    ui.add_space(20.0);
+                    
+                    // Basic controls
                     ui.horizontal(|ui| {
-                        // Overrides Grid
-                        self.overrides_panel.show(ui, &self.console);
-
-                        ui.add_space(10.0);
-                        ui.separator();
-                        ui.add_space(10.0);
-
-                        // Master Panel
-                        self.master_panel.show(ui, &self.console);
+                        if ui.button("Play").clicked() {
+                            let _ = self.console.play();
+                        }
+                        if ui.button("Stop").clicked() {
+                            let _ = self.console.stop();
+                        }
+                        if ui.button("Pause").clicked() {
+                            let _ = self.console.pause();
+                        }
                     });
-
-                    // Fixtures
-                    let main_content_height = ui.available_height(); // Subtract header and footer heights
-                    self.fixture_grid
-                        .render(ui, &self.console, main_content_height - 60.0);
-                    // TODO - Subtract the height of the overrides grid
+                    
+                    ui.add_space(10.0);
+                    
+                    // BPM control
+                    ui.horizontal(|ui| {
+                        ui.label("BPM:");
+                        if ui.button("-").clicked() {
+                            let _ = self.console.set_bpm(state.bpm - 1.0);
+                        }
+                        ui.label(format!("{:.1}", state.bpm));
+                        if ui.button("+").clicked() {
+                            let _ = self.console.set_bpm(state.bpm + 1.0);
+                        }
+                    });
                 });
             }
             ActiveTab::CueEditor => {
-                self.cue_editor.render(ctx, &self.console);
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading("Cue Editor");
+                    ui.label("Cue editor functionality coming soon...");
+                });
             }
             ActiveTab::Programmer => {
-                self.programmer.render_full_view(ctx, &self.console);
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading("Programmer");
+                    ui.label("Programmer functionality coming soon...");
+                });
             }
             ActiveTab::PatchPanel => {
-                self.patch_panel.render(ctx, &self.console);
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.heading("Patch Panel");
+                    ui.label("Patch panel functionality coming soon...");
+                });
             }
             ActiveTab::ShowManager => {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    self.show_panel.show(ui, &self.console);
+                    ui.heading("Show Manager");
+                    ui.label("Show manager functionality coming soon...");
                 });
             }
         }
@@ -198,8 +257,6 @@ impl eframe::App for HaloApp {
 
 pub fn run_ui(console: Arc<ConsoleAdapter>) -> eframe::Result {
     let native_options = eframe::NativeOptions {
-        // initial_window_size: Some(egui::vec2(400.0, 200.0)),
-        // min_window_size: Some(egui::vec2(300.0, 150.0)),
         viewport: eframe::egui::ViewportBuilder {
             title: Some(String::from("Halo")),
             app_id: Some(String::from("io.github.robmorgan.halo")),
@@ -213,5 +270,23 @@ pub fn run_ui(console: Arc<ConsoleAdapter>) -> eframe::Result {
         "Halo",
         native_options,
         Box::new(|cc| Ok(Box::new(HaloApp::new(cc, console)))),
+    )
+}
+
+pub fn run_ui_sync(console: Arc<parking_lot::Mutex<halo_core::SyncLightingConsole>>) -> eframe::Result {
+    let native_options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder {
+            title: Some(String::from("Halo")),
+            app_id: Some(String::from("io.github.robmorgan.halo")),
+            maximized: Some(true),
+            ..eframe::egui::ViewportBuilder::default()
+        },
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "Halo",
+        native_options,
+        Box::new(|cc| Ok(Box::new(HaloAppSync::new(cc, console)))),
     )
 }

@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui;
-use halo_core::{SyncLightingConsole as LightingConsole, PlaybackState};
-use parking_lot::Mutex;
+use halo_core::PlaybackState;
+use crate::console_adapter::ConsoleAdapter;
 
 /// A panel that shows the list of cues.
 #[derive(Default)]
@@ -12,39 +12,27 @@ pub struct CuePanel {
 }
 
 impl CuePanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
+    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<ConsoleAdapter>) {
         ui.heading("Cues");
 
-        let current_list;
-        {
-            let console_lock = console.lock();
-            current_list = console_lock.cue_manager().get_current_cue_list().cloned();
-            drop(console_lock);
-        }
+        let state = console.get_state();
+        let cue_lists = &state.cue_lists;
 
-        if let Some(current_list) = current_list {
+        if let Some(current_list) = cue_lists.first() {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.label("Current List:");
 
                     // Left arrow button
                     if ui.button("←").clicked() {
-                        let mut console_lock = console.lock();
-                        if let Err(err) = console_lock.cue_manager().select_previous_cue_list() {
-                            println!("Error switching to previous cue list: {}", err);
-                        }
-                        drop(console_lock);
+                        // TODO: Implement previous cue list selection
                     }
 
                     ui.strong(egui::RichText::new(&current_list.name).size(16.0));
 
                     // Right arrow button
                     if ui.button("→").clicked() {
-                        let mut console_lock = console.lock();
-                        if let Err(err) = console_lock.cue_manager().select_next_cue_list() {
-                            println!("Error switching to next cue list: {}", err);
-                        }
-                        drop(console_lock);
+                        // TODO: Implement next cue list selection
                     }
                 });
                 ui.add_space(5.0);
@@ -96,97 +84,83 @@ impl CuePanel {
         ui.separator();
 
         // Display cues with neat alignment and timecode
-        let console_lock = console.lock();
-        let cue_manager = console_lock.cue_manager();
-        let cues = cue_manager.get_current_cues();
+        if let Some(current_list) = cue_lists.first() {
+            let cues = &current_list.cues;
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for cue in cues {
-                ui.horizontal(|ui| {
-                    let is_active = console_lock.cue_manager().is_cue_active(cue.id);
-                    let active_color = if is_active {
-                        egui::Color32::from_rgb(100, 200, 100)
-                    } else {
-                        egui::Color32::from_rgb(150, 150, 150)
-                    };
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for cue in cues {
+                    ui.horizontal(|ui| {
+                        // TODO: Get active state from console state
+                        let is_active = false; // Placeholder
+                        let active_color = if is_active {
+                            egui::Color32::from_rgb(100, 200, 100)
+                        } else {
+                            egui::Color32::from_rgb(150, 150, 150)
+                        };
 
-                    // Cue name with fixed width
-                    ui.scope(|ui| {
-                        ui.style_mut().spacing.item_spacing.x = 0.0;
+                        // Cue name with fixed width
+                        ui.scope(|ui| {
+                            ui.style_mut().spacing.item_spacing.x = 0.0;
+                            ui.add_sized(
+                                [100.0, 20.0],
+                                egui::Label::new(
+                                    egui::RichText::new(&cue.name).color(active_color).strong(),
+                                ),
+                            );
+                        });
+
+                        // Timecode marker (estimated position in the timeline)
+                        let timecode = if let Some(timecode) = &cue.timecode {
+                            timecode
+                        } else {
+                            &"N/A".to_string()
+                        };
+
                         ui.add_sized(
                             [100.0, 20.0],
                             egui::Label::new(
-                                egui::RichText::new(&cue.name).color(active_color).strong(),
+                                egui::RichText::new(timecode)
+                                    .color(active_color)
+                                    .monospace(),
                             ),
                         );
-                    });
 
-                    // Timecode marker (estimated position in the timeline)
-                    let timecode = if let Some(timecode) = &cue.timecode {
-                        timecode
-                    } else {
-                        &"N/A".to_string()
-                    };
+                        // Duration with fixed width
+                        ui.add_sized(
+                            [80.0, 20.0],
+                            egui::Label::new(
+                                egui::RichText::new(Self::format_duration(cue.fade_time))
+                                    .color(active_color)
+                                    .monospace(),
+                            ),
+                        );
 
-                    ui.add_sized(
-                        [100.0, 20.0],
-                        egui::Label::new(
-                            egui::RichText::new(timecode)
-                                .color(active_color)
-                                .monospace(),
-                        ),
-                    );
+                        // Progress bar
+                        let progress = if is_active {
+                            0.5 // Placeholder
+                        } else {
+                            0.0
+                        };
 
-                    // Duration with fixed width
-                    ui.add_sized(
-                        [80.0, 20.0],
-                        egui::Label::new(
-                            egui::RichText::new(Self::format_duration(cue.fade_time))
-                                .color(active_color)
-                                .monospace(),
-                        ),
-                    );
-
-                    // Progress bar
-                    let progress = if is_active {
-                        console_lock.cue_manager().get_current_cue_progress()
-                    } else {
-                        0.0
-                    };
-
-                    let progress_response = ui.add(
-                        egui::ProgressBar::new(progress)
-                            .desired_width(200.0)
-                            .desired_height(30.0)
-                            .corner_radius(0.0)
-                            .animate(is_active)
-                            .fill(if is_active {
-                                egui::Color32::from_rgb(75, 2, 245)
-                            } else {
-                                egui::Color32::from_rgb(100, 100, 100)
-                            }),
-                    );
-
-                    // Show detailed info on hover
-                    if progress_response.hovered() {
-                        egui::Tooltip::new(&progress_response).ui(ui, |ui| {
-                            ui.vertical(|ui| {
-                                ui.label(format!("Cue: {}", cue.name));
-                                ui.label(format!("Duration: {}s", cue.fade_time.as_secs()));
-                                ui.label(format!("Progress: {:.1}%", progress * 100.0));
-                                if is_active {
-                                    ui.label("Status: Active");
+                        let progress_response = ui.add(
+                            egui::ProgressBar::new(progress)
+                                .desired_width(200.0)
+                                .desired_height(30.0)
+                                .corner_radius(0.0)
+                                .animate(is_active)
+                                .fill(if is_active {
+                                    egui::Color32::from_rgb(75, 2, 245)
                                 } else {
-                                    ui.label("Status: Inactive");
-                                }
-                            });
-                        });
-                    }
-                });
-                ui.add_space(2.0); // Spacing between cue rows
-            }
-        });
-        drop(console_lock);
+                                    egui::Color32::from_rgb(100, 100, 100)
+                                }),
+                        );
+
+                        // TODO: Add tooltip functionality
+                    });
+                    ui.add_space(2.0); // Spacing between cue rows
+                }
+            });
+        }
     }
 
     pub fn set_playback_state(&mut self, state: PlaybackState) {

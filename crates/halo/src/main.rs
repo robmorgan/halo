@@ -1,11 +1,10 @@
 use std::net::IpAddr;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{ConsoleCommand, ConsoleEvent, ConsoleHandle, LightingConsole, CueList, MidiAction, MidiOverride, NetworkConfig};
+use halo_core::{ConsoleCommand, ConsoleEvent, ConsoleHandle, LightingConsole, CueList, NetworkConfig};
 use tokio::sync::mpsc;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -117,6 +116,12 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("MIDI support: {}", args.enable_midi);
     println!("Show file: {:?}", args.show_file);
 
+    // Launch the UI in the main thread with the channel-based console adapter
+    let ui_console_adapter = Arc::new(halo_ui::console_adapter::ConsoleAdapter::new(
+        console_handle.clone(),
+        event_rx,
+    ));
+    
     // Spawn the console task with channel communication
     let console_handle_for_task = console_handle.clone();
     let console_task = tokio::spawn(async move {
@@ -127,7 +132,7 @@ async fn main() -> Result<(), anyhow::Error> {
     });
 
     // Send initialization commands
-    console_handle.send_command(ConsoleCommand::Initialize)?;
+    console_handle.send_command(ConsoleCommand::Initialize).map_err(|e| anyhow::anyhow!("{}", e))?;
     
     // Allow time for initialization
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -138,49 +143,49 @@ async fn main() -> Result<(), anyhow::Error> {
         profile_name: "shehds-rgbw-par".to_string(),
         universe: 1,
         address: 1,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
     console_handle.send_command(ConsoleCommand::PatchFixture {
         name: "Right PAR".to_string(),
         profile_name: "shehds-rgbw-par".to_string(),
         universe: 1,
         address: 9,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
     console_handle.send_command(ConsoleCommand::PatchFixture {
         name: "Left Spot".to_string(),
         profile_name: "shehds-led-spot-60w".to_string(),
         universe: 1,
         address: 18,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
     console_handle.send_command(ConsoleCommand::PatchFixture {
         name: "Right Spot".to_string(),
         profile_name: "shehds-led-spot-60w".to_string(),
         universe: 1,
         address: 28,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
     console_handle.send_command(ConsoleCommand::PatchFixture {
         name: "Left Wash".to_string(),
         profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
         universe: 1,
         address: 38,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
     console_handle.send_command(ConsoleCommand::PatchFixture {
         name: "Right Wash".to_string(),
         profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
         universe: 1,
         address: 48,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
     console_handle.send_command(ConsoleCommand::PatchFixture {
         name: "Smoke #1".to_string(),
         profile_name: "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
         universe: 1,
         address: 69,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
     console_handle.send_command(ConsoleCommand::PatchFixture {
         name: "Pinspot".to_string(),
         profile_name: "shehds-mini-led-pinspot-10w".to_string(),
         universe: 1,
         address: 80,
-    })?;
+    }).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Set up cue lists
     let cue_lists = vec![CueList {
@@ -188,23 +193,13 @@ async fn main() -> Result<(), anyhow::Error> {
         cues: vec![],
         audio_file: None,
     }];
-    console_handle.send_command(ConsoleCommand::SetCueLists { cue_lists })?;
-
-    // Launch the UI in the main thread with the channel-based console adapter
-    // Temporarily disabled due to UI compilation issues
-    // let ui_console_adapter = Arc::new(halo_ui::console_adapter::ConsoleAdapter::new(
-    //     console_handle.clone(),
-    //     event_rx,
-    // ));
-    // let ui_result = tokio::task::spawn_blocking(move || {
-    //     halo_ui::run_ui(ui_console_adapter)
-    // }).await;
-
-    // For now, just wait for a bit then shutdown
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    console_handle.send_command(ConsoleCommand::SetCueLists { cue_lists }).map_err(|e| anyhow::anyhow!("{}", e))?;
+    
+    // Run the UI with the console adapter
+    let _ui_result = halo_ui::run_ui(ui_console_adapter);
     
     // Send shutdown command
-    console_handle.send_command(ConsoleCommand::Shutdown)?;
+    console_handle.send_command(ConsoleCommand::Shutdown).map_err(|e| anyhow::anyhow!("{}", e))?;
     
     // Wait for console task to finish
     let _ = console_task.await;

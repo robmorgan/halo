@@ -1,29 +1,25 @@
 use std::sync::Arc;
 
-use eframe::egui;
-use halo_core::SyncLightingConsole as LightingConsole;
-use parking_lot::Mutex;
-
+use crate::console_adapter::ConsoleAdapter;
 use crate::ActiveTab;
+use eframe::egui;
 
 pub fn render(
     ui: &mut eframe::egui::Ui,
     active_tab: &mut ActiveTab,
-    console: &Arc<Mutex<LightingConsole>>,
+    console: &Arc<ConsoleAdapter>,
 ) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
             if let Some(path) = rfd::FileDialog::new().set_title("New Show").save_file() {
-                let mut console_lock = console.lock();
                 let name = path
                     .file_stem()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let _ = console_lock.new_show(name);
-                drop(console_lock);
+                let _ = console.new_show(name);
             }
-            ui.close_menu();
+            ui.close();
         }
 
         if ui.button("Open Show...").clicked() {
@@ -32,24 +28,18 @@ pub fn render(
                 .set_title("Open Show")
                 .pick_file()
             {
-                let mut console_lock = console.lock();
-                let _ = console_lock.load_show(&path);
-                drop(console_lock);
+                let _ = console.load_show(path);
             }
-            ui.close_menu();
+            ui.close();
         }
 
         if ui.button("Reload Show").clicked() {
-            let mut console_lock = console.lock();
-            let _ = console_lock.reload_show();
-            drop(console_lock);
+            let _ = console.reload_show();
         }
 
         if ui.button("Save Show").clicked() {
-            let mut console_lock = console.lock();
-            let _ = console_lock.save_show();
-            drop(console_lock);
-            ui.close_menu();
+            let _ = console.save_show();
+            ui.close();
         }
 
         if ui.button("Save Show As...").clicked() {
@@ -58,23 +48,21 @@ pub fn render(
                 .set_title("Save Show As")
                 .save_file()
             {
-                let mut console_lock = console.lock();
                 let name = path
                     .file_stem()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let _ = console_lock.save_show_as(name, path);
-                drop(console_lock);
+                let _ = console.save_show_as(name, path);
             }
-            ui.close_menu();
+            ui.close();
         }
 
         ui.separator();
 
         if ui.button("Show Manager").clicked() {
             *active_tab = ActiveTab::ShowManager;
-            ui.close_menu();
+            ui.close();
         }
 
         ui.separator();

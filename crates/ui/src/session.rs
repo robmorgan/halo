@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use halo_core::{SyncLightingConsole as LightingConsole, PlaybackState, TimeCode};
-use parking_lot::Mutex;
+use halo_core::{PlaybackState, TimeCode};
+use crate::console_adapter::ConsoleAdapter;
 
 enum ClockMode {
     TimeCode,
@@ -47,7 +47,7 @@ impl Default for SessionPanel {
 }
 
 impl SessionPanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
+    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<ConsoleAdapter>) {
         // Session UI
         ui.vertical(|ui| {
             // Top row - header and mode toggle
@@ -213,9 +213,7 @@ impl SessionPanel {
 
                     if play_button.clicked() {
                         self.playback_state = PlaybackState::Playing;
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager().go();
-                        drop(console_lock);
+                        let _ = console.play();
                     }
 
                     // Hold button
@@ -234,9 +232,7 @@ impl SessionPanel {
 
                     if hold_button.clicked() {
                         self.playback_state = PlaybackState::Holding;
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager().hold();
-                        drop(console_lock);
+                        let _ = console.pause();
                     }
 
                     // Stop button
@@ -255,9 +251,7 @@ impl SessionPanel {
 
                     if stop_button.clicked() {
                         self.playback_state = PlaybackState::Stopped;
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager().stop();
-                        drop(console_lock);
+                        let _ = console.stop();
                     }
                 });
             });
