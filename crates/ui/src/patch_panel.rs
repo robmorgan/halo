@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use halo_core::LightingConsole;
+use halo_core::SyncLightingConsole as LightingConsole;
 use halo_fixtures::{Fixture, FixtureLibrary};
 use parking_lot::Mutex;
 

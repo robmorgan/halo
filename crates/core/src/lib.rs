@@ -1,7 +1,7 @@
 pub use artnet::network_config::NetworkConfig;
 pub use audio::audio_player::AudioPlayer;
-pub use console::{EventLoop, LightingConsole};
-pub use async_console::AsyncLightingConsole;
+
+pub use console::{LightingConsole, SyncLightingConsole};
 pub use cue::cue::{Cue, CueList, EffectDistribution, EffectMapping, StaticValue};
 pub use cue::cue_manager::{CueManager, PlaybackState};
 pub use effect::effect::{
@@ -14,15 +14,15 @@ pub use timecode::timecode::TimeCode;
 
 // Async module system exports
 pub use modules::{
-    AsyncModule, ModuleEvent, ModuleId, ModuleMessage, ModuleManager,
-    AudioModule, DmxModule, MidiModule, SmpteModule,
+    AsyncModule, AudioModule, DmxModule, MidiModule, ModuleEvent, ModuleId, ModuleManager,
+    ModuleMessage, SmpteModule,
 };
 
 mod ableton_link;
 mod artnet;
 mod audio;
-mod async_console;
 mod console;
+
 mod cue;
 mod effect;
 mod midi;

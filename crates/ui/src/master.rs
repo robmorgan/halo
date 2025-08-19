@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Stroke, Vec2};
-use halo_core::{LightingConsole, MidiAction, MidiOverride, StaticValue};
+use halo_core::{SyncLightingConsole as LightingConsole, MidiAction, MidiOverride, StaticValue};
 use halo_fixtures::ChannelType;
 use parking_lot::Mutex;
 
@@ -301,34 +301,12 @@ impl MasterPanel {
     pub fn apply_masters(&self, console: &mut LightingConsole) {
         // Apply master dimmer
         if self.master_fader.is_active {
-            for fixture in &mut console.fixtures {
-                for channel in &mut fixture.channels {
-                    if let ChannelType::Dimmer = channel.channel_type {
-                        // Scale the channel value by the master value
-                        // Note: We apply the square of the fader value for a more natural feel
-                        let scaled_value =
-                            (channel.value as f32 * self.master_fader.value.powi(2)) as u8;
-                        channel.value = scaled_value;
-                    }
-                }
-            }
+            console.apply_master_fader(self.master_fader.value);
         }
 
         // Apply smoke master
         if self.smoke_fader.is_active {
-            for fixture in &mut console.fixtures {
-                if fixture.name.to_lowercase().contains("smoke") {
-                    for channel in &mut fixture.channels {
-                        if let ChannelType::Other(ref name) = channel.channel_type {
-                            if name == "Smoke" {
-                                let scaled_value =
-                                    (channel.value as f32 * self.smoke_fader.value.powi(2)) as u8;
-                                channel.value = scaled_value;
-                            }
-                        }
-                    }
-                }
-            }
+            console.apply_smoke_fader(self.smoke_fader.value);
         }
     }
 

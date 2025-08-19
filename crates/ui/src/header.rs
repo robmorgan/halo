@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use halo_core::LightingConsole;
+use halo_core::SyncLightingConsole as LightingConsole;
 use parking_lot::Mutex;
 
 use crate::ActiveTab;

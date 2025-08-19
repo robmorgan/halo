@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui;
-use halo_core::{LightingConsole, PlaybackState};
+use halo_core::{SyncLightingConsole as LightingConsole, PlaybackState};
 use parking_lot::Mutex;
 
 /// A panel that shows the list of cues.

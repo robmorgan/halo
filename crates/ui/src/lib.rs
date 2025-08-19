@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use std::thread::JoinHandle;
 use std::time::{Instant, SystemTime};
 
 use cue::CuePanel;
 use cue_editor::CueEditor;
 use eframe::egui;
 use fixture::FixtureGrid;
-use halo_core::{EffectType, EventLoop, LightingConsole};
+use halo_core::{EffectType, SyncLightingConsole as LightingConsole};
 use master::{MasterPanel, OverridesPanel};
 use parking_lot::Mutex;
 use patch_panel::PatchPanel;
@@ -38,7 +37,6 @@ pub enum ActiveTab {
 }
 pub struct HaloApp {
     pub console: Arc<Mutex<LightingConsole>>,
-    _event_thread: JoinHandle<()>,
     last_update: Instant,
     current_time: SystemTime,
     active_tab: ActiveTab,
@@ -71,19 +69,11 @@ pub struct HaloApp {
 
 impl HaloApp {
     fn new(_cc: &eframe::CreationContext<'_>, console: Arc<Mutex<LightingConsole>>) -> Self {
-        let mut event_loop = EventLoop::new(Arc::clone(&console), 44.0);
-
-        // Spawn the event loop thread
-        let event_thread = std::thread::Builder::new()
-            .name("HaloWorker".to_string())
-            .spawn(move || {
-                event_loop.run();
-            })
-            .expect("failed to spawn thread");
+        // The async console handles its own event loop internally
+        // No need for a separate event loop thread
 
         Self {
             console,
-            _event_thread: event_thread,
             last_update: Instant::now(),
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
@@ -122,15 +112,22 @@ impl eframe::App for HaloApp {
         self.last_update = now;
         self.current_time = SystemTime::now();
 
+        // Update the console
+        {
+            let mut console = self.console.lock();
+            console.update();
+        }
+
         // Get items from the console
         {
             let mut console = self.console.lock();
-            let fixtures = console.fixtures.to_vec();
-            let playback_state = console.cue_manager.get_playback_state();
+            let fixtures = console.fixtures();
+            let cue_manager = console.cue_manager();
+            let playback_state = cue_manager.get_playback_state();
 
             // Update the session panel with the current playback state and time
             self.session_panel.set_playback_state(playback_state);
-            if let Some(timecode) = console.cue_manager.current_timecode {
+            if let Some(timecode) = cue_manager.current_timecode {
                 self.session_panel.set_timecode(timecode);
             }
 

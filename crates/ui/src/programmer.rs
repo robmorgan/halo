@@ -5,7 +5,7 @@ use std::sync::Arc;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
 use halo_core::{
-    Effect, EffectDistribution, EffectMapping, EffectParams, EffectType, Interval, LightingConsole,
+    Effect, EffectDistribution, EffectMapping, EffectParams, EffectType, Interval, SyncLightingConsole as LightingConsole,
     StaticValue,
 };
 use halo_fixtures::{Channel, ChannelType, Fixture};

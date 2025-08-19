@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use halo_core::{LightingConsole, PlaybackState, TimeCode};
+use halo_core::{SyncLightingConsole as LightingConsole, PlaybackState, TimeCode};
 use parking_lot::Mutex;
 
 enum ClockMode {

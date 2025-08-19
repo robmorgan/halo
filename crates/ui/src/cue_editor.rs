@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui::{self, Color32, RichText};
-use halo_core::{Cue, CueList, LightingConsole};
+use halo_core::{Cue, CueList, SyncLightingConsole as LightingConsole};
 use parking_lot::Mutex;
 use rfd::FileDialog;
 

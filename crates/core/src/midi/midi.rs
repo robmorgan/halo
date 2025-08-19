@@ -11,6 +11,7 @@ pub struct MidiOverride {
 }
 
 // MIDI message types we care about
+#[derive(Debug, Clone)]
 pub enum MidiMessage {
     NoteOn(u8, u8),        // (note, velocity)
     NoteOff(u8),           // note

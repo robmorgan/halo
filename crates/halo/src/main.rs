@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{AsyncLightingConsole, CueList, MidiAction, MidiOverride, NetworkConfig};
+use halo_core::{LightingConsole, CueList, MidiAction, MidiOverride, NetworkConfig};
 use parking_lot::Mutex;
 use tokio::time::interval;
 
@@ -60,7 +60,7 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("Port: {}", network_config.port);
 
     // Create the async console
-    let mut console = AsyncLightingConsole::new(80., network_config.clone()).unwrap();
+    let mut console = LightingConsole::new(80., network_config.clone()).unwrap();
     console.load_fixture_library();
 
     // patch fixtures
