@@ -8,7 +8,7 @@ edition = "2021"
 halo-fixtures = { path = "../fixtures" }
 rusty_link = "0.4.5"
 artnet_protocol = "0.4.2"
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 log = "0.4.27"
 crossterm = "0.29.0"
 midir = "0.10.2"
