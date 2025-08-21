@@ -644,7 +644,7 @@ impl LightingConsole {
             // Tempo and timing
             SetBpm { bpm } => {
                 self.set_bpm(bpm);
-                let _ = event_tx.send(ConsoleEvent::BpmChanged { bpm });
+                let _ = event_tx.send(ConsoleEvent::BpmChanged { bpm: self.tempo });
             }
             TapTempo => {
                 // TODO: Implement tap tempo
