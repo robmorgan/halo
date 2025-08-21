@@ -6,21 +6,13 @@ use tokio::sync::mpsc;
 pub fn render(
     ui: &mut eframe::egui::Ui,
     _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    state: &crate::state::ConsoleState,
     fps: u32,
 ) {
     let theme = Theme::default();
-    // TODO: Get state from the UI state instead of console
-    let fixture_count = 0; // Placeholder
-    let bpm = 120.0; // Placeholder
-    let rhythm_state = halo_core::RhythmState {
-        beat_phase: 0.0,
-        bar_phase: 0.0,
-        phrase_phase: 0.0,
-        beats_per_bar: 4,
-        bars_per_phrase: 4,
-        last_tap_time: None,
-        tap_count: 0,
-    };
+    let fixture_count = state.fixtures.len();
+    let bpm = state.bpm;
+    let rhythm_state = &state.rhythm_state;
 
     ui.painter().rect_filled(
         ui.available_rect_before_wrap(),

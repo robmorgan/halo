@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
+use crate::state::ConsoleState;
 use eframe::egui;
-use halo_core::PlaybackState;
-use crate::console_adapter::ConsoleAdapter;
+use halo_core::{ConsoleCommand, PlaybackState};
 
 /// A panel that shows the list of cues.
 #[derive(Default)]
@@ -12,10 +12,14 @@ pub struct CuePanel {
 }
 
 impl CuePanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<ConsoleAdapter>) {
+    pub fn render(
+        &mut self,
+        ui: &mut eframe::egui::Ui,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         ui.heading("Cues");
 
-        let state = console.get_state();
         let cue_lists = &state.cue_lists;
 
         if let Some(current_list) = cue_lists.first() {
@@ -70,16 +74,16 @@ impl CuePanel {
         // Column headers for cue list
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Cue").strong());
+            ui.label(egui::RichText::new("Cue".to_string()).strong());
             ui.add_space(80.0); // Adjust spacing based on your UI needs
 
-            ui.label(egui::RichText::new("Timecode").strong());
+            ui.label(egui::RichText::new("Timecode".to_string()).strong());
             ui.add_space(60.0);
 
-            ui.label(egui::RichText::new("Duration").strong());
+            ui.label(egui::RichText::new("Duration".to_string()).strong());
             ui.add_space(40.0);
 
-            ui.label(egui::RichText::new("Progress").strong());
+            ui.label(egui::RichText::new("Progress".to_string()).strong());
         });
         ui.separator();
 
@@ -173,4 +177,13 @@ impl CuePanel {
         let seconds = total_secs % 60;
         format!("{:02}:{:02}", minutes, seconds)
     }
+}
+
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    state: &ConsoleState,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+) {
+    let mut cue_panel = CuePanel::default();
+    cue_panel.render(ui, state, console_tx);
 }

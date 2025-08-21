@@ -10,17 +10,17 @@ mod header;
 mod state;
 mod utils;
 
-// TODO - renable these when you get message passing working
-// mod cue;
-// mod cue_editor;
-// mod fader;
-// mod fixture;
-// mod master;
-// mod patch_panel;
-// mod programmer;
-// mod session;
-// mod show_panel;
-// mod timeline;
+// Enable all UI modules
+mod cue;
+mod cue_editor;
+mod fader;
+mod fixture;
+mod master;
+mod patch_panel;
+mod programmer;
+mod session;
+mod show_panel;
+mod timeline;
 
 pub enum ActiveTab {
     Dashboard,
@@ -76,7 +76,7 @@ impl HaloApp {
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            footer::render(ui, &self.console_tx, self.fps);
+            footer::render(ui, &self.console_tx, &self.state, self.fps);
         });
 
         match self.active_tab {
@@ -133,26 +133,22 @@ impl HaloApp {
             }
             ActiveTab::CueEditor => {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.heading("Cue Editor");
-                    ui.label("Cue editor functionality coming soon...");
+                    cue_editor::render(ui, &self.state, &self.console_tx);
                 });
             }
             ActiveTab::Programmer => {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.heading("Programmer");
-                    ui.label("Programmer functionality coming soon...");
+                    programmer::render(ui, &self.state, &self.console_tx);
                 });
             }
             ActiveTab::PatchPanel => {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.heading("Patch Panel");
-                    ui.label("Patch panel functionality coming soon...");
+                    patch_panel::render(ui, &self.state, &self.console_tx);
                 });
             }
             ActiveTab::ShowManager => {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.heading("Show Manager");
-                    ui.label("Show manager functionality coming soon...");
+                    show_panel::render(ui, &self.state, &self.console_tx);
                 });
             }
         }
