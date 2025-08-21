@@ -1,12 +1,9 @@
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{
-    ConsoleCommand, ConsoleEvent, ConsoleHandle, CueList, LightingConsole, NetworkConfig,
-};
+use halo_core::{ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig};
 use tokio::sync::mpsc;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -61,10 +58,17 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Create channels for communication
     let (command_tx, command_rx) = mpsc::unbounded_channel::<ConsoleCommand>();
-    let (event_tx, event_rx) = mpsc::unbounded_channel::<ConsoleEvent>();
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ConsoleEvent>();
 
-    // Create the console handle for sending commands
-    let console_handle = ConsoleHandle::new(command_tx.clone());
+    // Convert tokio receiver to std receiver for UI
+    let (ui_event_tx, ui_event_rx) = std::sync::mpsc::channel::<ConsoleEvent>();
+
+    // Spawn a task to forward events from tokio to std channel
+    let _event_forwarder = tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let _ = ui_event_tx.send(event);
+        }
+    });
 
     // Create the async console
     let console = LightingConsole::new(80., network_config.clone()).unwrap();
@@ -121,7 +125,6 @@ async fn main() -> Result<(), anyhow::Error> {
     // Launch the UI in the main thread
 
     // Spawn the console task with channel communication
-    let console_handle_for_task = console_handle.clone();
     let console_task = tokio::spawn(async move {
         // Run the console with channels
         if let Err(e) = console.run_with_channels(command_rx, event_tx).await {
@@ -130,72 +133,72 @@ async fn main() -> Result<(), anyhow::Error> {
     });
 
     // Send initialization commands
-    console_handle
-        .send_command(ConsoleCommand::Initialize)
+    command_tx
+        .send(ConsoleCommand::Initialize)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Allow time for initialization
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Patch fixtures via commands
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Left PAR".to_string(),
             profile_name: "shehds-rgbw-par".to_string(),
             universe: 1,
             address: 1,
         })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Right PAR".to_string(),
             profile_name: "shehds-rgbw-par".to_string(),
             universe: 1,
             address: 9,
         })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Left Spot".to_string(),
             profile_name: "shehds-led-spot-60w".to_string(),
             universe: 1,
             address: 18,
         })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Right Spot".to_string(),
             profile_name: "shehds-led-spot-60w".to_string(),
             universe: 1,
             address: 28,
         })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Left Wash".to_string(),
             profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
             universe: 1,
             address: 38,
         })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Right Wash".to_string(),
             profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
             universe: 1,
             address: 48,
         })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Smoke #1".to_string(),
             profile_name: "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
             universe: 1,
             address: 69,
         })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    console_handle
-        .send_command(ConsoleCommand::PatchFixture {
+    command_tx
+        .send(ConsoleCommand::PatchFixture {
             name: "Pinspot".to_string(),
             profile_name: "shehds-mini-led-pinspot-10w".to_string(),
             universe: 1,
@@ -209,16 +212,16 @@ async fn main() -> Result<(), anyhow::Error> {
         cues: vec![],
         audio_file: None,
     }];
-    console_handle
-        .send_command(ConsoleCommand::SetCueLists { cue_lists })
+    command_tx
+        .send(ConsoleCommand::SetCueLists { cue_lists })
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    // Run the UI with the console adapter
-    let _ui_result = halo_ui::run_ui(ui_console_adapter);
+    // Run the UI with the channels
+    let _ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx);
 
     // Send shutdown command
-    console_handle
-        .send_command(ConsoleCommand::Shutdown)
+    command_tx
+        .send(ConsoleCommand::Shutdown)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Wait for console task to finish

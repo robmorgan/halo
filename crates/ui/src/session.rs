@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::mpsc;
 
-use crate::console_adapter::ConsoleAdapter;
 use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use halo_core::{PlaybackState, TimeCode};
+use halo_core::{ConsoleCommand, PlaybackState, TimeCode};
 
 enum ClockMode {
     TimeCode,
@@ -51,7 +51,11 @@ impl SessionPanel {
     //     self.state.bpm = temp_bpm; // Update local state for immediate UI feedback
     //     let _ = self.engine_tx.send(EngineCommand::SetTempo(temp_bpm));
     // }
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<ConsoleAdapter>) {
+    pub fn render(
+        &mut self,
+        ui: &mut eframe::egui::Ui,
+        tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         // Session UI
         ui.vertical(|ui| {
             // Top row - header and mode toggle
@@ -217,7 +221,7 @@ impl SessionPanel {
 
                     if play_button.clicked() {
                         self.playback_state = PlaybackState::Playing;
-                        let _ = console.play();
+                        let _ = tx.send(ConsoleCommand::Play);
                     }
 
                     // Hold button
@@ -236,7 +240,7 @@ impl SessionPanel {
 
                     if hold_button.clicked() {
                         self.playback_state = PlaybackState::Holding;
-                        let _ = console.pause();
+                        let _ = tx.send(ConsoleCommand::Pause);
                     }
 
                     // Stop button
@@ -255,7 +259,7 @@ impl SessionPanel {
 
                     if stop_button.clicked() {
                         self.playback_state = PlaybackState::Stopped;
-                        let _ = console.stop();
+                        let _ = tx.send(ConsoleCommand::Stop);
                     }
                 });
             });

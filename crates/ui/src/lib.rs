@@ -1,13 +1,10 @@
-use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
+use tokio::sync::mpsc;
 
-use console_adapter::ConsoleAdapter;
 use eframe::egui;
 use halo_core::{ConsoleCommand, ConsoleEvent};
 
 use crate::state::ConsoleState;
-
-pub mod console_adapter;
 mod footer;
 mod header;
 mod state;
@@ -49,13 +46,13 @@ pub struct HaloApp {
 impl HaloApp {
     fn new(
         _cc: &eframe::CreationContext<'_>,
-        engine_tx: mpsc::UnboundedSender<ConsoleCommand>,
-        engine_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
+        console_tx: mpsc::UnboundedSender<ConsoleCommand>,
+        console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
     ) -> Self {
         Self {
-            state: EngineState::default(),
-            engine_tx,
-            engine_rx,
+            state: ConsoleState::default(),
+            console_tx,
+            console_rx,
             last_update: Instant::now(),
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
@@ -64,10 +61,8 @@ impl HaloApp {
     }
 
     fn process_engine_updates(&mut self) {
-        while let Ok(event) = self.engine_rx.try_recv() {
-            match event {
-                EngineEvent::Update(update) => self.state.update(update),
-            }
+        while let Ok(event) = self.console_rx.try_recv() {
+            self.state.update(event);
         }
     }
 
@@ -75,13 +70,13 @@ impl HaloApp {
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                header::render(ui, &mut self.active_tab, &self.console);
+                header::render(ui, &mut self.active_tab, &self.console_tx);
             });
         });
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            footer::render(ui, &self.console, self.fps);
+            footer::render(ui, &self.console_tx, self.fps);
         });
 
         match self.active_tab {
@@ -89,31 +84,31 @@ impl HaloApp {
                 egui::SidePanel::right("right_panel").show(ctx, |ui| {
                     ui.set_min_width(400.0);
                     ui.heading("Session Info");
-                    ui.label(format!("Fixtures: {}", state.fixtures.len()));
-                    ui.label(format!("BPM: {:.1}", state.bpm));
-                    ui.label(format!("Playback: {:?}", state.playback_state));
-                    ui.label(format!("Link Enabled: {}", state.link_enabled));
-                    ui.label(format!("Link Peers: {}", state.link_peers));
+                    ui.label(format!("Fixtures: {}", self.state.fixtures.len()));
+                    ui.label(format!("BPM: {:.1}", self.state.bpm));
+                    ui.label(format!("Playback: {:?}", self.state.playback_state));
+                    ui.label(format!("Link Enabled: {}", self.state.link_enabled));
+                    ui.label(format!("Link Peers: {}", self.state.link_peers));
                 });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.heading("Halo Lighting Console");
                     ui.label("Message passing architecture enabled");
-                    ui.label(format!("Active Fixtures: {}", state.fixtures.len()));
-                    ui.label(format!("Cue Lists: {}", state.cue_lists.len()));
+                    ui.label(format!("Active Fixtures: {}", self.state.fixtures.len()));
+                    ui.label(format!("Cue Lists: {}", self.state.cue_lists.len()));
 
                     ui.add_space(20.0);
 
                     // Basic controls
                     ui.horizontal(|ui| {
                         if ui.button("Play").clicked() {
-                            let _ = self.console.play();
+                            let _ = self.console_tx.send(ConsoleCommand::Play);
                         }
                         if ui.button("Stop").clicked() {
-                            let _ = self.console.stop();
+                            let _ = self.console_tx.send(ConsoleCommand::Stop);
                         }
                         if ui.button("Pause").clicked() {
-                            let _ = self.console.pause();
+                            let _ = self.console_tx.send(ConsoleCommand::Pause);
                         }
                     });
 
@@ -123,11 +118,15 @@ impl HaloApp {
                     ui.horizontal(|ui| {
                         ui.label("BPM:");
                         if ui.button("-").clicked() {
-                            let _ = self.console.set_bpm(state.bpm - 1.0);
+                            let _ = self.console_tx.send(ConsoleCommand::SetBpm {
+                                bpm: self.state.bpm - 1.0,
+                            });
                         }
-                        ui.label(format!("{:.1}", state.bpm));
+                        ui.label(format!("{:.1}", self.state.bpm));
                         if ui.button("+").clicked() {
-                            let _ = self.console.set_bpm(state.bpm + 1.0);
+                            let _ = self.console_tx.send(ConsoleCommand::SetBpm {
+                                bpm: self.state.bpm + 1.0,
+                            });
                         }
                     });
                 });
@@ -169,26 +168,11 @@ impl eframe::App for HaloApp {
         // Process all updates first
         self.process_engine_updates();
 
-        // Clear dirty flags and react to changes
-        if self.state.dirty_flags.fixtures_changed {
-            self.rebuild_fixture_ui_cache();
-            self.state.dirty_flags.fixtures_changed = false;
-        }
-
-        if self.state.dirty_flags.cues_changed {
-            self.update_cue_list_view();
-            self.state.dirty_flags.cues_changed = false;
-        }
-
-        // Interpolate time-based values for smooth display
-        self.interpolate_timecode();
-        self.update_beat_animation();
-
         // Render UI
         self.render_ui(ctx);
 
         // Smart repaint based on playback state
-        if self.state.playback_state.is_playing() {
+        if matches!(self.state.playback_state, halo_core::PlaybackState::Playing) {
             ctx.request_repaint(); // Continuous
         } else {
             ctx.request_repaint_after(Duration::from_millis(100)); // Slower
@@ -196,7 +180,10 @@ impl eframe::App for HaloApp {
     }
 }
 
-pub fn run_ui(console: Arc<ConsoleAdapter>) -> eframe::Result {
+pub fn run_ui(
+    console_tx: mpsc::UnboundedSender<ConsoleCommand>,
+    console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
+) -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder {
             title: Some(String::from("Halo")),
@@ -210,6 +197,6 @@ pub fn run_ui(console: Arc<ConsoleAdapter>) -> eframe::Result {
     eframe::run_native(
         "Halo",
         native_options,
-        Box::new(|cc| Ok(Box::new(HaloApp::new(cc, console)))),
+        Box::new(|cc| Ok(Box::new(HaloApp::new(cc, console_tx, console_rx)))),
     )
 }

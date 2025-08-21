@@ -1,15 +1,26 @@
-use std::sync::Arc;
-
-use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
-use crate::console_adapter::ConsoleAdapter;
 use crate::utils::theme::Theme;
+use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
+use halo_core::ConsoleCommand;
+use tokio::sync::mpsc;
 
-pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<ConsoleAdapter>, fps: u32) {
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    fps: u32,
+) {
     let theme = Theme::default();
-    let state = console.get_state();
-    let fixture_count = state.fixtures.len();
-    let bpm = state.bpm;
-    let rhythm_state = state.rhythm_state;
+    // TODO: Get state from the UI state instead of console
+    let fixture_count = 0; // Placeholder
+    let bpm = 120.0; // Placeholder
+    let rhythm_state = halo_core::RhythmState {
+        beat_phase: 0.0,
+        bar_phase: 0.0,
+        phrase_phase: 0.0,
+        beats_per_bar: 4,
+        bars_per_phrase: 4,
+        last_tap_time: None,
+        tap_count: 0,
+    };
 
     ui.painter().rect_filled(
         ui.available_rect_before_wrap(),

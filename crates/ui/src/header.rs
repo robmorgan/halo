@@ -1,13 +1,12 @@
-use std::sync::Arc;
-
-use crate::console_adapter::ConsoleAdapter;
+use tokio::sync::mpsc;
+use halo_core::ConsoleCommand;
 use crate::ActiveTab;
 use eframe::egui;
 
 pub fn render(
     ui: &mut eframe::egui::Ui,
     active_tab: &mut ActiveTab,
-    console: &Arc<ConsoleAdapter>,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
 ) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
@@ -17,7 +16,7 @@ pub fn render(
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let _ = console.new_show(name);
+                let _ = console_tx.send(ConsoleCommand::NewShow { name });
             }
             ui.close();
         }
@@ -28,17 +27,17 @@ pub fn render(
                 .set_title("Open Show")
                 .pick_file()
             {
-                let _ = console.load_show(path);
+                let _ = console_tx.send(ConsoleCommand::LoadShow { path });
             }
             ui.close();
         }
 
         if ui.button("Reload Show").clicked() {
-            let _ = console.reload_show();
+            let _ = console_tx.send(ConsoleCommand::ReloadShow);
         }
 
         if ui.button("Save Show").clicked() {
-            let _ = console.save_show();
+            let _ = console_tx.send(ConsoleCommand::SaveShow);
             ui.close();
         }
 
@@ -53,7 +52,7 @@ pub fn render(
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let _ = console.save_show_as(name, path);
+                let _ = console_tx.send(ConsoleCommand::SaveShowAs { name, path });
             }
             ui.close();
         }
