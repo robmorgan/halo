@@ -18,7 +18,7 @@ use crate::modules::{
 use crate::programmer::Programmer;
 use crate::rhythm::rhythm::RhythmState;
 use crate::show::show_manager::ShowManager;
-use crate::{ableton_link, CueList};
+use crate::CueList;
 
 pub struct LightingConsole {
     // Core components
@@ -26,7 +26,6 @@ pub struct LightingConsole {
     tempo: f64,
     fixture_library: FixtureLibrary,
     pub fixtures: Arc<RwLock<Vec<Fixture>>>,
-    pub link_state: ableton_link::State,
     pub cue_manager: Arc<RwLock<CueManager>>,
     pub programmer: Arc<RwLock<Programmer>>,
     pub show_manager: Arc<RwLock<ShowManager>>,
@@ -48,9 +47,6 @@ pub struct LightingConsole {
 
 impl LightingConsole {
     pub fn new(bpm: f64, network_config: NetworkConfig) -> Result<Self, anyhow::Error> {
-        let link_state = ableton_link::State::new(bpm);
-        link_state.link.enable(true);
-
         let mut module_manager = ModuleManager::new();
 
         // Register async modules
@@ -66,7 +62,6 @@ impl LightingConsole {
             tempo: bpm,
             fixture_library: FixtureLibrary::new(),
             fixtures: Arc::new(RwLock::new(Vec::new())),
-            link_state,
             cue_manager: Arc::new(RwLock::new(CueManager::new(Vec::new()))),
             programmer: Arc::new(RwLock::new(Programmer::new())),
             show_manager: Arc::new(RwLock::new(show_manager)),
@@ -194,17 +189,22 @@ impl LightingConsole {
 
     /// Main update loop - call this regularly to process lighting data
     pub async fn update(&mut self) -> Result<(), anyhow::Error> {
+        // TODO - re-enable this when we have a way to sync the link state
         // Update Ableton Link state
-        self.link_state.capture_app_state();
-        self.link_state.link.enable_start_stop_sync(true);
-        self.link_state.commit_app_state();
+        // self.link_state.capture_app_state();
+        // self.link_state.link.enable_start_stop_sync(true);
+        // self.link_state.commit_app_state();
 
-        let clock = self.link_state.get_clock_state();
-        let beat_time = clock.beats;
-        self.tempo = self.link_state.session_state.tempo();
+        // let clock = self.link_state.get_clock_state();
+        // let beat_time = clock.beats;
+        //self.tempo = self.link_state.session_state.tempo();
+
+        // hard to 120 bpm for now (TODO - really bad)
+        self.tempo = 120.0;
 
         // Update rhythm state
-        self.update_rhythm_state(beat_time).await;
+        //self.update_rhythm_state(beat_time).await;
+        self.update_rhythm_state(0.0).await;
 
         // Process current cue if playing
         {
@@ -361,7 +361,8 @@ impl LightingConsole {
     pub fn set_bpm(&mut self, bpm: f64) {
         // set the tempo using ableton's boundary
         self.tempo = bpm.min(999.0).max(20.0);
-        self.link_state.set_tempo(self.tempo);
+        // TODO - re-enable this when we have a way to sync the link state
+        //self.link_state.set_tempo(self.tempo);
     }
 
     /// Add a new MIDI override configuration
@@ -753,9 +754,14 @@ impl LightingConsole {
                 let _ = event_tx.send(ConsoleEvent::CurrentShow { show });
             }
             QueryLinkState => {
-                let enabled = self.link_state.link.is_enabled();
-                let num_peers = self.link_state.link.num_peers();
-                let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+                // TODO - re-enable this when we have a way to sync the link state
+                // let enabled = self.link_state.link.is_enabled();
+                // let num_peers = self.link_state.link.num_peers();
+                // let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+                let _ = event_tx.send(ConsoleEvent::LinkStateChanged {
+                    enabled: false,
+                    num_peers: 0,
+                });
             }
         }
 
@@ -950,13 +956,6 @@ impl SyncLightingConsole {
             let cue_manager = console.cue_manager.read().await;
             cue_manager.clone()
         })
-    }
-
-    pub fn get_link_state(&self) -> ableton_link::State {
-        let _console = self.inner.lock().unwrap();
-        // Since ableton_link::State doesn't implement Clone, we'll need to handle this differently
-        // For now, return a default state - this is a temporary fix
-        ableton_link::State::new(120.0)
     }
 
     pub fn show_manager(&self) -> ShowManager {

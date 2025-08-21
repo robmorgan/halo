@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::console_adapter::ConsoleAdapter;
 use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
 use halo_core::{PlaybackState, TimeCode};
-use crate::console_adapter::ConsoleAdapter;
 
 enum ClockMode {
     TimeCode,
@@ -47,6 +47,10 @@ impl Default for SessionPanel {
 }
 
 impl SessionPanel {
+    // if ui.add(egui::DragValue::new(&mut temp_bpm).speed(0.1)).changed() {
+    //     self.state.bpm = temp_bpm; // Update local state for immediate UI feedback
+    //     let _ = self.engine_tx.send(EngineCommand::SetTempo(temp_bpm));
+    // }
     pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<ConsoleAdapter>) {
         // Session UI
         ui.vertical(|ui| {

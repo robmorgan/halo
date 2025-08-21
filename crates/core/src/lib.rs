@@ -7,7 +7,7 @@ pub use cue::cue_manager::{CueManager, PlaybackState};
 pub use effect::effect::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectParams, EffectType,
 };
-pub use messages::{ConsoleCommand, ConsoleEvent, ConsoleHandle};
+pub use messages::{ConsoleCommand, ConsoleEvent};
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
 pub use rhythm::rhythm::{Interval, RhythmState};
 pub use show::show::Show;
@@ -20,7 +20,6 @@ pub use modules::{
     ModuleMessage, SmpteModule,
 };
 
-mod ableton_link;
 mod artnet;
 mod audio;
 mod console;

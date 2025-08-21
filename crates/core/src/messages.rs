@@ -256,21 +256,3 @@ pub enum ConsoleEvent {
         show: Show,
     },
 }
-
-/// Handle for sending commands to the console
-#[derive(Clone)]
-pub struct ConsoleHandle {
-    command_tx: tokio::sync::mpsc::UnboundedSender<ConsoleCommand>,
-}
-
-impl ConsoleHandle {
-    pub fn new(command_tx: tokio::sync::mpsc::UnboundedSender<ConsoleCommand>) -> Self {
-        Self { command_tx }
-    }
-
-    pub fn send_command(&self, command: ConsoleCommand) -> Result<(), String> {
-        self.command_tx
-            .send(command)
-            .map_err(|e| format!("Failed to send command: {}", e))
-    }
-}
