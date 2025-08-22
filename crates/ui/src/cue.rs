@@ -1,7 +1,7 @@
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::state::ConsoleState;
+use crate::state::{ConsoleContext, ConsoleState};
 use eframe::egui;
 use halo_core::{ConsoleCommand, PlaybackState};
 
@@ -12,15 +12,10 @@ pub struct CuePanel {
 }
 
 impl CuePanel {
-    pub fn render(
-        &mut self,
-        ui: &mut eframe::egui::Ui,
-        state: &ConsoleState,
-        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
-    ) {
+    pub fn render(&mut self, ui: &mut eframe::egui::Ui, context: &ConsoleContext) {
         ui.heading("Cues");
 
-        let cue_lists = &state.cue_lists;
+        let cue_lists = &context.state.cue_lists;
 
         if let Some(current_list) = cue_lists.first() {
             ui.vertical(|ui| {
@@ -185,5 +180,6 @@ pub fn render(
     console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
 ) {
     let mut cue_panel = CuePanel::default();
-    cue_panel.render(ui, state, console_tx);
+    let context = ConsoleContext::new(state, console_tx);
+    cue_panel.render(ui, &context);
 }
