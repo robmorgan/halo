@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
@@ -18,7 +18,7 @@ use crate::modules::{
 use crate::programmer::Programmer;
 use crate::rhythm::rhythm::RhythmState;
 use crate::show::show_manager::ShowManager;
-use crate::CueList;
+use crate::{AbletonLinkManager, CueList};
 
 pub struct LightingConsole {
     // Core components
@@ -40,6 +40,9 @@ pub struct LightingConsole {
 
     // Rhythm state
     rhythm_state: Arc<RwLock<RhythmState>>,
+
+    // Ableton Link integration
+    link_manager: Arc<Mutex<AbletonLinkManager>>,
 
     // System state
     is_running: bool,
@@ -78,6 +81,7 @@ impl LightingConsole {
                 last_tap_time: None,
                 tap_count: 0,
             })),
+            link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
             is_running: false,
         })
     }
@@ -189,22 +193,14 @@ impl LightingConsole {
 
     /// Main update loop - call this regularly to process lighting data
     pub async fn update(&mut self) -> Result<(), anyhow::Error> {
-        // TODO - re-enable this when we have a way to sync the link state
         // Update Ableton Link state
-        // self.link_state.capture_app_state();
-        // self.link_state.link.enable_start_stop_sync(true);
-        // self.link_state.commit_app_state();
-
-        // let clock = self.link_state.get_clock_state();
-        // let beat_time = clock.beats;
-        //self.tempo = self.link_state.session_state.tempo();
-
-        // hard to 120 bpm for now (TODO - really bad)
-        self.tempo = 120.0;
-
-        // Update rhythm state
-        //self.update_rhythm_state(beat_time).await;
-        self.update_rhythm_state(0.0).await;
+        {
+            let mut link_manager = self.link_manager.lock().await;
+            if let Some((tempo, beat_time)) = link_manager.update().await {
+                self.tempo = tempo;
+                self.update_rhythm_state(beat_time).await;
+            }
+        }
 
         // Process current cue if playing
         {
@@ -357,12 +353,64 @@ impl LightingConsole {
         self.is_running
     }
 
+    /// Enable Ableton Link
+    pub async fn enable_ableton_link(&mut self) -> Result<(), anyhow::Error> {
+        {
+            let mut link_manager = self.link_manager.lock().await;
+            link_manager
+                .enable()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to enable Ableton Link: {}", e))?;
+
+            // Enable start/stop sync
+            link_manager
+                .enable_start_stop_sync(true)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to enable start/stop sync: {}", e))?;
+        }
+
+        log::info!("Ableton Link enabled and synchronized");
+        Ok(())
+    }
+
+    /// Disable Ableton Link
+    pub async fn disable_ableton_link(&mut self) {
+        let mut link_manager = self.link_manager.lock().await;
+        link_manager.disable();
+        log::info!("Ableton Link disabled");
+    }
+
+    /// Check if Ableton Link is enabled
+    pub async fn is_ableton_link_enabled(&self) -> bool {
+        let link_manager = self.link_manager.lock().await;
+        link_manager.is_enabled()
+    }
+
+    /// Get the number of Ableton Link peers
+    pub async fn get_ableton_link_peers(&self) -> u64 {
+        let link_manager = self.link_manager.lock().await;
+        link_manager.num_peers()
+    }
+
     /// Set the BPM/tempo
-    pub fn set_bpm(&mut self, bpm: f64) {
-        // set the tempo using ableton's boundary
-        self.tempo = bpm.min(999.0).max(20.0);
-        // TODO - re-enable this when we have a way to sync the link state
-        //self.link_state.set_tempo(self.tempo);
+    pub async fn set_bpm(&mut self, bpm: f64) -> Result<(), anyhow::Error> {
+        // Set the tempo using ableton's boundary
+        let bounded_bpm = bpm.min(999.0).max(20.0);
+        self.tempo = bounded_bpm;
+
+        // Update Ableton Link tempo if enabled
+        {
+            let link_manager = self.link_manager.lock().await;
+            if link_manager.is_enabled() {
+                drop(link_manager); // Release lock before async call
+                let mut link_manager = self.link_manager.lock().await;
+                if let Err(e) = link_manager.set_tempo(bounded_bpm).await {
+                    log::warn!("Failed to set Ableton Link tempo: {}", e);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Add a new MIDI override configuration
@@ -643,7 +691,9 @@ impl LightingConsole {
 
             // Tempo and timing
             SetBpm { bpm } => {
-                self.set_bpm(bpm);
+                if let Err(e) = self.set_bpm(bpm).await {
+                    log::error!("Failed to set BPM: {}", e);
+                }
                 let _ = event_tx.send(ConsoleEvent::BpmChanged { bpm: self.tempo });
             }
             TapTempo => {
@@ -754,14 +804,26 @@ impl LightingConsole {
                 let _ = event_tx.send(ConsoleEvent::CurrentShow { show });
             }
             QueryLinkState => {
-                // TODO - re-enable this when we have a way to sync the link state
-                // let enabled = self.link_state.link.is_enabled();
-                // let num_peers = self.link_state.link.num_peers();
-                // let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
-                let _ = event_tx.send(ConsoleEvent::LinkStateChanged {
-                    enabled: false,
-                    num_peers: 0,
-                });
+                let enabled = self.is_ableton_link_enabled().await;
+                let num_peers = self.get_ableton_link_peers().await;
+                let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+            }
+            EnableAbletonLink => {
+                if let Err(e) = self.enable_ableton_link().await {
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to enable Ableton Link: {}", e),
+                    });
+                } else {
+                    let enabled = self.is_ableton_link_enabled().await;
+                    let num_peers = self.get_ableton_link_peers().await;
+                    let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+                }
+            }
+            DisableAbletonLink => {
+                self.disable_ableton_link().await;
+                let enabled = self.is_ableton_link_enabled().await;
+                let num_peers = self.get_ableton_link_peers().await;
+                let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
             }
         }
 
@@ -858,7 +920,7 @@ impl SyncLightingConsole {
         address: u16,
     ) -> Result<usize, String> {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let mut console = self.inner.lock().await;
             console
                 .patch_fixture(name, profile_name, universe, address)
                 .await
@@ -867,38 +929,44 @@ impl SyncLightingConsole {
 
     pub fn set_cue_lists(&mut self, cue_lists: Vec<CueList>) {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             console.set_cue_lists(cue_lists).await;
         });
     }
 
     pub fn set_bpm(&mut self, bpm: f64) {
-        let mut console = self.inner.lock().unwrap();
-        console.set_bpm(bpm);
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().await;
+            if let Err(e) = console.set_bpm(bpm).await {
+                log::error!("Failed to set BPM: {}", e);
+            }
+        });
     }
 
     pub fn add_midi_override(&mut self, note: u8, override_config: MidiOverride) {
-        let mut console = self.inner.lock().unwrap();
-        console.add_midi_override(note, override_config);
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().await;
+            console.add_midi_override(note, override_config);
+        });
     }
 
     pub fn new_show(&mut self, name: String) -> Result<(), anyhow::Error> {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let mut console = self.inner.lock().await;
             console.new_show(name).await
         })
     }
 
     pub fn reload_show(&mut self) -> Result<(), anyhow::Error> {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let mut console = self.inner.lock().await;
             console.reload_show().await
         })
     }
 
     pub fn save_show(&mut self) -> Result<std::path::PathBuf, anyhow::Error> {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let mut console = self.inner.lock().await;
             console.save_show().await
         })
     }
@@ -909,28 +977,28 @@ impl SyncLightingConsole {
         path: std::path::PathBuf,
     ) -> Result<std::path::PathBuf, anyhow::Error> {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let mut console = self.inner.lock().await;
             console.save_show_as(name, path).await
         })
     }
 
     pub fn load_show(&mut self, path: &std::path::Path) -> Result<(), anyhow::Error> {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let mut console = self.inner.lock().await;
             console.load_show(path).await
         })
     }
 
     pub fn get_show(&self) -> crate::show::show::Show {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             console.get_show().await
         })
     }
 
     pub fn update(&mut self) {
         self.runtime.block_on(async {
-            let mut console = self.inner.lock().unwrap();
+            let mut console = self.inner.lock().await;
             if let Err(e) = console.update().await {
                 log::error!("Error updating console: {}", e);
             }
@@ -944,7 +1012,7 @@ impl SyncLightingConsole {
     // Getters for UI access
     pub fn fixtures(&self) -> Vec<Fixture> {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let fixtures = console.fixtures.read().await;
             fixtures.clone()
         })
@@ -952,7 +1020,7 @@ impl SyncLightingConsole {
 
     pub fn cue_manager(&self) -> CueManager {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let cue_manager = console.cue_manager.read().await;
             cue_manager.clone()
         })
@@ -960,7 +1028,7 @@ impl SyncLightingConsole {
 
     pub fn show_manager(&self) -> ShowManager {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let show_manager = console.show_manager.read().await;
             show_manager.clone()
         })
@@ -968,7 +1036,7 @@ impl SyncLightingConsole {
 
     pub fn programmer(&self) -> Programmer {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let programmer = console.programmer.read().await;
             programmer.clone()
         })
@@ -976,7 +1044,7 @@ impl SyncLightingConsole {
 
     pub fn record_cue(&mut self, name: String, fade_time: f64) -> Result<(), anyhow::Error> {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let programmer = console.programmer.read().await;
             let values = programmer.get_values().clone();
             drop(programmer);
@@ -1011,7 +1079,7 @@ impl SyncLightingConsole {
 
     pub fn set_programmer_preview_mode(&mut self, preview_mode: bool) {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let mut programmer = console.programmer.write().await;
             programmer.set_preview_mode(preview_mode);
         });
@@ -1019,7 +1087,7 @@ impl SyncLightingConsole {
 
     pub fn clear_programmer(&mut self) {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let mut programmer = console.programmer.write().await;
             programmer.clear();
         });
@@ -1027,7 +1095,7 @@ impl SyncLightingConsole {
 
     pub fn add_programmer_effect(&mut self, effect: crate::EffectMapping) {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let mut programmer = console.programmer.write().await;
             programmer.add_effect(effect);
         });
@@ -1035,7 +1103,7 @@ impl SyncLightingConsole {
 
     pub fn get_programmer_values(&self) -> Vec<crate::StaticValue> {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let programmer = console.programmer.read().await;
             programmer.get_values().clone()
         })
@@ -1043,21 +1111,55 @@ impl SyncLightingConsole {
 
     pub fn get_programmer_effects(&self) -> Vec<crate::EffectMapping> {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let programmer = console.programmer.read().await;
             programmer.get_effects().clone()
         })
     }
 
     pub fn is_running(&self) -> bool {
-        let console = self.inner.lock().unwrap();
-        console.is_running()
+        self.runtime.block_on(async {
+            let console = self.inner.lock().await;
+            console.is_running()
+        })
+    }
+
+    /// Enable Ableton Link
+    pub fn enable_ableton_link(&mut self) -> Result<(), anyhow::Error> {
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().await;
+            console.enable_ableton_link().await
+        })
+    }
+
+    /// Disable Ableton Link
+    pub fn disable_ableton_link(&mut self) {
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().await;
+            console.disable_ableton_link().await;
+        });
+    }
+
+    /// Check if Ableton Link is enabled
+    pub fn is_ableton_link_enabled(&self) -> bool {
+        self.runtime.block_on(async {
+            let console = self.inner.lock().await;
+            console.is_ableton_link_enabled().await
+        })
+    }
+
+    /// Get the number of Ableton Link peers
+    pub fn get_ableton_link_peers(&self) -> u64 {
+        self.runtime.block_on(async {
+            let console = self.inner.lock().await;
+            console.get_ableton_link_peers().await
+        })
     }
 
     /// Apply master fader to fixtures
     pub fn apply_master_fader(&mut self, master_value: f32) {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let mut fixtures = console.fixtures.write().await;
 
             for fixture in fixtures.iter_mut() {
@@ -1076,7 +1178,7 @@ impl SyncLightingConsole {
     /// Apply smoke fader to fixtures
     pub fn apply_smoke_fader(&mut self, smoke_value: f32) {
         self.runtime.block_on(async {
-            let console = self.inner.lock().unwrap();
+            let console = self.inner.lock().await;
             let mut fixtures = console.fixtures.write().await;
 
             for fixture in fixtures.iter_mut() {

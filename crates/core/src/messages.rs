@@ -108,6 +108,10 @@ pub enum ConsoleCommand {
         volume: f32,
     },
 
+    // Ableton Link
+    EnableAbletonLink,
+    DisableAbletonLink,
+
     // Effects
     ApplyEffect {
         fixture_ids: Vec<usize>,

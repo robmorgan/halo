@@ -38,6 +38,7 @@ pub struct HaloApp {
     console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
 
     last_update: Instant,
+    last_link_query: Instant,
     current_time: SystemTime,
     active_tab: ActiveTab,
     fps: u32,
@@ -54,6 +55,7 @@ impl HaloApp {
             console_tx,
             console_rx,
             last_update: Instant::now(),
+            last_link_query: Instant::now(),
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
             fps: 60,
@@ -70,7 +72,7 @@ impl HaloApp {
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                header::render(ui, &mut self.active_tab, &self.console_tx);
+                header::render(ui, &mut self.active_tab, &self.console_tx, &self.state);
             });
         });
 
@@ -87,8 +89,15 @@ impl HaloApp {
                     ui.label(format!("Fixtures: {}", self.state.fixtures.len()));
                     ui.label(format!("BPM: {:.1}", self.state.bpm));
                     ui.label(format!("Playback: {:?}", self.state.playback_state));
-                    ui.label(format!("Link Enabled: {}", self.state.link_enabled));
-                    ui.label(format!("Link Peers: {}", self.state.link_peers));
+                    
+                    // Link status with color
+                    let (link_status, link_color) = if self.state.link_enabled {
+                        ("● Link Active", egui::Color32::GREEN)
+                    } else {
+                        ("○ Link Inactive", egui::Color32::RED)
+                    };
+                    ui.colored_label(link_color, link_status);
+                    ui.label(format!("Peers: {}", self.state.link_peers));
                 });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
@@ -163,6 +172,12 @@ impl eframe::App for HaloApp {
 
         // Process all updates first
         self.process_engine_updates();
+
+        // Periodically query Link state (every 2 seconds)
+        if now.duration_since(self.last_link_query).as_secs() >= 2 {
+            let _ = self.console_tx.send(ConsoleCommand::QueryLinkState);
+            self.last_link_query = now;
+        }
 
         // Render UI
         self.render_ui(ctx);

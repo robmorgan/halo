@@ -1,12 +1,13 @@
-use tokio::sync::mpsc;
-use halo_core::ConsoleCommand;
 use crate::ActiveTab;
 use eframe::egui;
+use halo_core::ConsoleCommand;
+use tokio::sync::mpsc;
 
 pub fn render(
     ui: &mut eframe::egui::Ui,
     active_tab: &mut ActiveTab,
     console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    state: &crate::state::ConsoleState,
 ) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
@@ -77,8 +78,19 @@ pub fn render(
         }
     });
     ui.menu_button("Tools", |ui| {
-        if ui.button("Ableton Link").clicked() {
-            // TODO: Toggle Ableton Link
+        if ui
+            .button(if state.link_enabled {
+                "Disable Ableton Link"
+            } else {
+                "Enable Ableton Link"
+            })
+            .clicked()
+        {
+            if state.link_enabled {
+                let _ = console_tx.send(ConsoleCommand::DisableAbletonLink);
+            } else {
+                let _ = console_tx.send(ConsoleCommand::EnableAbletonLink);
+            }
         }
         if ui.button("MIDI Settings").clicked() {
             // TODO: Open MIDI settings

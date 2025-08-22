@@ -1,3 +1,4 @@
+pub use ableton_link::AbletonLinkManager;
 pub use artnet::network_config::NetworkConfig;
 pub use audio::audio_player::AudioPlayer;
 
@@ -20,6 +21,7 @@ pub use modules::{
     ModuleMessage, SmpteModule,
 };
 
+mod ableton_link;
 mod artnet;
 mod audio;
 mod console;
