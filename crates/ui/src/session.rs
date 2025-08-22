@@ -43,26 +43,33 @@ pub fn render(
 
             // Link state
             ui.heading("Ableton Link State");
-            
+
             // Status indicator with color
             let (status_text, status_color) = if state.link_enabled {
                 ("● Enabled", egui::Color32::GREEN)
             } else {
                 ("○ Disabled", egui::Color32::RED)
             };
-            
+
             ui.colored_label(status_color, status_text);
             ui.label(format!("Connected Peers: {}", state.link_peers));
-            
+
             // Toggle button
-            if ui.button(if state.link_enabled { "Disable Link" } else { "Enable Link" }).clicked() {
+            if ui
+                .button(if state.link_enabled {
+                    "Disable Link"
+                } else {
+                    "Enable Link"
+                })
+                .clicked()
+            {
                 if state.link_enabled {
                     let _ = console_tx.send(ConsoleCommand::DisableAbletonLink);
                 } else {
                     let _ = console_tx.send(ConsoleCommand::EnableAbletonLink);
                 }
             }
-            
+
             // Refresh button
             if ui.button("Refresh Link State").clicked() {
                 let _ = console_tx.send(ConsoleCommand::QueryLinkState);

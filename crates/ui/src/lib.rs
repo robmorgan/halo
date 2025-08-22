@@ -42,6 +42,12 @@ pub struct HaloApp {
     current_time: SystemTime,
     active_tab: ActiveTab,
     fps: u32,
+
+    // Component state - maintain state between renders
+    programmer_state: programmer::ProgrammerState,
+    cue_editor_state: cue_editor::CueEditor,
+    patch_panel_state: patch_panel::PatchPanelState,
+    show_panel_state: show_panel::ShowPanelState,
 }
 
 impl HaloApp {
@@ -59,6 +65,10 @@ impl HaloApp {
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
             fps: 60,
+            programmer_state: programmer::ProgrammerState::default(),
+            cue_editor_state: cue_editor::CueEditor::new(),
+            patch_panel_state: patch_panel::PatchPanelState::default(),
+            show_panel_state: show_panel::ShowPanelState::default(),
         }
     }
 
@@ -85,19 +95,7 @@ impl HaloApp {
             ActiveTab::Dashboard => {
                 egui::SidePanel::right("right_panel").show(ctx, |ui| {
                     ui.set_min_width(400.0);
-                    ui.heading("Session Info");
-                    ui.label(format!("Fixtures: {}", self.state.fixtures.len()));
-                    ui.label(format!("BPM: {:.1}", self.state.bpm));
-                    ui.label(format!("Playback: {:?}", self.state.playback_state));
-                    
-                    // Link status with color
-                    let (link_status, link_color) = if self.state.link_enabled {
-                        ("● Link Active", egui::Color32::GREEN)
-                    } else {
-                        ("○ Link Inactive", egui::Color32::RED)
-                    };
-                    ui.colored_label(link_color, link_status);
-                    ui.label(format!("Peers: {}", self.state.link_peers));
+                    session::render(ui, &self.state, &self.console_tx);
                 });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
@@ -141,24 +139,20 @@ impl HaloApp {
                 });
             }
             ActiveTab::CueEditor => {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    cue_editor::render(ui, &self.state, &self.console_tx);
-                });
+                self.cue_editor_state
+                    .render(ctx, &self.state, &self.console_tx);
             }
             ActiveTab::Programmer => {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    programmer::render(ui, &self.state, &self.console_tx);
-                });
+                self.programmer_state
+                    .render(ctx, &self.state, &self.console_tx);
             }
             ActiveTab::PatchPanel => {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    patch_panel::render(ui, &self.state, &self.console_tx);
-                });
+                self.patch_panel_state
+                    .render(ctx, &self.state, &self.console_tx);
             }
             ActiveTab::ShowManager => {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    show_panel::render(ui, &self.state, &self.console_tx);
-                });
+                self.show_panel_state
+                    .render(ctx, &self.state, &self.console_tx);
             }
         }
     }

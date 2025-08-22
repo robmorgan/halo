@@ -34,15 +34,15 @@ impl CueEditor {
 
     pub fn render(
         &mut self,
-        ui: &mut eframe::egui::Ui,
+        ctx: &egui::Context,
         state: &ConsoleState,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
-        egui::SidePanel::right("right_panel").show(ui.ctx(), |ui| {
+        egui::SidePanel::right("right_panel").show(ctx, |ui| {
             self.render_cue_lists_panel(ui, state, console_tx);
         });
 
-        egui::CentralPanel::default().show(ui.ctx(), |ui| {
+        egui::CentralPanel::default().show(ctx, |ui| {
             self.render_cues_panel(ui, state, console_tx);
         });
     }
@@ -171,5 +171,5 @@ pub fn render(
     console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
 ) {
     let mut cue_editor = CueEditor::default();
-    cue_editor.render(ui, state, console_tx);
+    cue_editor.render(ui.ctx(), state, console_tx);
 }
