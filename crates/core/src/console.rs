@@ -539,12 +539,16 @@ impl LightingConsole {
     ) -> Result<(), anyhow::Error> {
         use ConsoleCommand::*;
 
+        log::debug!("Processing command: {:?}", command);
+
         match command {
             Initialize => {
+                log::info!("Processing Initialize command");
                 self.initialize().await?;
                 let _ = event_tx.send(ConsoleEvent::Initialized);
             }
             Shutdown => {
+                log::info!("Processing Shutdown command");
                 self.shutdown().await?;
                 let _ = event_tx.send(ConsoleEvent::ShutdownComplete);
             }
@@ -558,9 +562,11 @@ impl LightingConsole {
                 let _ = event_tx.send(ConsoleEvent::ShowCreated { name });
             }
             LoadShow { path } => {
+                log::info!("Processing LoadShow command for path: {:?}", path);
                 self.load_show(&path).await?;
                 let show = self.get_show().await;
                 let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                log::info!("LoadShow command completed successfully");
             }
             SaveShow => {
                 let path = self.save_show().await?;
@@ -836,24 +842,35 @@ impl LightingConsole {
         mut command_rx: mpsc::UnboundedReceiver<ConsoleCommand>,
         event_tx: mpsc::UnboundedSender<ConsoleEvent>,
     ) -> Result<(), anyhow::Error> {
+        log::info!("Console run_with_channels starting...");
+
         // Initialize the console
+        log::info!("Initializing console...");
         self.initialize().await?;
+        log::info!("Console initialized successfully");
+
         let _ = event_tx.send(ConsoleEvent::Initialized);
+        log::info!("Sent Initialized event");
 
         // Start the update loop
         let mut update_interval = tokio::time::interval(std::time::Duration::from_millis(23)); // ~44Hz
+        log::info!("Starting console main loop...");
 
         loop {
             tokio::select! {
                 // Process commands from UI
                 Some(command) = command_rx.recv() => {
+                    log::debug!("Received command: {:?}", command);
+
                     if let ConsoleCommand::Shutdown = command {
+                        log::info!("Received shutdown command");
                         self.shutdown().await?;
                         let _ = event_tx.send(ConsoleEvent::ShutdownComplete);
                         break;
                     }
 
                     if let Err(e) = self.process_command(command, &event_tx).await {
+                        log::error!("Command processing error: {}", e);
                         let _ = event_tx.send(ConsoleEvent::Error {
                             message: format!("Command processing error: {}", e)
                         });
@@ -886,6 +903,7 @@ impl LightingConsole {
             }
         }
 
+        log::info!("Console run_with_channels completed");
         Ok(())
     }
 }

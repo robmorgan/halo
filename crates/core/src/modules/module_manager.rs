@@ -16,7 +16,7 @@ pub struct ModuleManager {
 impl ModuleManager {
     pub fn new() -> Self {
         let (message_sender, message_receiver) = mpsc::channel(1000);
-        
+
         Self {
             modules: HashMap::new(),
             module_handles: HashMap::new(),
@@ -40,7 +40,8 @@ impl ModuleManager {
                 Ok(_) => log::info!("Module {:?} initialized successfully", id),
                 Err(e) => {
                     log::error!("Failed to initialize module {:?}: {}", id, e);
-                    return Err(e);
+                    let error_message = format!("{:?}Module error: {}", id, e);
+                    return Err(error_message.into());
                 }
             }
         }
@@ -55,20 +56,23 @@ impl ModuleManager {
 
         // Start each module in its own async task
         let modules_to_start = std::mem::take(&mut self.modules);
-        
+
         for (id, mut module) in modules_to_start {
             let (event_tx, event_rx) = mpsc::channel(1000);
             let message_tx = self.message_sender.clone();
             let module_id = id.clone();
-            
+
             let handle = tokio::spawn(async move {
                 if let Err(e) = module.run(event_rx, message_tx.clone()).await {
-                    let _ = message_tx.send(ModuleMessage::Error(format!(
-                        "Module {:?} error: {}", module_id, e
-                    ))).await;
+                    let _ = message_tx
+                        .send(ModuleMessage::Error(format!(
+                            "Module {:?} error: {}",
+                            module_id, e
+                        )))
+                        .await;
                 }
             });
-            
+
             self.module_handles.insert(id.clone(), handle);
             self.module_senders.insert(id, event_tx);
         }
@@ -78,11 +82,16 @@ impl ModuleManager {
     }
 
     /// Send an event to a specific module
-    pub async fn send_to_module(&self, module_id: ModuleId, event: ModuleEvent) -> Result<(), String> {
+    pub async fn send_to_module(
+        &self,
+        module_id: ModuleId,
+        event: ModuleEvent,
+    ) -> Result<(), String> {
         if let Some(sender) = self.module_senders.get(&module_id) {
-            sender.send(event).await.map_err(|e| format!(
-                "Failed to send event to module {:?}: {}", module_id, e
-            ))?;
+            sender
+                .send(event)
+                .await
+                .map_err(|e| format!("Failed to send event to module {:?}: {}", module_id, e))?;
             Ok(())
         } else {
             Err(format!("Module {:?} not found", module_id))
