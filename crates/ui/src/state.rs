@@ -1,4 +1,4 @@
-use halo_core::{ConsoleCommand, CueList, PlaybackState};
+use halo_core::{ConsoleCommand, CueList, PlaybackState, RhythmState, Show, TimeCode};
 use halo_fixtures::Fixture;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
@@ -15,6 +15,10 @@ pub struct ConsoleState {
     pub link_quantum: f64,
     pub link_tempo: f64,
     pub link_start_stop_sync: bool,
+    pub link_enabled: bool,
+    pub rhythm_state: RhythmState,
+    pub show: Option<Show>,
+    pub timecode: Option<TimeCode>,
 }
 
 impl Default for ConsoleState {
@@ -29,6 +33,18 @@ impl Default for ConsoleState {
             link_quantum: 4.0,
             link_tempo: 120.0,
             link_start_stop_sync: false,
+            link_enabled: false,
+            rhythm_state: RhythmState {
+                beat_phase: 0.0,
+                bar_phase: 0.0,
+                phrase_phase: 0.0,
+                beats_per_bar: 4,
+                bars_per_phrase: 4,
+                last_tap_time: None,
+                tap_count: 0,
+            },
+            show: None,
+            timecode: None,
         }
     }
 }
@@ -52,11 +68,11 @@ impl ConsoleState {
                 self.bpm = bpm;
             }
             halo_core::ConsoleEvent::TimecodeUpdated { timecode } => {
-                // Store timecode info if needed
+                self.timecode = Some(timecode);
             }
             halo_core::ConsoleEvent::LinkStateChanged { enabled, num_peers } => {
                 self.link_peers = num_peers as u32;
-                // Note: enabled state could be added to ConsoleState if needed
+                self.link_enabled = enabled;
             }
             halo_core::ConsoleEvent::FixturePatched {
                 fixture_id,
@@ -69,10 +85,15 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::ShowLoaded { show } => {
                 self.fixtures.clear();
-                for fixture in show.fixtures {
-                    self.fixtures.insert(fixture.id.to_string(), fixture);
+                for fixture in &show.fixtures {
+                    self.fixtures
+                        .insert(fixture.id.to_string(), fixture.clone());
                 }
-                self.cue_lists = show.cue_lists;
+                self.cue_lists = show.cue_lists.clone();
+                self.show = Some(show);
+            }
+            halo_core::ConsoleEvent::RhythmStateUpdated { state } => {
+                self.rhythm_state = state;
             }
             _ => {
                 // Handle other events as needed

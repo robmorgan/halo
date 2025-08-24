@@ -64,10 +64,14 @@ async fn main() -> Result<(), anyhow::Error> {
     let (ui_event_tx, ui_event_rx) = std::sync::mpsc::channel::<ConsoleEvent>();
 
     // Spawn a task to forward events from tokio to std channel
-    let _event_forwarder = tokio::spawn(async move {
+    let event_forwarder = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
-            let _ = ui_event_tx.send(event);
+            if let Err(e) = ui_event_tx.send(event) {
+                log::error!("Failed to forward event to UI: {}", e);
+                break;
+            }
         }
+        log::info!("Event forwarder task completed");
     });
 
     // Create the async console
@@ -139,6 +143,18 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Allow time for initialization
     tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Load show file if specified
+    if let Some(show_file) = args.show_file {
+        command_tx
+            .send(ConsoleCommand::LoadShow {
+                path: std::path::PathBuf::from(show_file),
+            })
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        
+        // Allow time for show loading
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 
     // Patch fixtures via commands
     command_tx
@@ -217,7 +233,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Run the UI with the channels
-    let _ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx);
+    let ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx);
 
     // Send shutdown command
     command_tx
@@ -226,6 +242,14 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Wait for console task to finish
     let _ = console_task.await;
+
+    // Wait for event forwarder task to finish
+    let _ = event_forwarder.await;
+
+    // Check UI result
+    if let Err(e) = ui_result {
+        log::error!("UI error: {}", e);
+    }
 
     log::info!("Application shutting down");
     Ok(())

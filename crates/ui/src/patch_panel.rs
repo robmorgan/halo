@@ -36,7 +36,7 @@ impl PatchPanelState {
                 // Fixture list
                 ui.heading("Patched Fixtures");
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for (idx, fixture) in state.fixtures.iter().enumerate() {
+                    for (idx, (_, fixture)) in state.fixtures.iter().enumerate() {
                         ui.horizontal(|ui| {
                             ui.label(format!("{}: {}", idx + 1, fixture.name));
                             ui.label(format!("Profile: {}", fixture.profile_id));
@@ -44,7 +44,7 @@ impl PatchPanelState {
 
                             if ui.button("Remove").clicked() {
                                 let _ = console_tx
-                                    .send(ConsoleCommand::UnpatchFixture { fixture_id: idx });
+                                    .send(ConsoleCommand::UnpatchFixture { fixture_id: fixture.id });
                             }
                         });
                     }

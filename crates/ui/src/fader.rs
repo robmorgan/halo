@@ -22,7 +22,7 @@ pub fn render(ui: &mut eframe::egui::Ui, state: &ConsoleState, console_tx: &mpsc
             
             // Individual faders
             ui.heading("Individual Faders");
-            for (idx, fixture) in state.fixtures.iter().enumerate() {
+            for (idx, (_, fixture)) in state.fixtures.iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.label(format!("{}: {}", idx + 1, fixture.name));
                     let mut dimmer = 100.0;

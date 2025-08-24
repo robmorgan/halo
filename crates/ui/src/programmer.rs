@@ -137,13 +137,13 @@ impl ProgrammerState {
                 // Fixture selection
                 ui.heading("Fixtures");
                 egui::ScrollArea::horizontal().show(ui, |ui| {
-                    for (idx, fixture) in state.fixtures.iter().enumerate() {
-                        let is_selected = self.selected_fixtures.contains(&idx);
+                    for (idx, (_, fixture)) in state.fixtures.iter().enumerate() {
+                        let is_selected = self.selected_fixtures.contains(&fixture.id);
                         if ui.selectable_label(is_selected, &fixture.name).clicked() {
                             if is_selected {
-                                self.selected_fixtures.retain(|&x| x != idx);
+                                self.selected_fixtures.retain(|&x| x != fixture.id);
                             } else {
-                                self.selected_fixtures.push(idx);
+                                self.selected_fixtures.push(fixture.id);
                             }
                         }
                     }
