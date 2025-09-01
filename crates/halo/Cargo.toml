@@ -24,7 +24,7 @@ artnet_protocol = "0.4.2"
 anyhow = "1.0.99"
 log = "0.4.27"
 midir = "0.10.2"
-clap = { version = "4.5.45", features = ["derive"] }
+clap = { version = "4.5.46", features = ["derive"] }
 crossterm = "0.29.0"
 eframe = "0.32.1"
 parking_lot = "0.12.4"
