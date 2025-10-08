@@ -1,69 +1,236 @@
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 
-use eframe::egui;
+use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Stroke, Vec2};
 use halo_core::ConsoleCommand;
 use crate::state::ConsoleState;
 
+// Override button state
+#[derive(Clone, Debug)]
+pub struct OverrideButton {
+    pub name: String,
+    pub color: Color32,
+    pub is_active: bool,
+    pub is_momentary: bool,
+    pub values: Vec<(usize, String, u8)>, // (fixture_id, channel_name, value)
+}
+
+impl OverrideButton {
+    pub fn new(name: String, color: Color32) -> Self {
+        Self {
+            name,
+            color,
+            is_active: false,
+            is_momentary: false,
+            values: Vec::new(),
+        }
+    }
+}
+
+// Master fader state
+pub struct MasterFader {
+    pub name: String,
+    pub value: f32, // 0.0 to 1.0
+    pub color: Color32,
+    pub is_active: bool,
+}
+
+impl MasterFader {
+    pub fn new(name: String, value: f32, color: Color32) -> Self {
+        Self {
+            name,
+            value,
+            color,
+            is_active: true,
+        }
+    }
+}
+
 pub fn render(ui: &mut eframe::egui::Ui, state: &ConsoleState, console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
-    egui::CentralPanel::default().show(ui.ctx(), |ui| {
-        ui.vertical(|ui| {
-            ui.heading("Master Controls");
-            
-            // Master fader
-            ui.horizontal(|ui| {
-                ui.label("Master:");
-                let mut master = 100.0;
-                if ui.add(egui::Slider::new(&mut master, 0.0..=100.0).text("Master")).changed() {
-                    // TODO: Implement master fader via message passing
-                }
-            });
-            
-            ui.separator();
-            
-            // Transport controls
-            ui.heading("Transport");
-            ui.horizontal(|ui| {
-                if ui.button("Play").clicked() {
-                    let _ = console_tx.send(ConsoleCommand::Play);
-                }
-                
-                if ui.button("Stop").clicked() {
-                    let _ = console_tx.send(ConsoleCommand::Stop);
-                }
-                
-                if ui.button("Pause").clicked() {
-                    let _ = console_tx.send(ConsoleCommand::Pause);
-                }
-                
-                if ui.button("Resume").clicked() {
-                    let _ = console_tx.send(ConsoleCommand::Resume);
-                }
-            });
-            
-            ui.separator();
-            
-            // BPM control
-            ui.heading("Tempo");
-            ui.horizontal(|ui| {
-                ui.label("BPM:");
-                let mut bpm = state.bpm;
-                if ui.add(egui::Slider::new(&mut bpm, 60.0..=200.0).text("BPM")).changed() {
-                    let _ = console_tx.send(ConsoleCommand::SetBpm { bpm });
-                }
-                
-                if ui.button("Tap").clicked() {
-                    let _ = console_tx.send(ConsoleCommand::TapTempo);
-                }
-            });
-            
-            ui.separator();
-            
-            // Status
-            ui.heading("Status");
-            ui.label(format!("Playback: {:?}", state.playback_state));
-            ui.label(format!("BPM: {:.1}", state.bpm));
-            ui.label(format!("Fixtures: {}", state.fixtures.len()));
-            ui.label(format!("Cue Lists: {}", state.cue_lists.len()));
+    ui.vertical(|ui| {
+        // Overrides section
+        ui.heading("OVERRIDES");
+        ui.add_space(5.0);
+
+        // Static override buttons (similar to main branch implementation)
+        ui.horizontal(|ui| {
+            // Red override
+            let red_button = draw_override_button(ui, "Red", Color32::RED, false, 120.0, 40.0);
+            if red_button.clicked() {
+                // TODO: Send override command
+            }
+
+            ui.add_space(5.0);
+
+            // Green override
+            let green_button = draw_override_button(ui, "Green", Color32::GREEN, false, 120.0, 40.0);
+            if green_button.clicked() {
+                // TODO: Send override command
+            }
+
+            ui.add_space(5.0);
+
+            // Blue override
+            let blue_button = draw_override_button(ui, "Blue", Color32::BLUE, false, 120.0, 40.0);
+            if blue_button.clicked() {
+                // TODO: Send override command
+            }
         });
+
+        ui.add_space(15.0);
+
+        // Master faders section
+        ui.heading("MASTER");
+        ui.add_space(5.0);
+
+        // Master fader
+        draw_master_fader(ui, "Master", 1.0, Color32::from_rgb(150, 150, 150));
+        ui.add_space(15.0);
+
+        // Smoke fader
+        draw_master_fader(ui, "Smoke %", 0.75, Color32::from_rgb(100, 100, 100));
+
+        ui.add_space(20.0);
+
+        // Transport controls
+        ui.heading("TRANSPORT");
+        ui.horizontal(|ui| {
+            if ui.button("Play").clicked() {
+                let _ = console_tx.send(ConsoleCommand::Play);
+            }
+            
+            if ui.button("Stop").clicked() {
+                let _ = console_tx.send(ConsoleCommand::Stop);
+            }
+            
+            if ui.button("Pause").clicked() {
+                let _ = console_tx.send(ConsoleCommand::Pause);
+            }
+            
+            if ui.button("Resume").clicked() {
+                let _ = console_tx.send(ConsoleCommand::Resume);
+            }
+        });
+
+        ui.add_space(10.0);
+
+        // BPM control
+        ui.heading("TEMPO");
+        ui.horizontal(|ui| {
+            ui.label("BPM:");
+            let mut bpm = state.bpm;
+            if ui.add(egui::Slider::new(&mut bpm, 60.0..=200.0).text("BPM")).changed() {
+                let _ = console_tx.send(ConsoleCommand::SetBpm { bpm });
+            }
+            
+            if ui.button("Tap").clicked() {
+                let _ = console_tx.send(ConsoleCommand::TapTempo);
+            }
+        });
+
+        ui.add_space(10.0);
+
+        // Status
+        ui.heading("STATUS");
+        ui.label(format!("Playback: {:?}", state.playback_state));
+        ui.label(format!("BPM: {:.1}", state.bpm));
+        ui.label(format!("Fixtures: {}", state.fixtures.len()));
+        ui.label(format!("Cue Lists: {}", state.cue_lists.len()));
+    });
+}
+
+// Draw a single override button
+fn draw_override_button(
+    ui: &mut egui::Ui,
+    name: &str,
+    color: Color32,
+    is_active: bool,
+    width: f32,
+    height: f32,
+) -> Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
+
+    // Determine button colors
+    let (bg_color, text_color, stroke_color) = if is_active {
+        // Active button colors
+        (color, Color32::BLACK, Color32::WHITE)
+    } else {
+        // Inactive button colors
+        (
+            color.linear_multiply(0.3), // Darker version of the color
+            Color32::WHITE,
+            Color32::from_gray(100),
+        )
+    };
+
+    // Draw button
+    ui.painter().rect_filled(
+        rect, 4.0, // rounded corners
+        bg_color,
+    );
+
+    // Draw button outline
+    ui.painter().rect_stroke(
+        rect,
+        4.0, // rounded corners
+        Stroke::new(1.0, stroke_color),
+        egui::StrokeKind::Inside,
+    );
+
+    // Draw button text
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        name,
+        egui::FontId::proportional(14.0),
+        text_color,
+    );
+
+    response
+}
+
+// Draw a single master fader
+fn draw_master_fader(ui: &mut egui::Ui, name: &str, mut value: f32, color: Color32) {
+    ui.vertical(|ui| {
+        // Fader label and value
+        ui.horizontal(|ui| {
+            ui.label(name);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(format!("{:.0}%", value * 100.0));
+            });
+        });
+
+        // Fader slider
+        let response = ui.add(
+            egui::Slider::new(&mut value, 0.0..=1.0)
+                .show_value(false)
+                .fixed_decimals(2)
+                .orientation(egui::SliderOrientation::Horizontal),
+        );
+
+        // Customize fader appearance with visual feedback
+        let slider_rect = response.rect;
+        let track_height = 20.0 * 0.8;
+        let track_rect = Rect::from_min_size(
+            Pos2::new(
+                slider_rect.min.x,
+                slider_rect.center().y - track_height / 2.0,
+            ),
+            Vec2::new(slider_rect.width(), track_height),
+        );
+
+        // Draw filled portion
+        let fill_width = slider_rect.width() * value;
+        let fill_rect = Rect::from_min_size(track_rect.min, Vec2::new(fill_width, track_height));
+
+        ui.painter()
+            .rect_filled(track_rect, 2.0, Color32::from_rgb(40, 40, 40));
+
+        ui.painter().rect_filled(fill_rect, 2.0, color);
+
+        // Apply fader value changes (TODO: implement via message passing)
+        if response.changed() {
+            // TODO: Send master fader command
+        }
     });
 }

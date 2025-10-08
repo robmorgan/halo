@@ -88,6 +88,15 @@ impl HaloApp {
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            // Show programmer panel
+            programmer::render_compact(ui, &self.state, &self.console_tx);
+            ui.separator();
+            
+            // Show timeline
+            timeline::render(ui, &self.state, &self.console_tx);
+            ui.separator();
+            
+            // Show footer status
             footer::render(ui, &self.console_tx, &self.state, self.fps);
         });
 
@@ -96,46 +105,23 @@ impl HaloApp {
                 egui::SidePanel::right("right_panel").show(ctx, |ui| {
                     ui.set_min_width(400.0);
                     session::render(ui, &self.state, &self.console_tx);
+                    ui.separator();
+                    cue::render(ui, &self.state, &self.console_tx);
                 });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.heading("Halo Lighting Console");
-                    ui.label("Message passing architecture enabled");
-                    ui.label(format!("Active Fixtures: {}", self.state.fixtures.len()));
-                    ui.label(format!("Cue Lists: {}", self.state.cue_lists.len()));
-
-                    ui.add_space(20.0);
-
-                    // Basic controls
                     ui.horizontal(|ui| {
-                        if ui.button("Play").clicked() {
-                            let _ = self.console_tx.send(ConsoleCommand::Play);
-                        }
-                        if ui.button("Stop").clicked() {
-                            let _ = self.console_tx.send(ConsoleCommand::Stop);
-                        }
-                        if ui.button("Pause").clicked() {
-                            let _ = self.console_tx.send(ConsoleCommand::Pause);
-                        }
+                        // Master Panel with overrides and master faders
+                        master::render(ui, &self.state, &self.console_tx);
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
                     });
 
-                    ui.add_space(10.0);
-
-                    // BPM control
-                    ui.horizontal(|ui| {
-                        ui.label("BPM:");
-                        if ui.button("-").clicked() {
-                            let _ = self.console_tx.send(ConsoleCommand::SetBpm {
-                                bpm: self.state.bpm - 1.0,
-                            });
-                        }
-                        ui.label(format!("{:.1}", self.state.bpm));
-                        if ui.button("+").clicked() {
-                            let _ = self.console_tx.send(ConsoleCommand::SetBpm {
-                                bpm: self.state.bpm + 1.0,
-                            });
-                        }
-                    });
+                    // Fixtures Grid
+                    let main_content_height = ui.available_height();
+                    fixture::render_grid(ui, &self.state, &self.console_tx, main_content_height - 60.0);
                 });
             }
             ActiveTab::CueEditor => {

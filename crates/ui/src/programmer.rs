@@ -818,3 +818,51 @@ pub fn render(
     let mut programmer = ProgrammerState::default();
     programmer.render(ui.ctx(), state, console_tx);
 }
+
+pub fn render_compact(
+    ui: &mut eframe::egui::Ui,
+    state: &ConsoleState,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+) {
+    ui.horizontal(|ui| {
+        ui.heading("PROGRAMMER");
+        
+        ui.add_space(20.0);
+        
+        // Quick intensity control
+        ui.label("Intensity:");
+        let mut intensity = 100.0;
+        if ui.add(egui::Slider::new(&mut intensity, 0.0..=100.0).text("%")).changed() {
+            // TODO: Apply intensity to selected fixtures
+        }
+        
+        ui.add_space(10.0);
+        
+        // Color preset buttons
+        ui.label("Color:");
+        if ui.button("Red").clicked() {
+            // TODO: Apply red color
+        }
+        if ui.button("Green").clicked() {
+            // TODO: Apply green color  
+        }
+        if ui.button("Blue").clicked() {
+            // TODO: Apply blue color
+        }
+        if ui.button("White").clicked() {
+            // TODO: Apply white color
+        }
+        
+        ui.add_space(20.0);
+        
+        // Record cue button
+        if ui.button("Record Cue").clicked() {
+            // TODO: Record current programmer state as cue
+        }
+        
+        // Clear programmer button
+        if ui.button("Clear").clicked() {
+            // TODO: Clear programmer state
+        }
+    });
+}
