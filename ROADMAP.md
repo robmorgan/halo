@@ -85,7 +85,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 
 ## Future
 
-- [ ] Use tokio for async io + UDP
+- [x] Use tokio for async io + UDP
 - [ ] Bring back a headless console mode with keyboard input
 - [ ] 2D fixture visualization with different fixture types
 - [ ] Sequences/Chases with looping functionality
