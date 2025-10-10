@@ -137,6 +137,9 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     });
 
+    // Store the show file path for later loading after UI starts
+    let show_file_path = args.show_file.clone();
+
     // Spawn an initialization task to send all the setup commands
     let init_task = tokio::spawn(async move {
         println!("Starting initialization task...");
@@ -150,19 +153,6 @@ async fn main() -> Result<(), anyhow::Error> {
         // Allow time for initialization
         println!("Waiting for initialization...");
         tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Load show file if specified
-        if let Some(show_file) = args.show_file {
-            println!("Loading show file: {}", show_file);
-            init_command_tx
-                .send(ConsoleCommand::LoadShow {
-                    path: std::path::PathBuf::from(show_file),
-                })
-                .map_err(|e| anyhow::anyhow!("Failed to send LoadShow command: {}", e))?;
-
-            // Allow time for show loading
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
 
         // Patch fixtures via commands
         println!("Patching fixtures...");
@@ -261,7 +251,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // Run the UI with the channels (this will block until UI closes)
     log::info!("Starting UI...");
-    let ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx);
+    let show_path = show_file_path.map(std::path::PathBuf::from);
+    let ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx, show_path);
     log::info!("UI completed");
 
     // Send shutdown command
