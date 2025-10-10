@@ -9,6 +9,8 @@ pub struct ConsoleState {
     pub fixtures: HashMap<String, Fixture>,
     pub cue_lists: Vec<CueList>,
     pub current_cue_list_index: usize,
+    pub current_cue_index: usize,
+    pub current_cue_progress: f32,
     pub playback_state: PlaybackState,
     pub bpm: f64,
     pub current_time: SystemTime,
@@ -33,6 +35,8 @@ impl Default for ConsoleState {
             fixtures: HashMap::new(),
             cue_lists: Vec::new(),
             current_cue_list_index: 0,
+            current_cue_index: 0,
+            current_cue_progress: 0.0,
             playback_state: PlaybackState::Stopped,
             bpm: 120.0,
             current_time: SystemTime::now(),
@@ -75,6 +79,13 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::CueListSelected { list_index } => {
                 self.current_cue_list_index = list_index;
+            }
+            halo_core::ConsoleEvent::CurrentCueChanged {
+                cue_index,
+                progress,
+            } => {
+                self.current_cue_index = cue_index;
+                self.current_cue_progress = progress;
             }
             halo_core::ConsoleEvent::PlaybackStateChanged { state } => {
                 self.playback_state = state;
@@ -143,6 +154,13 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::CurrentCueListIndex { index } => {
                 self.current_cue_list_index = index;
+            }
+            halo_core::ConsoleEvent::CurrentCue {
+                cue_index,
+                progress,
+            } => {
+                self.current_cue_index = cue_index;
+                self.current_cue_progress = progress;
             }
             halo_core::ConsoleEvent::CurrentPlaybackState { state } => {
                 self.playback_state = state;

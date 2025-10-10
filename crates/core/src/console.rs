@@ -662,12 +662,36 @@ impl LightingConsole {
                     list_index,
                     cue_index,
                 });
+                // Send current cue update
+                let cue_manager = self.cue_manager.read().await;
+                let current_cue_index = cue_manager.get_current_cue_idx().unwrap_or(0);
+                let progress = cue_manager.get_current_cue_progress();
+                let _ = event_tx.send(ConsoleEvent::CurrentCueChanged {
+                    cue_index: current_cue_index,
+                    progress,
+                });
             }
             NextCue { list_index: _ } => {
                 let _ = self.cue_manager.write().await.go_to_next_cue();
+                // Send current cue update
+                let cue_manager = self.cue_manager.read().await;
+                let cue_index = cue_manager.get_current_cue_idx().unwrap_or(0);
+                let progress = cue_manager.get_current_cue_progress();
+                let _ = event_tx.send(ConsoleEvent::CurrentCueChanged {
+                    cue_index,
+                    progress,
+                });
             }
             PrevCue { list_index: _ } => {
                 let _ = self.cue_manager.write().await.go_to_previous_cue();
+                // Send current cue update
+                let cue_manager = self.cue_manager.read().await;
+                let cue_index = cue_manager.get_current_cue_idx().unwrap_or(0);
+                let progress = cue_manager.get_current_cue_progress();
+                let _ = event_tx.send(ConsoleEvent::CurrentCueChanged {
+                    cue_index,
+                    progress,
+                });
             }
             SelectNextCueList => {
                 let mut cue_manager = self.cue_manager.write().await;
@@ -890,6 +914,15 @@ impl LightingConsole {
                 let index = self.cue_manager.read().await.get_current_cue_list_idx();
                 let _ = event_tx.send(ConsoleEvent::CurrentCueListIndex { index });
             }
+            QueryCurrentCue => {
+                let cue_manager = self.cue_manager.read().await;
+                let cue_index = cue_manager.get_current_cue_idx().unwrap_or(0);
+                let progress = cue_manager.get_current_cue_progress();
+                let _ = event_tx.send(ConsoleEvent::CurrentCue {
+                    cue_index,
+                    progress,
+                });
+            }
             QueryPlaybackState => {
                 let state = self.cue_manager.read().await.get_playback_state();
                 let _ = event_tx.send(ConsoleEvent::CurrentPlaybackState { state });
@@ -989,6 +1022,12 @@ impl LightingConsole {
                     if let Some(timecode) = self.cue_manager.read().await.current_timecode {
                         let _ = event_tx.send(ConsoleEvent::TimecodeUpdated { timecode });
                     }
+
+                    // Send current cue information
+                    let cue_manager = self.cue_manager.read().await;
+                    let cue_index = cue_manager.get_current_cue_idx().unwrap_or(0);
+                    let progress = cue_manager.get_current_cue_progress();
+                    let _ = event_tx.send(ConsoleEvent::CurrentCueChanged { cue_index, progress });
 
                     let rhythm_guard = self.rhythm_state.read().await;
                     let rhythm_state = RhythmState {

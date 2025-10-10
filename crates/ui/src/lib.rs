@@ -61,6 +61,7 @@ impl HaloApp {
         let _ = console_tx.send(ConsoleCommand::QueryFixtures);
         let _ = console_tx.send(ConsoleCommand::QueryCueLists);
         let _ = console_tx.send(ConsoleCommand::QueryCurrentCueListIndex);
+        let _ = console_tx.send(ConsoleCommand::QueryCurrentCue);
         let _ = console_tx.send(ConsoleCommand::QueryPlaybackState);
         let _ = console_tx.send(ConsoleCommand::QueryRhythmState);
         let _ = console_tx.send(ConsoleCommand::QueryShow);

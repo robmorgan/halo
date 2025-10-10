@@ -172,6 +172,7 @@ pub enum ConsoleCommand {
     QueryFixtures,
     QueryCueLists,
     QueryCurrentCueListIndex,
+    QueryCurrentCue,
     QueryPlaybackState,
     QueryRhythmState,
     QueryShow,
@@ -250,6 +251,10 @@ pub enum ConsoleEvent {
     CueListSelected {
         list_index: usize,
     },
+    CurrentCueChanged {
+        cue_index: usize,
+        progress: f32,
+    },
 
     // MIDI events
     MidiOverrideAdded {
@@ -299,6 +304,10 @@ pub enum ConsoleEvent {
     },
     CurrentCueListIndex {
         index: usize,
+    },
+    CurrentCue {
+        cue_index: usize,
+        progress: f32,
     },
     CurrentPlaybackState {
         state: PlaybackState,

@@ -110,14 +110,16 @@ impl CuePanel {
             let cues = &current_list.cues;
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for cue in cues {
+                for (cue_index, cue) in cues.iter().enumerate() {
                     ui.horizontal(|ui| {
-                        // Get active state from console state
-                        let is_active = state.playback_state == PlaybackState::Playing;
-                        let active_color = if is_active {
-                            egui::Color32::from_rgb(100, 200, 100)
+                        // Check if this is the current active cue
+                        let is_current_cue = cue_index == state.current_cue_index
+                            && state.playback_state == PlaybackState::Playing;
+
+                        let active_color = if is_current_cue {
+                            egui::Color32::from_rgb(100, 200, 100) // Green for current cue when playing
                         } else {
-                            egui::Color32::from_rgb(150, 150, 150)
+                            ui.style().visuals.text_color() // Default color for all other cues
                         };
 
                         // Cue name with fixed width
@@ -157,10 +159,9 @@ impl CuePanel {
                             ),
                         );
 
-                        // Progress bar
-                        let progress = if is_active {
-                            // TODO: Get actual cue progress from console state
-                            0.5 // Placeholder
+                        // Progress bar - only show progress for the current cue
+                        let progress = if is_current_cue {
+                            state.current_cue_progress
                         } else {
                             0.0
                         };
@@ -170,11 +171,11 @@ impl CuePanel {
                                 .desired_width(200.0)
                                 .desired_height(30.0)
                                 .corner_radius(0.0)
-                                .animate(is_active)
-                                .fill(if is_active {
-                                    egui::Color32::from_rgb(75, 2, 245)
+                                .animate(is_current_cue)
+                                .fill(if is_current_cue {
+                                    egui::Color32::from_rgb(75, 2, 245) // Blue for current cue progress
                                 } else {
-                                    egui::Color32::from_rgb(100, 100, 100)
+                                    egui::Color32::from_rgb(100, 100, 100) // Gray for inactive cues
                                 }),
                         );
 
