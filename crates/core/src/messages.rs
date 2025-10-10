@@ -68,6 +68,8 @@ pub enum ConsoleCommand {
     PrevCue {
         list_index: usize,
     },
+    SelectNextCueList,
+    SelectPreviousCueList,
 
     // Playback control
     Play,
@@ -169,6 +171,7 @@ pub enum ConsoleCommand {
     // Query commands (request state)
     QueryFixtures,
     QueryCueLists,
+    QueryCurrentCueListIndex,
     QueryPlaybackState,
     QueryRhythmState,
     QueryShow,
@@ -244,6 +247,9 @@ pub enum ConsoleEvent {
     CueListCompleted {
         list_index: usize,
     },
+    CueListSelected {
+        list_index: usize,
+    },
 
     // MIDI events
     MidiOverrideAdded {
@@ -290,6 +296,9 @@ pub enum ConsoleEvent {
     },
     CueListsList {
         cue_lists: Vec<CueList>,
+    },
+    CurrentCueListIndex {
+        index: usize,
     },
     CurrentPlaybackState {
         state: PlaybackState,

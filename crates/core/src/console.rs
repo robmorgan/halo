@@ -669,6 +669,28 @@ impl LightingConsole {
             PrevCue { list_index: _ } => {
                 let _ = self.cue_manager.write().await.go_to_previous_cue();
             }
+            SelectNextCueList => {
+                let mut cue_manager = self.cue_manager.write().await;
+                if let Err(err) = cue_manager.select_next_cue_list() {
+                    log::warn!("Error selecting next cue list: {}", err);
+                } else {
+                    let current_index = cue_manager.get_current_cue_list_idx();
+                    let _ = event_tx.send(ConsoleEvent::CueListSelected {
+                        list_index: current_index,
+                    });
+                }
+            }
+            SelectPreviousCueList => {
+                let mut cue_manager = self.cue_manager.write().await;
+                if let Err(err) = cue_manager.select_previous_cue_list() {
+                    log::warn!("Error selecting previous cue list: {}", err);
+                } else {
+                    let current_index = cue_manager.get_current_cue_list_idx();
+                    let _ = event_tx.send(ConsoleEvent::CueListSelected {
+                        list_index: current_index,
+                    });
+                }
+            }
 
             // Playback control
             Play => {
@@ -863,6 +885,10 @@ impl LightingConsole {
             QueryCueLists => {
                 let cue_lists = self.cue_manager.read().await.get_cue_lists().clone();
                 let _ = event_tx.send(ConsoleEvent::CueListsList { cue_lists });
+            }
+            QueryCurrentCueListIndex => {
+                let index = self.cue_manager.read().await.get_current_cue_list_idx();
+                let _ = event_tx.send(ConsoleEvent::CurrentCueListIndex { index });
             }
             QueryPlaybackState => {
                 let state = self.cue_manager.read().await.get_playback_state();

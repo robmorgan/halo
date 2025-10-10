@@ -56,6 +56,15 @@ impl HaloApp {
         console_tx: mpsc::UnboundedSender<ConsoleCommand>,
         console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
     ) -> Self {
+        // Request initial data from console
+        let _ = console_tx.send(ConsoleCommand::QueryFixtures);
+        let _ = console_tx.send(ConsoleCommand::QueryCueLists);
+        let _ = console_tx.send(ConsoleCommand::QueryCurrentCueListIndex);
+        let _ = console_tx.send(ConsoleCommand::QueryPlaybackState);
+        let _ = console_tx.send(ConsoleCommand::QueryRhythmState);
+        let _ = console_tx.send(ConsoleCommand::QueryShow);
+        let _ = console_tx.send(ConsoleCommand::QueryLinkState);
+
         Self {
             state: ConsoleState::default(),
             console_tx,

@@ -1,13 +1,14 @@
 use halo_core::{ConsoleCommand, CueList, PlaybackState, RhythmState, Show, TimeCode};
 use halo_fixtures::Fixture;
 use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub struct ConsoleState {
     pub fixtures: HashMap<String, Fixture>,
     pub cue_lists: Vec<CueList>,
+    pub current_cue_list_index: usize,
     pub playback_state: PlaybackState,
     pub bpm: f64,
     pub current_time: SystemTime,
@@ -31,6 +32,7 @@ impl Default for ConsoleState {
         Self {
             fixtures: HashMap::new(),
             cue_lists: Vec::new(),
+            current_cue_list_index: 0,
             playback_state: PlaybackState::Stopped,
             bpm: 120.0,
             current_time: SystemTime::now(),
@@ -71,6 +73,9 @@ impl ConsoleState {
             halo_core::ConsoleEvent::CueListsUpdated { cue_lists } => {
                 self.cue_lists = cue_lists;
             }
+            halo_core::ConsoleEvent::CueListSelected { list_index } => {
+                self.current_cue_list_index = list_index;
+            }
             halo_core::ConsoleEvent::PlaybackStateChanged { state } => {
                 self.playback_state = state;
             }
@@ -100,6 +105,7 @@ impl ConsoleState {
                         .insert(fixture.id.to_string(), fixture.clone());
                 }
                 self.cue_lists = show.cue_lists.clone();
+                self.current_cue_list_index = 0; // Reset to first cue list when show is loaded
                 self.show = Some(show);
             }
             halo_core::ConsoleEvent::RhythmStateUpdated { state } => {
@@ -122,6 +128,37 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::ProgrammerEffectsUpdated { effects } => {
                 self.programmer_effects = effects;
+            }
+            // Handle query responses
+            halo_core::ConsoleEvent::FixturesList { fixtures } => {
+                self.fixtures.clear();
+                for fixture in fixtures {
+                    self.fixtures.insert(fixture.id.to_string(), fixture);
+                }
+            }
+            halo_core::ConsoleEvent::CueListsList { cue_lists } => {
+                self.cue_lists = cue_lists;
+                // Reset to first cue list when cue lists are loaded
+                self.current_cue_list_index = 0;
+            }
+            halo_core::ConsoleEvent::CurrentCueListIndex { index } => {
+                self.current_cue_list_index = index;
+            }
+            halo_core::ConsoleEvent::CurrentPlaybackState { state } => {
+                self.playback_state = state;
+            }
+            halo_core::ConsoleEvent::CurrentRhythmState { state } => {
+                self.rhythm_state = state;
+            }
+            halo_core::ConsoleEvent::CurrentShow { show } => {
+                self.fixtures.clear();
+                for fixture in &show.fixtures {
+                    self.fixtures
+                        .insert(fixture.id.to_string(), fixture.clone());
+                }
+                self.cue_lists = show.cue_lists.clone();
+                self.current_cue_list_index = 0; // Reset to first cue list when show is loaded
+                self.show = Some(show);
             }
             _ => {
                 // Handle other events as needed
