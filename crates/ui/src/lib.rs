@@ -43,6 +43,10 @@ pub struct HaloApp {
     active_tab: ActiveTab,
     fps: u32,
 
+    // Track if initial show load has been triggered
+    initial_show_loaded: bool,
+    show_file_path: Option<std::path::PathBuf>,
+
     // Component state - maintain state between renders
     programmer_state: programmer::ProgrammerState,
     cue_editor_state: cue_editor::CueEditor,
@@ -56,6 +60,7 @@ impl HaloApp {
         _cc: &eframe::CreationContext<'_>,
         console_tx: mpsc::UnboundedSender<ConsoleCommand>,
         console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
+        show_file_path: Option<std::path::PathBuf>,
     ) -> Self {
         // Request initial data from console
         let _ = console_tx.send(ConsoleCommand::QueryFixtures);
@@ -76,6 +81,8 @@ impl HaloApp {
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
             fps: 60,
+            initial_show_loaded: false,
+            show_file_path,
             programmer_state: programmer::ProgrammerState::default(),
             cue_editor_state: cue_editor::CueEditor::new(),
             patch_panel_state: patch_panel::PatchPanelState::default(),
@@ -173,6 +180,17 @@ impl eframe::App for HaloApp {
         self.last_update = now;
         self.current_time = SystemTime::now();
 
+        // Load show file on first update if provided
+        if !self.initial_show_loaded {
+            if let Some(ref path) = self.show_file_path {
+                println!("Loading show file on UI startup: {}", path.display());
+                let _ = self
+                    .console_tx
+                    .send(ConsoleCommand::LoadShow { path: path.clone() });
+            }
+            self.initial_show_loaded = true;
+        }
+
         // Process all updates first
         self.process_engine_updates();
 
@@ -197,6 +215,7 @@ impl eframe::App for HaloApp {
 pub fn run_ui(
     console_tx: mpsc::UnboundedSender<ConsoleCommand>,
     console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
+    show_file_path: Option<std::path::PathBuf>,
 ) -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder {
@@ -211,6 +230,13 @@ pub fn run_ui(
     eframe::run_native(
         "Halo",
         native_options,
-        Box::new(|cc| Ok(Box::new(HaloApp::new(cc, console_tx, console_rx)))),
+        Box::new(move |cc| {
+            Ok(Box::new(HaloApp::new(
+                cc,
+                console_tx,
+                console_rx,
+                show_file_path,
+            )))
+        }),
     )
 }

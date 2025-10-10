@@ -718,24 +718,83 @@ impl LightingConsole {
 
             // Playback control
             Play => {
+                println!("Console received Play command");
+                log::info!("Console received Play command");
                 let _ = self.cue_manager.write().await.go();
                 let state = self.cue_manager.read().await.get_playback_state();
                 let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+
+                // Check if current cuelist has an audio file and play it
+                let cue_manager = self.cue_manager.read().await;
+                if let Some(current_cue_list) = cue_manager.get_current_cue_list() {
+                    println!("Current cuelist: {}", current_cue_list.name);
+                    log::info!("Current cuelist: {}", current_cue_list.name);
+                    if let Some(audio_file) = &current_cue_list.audio_file {
+                        println!("Found audio file for cuelist: {}", audio_file);
+                        log::info!("Found audio file for cuelist: {}", audio_file);
+                        if let Err(e) = self.play_audio(audio_file.clone()).await {
+                            println!("ERROR: Failed to play audio file {}: {}", audio_file, e);
+                            log::error!("Failed to play audio file {}: {}", audio_file, e);
+                        } else {
+                            println!("Successfully sent audio play command for: {}", audio_file);
+                            log::info!("Successfully sent audio play command for: {}", audio_file);
+                        }
+                    } else {
+                        println!(
+                            "No audio file found for current cuelist: {}",
+                            current_cue_list.name
+                        );
+                        log::info!(
+                            "No audio file found for current cuelist: {}",
+                            current_cue_list.name
+                        );
+                    }
+                } else {
+                    println!("No current cuelist found");
+                    log::warn!("No current cuelist found");
+                }
             }
             Stop => {
                 let _ = self.cue_manager.write().await.stop();
                 let state = self.cue_manager.read().await.get_playback_state();
                 let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+
+                // Stop audio playback when stopping the cuelist
+                if let Err(e) = self
+                    .module_manager
+                    .send_to_module(ModuleId::Audio, ModuleEvent::AudioStop)
+                    .await
+                {
+                    log::error!("Failed to stop audio: {}", e);
+                }
             }
             Pause => {
                 let _ = self.cue_manager.write().await.hold();
                 let state = self.cue_manager.read().await.get_playback_state();
                 let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+
+                // Pause audio playback when pausing the cuelist
+                if let Err(e) = self
+                    .module_manager
+                    .send_to_module(ModuleId::Audio, ModuleEvent::AudioPause)
+                    .await
+                {
+                    log::error!("Failed to pause audio: {}", e);
+                }
             }
             Resume => {
                 let _ = self.cue_manager.write().await.go();
                 let state = self.cue_manager.read().await.get_playback_state();
                 let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+
+                // Resume audio playback when resuming the cuelist
+                if let Err(e) = self
+                    .module_manager
+                    .send_to_module(ModuleId::Audio, ModuleEvent::AudioResume)
+                    .await
+                {
+                    log::error!("Failed to resume audio: {}", e);
+                }
             }
             SetPlaybackRate { rate: _ } => {
                 // TODO: Implement playback rate control

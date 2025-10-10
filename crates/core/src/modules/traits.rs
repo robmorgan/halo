@@ -17,12 +17,17 @@ pub enum ModuleEvent {
     /// DMX data to output (universe, data)
     DmxOutput(u8, Vec<u8>),
     /// Audio playback command
-    AudioPlay { file_path: String },
+    AudioPlay {
+        file_path: String,
+    },
     AudioPause,
+    AudioResume,
     AudioStop,
     AudioSetVolume(f32),
     /// SMPTE timecode sync
-    SmpteSync { timecode: crate::timecode::timecode::TimeCode },
+    SmpteSync {
+        timecode: crate::timecode::timecode::TimeCode,
+    },
     /// MIDI input events
     MidiInput(crate::midi::midi::MidiMessage),
     /// System events
@@ -42,20 +47,20 @@ pub enum ModuleMessage {
 pub trait AsyncModule: Send + Sync {
     /// Get the unique identifier for this module
     fn id(&self) -> ModuleId;
-    
+
     /// Initialize the module (called once at startup)
     async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    
+
     /// Start the module's main loop
     async fn run(
         &mut self,
         mut rx: mpsc::Receiver<ModuleEvent>,
         tx: mpsc::Sender<ModuleMessage>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    
+
     /// Shutdown the module gracefully
     async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    
+
     /// Get the module's status
     fn status(&self) -> HashMap<String, String>;
 }

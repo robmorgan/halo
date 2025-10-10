@@ -29,21 +29,50 @@ impl AudioModule {
 
     async fn load_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
         let path_str = path.as_ref().to_string_lossy().to_string();
+        println!("Audio module: Attempting to load file: {}", path_str);
 
         if let Some(stream_handle) = &self.stream_handle {
+            println!("Audio module: Stream handle available, creating sink");
             // Create a new sink
+            // let sink = Sink::try_new(stream_handle).map_err(|e| {
+            //     let error_msg = format!("Failed to create audio sink: {}", e);
+            //     println!("ERROR: {}", error_msg);
+
+            //     // Provide more specific error information
+            //     match e {
+            //         rodio::PlayError::NoDevice => {
+            //             println!("ERROR: No audio device available. Please check your audio system and permissions.");
+            //             println!("Try running: sudo killall coreaudiod");
+            //         }
+            //         _ => {
+            //             println!("ERROR: Audio sink creation failed with error: {}", e);
+            //         }
+            //     }
+
+            //     error_msg
+            // })?;
+
             let sink = Sink::try_new(stream_handle)
                 .map_err(|e| format!("Failed to create audio sink: {}", e))?;
 
+            println!("Audio module: Sink created, opening file");
             // Open the audio file
-            let file =
-                File::open(&path).map_err(|e| format!("Failed to open audio file: {}", e))?;
+            let file = File::open(&path).map_err(|e| {
+                let error_msg = format!("Failed to open audio file: {}", e);
+                println!("ERROR: {}", error_msg);
+                error_msg
+            })?;
             let reader = BufReader::new(file);
 
+            println!("Audio module: File opened, decoding audio");
             // Decode the audio file
-            let source =
-                Decoder::new(reader).map_err(|e| format!("Failed to decode audio file: {}", e))?;
+            let source = Decoder::new(reader).map_err(|e| {
+                let error_msg = format!("Failed to decode audio file: {}", e);
+                println!("ERROR: {}", error_msg);
+                error_msg
+            })?;
 
+            println!("Audio module: Audio decoded, adding to sink");
             // Add the source to the sink
             sink.append(source);
             sink.set_volume(self.volume);
@@ -57,9 +86,12 @@ impl AudioModule {
             self.status
                 .insert("status".to_string(), "loaded".to_string());
 
+            println!("Audio module: File loaded successfully");
             Ok(())
         } else {
-            Err("Audio module not initialized".to_string())
+            let error_msg = "Audio module not initialized - no stream handle available";
+            println!("ERROR: {}", error_msg);
+            Err(error_msg.to_string())
         }
     }
 
@@ -85,6 +117,17 @@ impl AudioModule {
         }
     }
 
+    async fn resume(&mut self) -> Result<(), String> {
+        if let Some(sink) = &self.sink {
+            sink.play();
+            self.status
+                .insert("playback_state".to_string(), "playing".to_string());
+            Ok(())
+        } else {
+            Err("No audio file loaded".to_string())
+        }
+    }
+
     async fn stop(&mut self) -> Result<(), String> {
         if let Some(sink) = &self.sink {
             sink.stop();
@@ -97,9 +140,11 @@ impl AudioModule {
     }
 
     async fn set_volume(&mut self, volume: f32) {
+        log::info!("Setting volume to {}", volume);
         self.volume = volume.clamp(0.0, 1.0);
         if let Some(sink) = &self.sink {
             sink.set_volume(self.volume);
+            log::info!("Volume set to {}", self.volume);
         }
         self.status
             .insert("volume".to_string(), format!("{:.2}", self.volume));
@@ -121,10 +166,40 @@ impl AsyncModule for AudioModule {
     }
 
     async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        println!("Initializing Audio module");
         log::info!("Initializing Audio module");
 
-        let (stream, stream_handle) = OutputStream::try_default()
-            .map_err(|e| format!("Failed to open audio output stream: {}", e))?;
+        // Try to create output stream with better error handling
+        let (stream, stream_handle) = match OutputStream::try_default() {
+            Ok((stream, handle)) => {
+                println!("Successfully created default audio output stream");
+                (stream, handle)
+            }
+            Err(e) => {
+                println!("Failed to create default audio stream: {}", e);
+
+                // Provide helpful error message for common issues
+                match e {
+                    rodio::StreamError::NoDevice => {
+                        println!(
+                            "ERROR: No audio device available. This is a common issue on macOS."
+                        );
+                        println!("Try the following solutions:");
+                        println!("1. Check System Preferences > Sound > Output");
+                        println!("2. Restart the audio system: sudo killall coreaudiod");
+                        println!("3. Check if another application is using the audio device");
+                        println!("4. Try plugging in headphones or external speakers");
+                    }
+                    _ => {
+                        println!("ERROR: Audio stream creation failed: {}", e);
+                    }
+                }
+
+                let error_msg = format!("Failed to open audio output stream: {}", e);
+                log::error!("{}", error_msg);
+                return Err(error_msg.into());
+            }
+        };
 
         // Drop the stream immediately to avoid Send issues
         drop(stream);
@@ -137,6 +212,7 @@ impl AsyncModule for AudioModule {
         self.status
             .insert("playback_state".to_string(), "idle".to_string());
 
+        log::info!("Audio module initialized successfully");
         Ok(())
     }
 
@@ -154,14 +230,29 @@ impl AsyncModule for AudioModule {
         while let Some(event) = rx.recv().await {
             match event {
                 ModuleEvent::AudioPlay { file_path } => {
+                    log::info!(
+                        "Audio module received AudioPlay event for file: {}",
+                        file_path
+                    );
+
+                    if file_path.is_empty() {
+                        log::warn!("AudioPlay received with empty file path");
+                        let _ = tx
+                            .send(ModuleMessage::Error("Empty file path provided".to_string()))
+                            .await;
+                        continue;
+                    }
+
                     log::info!("Loading and playing audio file: {}", file_path);
                     match self.load_file(&file_path).await {
                         Ok(_) => {
+                            log::info!("Audio file loaded successfully, starting playback");
                             if let Err(e) = self.play().await {
                                 let error_msg = format!("Failed to play audio: {}", e);
                                 log::error!("{}", error_msg);
                                 let _ = tx.send(ModuleMessage::Error(error_msg)).await;
                             } else {
+                                log::info!("Audio playback started successfully");
                                 let _ = tx
                                     .send(ModuleMessage::Status(format!(
                                         "Playing audio: {}",
@@ -186,6 +277,18 @@ impl AsyncModule for AudioModule {
                     } else {
                         let _ = tx
                             .send(ModuleMessage::Status("Audio paused".to_string()))
+                            .await;
+                    }
+                }
+
+                ModuleEvent::AudioResume => {
+                    if let Err(e) = self.resume().await {
+                        let error_msg = format!("Failed to resume audio: {}", e);
+                        log::error!("{}", error_msg);
+                        let _ = tx.send(ModuleMessage::Error(error_msg)).await;
+                    } else {
+                        let _ = tx
+                            .send(ModuleMessage::Status("Audio resumed".to_string()))
                             .await;
                     }
                 }
