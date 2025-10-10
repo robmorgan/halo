@@ -780,20 +780,51 @@ impl LightingConsole {
                 // TODO: Handle collapsed state in UI state
             }
             SetSelectedFixtures { fixture_ids } => {
-                // TODO: Handle selected fixtures in UI state
-                println!("Selected fixtures: {:?}", fixture_ids);
+                self.programmer
+                    .write()
+                    .await
+                    .set_selected_fixtures(fixture_ids.clone());
+                let programmer = self.programmer.read().await;
+                let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
+                    preview_mode: programmer.get_preview_mode(),
+                    collapsed: programmer.get_collapsed(),
+                    selected_fixtures: fixture_ids,
+                });
             }
             AddSelectedFixture { fixture_id } => {
-                // TODO: Handle adding selected fixture in UI state
-                println!("Added fixture to selection: {}", fixture_id);
+                self.programmer
+                    .write()
+                    .await
+                    .add_selected_fixture(fixture_id);
+                let programmer = self.programmer.read().await;
+                let selected_fixtures = programmer.get_selected_fixtures().clone();
+                let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
+                    preview_mode: programmer.get_preview_mode(),
+                    collapsed: programmer.get_collapsed(),
+                    selected_fixtures,
+                });
             }
             RemoveSelectedFixture { fixture_id } => {
-                // TODO: Handle removing selected fixture in UI state
-                println!("Removed fixture from selection: {}", fixture_id);
+                self.programmer
+                    .write()
+                    .await
+                    .remove_selected_fixture(fixture_id);
+                let programmer = self.programmer.read().await;
+                let selected_fixtures = programmer.get_selected_fixtures().clone();
+                let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
+                    preview_mode: programmer.get_preview_mode(),
+                    collapsed: programmer.get_collapsed(),
+                    selected_fixtures,
+                });
             }
             ClearSelectedFixtures => {
-                // TODO: Handle clearing selected fixtures in UI state
-                println!("Cleared selected fixtures");
+                self.programmer.write().await.clear_selected_fixtures();
+                let programmer = self.programmer.read().await;
+                let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
+                    preview_mode: programmer.get_preview_mode(),
+                    collapsed: programmer.get_collapsed(),
+                    selected_fixtures: Vec::new(),
+                });
             }
             ClearProgrammer => {
                 self.programmer.write().await.clear();

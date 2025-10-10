@@ -46,7 +46,7 @@ pub fn render(
 pub fn render_grid(
     ui: &mut eframe::egui::Ui,
     state: &ConsoleState,
-    _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     height: f32,
 ) {
     let text_color = Color32::from_rgb(255, 255, 255);
@@ -65,7 +65,8 @@ pub fn render_grid(
             let available_width = ui.available_width();
             let fixture_width = 100.0;
             let spacing = 10.0;
-            let columns = ((available_width + spacing) / (fixture_width + spacing)).floor() as usize;
+            let columns =
+                ((available_width + spacing) / (fixture_width + spacing)).floor() as usize;
             let columns = columns.max(1); // At least 1 column
 
             // Create a grid layout for fixtures
@@ -75,7 +76,8 @@ pub fn render_grid(
                 .show(ui, |ui| {
                     for (i, (fixture_id, fixture)) in state.fixtures.iter().enumerate() {
                         // Create a fixture button
-                        let fixture_height = if fixture.profile.fixture_type == FixtureType::LEDBar {
+                        let fixture_height = if fixture.profile.fixture_type == FixtureType::LEDBar
+                        {
                             70.0
                         } else {
                             80.0
@@ -86,6 +88,15 @@ pub fn render_grid(
                             .allocate_space(Vec2::new(fixture_width, fixture_height))
                             .1;
 
+                        // Check if fixture is selected
+                        let is_selected = state.selected_fixtures.contains(&fixture.id);
+                        let border_color = if is_selected {
+                            highlight_color
+                        } else {
+                            Color32::from_gray(70)
+                        };
+                        let border_width = if is_selected { 2.0 } else { 1.0 };
+
                         // Draw fixture box
                         ui.painter()
                             .rect_filled(rect, CornerRadius::same(4), fixture_bg);
@@ -93,14 +104,25 @@ pub fn render_grid(
                         ui.painter().rect_stroke(
                             rect,
                             CornerRadius::same(4),
-                            Stroke::new(1.0, Color32::from_gray(70)),
+                            Stroke::new(border_width, border_color),
                             egui::StrokeKind::Outside,
                         );
 
-                        // Handle clicks (TODO: implement selection state)
+                        // Handle clicks for fixture selection
                         let response = ui.interact(rect, ui.id().with(i), egui::Sense::click());
                         if response.clicked() {
-                            // TODO: Implement fixture selection
+                            let fixture_id = fixture.id;
+                            let is_selected = state.selected_fixtures.contains(&fixture_id);
+
+                            if is_selected {
+                                // Remove from selection
+                                let _ = console_tx
+                                    .send(ConsoleCommand::RemoveSelectedFixture { fixture_id });
+                            } else {
+                                // Add to selection
+                                let _ = console_tx
+                                    .send(ConsoleCommand::AddSelectedFixture { fixture_id });
+                            }
                         }
 
                         // Draw color strip at the top of the fixture box
@@ -125,10 +147,11 @@ pub fn render_grid(
                         );
 
                         // Add intensity percentage in bottom right corner
-                        let intensity_value = if let Some(channel) = fixture.channels.iter().find(|c| {
-                            c.name.to_lowercase().contains("dimmer")
-                                || c.name.to_lowercase().contains("intensity")
-                        }) {
+                        let intensity_value = if let Some(channel) =
+                            fixture.channels.iter().find(|c| {
+                                c.name.to_lowercase().contains("dimmer")
+                                    || c.name.to_lowercase().contains("intensity")
+                            }) {
                             channel.value
                         } else {
                             0 // Default if no dimmer/intensity channel found

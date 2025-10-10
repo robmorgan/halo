@@ -7,6 +7,8 @@ pub struct Programmer {
     values: Vec<StaticValue>,
     effects: Vec<EffectMapping>,
     preview_mode: bool,
+    collapsed: bool,
+    selected_fixtures: Vec<usize>,
 }
 
 impl Programmer {
@@ -15,6 +17,8 @@ impl Programmer {
             values: Vec::new(),
             effects: Vec::new(),
             preview_mode: false,
+            collapsed: false,
+            selected_fixtures: Vec::new(),
         }
     }
 
@@ -54,5 +58,35 @@ impl Programmer {
     pub fn clear(&mut self) {
         self.values.clear();
         self.effects.clear();
+    }
+
+    pub fn set_collapsed(&mut self, collapsed: bool) {
+        self.collapsed = collapsed;
+    }
+
+    pub fn get_collapsed(&self) -> bool {
+        self.collapsed
+    }
+
+    pub fn set_selected_fixtures(&mut self, fixtures: Vec<usize>) {
+        self.selected_fixtures = fixtures;
+    }
+
+    pub fn add_selected_fixture(&mut self, fixture_id: usize) {
+        if !self.selected_fixtures.contains(&fixture_id) {
+            self.selected_fixtures.push(fixture_id);
+        }
+    }
+
+    pub fn remove_selected_fixture(&mut self, fixture_id: usize) {
+        self.selected_fixtures.retain(|&id| id != fixture_id);
+    }
+
+    pub fn clear_selected_fixtures(&mut self) {
+        self.selected_fixtures.clear();
+    }
+
+    pub fn get_selected_fixtures(&self) -> &Vec<usize> {
+        &self.selected_fixtures
     }
 }
