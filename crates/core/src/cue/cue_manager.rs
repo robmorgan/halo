@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::{AudioPlayer, Cue, CueList, EffectMapping, StaticValue, TimeCode};
+use crate::{Cue, CueList, EffectMapping, StaticValue, TimeCode};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum PlaybackState {
@@ -31,13 +31,11 @@ pub struct CueManager {
     original_start_time: Option<Instant>,
     /// Current cue progress
     progress: f32,
-    audio_player: Option<AudioPlayer>,
+    // audio_player: Option<AudioPlayer>, // Removed - using audio module instead
 }
 
 impl CueManager {
     pub fn new(cue_lists: Vec<CueList>) -> Self {
-        let audio_player = AudioPlayer::new().ok();
-
         CueManager {
             cue_lists,
             current_cue_list: 0,
@@ -51,7 +49,6 @@ impl CueManager {
             last_update: Instant::now(),
             original_start_time: None,
             progress: 0.0,
-            audio_player,
         }
     }
 
@@ -144,14 +141,6 @@ impl CueManager {
     pub fn set_audio_file(&mut self, cue_list_idx: usize, path: String) -> Result<(), String> {
         if let Some(cue_list) = self.cue_lists.get_mut(cue_list_idx) {
             cue_list.audio_file = Some(path.clone());
-
-            // If this is the current cue list, load the audio file
-            if cue_list_idx == self.current_cue_list {
-                if let Some(audio_player) = &mut self.audio_player {
-                    let _ = audio_player.load_file(path);
-                }
-            }
-
             Ok(())
         } else {
             Err("Invalid cue list index".to_string())
@@ -261,13 +250,7 @@ impl CueManager {
     }
 
     pub fn go(&mut self) -> Result<&Cue, String> {
-        // Start audio playback when going to the first cue
-        if self.current_cue == 0 && self.playback_state == PlaybackState::Stopped {
-            // Load and play the audio for the current cue list
-            let _ = self.load_audio(self.current_cue_list);
-            let _ = self.play_audio();
-        }
-
+        // Audio playback is now handled by the audio module
         self.go_to_next_cue()
     }
 
@@ -278,7 +261,7 @@ impl CueManager {
     }
 
     pub fn stop(&mut self) -> Result<&Cue, String> {
-        let _ = self.stop_audio();
+        // Audio stop is now handled by the audio module
         self.playback_state = PlaybackState::Stopped;
         self.progress = 0.0;
         self.show_elapsed_time = 0.0;
@@ -397,42 +380,7 @@ impl CueManager {
         self.playback_state
     }
 
-    // Audio Playback Control
-
-    pub fn load_audio(&mut self, cue_list_idx: usize) -> Result<(), String> {
-        if let Some(audio_player) = &mut self.audio_player {
-            if let Some(cue_list) = self.cue_lists.get(cue_list_idx) {
-                if let Some(audio_file) = &cue_list.audio_file {
-                    return audio_player.load_file(audio_file);
-                }
-            }
-        }
-        Err("Failed to load audio file".to_string())
-    }
-
-    pub fn play_audio(&mut self) -> Result<(), String> {
-        if let Some(audio_player) = &self.audio_player {
-            audio_player.play()
-        } else {
-            Err("Audio player not initialized".to_string())
-        }
-    }
-
-    pub fn pause_audio(&mut self) -> Result<(), String> {
-        if let Some(audio_player) = &self.audio_player {
-            audio_player.pause()
-        } else {
-            Err("Audio player not initialized".to_string())
-        }
-    }
-
-    pub fn stop_audio(&mut self) -> Result<(), String> {
-        if let Some(audio_player) = &self.audio_player {
-            audio_player.stop()
-        } else {
-            Err("Audio player not initialized".to_string())
-        }
-    }
+    // Audio Playback Control - now handled by audio module
 
     // Cue Management
 
@@ -454,6 +402,25 @@ impl CueManager {
                 timecode: None,
                 is_blocking: false,
             });
+        }
+    }
+}
+
+impl Clone for CueManager {
+    fn clone(&self) -> Self {
+        Self {
+            cue_lists: self.cue_lists.clone(),
+            current_cue_list: self.current_cue_list,
+            current_cue: self.current_cue,
+            playback_state: self.playback_state,
+            show_start_time: self.show_start_time,
+            show_elapsed_time: self.show_elapsed_time,
+            current_timecode: self.current_timecode.clone(),
+            current_cue_start_time: self.current_cue_start_time,
+            current_cue_elapsed_time: self.current_cue_elapsed_time,
+            last_update: self.last_update,
+            original_start_time: self.original_start_time,
+            progress: self.progress,
         }
     }
 }

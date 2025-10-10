@@ -1,29 +1,26 @@
-use std::sync::Arc;
-
 use eframe::egui;
-use halo_core::LightingConsole;
-use parking_lot::Mutex;
+use halo_core::ConsoleCommand;
+use tokio::sync::mpsc;
 
 use crate::ActiveTab;
 
 pub fn render(
     ui: &mut eframe::egui::Ui,
     active_tab: &mut ActiveTab,
-    console: &Arc<Mutex<LightingConsole>>,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    state: &crate::state::ConsoleState,
 ) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
             if let Some(path) = rfd::FileDialog::new().set_title("New Show").save_file() {
-                let mut console_lock = console.lock();
                 let name = path
                     .file_stem()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let _ = console_lock.new_show(name);
-                drop(console_lock);
+                let _ = console_tx.send(ConsoleCommand::NewShow { name });
             }
-            ui.close_menu();
+            ui.close();
         }
 
         if ui.button("Open Show...").clicked() {
@@ -32,24 +29,18 @@ pub fn render(
                 .set_title("Open Show")
                 .pick_file()
             {
-                let mut console_lock = console.lock();
-                let _ = console_lock.load_show(&path);
-                drop(console_lock);
+                let _ = console_tx.send(ConsoleCommand::LoadShow { path });
             }
-            ui.close_menu();
+            ui.close();
         }
 
         if ui.button("Reload Show").clicked() {
-            let mut console_lock = console.lock();
-            let _ = console_lock.reload_show();
-            drop(console_lock);
+            let _ = console_tx.send(ConsoleCommand::ReloadShow);
         }
 
         if ui.button("Save Show").clicked() {
-            let mut console_lock = console.lock();
-            let _ = console_lock.save_show();
-            drop(console_lock);
-            ui.close_menu();
+            let _ = console_tx.send(ConsoleCommand::SaveShow);
+            ui.close();
         }
 
         if ui.button("Save Show As...").clicked() {
@@ -58,23 +49,21 @@ pub fn render(
                 .set_title("Save Show As")
                 .save_file()
             {
-                let mut console_lock = console.lock();
                 let name = path
                     .file_stem()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let _ = console_lock.save_show_as(name, path);
-                drop(console_lock);
+                let _ = console_tx.send(ConsoleCommand::SaveShowAs { name, path });
             }
-            ui.close_menu();
+            ui.close();
         }
 
         ui.separator();
 
         if ui.button("Show Manager").clicked() {
             *active_tab = ActiveTab::ShowManager;
-            ui.close_menu();
+            ui.close();
         }
 
         ui.separator();
@@ -90,8 +79,19 @@ pub fn render(
         }
     });
     ui.menu_button("Tools", |ui| {
-        if ui.button("Ableton Link").clicked() {
-            // TODO: Toggle Ableton Link
+        if ui
+            .button(if state.link_enabled {
+                "Disable Ableton Link"
+            } else {
+                "Enable Ableton Link"
+            })
+            .clicked()
+        {
+            if state.link_enabled {
+                let _ = console_tx.send(ConsoleCommand::DisableAbletonLink);
+            } else {
+                let _ = console_tx.send(ConsoleCommand::EnableAbletonLink);
+            }
         }
         if ui.button("MIDI Settings").clicked() {
             // TODO: Open MIDI settings

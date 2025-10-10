@@ -1,10 +1,10 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui::{self, Color32, RichText};
-use halo_core::{Cue, CueList, LightingConsole};
-use parking_lot::Mutex;
-use rfd::FileDialog;
+use halo_core::{ConsoleCommand, Cue, CueList};
+use tokio::sync::mpsc;
+
+use crate::state::ConsoleState;
 
 pub struct CueEditor {
     selected_cue_list_index: Option<usize>,
@@ -13,12 +13,6 @@ pub struct CueEditor {
     new_cue_name: String,
     new_fade_time: f64,
     new_timecode: String,
-    audio_file_path: Option<String>,
-    editing_timecode_cue_index: Option<usize>,
-    editing_timecode_value: String,
-    editing_name_cue_index: Option<usize>,
-    editing_name_value: String,
-    editing_fade_time_cue_index: Option<usize>,
 }
 
 impl Default for CueEditor {
@@ -30,12 +24,6 @@ impl Default for CueEditor {
             new_cue_name: String::new(),
             new_fade_time: 3.0,
             new_timecode: "00:00:00:00".to_string(),
-            audio_file_path: None,
-            editing_timecode_cue_index: None,
-            editing_timecode_value: String::new(),
-            editing_name_cue_index: None,
-            editing_name_value: String::new(),
-            editing_fade_time_cue_index: None,
         }
     }
 }
@@ -45,17 +33,27 @@ impl CueEditor {
         Self::default()
     }
 
-    pub fn render(&mut self, ctx: &egui::Context, console: &Arc<Mutex<LightingConsole>>) {
+    pub fn render(
+        &mut self,
+        ctx: &egui::Context,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            self.render_cue_lists_panel(ui, console);
+            self.render_cue_lists_panel(ui, state, console_tx);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_cues_panel(ui, console);
+            self.render_cues_panel(ui, state, console_tx);
         });
     }
 
-    fn render_cue_lists_panel(&mut self, ui: &mut egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
+    fn render_cue_lists_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         ui.vertical(|ui| {
             ui.heading("Cue Lists");
 
@@ -69,13 +67,13 @@ impl CueEditor {
                     .add_enabled(name_valid, egui::Button::new("Add Cue List"))
                     .clicked()
                 {
-                    let mut console_lock = console.lock();
-                    console_lock.cue_manager.add_cue_list(CueList {
-                        name: std::mem::take(&mut self.new_cue_list_name),
-                        cues: Vec::new(),
-                        audio_file: None,
+                    let _ = console_tx.send(ConsoleCommand::SetCueLists {
+                        cue_lists: vec![CueList {
+                            name: std::mem::take(&mut self.new_cue_list_name),
+                            cues: Vec::new(),
+                            audio_file: None,
+                        }],
                     });
-                    drop(console_lock);
                 }
             });
 
@@ -83,8 +81,7 @@ impl CueEditor {
 
             // List of cue lists
             egui::ScrollArea::vertical().show(ui, |ui| {
-                let console_lock = console.lock();
-                let cue_lists = console_lock.cue_manager.get_cue_lists();
+                let cue_lists = &state.cue_lists;
 
                 for (idx, cue_list) in cue_lists.iter().enumerate() {
                     let is_selected = self.selected_cue_list_index == Some(idx);
@@ -93,381 +90,87 @@ impl CueEditor {
                         self.selected_cue_index = None; // Reset cue selection when changing lists
                     }
                 }
-                drop(console_lock);
             });
         });
     }
 
-    fn render_cues_panel(&mut self, ui: &mut egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
+    fn render_cues_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         ui.vertical(|ui| {
             ui.heading("Cues");
 
-            // Add new cue section
-            self.render_add_cue_section(ui, console);
-
-            ui.separator();
-
-            // Table of cues
             if let Some(cue_list_idx) = self.selected_cue_list_index {
-                self.render_cues_table(ui, console, cue_list_idx);
-                self.render_audio_section(ui, cue_list_idx, console);
-                self.render_cue_details(ui, console);
-            }
-        });
-    }
+                if let Some(cue_list) = state.cue_lists.get(cue_list_idx) {
+                    // Add new cue
+                    ui.horizontal(|ui| {
+                        ui.label("Name:");
+                        ui.text_edit_singleline(&mut self.new_cue_name);
+                        ui.label("Fade Time:");
+                        ui.add(egui::DragValue::new(&mut self.new_fade_time).speed(0.1));
+                        ui.label("Timecode:");
+                        ui.text_edit_singleline(&mut self.new_timecode);
 
-    fn render_add_cue_section(&mut self, ui: &mut egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
-        if let Some(cue_list_idx) = self.selected_cue_list_index {
-            ui.horizontal(|ui| {
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut self.new_cue_name);
-
-                ui.label("Fade Time:");
-                ui.add(
-                    egui::DragValue::new(&mut self.new_fade_time)
-                        .speed(0.1)
-                        .suffix(" s"),
-                );
-
-                ui.label("Timecode:");
-                ui.text_edit_singleline(&mut self.new_timecode);
-
-                let name_valid = !self.new_cue_name.is_empty();
-                if ui
-                    .add_enabled(name_valid, egui::Button::new("Add Cue"))
-                    .clicked()
-                {
-                    // Need to get a mutable lock for modifying the console
-                    let mut console_lock = console.lock();
-                    let _ = console_lock.cue_manager.add_cue(
-                        cue_list_idx,
-                        Cue {
-                            name: std::mem::take(&mut self.new_cue_name),
-                            fade_time: Duration::from_secs_f64(self.new_fade_time),
-                            timecode: if self.new_timecode.is_empty() {
-                                None
-                            } else {
-                                Some(self.new_timecode.clone())
-                            },
-                            ..Default::default()
-                        },
-                    );
-                    drop(console_lock);
-                }
-            });
-        } else {
-            ui.label("Select a cue list first");
-        }
-    }
-
-    fn render_cues_table(
-        &mut self,
-        ui: &mut egui::Ui,
-        console: &Arc<Mutex<LightingConsole>>,
-        cue_list_idx: usize,
-    ) {
-        // Add state for editing
-        let mut delete_cue_idx: Option<usize> = None;
-        let mut cue_reorder: Option<(usize, bool)> = None; // (idx, is_move_up)
-
-        egui::Grid::new("cues_grid")
-            .striped(true)
-            .num_columns(8)
-            .spacing([10.0, 6.0])
-            .show(ui, |ui| {
-                let cue_list = {
-                    let console_lock = console.lock();
-                    console_lock.cue_manager.get_cue_list(cue_list_idx).cloned()
-                };
-
-                // Header
-                ui.strong("ID");
-                ui.strong("Name");
-                ui.strong("Fade Time");
-                ui.strong("Timecode");
-                ui.strong("Static Values");
-                ui.strong("Effects");
-                ui.strong("Order");
-                ui.strong("Actions");
-                ui.end_row();
-
-                // Cues
-                if let Some(cue_list) = cue_list {
-                    for (idx, cue) in cue_list.cues.iter().enumerate() {
-                        let is_selected = self.selected_cue_index == Some(idx);
-                        let id_text = RichText::new(format!("{}", idx + 1)).strong();
-
-                        if ui.selectable_label(is_selected, id_text).clicked() {
-                            self.selected_cue_index = Some(idx);
-                        }
-
-                        // Name field - with editable functionality
-                        // Check if this cue's name is being edited
-                        if self.editing_name_cue_index == Some(idx) {
-                            // Show text edit for editing the name
-                            let response = ui.text_edit_singleline(&mut self.editing_name_value);
-
-                            // If user presses Enter or clicks elsewhere, save the changes
-                            if response.lost_focus()
-                                || ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            {
-                                if !self.editing_name_value.is_empty() {
-                                    let mut console_lock = console.lock();
-                                    if let Some(cue_list) =
-                                        console_lock.cue_manager.get_cue_list_mut(cue_list_idx)
-                                    {
-                                        if idx < cue_list.cues.len() {
-                                            cue_list.cues[idx].name =
-                                                self.editing_name_value.clone();
-                                        }
-                                    }
-                                    drop(console_lock);
-                                }
-                                self.editing_name_cue_index = None;
-                            }
-                        } else {
-                            // Display name as clickable for editing
-                            if ui
-                                .add(egui::Label::new(&cue.name).sense(egui::Sense::click()))
-                                .clicked()
-                            {
-                                self.editing_name_cue_index = Some(idx);
-                                self.editing_name_value = cue.name.clone();
-                            }
-                        }
-
-                        // Fade time field - with editable functionality
-                        if self.editing_fade_time_cue_index == Some(idx) {
-                            let mut fade_time_secs = cue.fade_time.as_secs_f64();
-                            let response = ui.add(
-                                egui::DragValue::new(&mut fade_time_secs)
-                                    .speed(0.1)
-                                    .clamp_range(0.1..=30.0)
-                                    .suffix(" s"),
-                            );
-
-                            if response.lost_focus()
-                                || ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            {
-                                let mut console_lock = console.lock();
-                                if let Some(cue_list) =
-                                    console_lock.cue_manager.get_cue_list_mut(cue_list_idx)
-                                {
-                                    if idx < cue_list.cues.len() {
-                                        cue_list.cues[idx].fade_time =
-                                            Duration::from_secs_f64(fade_time_secs);
-                                    }
-                                }
-                                drop(console_lock);
-                                self.editing_fade_time_cue_index = None;
-                            }
-                        } else {
-                            // Display fade time as clickable for editing
-                            if ui
-                                .add(
-                                    egui::Label::new(format!(
-                                        "{:.1} s",
-                                        cue.fade_time.as_secs_f64()
-                                    ))
-                                    .sense(egui::Sense::click()),
-                                )
-                                .clicked()
-                            {
-                                self.editing_fade_time_cue_index = Some(idx);
-                            }
-                        }
-
-                        // Check if this cue's timecode is being edited
-                        if self.editing_timecode_cue_index == Some(idx) {
-                            // Show text edit for editing the timecode
-                            let response =
-                                ui.text_edit_singleline(&mut self.editing_timecode_value);
-
-                            // If user presses Enter or clicks elsewhere, save the changes
-                            if response.lost_focus()
-                                || ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            {
-                                let mut console_lock = console.lock();
-                                if let Some(cue_list) =
-                                    console_lock.cue_manager.get_cue_list_mut(cue_list_idx)
-                                {
-                                    if idx < cue_list.cues.len() {
-                                        // Update the timecode
-                                        if self.editing_timecode_value.is_empty() {
-                                            cue_list.cues[idx].timecode = None;
-                                        } else {
-                                            cue_list.cues[idx].timecode =
-                                                Some(self.editing_timecode_value.clone());
-                                        }
-                                    }
-                                }
-                                drop(console_lock);
-
-                                self.editing_timecode_cue_index = None;
-                            }
-                        } else {
-                            // Display the timecode as a clickable label
-                            let timecode_text = if let Some(tc) = &cue.timecode {
-                                RichText::new(tc).color(Color32::from_rgb(0, 150, 255))
-                            } else {
-                                RichText::new("None").color(Color32::from_gray(120))
-                            };
-
-                            if ui
-                                .add(egui::Label::new(timecode_text).sense(egui::Sense::click()))
-                                .clicked()
-                            {
-                                // Start editing this timecode
-                                self.editing_timecode_cue_index = Some(idx);
-                                self.editing_timecode_value =
-                                    cue.timecode.clone().unwrap_or_default();
-                            }
-                        }
-
-                        ui.label(format!("{}", cue.static_values.len()));
-                        ui.label(format!("{}", cue.effects.len()));
-
-                        // Reordering buttons
-                        ui.horizontal(|ui| {
-                            let up_enabled = idx > 0;
-                            let down_enabled = idx < cue_list.cues.len() - 1;
-
-                            if ui.add_enabled(up_enabled, egui::Button::new("↑")).clicked() {
-                                cue_reorder = Some((idx, true)); // Move up
-                            }
-                            if ui
-                                .add_enabled(down_enabled, egui::Button::new("↓"))
-                                .clicked()
-                            {
-                                cue_reorder = Some((idx, false)); // Move down
-                            }
-                        });
-
-                        // Delete button
-                        if ui.button("🗑").clicked() {
-                            delete_cue_idx = Some(idx);
-                        }
-
-                        ui.end_row();
-                    }
-                }
-            });
-
-        // Handle cue deletion outside the grid to avoid borrowing issues
-        if let Some(idx) = delete_cue_idx {
-            let mut console_lock = console.lock();
-            if let Some(cue_list) = console_lock.cue_manager.get_cue_list_mut(cue_list_idx) {
-                if idx < cue_list.cues.len() {
-                    cue_list.cues.remove(idx);
-                    // Reset selection if the selected cue was deleted
-                    if self.selected_cue_index == Some(idx) {
-                        self.selected_cue_index = None;
-                    } else if let Some(selected_idx) = self.selected_cue_index {
-                        if selected_idx > idx {
-                            // Adjust selection index if we deleted a cue before the selected one
-                            self.selected_cue_index = Some(selected_idx - 1);
-                        }
-                    }
-                }
-            }
-            drop(console_lock);
-        }
-
-        // Handle cue reordering
-        if let Some((idx, is_move_up)) = cue_reorder {
-            let mut console_lock = console.lock();
-            if let Some(cue_list) = console_lock.cue_manager.get_cue_list_mut(cue_list_idx) {
-                if is_move_up && idx > 0 {
-                    // Move cue up
-                    cue_list.cues.swap(idx, idx - 1);
-                    // Update selection if needed
-                    if self.selected_cue_index == Some(idx) {
-                        self.selected_cue_index = Some(idx - 1);
-                    } else if self.selected_cue_index == Some(idx - 1) {
-                        self.selected_cue_index = Some(idx);
-                    }
-                } else if !is_move_up && idx < cue_list.cues.len() - 1 {
-                    // Move cue down
-                    cue_list.cues.swap(idx, idx + 1);
-                    // Update selection if needed
-                    if self.selected_cue_index == Some(idx) {
-                        self.selected_cue_index = Some(idx + 1);
-                    } else if self.selected_cue_index == Some(idx + 1) {
-                        self.selected_cue_index = Some(idx);
-                    }
-                }
-            }
-            drop(console_lock);
-        }
-    }
-
-    fn render_audio_section(
-        &mut self,
-        ui: &mut egui::Ui,
-        cue_list_idx: usize,
-        console: &Arc<Mutex<LightingConsole>>,
-    ) {
-        ui.separator();
-        ui.heading("Audio File");
-
-        let mut console_lock = console.lock();
-        ui.horizontal(|ui| {
-            if let Some(audio_file_path) = &self.audio_file_path {
-                ui.label("Audio File:");
-                ui.monospace(audio_file_path);
-            }
-
-            if ui.button("Browse Audio").clicked() {
-                if let Some(cue_id) = &self.selected_cue_list_index {
-                    if let Some(path) = FileDialog::new()
-                        .add_filter("Audio", &["mp3", "wav", "ogg", "flac"])
-                        .set_title("Select Audio File")
-                        .pick_file()
-                    {
-                        // if let Ok(mut audio_manager) = self.audio_manager.lock() {
-                        //     let _ = audio_manager.add_track(path, cue_id.clone());
-                        // }
-                        let audio_file_path = path.display().to_string();
-                        self.audio_file_path = Some(audio_file_path.clone());
-                        let _ = console_lock
-                            .cue_manager
-                            .set_audio_file(cue_list_idx, audio_file_path);
-                    }
-                } else {
-                    // Show error or notification that no cue is selected
-                    // TODO - show message modal
-                    ui.label("Please select a cue first");
-                }
-            }
-        });
-        drop(console_lock);
-    }
-
-    fn render_cue_details(&mut self, ui: &mut egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
-        let console_lock = console.lock();
-        // Cue details if selected
-        if let Some(cue_idx) = self.selected_cue_index {
-            let cue = console_lock.cue_manager.get_cue(cue_idx);
-
-            if let Some(cue) = cue {
-                ui.separator();
-                ui.heading(format!("Cue {} Details", cue_idx + 1));
-
-                // Create a collapsing region for this section
-                egui::CollapsingHeader::new("Cue Properties")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.label(format!("Static Values: {}", cue.static_values.len()));
-                        ui.label(format!("Effects: {}", cue.effects.len()));
-
-                        if ui.button("Edit Cue").clicked() {
-                            // This would open the detailed cue editor
-                            // The actual implementation would depend on how you want to handle
-                            // navigation
+                        let name_valid = !self.new_cue_name.is_empty();
+                        if ui
+                            .add_enabled(name_valid, egui::Button::new("Add Cue"))
+                            .clicked()
+                        {
+                            // TODO: Implement cue creation via message passing
+                            ui.label("Cue creation not yet implemented");
                         }
                     });
+
+                    ui.separator();
+
+                    // List of cues
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for (idx, cue) in cue_list.cues.iter().enumerate() {
+                            let is_selected = self.selected_cue_index == Some(idx);
+                            if ui.selectable_label(is_selected, &cue.name).clicked() {
+                                self.selected_cue_index = Some(idx);
+                            }
+                        }
+                    });
+
+                    // Cue details if selected
+                    if let Some(cue_idx) = self.selected_cue_index {
+                        if let Some(cue) = cue_list.cues.get(cue_idx) {
+                            ui.separator();
+                            ui.heading(format!("Cue {} Details", cue_idx + 1));
+
+                            egui::CollapsingHeader::new("Cue Properties")
+                                .default_open(true)
+                                .show(ui, |ui| {
+                                    ui.label(format!("Static Values: {}", cue.static_values.len()));
+                                    ui.label(format!("Effects: {}", cue.effects.len()));
+                                    ui.label(format!(
+                                        "Fade Time: {:.1}s",
+                                        cue.fade_time.as_secs_f64()
+                                    ));
+
+                                    if let Some(timecode) = &cue.timecode {
+                                        ui.label(format!("Timecode: {}", timecode));
+                                    }
+                                });
+                        }
+                    }
+                }
+            } else {
+                ui.label("Please select a cue list from the right panel");
             }
-        }
-        drop(console_lock);
+        });
     }
+}
+
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    state: &ConsoleState,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+) {
+    let mut cue_editor = CueEditor::default();
+    cue_editor.render(ui.ctx(), state, console_tx);
 }

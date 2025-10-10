@@ -3,6 +3,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 // Assuming we have access to these from our rhythm engine
+#[derive(Debug, Clone)]
 pub struct RhythmState {
     pub beat_phase: f64,   // 0.0 to 1.0, resets each beat
     pub bar_phase: f64,    // 0.0 to 1.0, resets each bar

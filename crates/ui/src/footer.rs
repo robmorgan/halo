@@ -1,21 +1,19 @@
-use std::sync::Arc;
-
 use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
-use halo_core::LightingConsole;
-use parking_lot::Mutex;
+use halo_core::ConsoleCommand;
+use tokio::sync::mpsc;
 
 use crate::utils::theme::Theme;
 
-pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>, fps: u32) {
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    state: &crate::state::ConsoleState,
+    fps: u32,
+) {
     let theme = Theme::default();
-    let fixture_count;
-    let clock;
-    {
-        let mut console = console.lock();
-        fixture_count = console.fixtures.clone().len();
-        clock = console.link_state.get_clock_state();
-        drop(console);
-    }
+    let fixture_count = state.fixtures.len();
+    let bpm = state.bpm;
+    let rhythm_state = &state.rhythm_state;
 
     ui.painter().rect_filled(
         ui.available_rect_before_wrap(),
@@ -37,7 +35,7 @@ pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>, 
                 ui.label(
                     RichText::new(format!(
                         "{} Fixtures | 42 Parameters | {:.1} BPM | Beat {:.2} | Phase {:.2}",
-                        fixture_count, clock.tempo, clock.beats, clock.phase
+                        fixture_count, bpm, rhythm_state.beat_phase, rhythm_state.bar_phase
                     ))
                     .size(12.0)
                     .color(theme.text_dim),
@@ -47,7 +45,7 @@ pub fn render(ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>, 
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(12.0);
-            ui.label(RichText::new("Halo v0.3").size(12.0).color(theme.text_dim));
+            ui.label(RichText::new("Halo v0.4").size(12.0).color(theme.text_dim));
         });
     });
 }

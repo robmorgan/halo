@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
@@ -97,8 +96,8 @@ impl AudioPlayer {
         }
     }
 
-    pub fn seek(&self, position: Duration) -> Result<(), String> {
-        if let Some(sink) = &self.sink {
+    pub fn seek(&self, _position: Duration) -> Result<(), String> {
+        if let Some(_sink) = &self.sink {
             // Rodio doesn't support seeking directly, so we'd need to
             // implement a custom solution for this, potentially by
             // reloading the file and skipping to position

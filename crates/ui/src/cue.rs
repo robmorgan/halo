@@ -1,9 +1,10 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui;
-use halo_core::{LightingConsole, PlaybackState};
-use parking_lot::Mutex;
+use halo_core::{ConsoleCommand, PlaybackState};
+use tokio::sync::mpsc;
+
+use crate::state::ConsoleState;
 
 /// A panel that shows the list of cues.
 #[derive(Default)]
@@ -12,42 +13,36 @@ pub struct CuePanel {
 }
 
 impl CuePanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
+    pub fn render(
+        &mut self,
+        ui: &mut eframe::egui::Ui,
+        state: &ConsoleState,
+        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         ui.heading("Cues");
 
-        let current_list;
-        {
-            let console_lock = console.lock();
-            current_list = console_lock.cue_manager.get_current_cue_list().cloned();
-            drop(console_lock);
-        }
+        let cue_lists = &state.cue_lists;
 
-        if let Some(current_list) = current_list {
+        if let Some(current_list) = cue_lists.get(state.current_cue_list_index) {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.label("Current List:");
 
                     // Left arrow button
                     if ui.button("←").clicked() {
-                        let mut console_lock = console.lock();
-                        if let Err(err) = console_lock.cue_manager.select_previous_cue_list() {
-                            println!("Error switching to previous cue list: {}", err);
-                        }
-                        drop(console_lock);
+                        let _ = _console_tx.send(ConsoleCommand::SelectPreviousCueList);
                     }
 
                     ui.strong(egui::RichText::new(&current_list.name).size(16.0));
 
                     // Right arrow button
                     if ui.button("→").clicked() {
-                        let mut console_lock = console.lock();
-                        if let Err(err) = console_lock.cue_manager.select_next_cue_list() {
-                            println!("Error switching to next cue list: {}", err);
-                        }
-                        drop(console_lock);
+                        let _ = _console_tx.send(ConsoleCommand::SelectNextCueList);
                     }
                 });
+
                 ui.add_space(5.0);
+
                 ui.horizontal(|ui| {
                     ui.label("Audio:");
                     ui.strong(
@@ -78,21 +73,19 @@ impl CuePanel {
                 // Add audio transport controls
                 ui.horizontal(|ui| {
                     if ui.button("▶").clicked() {
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.play_audio();
-                        drop(console_lock);
+                        // TODO: Implement audio play
+                        // console_tx.send(ConsoleCommand::PlayAudio { file_path:
+                        // current_list.audio_file.clone().unwrap_or_default() }).ok();
                     }
 
                     if ui.button("⏸").clicked() {
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.pause_audio();
-                        drop(console_lock);
+                        // TODO: Implement audio pause
+                        // console_tx.send(ConsoleCommand::PauseAudio).ok();
                     }
 
                     if ui.button("⏹").clicked() {
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.stop_audio();
-                        drop(console_lock);
+                        // TODO: Implement audio stop
+                        // console_tx.send(ConsoleCommand::StopAudio).ok();
                     }
                 });
             });
@@ -115,101 +108,96 @@ impl CuePanel {
         ui.separator();
 
         // Display cues with neat alignment and timecode
-        let console_lock = console.lock();
-        let cues = console_lock.cue_manager.get_current_cues();
+        if let Some(current_list) = cue_lists.get(state.current_cue_list_index) {
+            let cues = &current_list.cues;
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for cue in cues {
-                ui.horizontal(|ui| {
-                    let is_active = console_lock.cue_manager.is_cue_active(cue.id);
-                    let active_color = if is_active {
-                        egui::Color32::from_rgb(100, 200, 100)
-                    } else {
-                        egui::Color32::from_rgb(150, 150, 150)
-                    };
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for (cue_index, cue) in cues.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        // Check if this is the current active cue
+                        let is_current_cue = cue_index == state.current_cue_index
+                            && state.playback_state == PlaybackState::Playing;
 
-                    // Cue name with fixed width
-                    ui.scope(|ui| {
-                        ui.style_mut().spacing.item_spacing.x = 0.0;
+                        let active_color = if is_current_cue {
+                            egui::Color32::from_rgb(100, 200, 100) // Green for current cue when
+                                                                   // playing
+                        } else {
+                            ui.style().visuals.text_color() // Default color for all other cues
+                        };
+
+                        // Cue name with fixed width
+                        ui.scope(|ui| {
+                            ui.style_mut().spacing.item_spacing.x = 0.0;
+                            ui.add_sized(
+                                [100.0, 20.0],
+                                egui::Label::new(
+                                    egui::RichText::new(&cue.name).color(active_color).strong(),
+                                ),
+                            );
+                        });
+
+                        // Timecode marker (estimated position in the timeline)
+                        let timecode = if let Some(timecode) = &cue.timecode {
+                            timecode
+                        } else {
+                            &"N/A".to_string()
+                        };
+
                         ui.add_sized(
                             [100.0, 20.0],
                             egui::Label::new(
-                                egui::RichText::new(&cue.name).color(active_color).strong(),
+                                egui::RichText::new(timecode)
+                                    .color(active_color)
+                                    .monospace(),
                             ),
                         );
-                    });
 
-                    // Timecode marker (estimated position in the timeline)
-                    let timecode = if let Some(timecode) = &cue.timecode {
-                        timecode
-                    } else {
-                        &"N/A".to_string()
-                    };
-
-                    ui.add_sized(
-                        [100.0, 20.0],
-                        egui::Label::new(
-                            egui::RichText::new(timecode)
-                                .color(active_color)
-                                .monospace(),
-                        ),
-                    );
-
-                    // Duration with fixed width
-                    ui.add_sized(
-                        [80.0, 20.0],
-                        egui::Label::new(
-                            egui::RichText::new(Self::format_duration(cue.fade_time))
-                                .color(active_color)
-                                .monospace(),
-                        ),
-                    );
-
-                    // Progress bar
-                    let progress = if is_active {
-                        console_lock.cue_manager.get_current_cue_progress()
-                    } else {
-                        0.0
-                    };
-
-                    let progress_response = ui.add(
-                        egui::ProgressBar::new(progress)
-                            .desired_width(200.0)
-                            .desired_height(30.0)
-                            .corner_radius(0.0)
-                            .animate(is_active)
-                            .fill(if is_active {
-                                egui::Color32::from_rgb(75, 2, 245)
-                            } else {
-                                egui::Color32::from_rgb(100, 100, 100)
-                            }),
-                    );
-
-                    // Show detailed info on hover
-                    if progress_response.hovered() {
-                        egui::show_tooltip(
-                            ui.ctx(),
-                            progress_response.layer_id,
-                            egui::Id::new("cue_tooltip"),
-                            |ui| {
-                                ui.vertical(|ui| {
-                                    ui.label(format!("Cue: {}", cue.name));
-                                    ui.label(format!("Duration: {}s", cue.fade_time.as_secs()));
-                                    ui.label(format!("Progress: {:.1}%", progress * 100.0));
-                                    if is_active {
-                                        ui.label("Status: Active");
-                                    } else {
-                                        ui.label("Status: Inactive");
-                                    }
-                                });
-                            },
+                        // Duration with fixed width
+                        ui.add_sized(
+                            [80.0, 20.0],
+                            egui::Label::new(
+                                egui::RichText::new(Self::format_duration(cue.fade_time))
+                                    .color(active_color)
+                                    .monospace(),
+                            ),
                         );
-                    }
-                });
-                ui.add_space(2.0); // Spacing between cue rows
-            }
-        });
-        drop(console_lock);
+
+                        // Progress bar - only show progress for the current cue
+                        let progress = if is_current_cue {
+                            state.current_cue_progress
+                        } else {
+                            0.0
+                        };
+
+                        let progress_response = ui.add(
+                            egui::ProgressBar::new(progress)
+                                .desired_width(200.0)
+                                .desired_height(30.0)
+                                .corner_radius(0.0)
+                                .animate(is_current_cue)
+                                .fill(if is_current_cue {
+                                    egui::Color32::from_rgb(75, 2, 245) // Blue for current cue
+                                                                        // progress
+                                } else {
+                                    egui::Color32::from_rgb(100, 100, 100) // Gray for inactive cues
+                                }),
+                        );
+
+                        // Show detailed info on hover
+                        if progress_response.hovered() {
+                            // Simple tooltip with cue info
+                            ui.label(format!(
+                                "Cue: {} | Duration: {}s | Progress: {:.1}%",
+                                cue.name,
+                                cue.fade_time.as_secs(),
+                                progress * 100.0
+                            ));
+                        }
+                    });
+                    ui.add_space(2.0); // Spacing between cue rows
+                }
+            });
+        }
     }
 
     pub fn set_playback_state(&mut self, state: PlaybackState) {
@@ -222,4 +210,14 @@ impl CuePanel {
         let seconds = total_secs % 60;
         format!("{:02}:{:02}", minutes, seconds)
     }
+}
+
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    state: &ConsoleState,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+) {
+    let mut cue_panel = CuePanel::default();
+    cue_panel.set_playback_state(state.playback_state);
+    cue_panel.render(ui, state, console_tx);
 }

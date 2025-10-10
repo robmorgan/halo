@@ -14,6 +14,7 @@
     "robmorgan",
     "timecode",
     "egui",
-    "eframe"
+    "eframe",
+    "smpte"
   ]
 }

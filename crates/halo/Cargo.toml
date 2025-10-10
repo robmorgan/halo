@@ -29,3 +29,5 @@ crossterm = "0.29.0"
 eframe = "0.32.3"
 parking_lot = "0.12.5"
 rfd = "0.15.4"
+tokio = { version = "1.47.1", features = ["full"] }
+rodio = "0.17.1"

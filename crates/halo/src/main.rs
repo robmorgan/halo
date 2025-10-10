@@ -1,11 +1,10 @@
 use std::net::IpAddr;
-use std::path::Path;
-use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Ok;
 use clap::Parser;
-use halo_core::{CueList, LightingConsole, MidiAction, MidiOverride, NetworkConfig};
-use parking_lot::Mutex;
+use halo_core::{ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig};
+use tokio::sync::mpsc;
 
 /// Lighting Console for live performances with precise automation and control.
 #[derive(Parser, Debug)]
@@ -41,7 +40,8 @@ fn parse_ip(s: &str) -> Result<IpAddr, String> {
     s.parse().map_err(|e| format!("Invalid IP address: {}", e))
 }
 
-fn main() -> Result<(), anyhow::Error> {
+#[tokio::main]
+async fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
     let network_config = NetworkConfig::new(
         args.source_ip,
@@ -56,34 +56,26 @@ fn main() -> Result<(), anyhow::Error> {
     println!("Destination: {}", network_config.get_destination());
     println!("Port: {}", network_config.port);
 
-    // Create the console
-    let mut console = LightingConsole::new(80., network_config.clone()).unwrap();
-    console.load_fixture_library();
+    // Create channels for communication
+    let (command_tx, command_rx) = mpsc::unbounded_channel::<ConsoleCommand>();
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ConsoleEvent>();
 
-    // patch fixtures
-    let _ = console.patch_fixture("Left PAR", "shehds-rgbw-par", 1, 1);
-    let _ = console.patch_fixture("Right PAR", "shehds-rgbw-par", 1, 9);
-    let _ = console.patch_fixture("Left Spot", "shehds-led-spot-60w", 1, 18);
-    let _ = console.patch_fixture("Right Spot", "shehds-led-spot-60w", 1, 28);
-    let _ = console.patch_fixture("Left Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 38);
-    let _ = console.patch_fixture("Right Wash", "shehds-led-wash-7x18w-rgbwa-uv", 1, 48);
-    let _ = console.patch_fixture(
-        "Smoke #1",
-        "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb",
-        1,
-        69,
-    );
-    let _ = console.patch_fixture("Pinspot", "shehds-mini-led-pinspot-10w", 1, 80);
+    // Convert tokio receiver to std receiver for UI
+    let (ui_event_tx, ui_event_rx) = std::sync::mpsc::channel::<ConsoleEvent>();
 
-    // store the cues in a default cue list
-    let cue_lists = vec![CueList {
-        name: "Default".to_string(),
-        cues: vec![],
-        audio_file: None,
-    }];
+    // Spawn a task to forward events from tokio to std channel
+    let event_forwarder = tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            if let Err(e) = ui_event_tx.send(event) {
+                log::error!("Failed to forward event to UI: {}", e);
+                break;
+            }
+        }
+        log::info!("Event forwarder task completed");
+    });
 
-    // load cue lists
-    console.set_cue_lists(cue_lists);
+    // Create the async console
+    let console = LightingConsole::new(80., network_config.clone()).unwrap();
 
     // // Blue Strobe Fast
     // console.add_midi_override(
@@ -130,35 +122,159 @@ fn main() -> Result<(), anyhow::Error> {
 
     //// Cue Overrides
 
-    // Cue 5: Pinspot Purple
-    console.add_midi_override(
-        62,
-        MidiOverride {
-            action: MidiAction::TriggerCue("Pinspot Purple".to_string()),
-        },
-    );
+    println!("Starting lighting console...");
+    println!("MIDI support: {}", args.enable_midi);
+    println!("Show file: {:?}", args.show_file);
 
-    // Cue 6: Pinspot Gradient
-    console.add_midi_override(
-        64,
-        MidiOverride {
-            action: MidiAction::TriggerCue("Pinspot Gradient".to_string()),
-        },
-    );
+    // Create a command sender for the initialization task
+    let init_command_tx = command_tx.clone();
 
-    // Check if MIDI support is enabled
-    if args.enable_midi {
-        console.init_mpk49_midi()?;
+    // Spawn the console task with channel communication
+    let console_task = tokio::spawn(async move {
+        // Run the console with channels
+        if let Err(e) = console.run_with_channels(command_rx, event_tx).await {
+            println!("Console error: {}", e);
+        }
+    });
+
+    // Store the show file path for later loading after UI starts
+    let show_file_path = args.show_file.clone();
+
+    // Spawn an initialization task to send all the setup commands
+    let init_task = tokio::spawn(async move {
+        println!("Starting initialization task...");
+
+        // Send initialization commands
+        println!("Sending Initialize command...");
+        init_command_tx
+            .send(ConsoleCommand::Initialize)
+            .map_err(|e| anyhow::anyhow!("Failed to send Initialize command: {}", e))?;
+
+        // Allow time for initialization
+        println!("Waiting for initialization...");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Patch fixtures via commands
+        println!("Patching fixtures...");
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Left PAR".to_string(),
+                profile_name: "shehds-rgbw-par".to_string(),
+                universe: 1,
+                address: 1,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Right PAR".to_string(),
+                profile_name: "shehds-rgbw-par".to_string(),
+                universe: 1,
+                address: 9,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Left Spot".to_string(),
+                profile_name: "shehds-led-spot-60w".to_string(),
+                universe: 1,
+                address: 18,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Right Spot".to_string(),
+                profile_name: "shehds-led-spot-60w".to_string(),
+                universe: 1,
+                address: 28,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Left Wash".to_string(),
+                profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
+                universe: 1,
+                address: 38,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Right Wash".to_string(),
+                profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
+                universe: 1,
+                address: 48,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Smoke #1".to_string(),
+                profile_name: "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
+                universe: 1,
+                address: 69,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+        init_command_tx
+            .send(ConsoleCommand::PatchFixture {
+                name: "Pinspot".to_string(),
+                profile_name: "shehds-mini-led-pinspot-10w".to_string(),
+                universe: 1,
+                address: 80,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
+
+        // Set up cue lists
+        println!("Setting up cue lists...");
+        let cue_lists = vec![CueList {
+            name: "Default".to_string(),
+            cues: vec![],
+            audio_file: None,
+        }];
+        init_command_tx
+            .send(ConsoleCommand::SetCueLists { cue_lists })
+            .map_err(|e| anyhow::anyhow!("Failed to send SetCueLists command: {}", e))?;
+
+        println!("Initialization task completed successfully");
+        Ok(())
+    });
+
+    // Wait for initialization to complete
+    log::info!("Waiting for initialization to complete...");
+    let init_result = init_task.await;
+    if let Err(e) = init_result {
+        log::error!("Initialization task join error: {}", e);
+        return Err(anyhow::anyhow!("Initialization task failed: {}", e));
+    }
+    if let Err(e) = init_result.unwrap() {
+        log::error!("Initialization task error: {}", e);
+        return Err(e);
+    }
+    log::info!("Initialization completed successfully");
+
+    // Run the UI with the channels (this will block until UI closes)
+    log::info!("Starting UI...");
+    let show_path = show_file_path.map(std::path::PathBuf::from);
+    let ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx, show_path);
+    log::info!("UI completed");
+
+    // Send shutdown command
+    log::info!("Sending shutdown command...");
+    command_tx
+        .send(ConsoleCommand::Shutdown)
+        .map_err(|e| anyhow::anyhow!("Failed to send Shutdown command: {}", e))?;
+
+    // Wait for console task to finish
+    log::info!("Waiting for console task to finish...");
+    let _ = console_task.await;
+
+    // Wait for event forwarder task to finish
+    log::info!("Waiting for event forwarder task to finish...");
+    let _ = event_forwarder.await;
+
+    // Check UI result
+    if let Err(e) = ui_result {
+        log::error!("UI error: {}", e);
     }
 
-    // Check if a show file was provided
-    if let Some(show_file) = args.show_file {
-        let path = Path::new(&show_file);
-        console.load_show(path)?;
-    }
-
-    // Launch the UI in the main thread
-    let _ = halo_ui::run_ui(Arc::new(Mutex::new(console)));
+    log::info!("Application shutting down");
     Ok(())
 }
 

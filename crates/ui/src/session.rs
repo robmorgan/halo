@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use std::time::Instant;
+use std::time::SystemTime;
 
-use chrono::{Local, Timelike};
 use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use halo_core::{LightingConsole, PlaybackState, TimeCode};
-use parking_lot::Mutex;
+use halo_core::{ConsoleCommand, PlaybackState};
+use tokio::sync::mpsc;
+
+use crate::state::ConsoleState;
 
 enum ClockMode {
     TimeCode,
@@ -17,37 +17,27 @@ enum ClockMode {
 /// - A toggable clock that can show either timecode or the system clock.
 /// - The Master BPM display +/- buttons.
 /// - Ableton Link status and connected peers.
+/// - Large transport controls (GO, HOLD, STOP).
 pub struct SessionPanel {
     // Clock state
     clock_mode: ClockMode,
-    timecode: TimeCode,
-
-    // BPM state
-    pub bpm: f64,
-
-    // Ableton Link state
-    link_enabled: bool,
-    link_peers: u64,
-
-    // Playback state
-    playback_state: PlaybackState,
 }
 
 impl Default for SessionPanel {
     fn default() -> Self {
         Self {
             clock_mode: ClockMode::TimeCode,
-            timecode: TimeCode::default(),
-            bpm: 120.0,
-            link_enabled: false,
-            link_peers: 0,
-            playback_state: PlaybackState::Stopped,
         }
     }
 }
 
 impl SessionPanel {
-    pub fn render(&mut self, ui: &mut eframe::egui::Ui, console: &Arc<Mutex<LightingConsole>>) {
+    pub fn render(
+        &mut self,
+        ui: &mut eframe::egui::Ui,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         // Session UI
         ui.vertical(|ui| {
             // Top row - header and mode toggle
@@ -76,17 +66,24 @@ impl SessionPanel {
 
                 let clock_text = match self.clock_mode {
                     ClockMode::TimeCode => {
-                        format!(
-                            "{:02}:{:02}:{:02}.{:02}",
-                            self.timecode.hours,
-                            self.timecode.minutes,
-                            self.timecode.seconds,
-                            self.timecode.frames
-                        )
+                        if let Some(timecode) = &state.timecode {
+                            format!(
+                                "{:02}:{:02}:{:02}.{:02}",
+                                timecode.hours, timecode.minutes, timecode.seconds, timecode.frames
+                            )
+                        } else {
+                            "00:00:00.00".to_string()
+                        }
                     }
                     ClockMode::System => {
-                        let now = Local::now();
-                        format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second())
+                        let now = SystemTime::now()
+                            .duration_since(SystemTime::UNIX_EPOCH)
+                            .unwrap_or_default();
+                        let total_secs = now.as_secs();
+                        let hours = (total_secs / 3600) % 24;
+                        let minutes = (total_secs / 60) % 60;
+                        let seconds = total_secs % 60;
+                        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
                     }
                 };
 
@@ -113,10 +110,12 @@ impl SessionPanel {
 
                         ui.horizontal(|ui| {
                             if ui.button("-").clicked() {
-                                self.bpm = (self.bpm - 0.1).max(20.0);
+                                let _ = console_tx.send(ConsoleCommand::SetBpm {
+                                    bpm: state.bpm - 0.1,
+                                });
                             }
 
-                            let bpm_text = format!("{:.1}", self.bpm);
+                            let bpm_text = format!("{:.1}", state.bpm);
                             let font_id = FontId::monospace(24.0);
                             ui.colored_label(
                                 Color32::from_rgb(255, 215, 0),
@@ -124,16 +123,22 @@ impl SessionPanel {
                             );
 
                             if ui.button("+").clicked() {
-                                self.bpm = (self.bpm + 0.1).min(999.0);
+                                let _ = console_tx.send(ConsoleCommand::SetBpm {
+                                    bpm: state.bpm + 0.1,
+                                });
                             }
                         });
 
                         ui.horizontal(|ui| {
                             if ui.button("-1.0").clicked() {
-                                self.bpm = (self.bpm - 1.0).max(1.0);
+                                let _ = console_tx.send(ConsoleCommand::SetBpm {
+                                    bpm: state.bpm - 1.0,
+                                });
                             }
                             if ui.button("+1.0").clicked() {
-                                self.bpm = (self.bpm + 1.0).min(999.0);
+                                let _ = console_tx.send(ConsoleCommand::SetBpm {
+                                    bpm: state.bpm + 1.0,
+                                });
                             }
                         });
                     });
@@ -145,12 +150,12 @@ impl SessionPanel {
                 ui.group(|ui| {
                     ui.vertical(|ui| {
                         ui.label("Ableton Link");
-                        let link_text = if self.link_enabled {
+                        let link_text = if state.link_enabled {
                             "LINK ●"
                         } else {
                             "LINK ○"
                         };
-                        let link_color = if self.link_enabled {
+                        let link_color = if state.link_enabled {
                             Color32::from_rgb(66, 133, 244)
                         } else {
                             ui.style().visuals.text_color()
@@ -160,27 +165,25 @@ impl SessionPanel {
                             .button(RichText::new(link_text).color(link_color))
                             .clicked()
                         {
-                            self.link_enabled = !self.link_enabled;
-                            if self.link_enabled {
-                                // Simulate peers connecting
-                                self.link_peers = (rand::random::<u64>() % 3) + 1;
+                            if state.link_enabled {
+                                let _ = console_tx.send(ConsoleCommand::DisableAbletonLink);
                             } else {
-                                self.link_peers = 0;
+                                let _ = console_tx.send(ConsoleCommand::EnableAbletonLink);
                             }
                         }
 
-                        let status_text = if self.link_enabled {
+                        let status_text = if state.link_enabled {
                             "Connected"
                         } else {
                             "Disabled"
                         };
                         ui.label(status_text);
 
-                        let peers_text = if self.link_enabled {
-                            if self.link_peers == 1 {
+                        let peers_text = if state.link_enabled {
+                            if state.link_peers == 1 {
                                 "1 peer connected".to_string()
                             } else {
-                                format!("{} peers connected", self.link_peers)
+                                format!("{} peers connected", state.link_peers)
                             }
                         } else {
                             "No peers connected".to_string()
@@ -190,6 +193,9 @@ impl SessionPanel {
                 });
             });
 
+            ui.add_space(10.0);
+
+            // Large transport controls
             ui.group(|ui| {
                 ui.horizontal(|ui| {
                     ui.set_min_width(ui.available_width());
@@ -201,7 +207,7 @@ impl SessionPanel {
                     let play_text =
                         RichText::new("▶ GO")
                             .size(18.0)
-                            .color(match self.playback_state {
+                            .color(match state.playback_state {
                                 PlaybackState::Playing => ui.style().visuals.text_color(),
                                 _ => Color32::from_rgb(120, 255, 120),
                             });
@@ -212,17 +218,14 @@ impl SessionPanel {
                     );
 
                     if play_button.clicked() {
-                        self.playback_state = PlaybackState::Playing;
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.go();
-                        drop(console_lock);
+                        let _ = console_tx.send(ConsoleCommand::Play);
                     }
 
                     // Hold button
                     let hold_text =
                         RichText::new("⏸ HOLD")
                             .size(18.0)
-                            .color(match self.playback_state {
+                            .color(match state.playback_state {
                                 PlaybackState::Playing => Color32::from_rgb(255, 215, 0),
                                 _ => ui.style().visuals.text_color(),
                             });
@@ -233,17 +236,14 @@ impl SessionPanel {
                     );
 
                     if hold_button.clicked() {
-                        self.playback_state = PlaybackState::Holding;
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.hold();
-                        drop(console_lock);
+                        let _ = console_tx.send(ConsoleCommand::Pause);
                     }
 
                     // Stop button
                     let stop_text =
                         RichText::new("⏹ STOP")
                             .size(18.0)
-                            .color(match self.playback_state {
+                            .color(match state.playback_state {
                                 PlaybackState::Stopped => ui.style().visuals.text_color(),
                                 _ => Color32::from_rgb(255, 100, 100),
                             });
@@ -254,21 +254,10 @@ impl SessionPanel {
                     );
 
                     if stop_button.clicked() {
-                        self.playback_state = PlaybackState::Stopped;
-                        let mut console_lock = console.lock();
-                        let _ = console_lock.cue_manager.stop();
-                        drop(console_lock);
+                        let _ = console_tx.send(ConsoleCommand::Stop);
                     }
                 });
             });
         });
-    }
-
-    pub fn set_playback_state(&mut self, state: PlaybackState) {
-        self.playback_state = state;
-    }
-
-    pub fn set_timecode(&mut self, timecode: TimeCode) {
-        self.timecode = timecode;
     }
 }

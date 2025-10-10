@@ -1,33 +1,26 @@
-use std::sync::Arc;
-use std::thread::JoinHandle;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
-use cue::CuePanel;
-use cue_editor::CueEditor;
 use eframe::egui;
-use fixture::FixtureGrid;
-use halo_core::{EffectType, EventLoop, LightingConsole};
-use master::{MasterPanel, OverridesPanel};
-use parking_lot::Mutex;
-use patch_panel::PatchPanel;
-use programmer::Programmer;
-use session::SessionPanel;
-use show_panel::ShowPanel;
-use timeline::Timeline;
+use halo_core::{ConsoleCommand, ConsoleEvent};
+use tokio::sync::mpsc;
 
+use crate::state::ConsoleState;
+mod footer;
+mod header;
+mod state;
+mod utils;
+
+// Enable all UI modules
 mod cue;
 mod cue_editor;
 mod fader;
 mod fixture;
-mod footer;
-mod header;
 mod master;
 mod patch_panel;
 mod programmer;
 mod session;
 mod show_panel;
 mod timeline;
-mod utils;
 
 pub enum ActiveTab {
     Dashboard,
@@ -36,82 +29,147 @@ pub enum ActiveTab {
     PatchPanel,
     ShowManager,
 }
+
 pub struct HaloApp {
-    pub console: Arc<Mutex<LightingConsole>>,
-    _event_thread: JoinHandle<()>,
+    state: ConsoleState,
+
+    // Communication channels
+    console_tx: mpsc::UnboundedSender<ConsoleCommand>,
+    console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
+
     last_update: Instant,
+    last_link_query: Instant,
     current_time: SystemTime,
     active_tab: ActiveTab,
-    selected_fixture_index: Option<usize>,
-    selected_cue_index: Option<usize>,
-    selected_chase_index: Option<usize>,
-    selected_step_index: Option<usize>,
-    new_fixture_name: String,
-    new_channel_name: String,
-    new_cue_name: String,
-    new_chase_name: String,
-    step_duration_ms: u64,
-    effect_frequency: f32,
-    effect_amplitude: f32,
-    effect_offset: f32,
-    selected_effect_type: EffectType,
-    temp_color_value: [f32; 3], // RGB for color picker
     fps: u32,
-    overrides_panel: OverridesPanel,
-    master_panel: MasterPanel,
-    fixture_grid: fixture::FixtureGrid,
-    session_panel: session::SessionPanel,
-    cue_panel: cue::CuePanel,
-    programmer: programmer::Programmer,
-    timeline: timeline::Timeline,
-    cue_editor: cue_editor::CueEditor,
-    patch_panel: PatchPanel,
-    show_panel: show_panel::ShowPanel,
+
+    // Track if initial show load has been triggered
+    initial_show_loaded: bool,
+    show_file_path: Option<std::path::PathBuf>,
+
+    // Component state - maintain state between renders
+    programmer_state: programmer::ProgrammerState,
+    cue_editor_state: cue_editor::CueEditor,
+    patch_panel_state: patch_panel::PatchPanelState,
+    show_panel_state: show_panel::ShowPanelState,
+    session_panel_state: session::SessionPanel,
 }
 
 impl HaloApp {
-    fn new(_cc: &eframe::CreationContext<'_>, console: Arc<Mutex<LightingConsole>>) -> Self {
-        let mut event_loop = EventLoop::new(Arc::clone(&console), 44.0);
-
-        // Spawn the event loop thread
-        let event_thread = std::thread::Builder::new()
-            .name("HaloWorker".to_string())
-            .spawn(move || {
-                event_loop.run();
-            })
-            .expect("failed to spawn thread");
+    fn new(
+        _cc: &eframe::CreationContext<'_>,
+        console_tx: mpsc::UnboundedSender<ConsoleCommand>,
+        console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
+        show_file_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        // Request initial data from console
+        let _ = console_tx.send(ConsoleCommand::QueryFixtures);
+        let _ = console_tx.send(ConsoleCommand::QueryCueLists);
+        let _ = console_tx.send(ConsoleCommand::QueryCurrentCueListIndex);
+        let _ = console_tx.send(ConsoleCommand::QueryCurrentCue);
+        let _ = console_tx.send(ConsoleCommand::QueryPlaybackState);
+        let _ = console_tx.send(ConsoleCommand::QueryRhythmState);
+        let _ = console_tx.send(ConsoleCommand::QueryShow);
+        let _ = console_tx.send(ConsoleCommand::QueryLinkState);
 
         Self {
-            console,
-            _event_thread: event_thread,
+            state: ConsoleState::default(),
+            console_tx,
+            console_rx,
             last_update: Instant::now(),
+            last_link_query: Instant::now(),
             current_time: SystemTime::now(),
             active_tab: ActiveTab::Dashboard,
-            selected_fixture_index: None,
-            selected_cue_index: None,
-            selected_chase_index: None,
-            selected_step_index: None,
-            new_fixture_name: String::new(),
-            new_channel_name: String::new(),
-            new_cue_name: String::new(),
-            new_chase_name: String::new(),
-            step_duration_ms: 1000,
-            effect_frequency: 1.0,
-            effect_amplitude: 1.0,
-            effect_offset: 0.5,
-            selected_effect_type: EffectType::Sine,
-            temp_color_value: [0.5, 0.5, 0.5],
             fps: 60,
-            overrides_panel: OverridesPanel::new(),
-            master_panel: MasterPanel::new(),
-            fixture_grid: FixtureGrid::default(),
-            session_panel: SessionPanel::default(),
-            cue_panel: CuePanel::default(),
-            programmer: Programmer::new(),
-            timeline: Timeline::new(),
-            cue_editor: CueEditor::new(),
-            patch_panel: PatchPanel::new(),
-            show_panel: ShowPanel::new(),
+            initial_show_loaded: false,
+            show_file_path,
+            programmer_state: programmer::ProgrammerState::default(),
+            cue_editor_state: cue_editor::CueEditor::new(),
+            patch_panel_state: patch_panel::PatchPanelState::default(),
+            show_panel_state: show_panel::ShowPanelState::default(),
+            session_panel_state: session::SessionPanel::default(),
+        }
+    }
+
+    fn process_engine_updates(&mut self) {
+        while let Ok(event) = self.console_rx.try_recv() {
+            self.state.update(event);
+        }
+    }
+
+    fn render_ui(&mut self, ctx: &egui::Context) {
+        // Header
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                header::render(ui, &mut self.active_tab, &self.console_tx, &self.state);
+            });
+        });
+
+        // Bottom UI
+        egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            // Show programmer panel
+            programmer::render_compact(
+                ui,
+                &self.state,
+                &self.console_tx,
+                &mut self.programmer_state,
+            );
+            ui.separator();
+
+            // Show timeline
+            timeline::render(ui, &self.state, &self.console_tx);
+            ui.separator();
+
+            // Show footer status
+            footer::render(ui, &self.console_tx, &self.state, self.fps);
+        });
+
+        match self.active_tab {
+            ActiveTab::Dashboard => {
+                egui::SidePanel::right("right_panel").show(ctx, |ui| {
+                    ui.set_min_width(400.0);
+                    self.session_panel_state
+                        .render(ui, &self.state, &self.console_tx);
+                    ui.separator();
+                    cue::render(ui, &self.state, &self.console_tx);
+                });
+
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        // Master Panel with overrides and master faders
+                        master::render(ui, &self.state, &self.console_tx);
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+                    });
+
+                    // Fixtures Grid
+                    let main_content_height = ui.available_height();
+                    fixture::render_grid(
+                        ui,
+                        &self.state,
+                        &self.console_tx,
+                        main_content_height - 60.0,
+                    );
+                });
+            }
+            ActiveTab::CueEditor => {
+                self.cue_editor_state
+                    .render(ctx, &self.state, &self.console_tx);
+            }
+            ActiveTab::Programmer => {
+                self.programmer_state
+                    .render_full_view(ctx, &self.state, &self.console_tx);
+            }
+            ActiveTab::PatchPanel => {
+                self.patch_panel_state
+                    .render(ctx, &self.state, &self.console_tx);
+            }
+            ActiveTab::ShowManager => {
+                self.show_panel_state
+                    .render(ctx, &self.state, &self.console_tx);
+            }
         }
     }
 }
@@ -122,95 +180,44 @@ impl eframe::App for HaloApp {
         self.last_update = now;
         self.current_time = SystemTime::now();
 
-        // Get items from the console
-        {
-            let mut console = self.console.lock();
-            let fixtures = console.fixtures.to_vec();
-            let playback_state = console.cue_manager.get_playback_state();
-
-            // Update the session panel with the current playback state and time
-            self.session_panel.set_playback_state(playback_state);
-            if let Some(timecode) = console.cue_manager.current_timecode {
-                self.session_panel.set_timecode(timecode);
+        // Load show file on first update if provided
+        if !self.initial_show_loaded {
+            if let Some(ref path) = self.show_file_path {
+                println!("Loading show file on UI startup: {}", path.display());
+                let _ = self
+                    .console_tx
+                    .send(ConsoleCommand::LoadShow { path: path.clone() });
             }
-
-            // Update the programmer with the current fixtures and selection
-            self.programmer.set_fixtures(fixtures);
-            self.programmer
-                .set_selected_fixtures(self.fixture_grid.selected_fixtures().clone());
-
-            // Update the console with the current bpm
-            console.set_bpm(self.session_panel.bpm);
+            self.initial_show_loaded = true;
         }
 
-        // Header
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                header::render(ui, &mut self.active_tab, &self.console);
-            });
-        });
+        // Process all updates first
+        self.process_engine_updates();
 
-        // Bottom UI
-        egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
-            self.programmer.show(ui, &self.console);
-            self.timeline.show(ui);
-            footer::render(ui, &self.console, self.fps);
-        });
-
-        match self.active_tab {
-            ActiveTab::Dashboard => {
-                egui::SidePanel::right("right_panel").show(ctx, |ui| {
-                    ui.set_min_width(400.0);
-                    self.session_panel.render(ui, &self.console);
-                    ui.separator();
-                    self.cue_panel.render(ui, &self.console);
-                });
-
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        // Overrides Grid
-                        self.overrides_panel.show(ui, &self.console);
-
-                        ui.add_space(10.0);
-                        ui.separator();
-                        ui.add_space(10.0);
-
-                        // Master Panel
-                        self.master_panel.show(ui, &self.console);
-                    });
-
-                    // Fixtures
-                    let main_content_height = ui.available_height(); // Subtract header and footer heights
-                    self.fixture_grid
-                        .render(ui, &self.console, main_content_height - 60.0);
-                    // TODO - Subtract the height of the overrides grid
-                });
-            }
-            ActiveTab::CueEditor => {
-                self.cue_editor.render(ctx, &self.console);
-            }
-            ActiveTab::Programmer => {
-                self.programmer.render_full_view(ctx, &self.console);
-            }
-            ActiveTab::PatchPanel => {
-                self.patch_panel.render(ctx, &self.console);
-            }
-            ActiveTab::ShowManager => {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    self.show_panel.show(ui, &self.console);
-                });
-            }
+        // Periodically query Link state (every 2 seconds)
+        if now.duration_since(self.last_link_query).as_secs() >= 2 {
+            let _ = self.console_tx.send(ConsoleCommand::QueryLinkState);
+            self.last_link_query = now;
         }
 
-        // Request a repaint
-        ctx.request_repaint();
+        // Render UI
+        self.render_ui(ctx);
+
+        // Smart repaint based on playback state
+        if matches!(self.state.playback_state, halo_core::PlaybackState::Playing) {
+            ctx.request_repaint(); // Continuous
+        } else {
+            ctx.request_repaint_after(Duration::from_millis(100)); // Slower
+        }
     }
 }
 
-pub fn run_ui(console: Arc<Mutex<LightingConsole>>) -> eframe::Result {
+pub fn run_ui(
+    console_tx: mpsc::UnboundedSender<ConsoleCommand>,
+    console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
+    show_file_path: Option<std::path::PathBuf>,
+) -> eframe::Result {
     let native_options = eframe::NativeOptions {
-        // initial_window_size: Some(egui::vec2(400.0, 200.0)),
-        // min_window_size: Some(egui::vec2(300.0, 150.0)),
         viewport: eframe::egui::ViewportBuilder {
             title: Some(String::from("Halo")),
             app_id: Some(String::from("io.github.robmorgan.halo")),
@@ -223,6 +230,13 @@ pub fn run_ui(console: Arc<Mutex<LightingConsole>>) -> eframe::Result {
     eframe::run_native(
         "Halo",
         native_options,
-        Box::new(|cc| Ok(Box::new(HaloApp::new(cc, console)))),
+        Box::new(move |cc| {
+            Ok(Box::new(HaloApp::new(
+                cc,
+                console_tx,
+                console_rx,
+                show_file_path,
+            )))
+        }),
     )
 }

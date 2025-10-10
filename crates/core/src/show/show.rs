@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::CueList;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Show {
     pub name: String,
     pub created_at: SystemTime,
