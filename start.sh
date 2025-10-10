@@ -11,5 +11,5 @@ echo "Starting Halo..."
 # unicast - using local IP address
 #cargo run -- --source-ip 192.168.1.131 --dest-ip 192.168.1.131 --show-file shows/Guys40th.json
 
-#cargo run -- --source-ip 192.168.1.131 --dest-ip 192.168.1.131 --show-file shows/Guys40th.json
-cargo run -- --source-ip 10.8.45.1 --dest-ip 10.8.45.80 --show-file shows/Guys40th.json
+cargo run -- --source-ip 192.168.1.131 --dest-ip 192.168.1.131 --show-file shows/Guys40th.json
+#cargo run -- --source-ip 10.8.45.1 --dest-ip 10.8.45.80 --show-file shows/Guys40th.json

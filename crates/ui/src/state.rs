@@ -19,6 +19,11 @@ pub struct ConsoleState {
     pub rhythm_state: RhythmState,
     pub show: Option<Show>,
     pub timecode: Option<TimeCode>,
+    pub programmer_preview_mode: bool,
+    pub programmer_collapsed: bool,
+    pub selected_fixtures: Vec<usize>,
+    pub programmer_values: HashMap<(usize, String), u8>, // (fixture_id, channel) -> value
+    pub programmer_effects: Vec<(String, halo_core::EffectType, Vec<usize>)>, // (name, effect_type, fixture_ids)
 }
 
 impl Default for ConsoleState {
@@ -45,6 +50,11 @@ impl Default for ConsoleState {
             },
             show: None,
             timecode: None,
+            programmer_preview_mode: false,
+            programmer_collapsed: false,
+            selected_fixtures: Vec::new(),
+            programmer_values: HashMap::new(),
+            programmer_effects: Vec::new(),
         }
     }
 }
@@ -94,6 +104,24 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::RhythmStateUpdated { state } => {
                 self.rhythm_state = state;
+            }
+            halo_core::ConsoleEvent::ProgrammerStateUpdated {
+                preview_mode,
+                collapsed,
+                selected_fixtures,
+            } => {
+                self.programmer_preview_mode = preview_mode;
+                self.programmer_collapsed = collapsed;
+                self.selected_fixtures = selected_fixtures;
+            }
+            halo_core::ConsoleEvent::ProgrammerValuesUpdated { values } => {
+                self.programmer_values.clear();
+                for (fixture_id, channel, value) in values {
+                    self.programmer_values.insert((fixture_id, channel), value);
+                }
+            }
+            halo_core::ConsoleEvent::ProgrammerEffectsUpdated { effects } => {
+                self.programmer_effects = effects;
             }
             _ => {
                 // Handle other events as needed

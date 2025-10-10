@@ -89,13 +89,18 @@ impl HaloApp {
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
             // Show programmer panel
-            programmer::render_compact(ui, &self.state, &self.console_tx);
+            programmer::render_compact(
+                ui,
+                &self.state,
+                &self.console_tx,
+                &mut self.programmer_state,
+            );
             ui.separator();
-            
+
             // Show timeline
             timeline::render(ui, &self.state, &self.console_tx);
             ui.separator();
-            
+
             // Show footer status
             footer::render(ui, &self.console_tx, &self.state, self.fps);
         });
@@ -121,7 +126,12 @@ impl HaloApp {
 
                     // Fixtures Grid
                     let main_content_height = ui.available_height();
-                    fixture::render_grid(ui, &self.state, &self.console_tx, main_content_height - 60.0);
+                    fixture::render_grid(
+                        ui,
+                        &self.state,
+                        &self.console_tx,
+                        main_content_height - 60.0,
+                    );
                 });
             }
             ActiveTab::CueEditor => {
@@ -130,7 +140,7 @@ impl HaloApp {
             }
             ActiveTab::Programmer => {
                 self.programmer_state
-                    .render(ctx, &self.state, &self.console_tx);
+                    .render_full_view(ctx, &self.state, &self.console_tx);
             }
             ActiveTab::PatchPanel => {
                 self.patch_panel_state

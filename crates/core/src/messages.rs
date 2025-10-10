@@ -132,10 +132,38 @@ pub enum ConsoleCommand {
         channel: String,
         value: u8,
     },
-    ClearProgrammer,
+    SetProgrammerPreviewMode {
+        preview_mode: bool,
+    },
+    SetProgrammerCollapsed {
+        collapsed: bool,
+    },
+    SetSelectedFixtures {
+        fixture_ids: Vec<usize>,
+    },
+    AddSelectedFixture {
+        fixture_id: usize,
+    },
+    RemoveSelectedFixture {
+        fixture_id: usize,
+    },
+    ClearSelectedFixtures,
     RecordProgrammerToCue {
-        list_index: usize,
-        cue_index: Option<usize>,
+        cue_name: String,
+        list_index: Option<usize>,
+    },
+    ClearProgrammer,
+    ApplyProgrammerEffect {
+        fixture_ids: Vec<usize>,
+        channel_type: String,
+        effect_type: EffectType,
+        waveform: u8,
+        interval: u8,
+        ratio: f32,
+        phase: f32,
+        distribution: u8,
+        step_value: Option<usize>,
+        wave_offset: Option<f32>,
     },
 
     // Query commands (request state)
@@ -241,6 +269,19 @@ pub enum ConsoleEvent {
     LinkStateChanged {
         enabled: bool,
         num_peers: u64,
+    },
+
+    // Programmer events
+    ProgrammerStateUpdated {
+        preview_mode: bool,
+        collapsed: bool,
+        selected_fixtures: Vec<usize>,
+    },
+    ProgrammerValuesUpdated {
+        values: Vec<(usize, String, u8)>, // (fixture_id, channel, value)
+    },
+    ProgrammerEffectsUpdated {
+        effects: Vec<(String, EffectType, Vec<usize>)>, // (name, effect_type, fixture_ids)
     },
 
     // Response to queries

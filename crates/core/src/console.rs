@@ -763,20 +763,65 @@ impl LightingConsole {
 
             // Programmer
             SetProgrammerValue {
-                fixture_id: _,
-                channel: _,
-                value: _,
+                fixture_id,
+                channel,
+                value,
             } => {
                 // TODO: Implement programmer channel value setting
+                println!(
+                    "Setting programmer value: fixture {}, channel {}, value {}",
+                    fixture_id, channel, value
+                );
+            }
+            SetProgrammerPreviewMode { preview_mode } => {
+                self.programmer.write().await.set_preview_mode(preview_mode);
+            }
+            SetProgrammerCollapsed { collapsed: _ } => {
+                // TODO: Handle collapsed state in UI state
+            }
+            SetSelectedFixtures { fixture_ids } => {
+                // TODO: Handle selected fixtures in UI state
+                println!("Selected fixtures: {:?}", fixture_ids);
+            }
+            AddSelectedFixture { fixture_id } => {
+                // TODO: Handle adding selected fixture in UI state
+                println!("Added fixture to selection: {}", fixture_id);
+            }
+            RemoveSelectedFixture { fixture_id } => {
+                // TODO: Handle removing selected fixture in UI state
+                println!("Removed fixture from selection: {}", fixture_id);
+            }
+            ClearSelectedFixtures => {
+                // TODO: Handle clearing selected fixtures in UI state
+                println!("Cleared selected fixtures");
             }
             ClearProgrammer => {
                 self.programmer.write().await.clear();
             }
             RecordProgrammerToCue {
+                cue_name,
                 list_index: _,
-                cue_index: _,
             } => {
                 // TODO: Implement record_programmer_to_cue method
+                println!("Recording programmer to cue: {}", cue_name);
+            }
+            ApplyProgrammerEffect {
+                fixture_ids,
+                channel_type,
+                effect_type,
+                waveform,
+                interval,
+                ratio,
+                phase,
+                distribution,
+                step_value,
+                wave_offset,
+            } => {
+                // TODO: Implement programmer effect application
+                println!(
+                    "Applying programmer effect: {:?} to fixtures {:?}",
+                    effect_type, fixture_ids
+                );
             }
 
             // Query commands
