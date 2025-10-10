@@ -1,9 +1,10 @@
 use std::time::Duration;
+
+use eframe::egui;
+use halo_core::{ConsoleCommand, PlaybackState};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
-use eframe::egui;
-use halo_core::{ConsoleCommand, PlaybackState};
 
 /// A panel that shows the list of cues.
 #[derive(Default)]
@@ -73,7 +74,8 @@ impl CuePanel {
                 ui.horizontal(|ui| {
                     if ui.button("▶").clicked() {
                         // TODO: Implement audio play
-                        // console_tx.send(ConsoleCommand::PlayAudio { file_path: current_list.audio_file.clone().unwrap_or_default() }).ok();
+                        // console_tx.send(ConsoleCommand::PlayAudio { file_path:
+                        // current_list.audio_file.clone().unwrap_or_default() }).ok();
                     }
 
                     if ui.button("⏸").clicked() {
@@ -117,7 +119,8 @@ impl CuePanel {
                             && state.playback_state == PlaybackState::Playing;
 
                         let active_color = if is_current_cue {
-                            egui::Color32::from_rgb(100, 200, 100) // Green for current cue when playing
+                            egui::Color32::from_rgb(100, 200, 100) // Green for current cue when
+                                                                   // playing
                         } else {
                             ui.style().visuals.text_color() // Default color for all other cues
                         };
@@ -173,7 +176,8 @@ impl CuePanel {
                                 .corner_radius(0.0)
                                 .animate(is_current_cue)
                                 .fill(if is_current_cue {
-                                    egui::Color32::from_rgb(75, 2, 245) // Blue for current cue progress
+                                    egui::Color32::from_rgb(75, 2, 245) // Blue for current cue
+                                                                        // progress
                                 } else {
                                     egui::Color32::from_rgb(100, 100, 100) // Gray for inactive cues
                                 }),

@@ -1,7 +1,8 @@
-use halo_core::{ConsoleCommand, CueList, PlaybackState, RhythmState, Show, TimeCode};
-use halo_fixtures::Fixture;
 use std::collections::HashMap;
 use std::time::SystemTime;
+
+use halo_core::{ConsoleCommand, CueList, PlaybackState, RhythmState, Show, TimeCode};
+use halo_fixtures::Fixture;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -26,7 +27,7 @@ pub struct ConsoleState {
     pub programmer_collapsed: bool,
     pub selected_fixtures: Vec<usize>,
     pub programmer_values: HashMap<(usize, String), u8>, // (fixture_id, channel) -> value
-    pub programmer_effects: Vec<(String, halo_core::EffectType, Vec<usize>)>, // (name, effect_type, fixture_ids)
+    pub programmer_effects: Vec<(String, halo_core::EffectType, Vec<usize>)>, /* (name, effect_type, fixture_ids) */
 }
 
 impl Default for ConsoleState {

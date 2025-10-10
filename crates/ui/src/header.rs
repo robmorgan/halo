@@ -1,7 +1,8 @@
-use crate::ActiveTab;
 use eframe::egui;
 use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
+
+use crate::ActiveTab;
 
 pub fn render(
     ui: &mut eframe::egui::Ui,

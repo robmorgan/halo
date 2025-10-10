@@ -1,7 +1,6 @@
 pub use ableton_link::AbletonLinkManager;
 pub use artnet::network_config::NetworkConfig;
 pub use audio::audio_player::AudioPlayer;
-
 pub use console::{LightingConsole, SyncLightingConsole};
 pub use cue::cue::{Cue, CueList, EffectDistribution, EffectMapping, StaticValue};
 pub use cue::cue_manager::{CueManager, PlaybackState};
@@ -10,16 +9,15 @@ pub use effect::effect::{
 };
 pub use messages::{ConsoleCommand, ConsoleEvent};
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
-pub use rhythm::rhythm::{Interval, RhythmState};
-pub use show::show::Show;
-pub use show::show_manager::ShowManager;
-pub use timecode::timecode::TimeCode;
-
 // Async module system exports
 pub use modules::{
     AsyncModule, AudioModule, DmxModule, MidiModule, ModuleEvent, ModuleId, ModuleManager,
     ModuleMessage, SmpteModule,
 };
+pub use rhythm::rhythm::{Interval, RhythmState};
+pub use show::show::Show;
+pub use show::show_manager::ShowManager;
+pub use timecode::timecode::TimeCode;
 
 mod ableton_link;
 mod artnet;

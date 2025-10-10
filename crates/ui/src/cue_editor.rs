@@ -1,9 +1,10 @@
 use std::time::Duration;
+
+use eframe::egui::{self, Color32, RichText};
+use halo_core::{ConsoleCommand, Cue, CueList};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
-use eframe::egui::{self, Color32, RichText};
-use halo_core::{ConsoleCommand, Cue, CueList};
 
 pub struct CueEditor {
     selected_cue_list_index: Option<usize>,

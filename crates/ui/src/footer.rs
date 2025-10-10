@@ -1,7 +1,8 @@
-use crate::utils::theme::Theme;
 use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
 use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
+
+use crate::utils::theme::Theme;
 
 pub fn render(
     ui: &mut eframe::egui::Ui,

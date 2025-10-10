@@ -1,9 +1,10 @@
 use std::time::SystemTime;
+
+use eframe::egui::{Align, Color32, FontId, Layout, RichText};
+use halo_core::{ConsoleCommand, PlaybackState};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
-use eframe::egui::{Align, Color32, FontId, Layout, RichText};
-use halo_core::{ConsoleCommand, PlaybackState};
 
 enum ClockMode {
     TimeCode,

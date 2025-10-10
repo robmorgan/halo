@@ -1,13 +1,14 @@
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::thread;
+
+use async_trait::async_trait;
+use rodio::{Decoder, OutputStream, Sink};
 use tokio::sync::{mpsc, oneshot};
 
 use super::traits::{AsyncModule, ModuleEvent, ModuleId, ModuleMessage};
-use rodio::{Decoder, OutputStream, Sink};
 
 /// Commands that can be sent to the audio thread
 #[derive(Debug)]

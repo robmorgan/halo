@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant, SystemTime};
-use tokio::sync::mpsc;
 
 use eframe::egui;
 use halo_core::{ConsoleCommand, ConsoleEvent};
+use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
 mod footer;

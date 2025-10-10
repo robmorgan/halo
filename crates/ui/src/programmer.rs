@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::f64::consts::PI;
-use tokio::sync::mpsc;
 
-use crate::state::ConsoleState;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
 use halo_core::{ConsoleCommand, EffectType};
+use tokio::sync::mpsc;
+
+use crate::state::ConsoleState;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum ActiveProgrammerTab {

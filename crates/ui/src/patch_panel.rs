@@ -1,8 +1,8 @@
+use eframe::egui;
+use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
-use eframe::egui;
-use halo_core::ConsoleCommand;
 
 pub struct PatchPanelState {
     new_fixture_name: String,
@@ -43,8 +43,9 @@ impl PatchPanelState {
                             ui.label(format!("Channels: {}", fixture.channels.len()));
 
                             if ui.button("Remove").clicked() {
-                                let _ = console_tx
-                                    .send(ConsoleCommand::UnpatchFixture { fixture_id: fixture.id });
+                                let _ = console_tx.send(ConsoleCommand::UnpatchFixture {
+                                    fixture_id: fixture.id,
+                                });
                             }
                         });
                     }

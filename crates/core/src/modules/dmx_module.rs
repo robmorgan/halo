@@ -1,11 +1,12 @@
-use async_trait::async_trait;
 use std::collections::HashMap;
+
+use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration, Instant};
 
+use super::traits::{AsyncModule, ModuleEvent, ModuleId, ModuleMessage};
 use crate::artnet::artnet::ArtNet;
 use crate::artnet::network_config::NetworkConfig;
-use super::traits::{AsyncModule, ModuleEvent, ModuleId, ModuleMessage};
 
 pub struct DmxModule {
     artnet: Option<ArtNet>,
@@ -40,15 +41,25 @@ impl AsyncModule for DmxModule {
     }
 
     async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        log::info!("Initializing DMX module with config: {:?}", self.network_config.get_mode_string());
-        
+        log::info!(
+            "Initializing DMX module with config: {:?}",
+            self.network_config.get_mode_string()
+        );
+
         let artnet = ArtNet::new(self.network_config.mode.clone())?;
         self.artnet = Some(artnet);
-        
-        self.status.insert("mode".to_string(), self.network_config.get_mode_string().to_string());
-        self.status.insert("destination".to_string(), self.network_config.get_destination());
-        self.status.insert("status".to_string(), "initialized".to_string());
-        
+
+        self.status.insert(
+            "mode".to_string(),
+            self.network_config.get_mode_string().to_string(),
+        );
+        self.status.insert(
+            "destination".to_string(),
+            self.network_config.get_destination(),
+        );
+        self.status
+            .insert("status".to_string(), "initialized".to_string());
+
         Ok(())
     }
 
@@ -57,8 +68,7 @@ impl AsyncModule for DmxModule {
         mut rx: mpsc::Receiver<ModuleEvent>,
         tx: mpsc::Sender<ModuleMessage>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let artnet = self.artnet.as_ref()
-            .ok_or("DMX module not initialized")?;
+        let artnet = self.artnet.as_ref().ok_or("DMX module not initialized")?;
 
         // Create interval for DMX output timing
         let frame_duration = Duration::from_secs_f64(1.0 / self.target_fps);
@@ -68,11 +78,14 @@ impl AsyncModule for DmxModule {
         let mut shutdown = false;
 
         log::info!("DMX module started, running at {}Hz", self.target_fps);
-        
+
         // Send initial status
-        let _ = tx.send(ModuleMessage::Status(format!(
-            "DMX module running at {}Hz", self.target_fps
-        ))).await;
+        let _ = tx
+            .send(ModuleMessage::Status(format!(
+                "DMX module running at {}Hz",
+                self.target_fps
+            )))
+            .await;
 
         while !shutdown {
             tokio::select! {
@@ -92,28 +105,28 @@ impl AsyncModule for DmxModule {
                         }
                     }
                 }
-                
+
                 // Send DMX data at regular intervals
                 _ = frame_interval.tick() => {
                     let now = Instant::now();
-                    
+
                     // Send all universes with data
                     for (universe, data) in &last_dmx_data {
                         artnet.send_data(*universe, data.clone());
                     }
-                    
+
                     self.frames_sent += 1;
                     self.last_frame_time = Some(now);
-                    
+
                     // Update status periodically
                     if self.frames_sent % (self.target_fps as u64 * 5) == 0 { // Every 5 seconds
                         self.status.insert("frames_sent".to_string(), self.frames_sent.to_string());
                         self.status.insert("fps".to_string(), format!("{:.1}", self.target_fps));
                         self.status.insert("universes".to_string(), last_dmx_data.len().to_string());
-                        
+
                         let _ = tx.send(ModuleMessage::Status(format!(
-                            "DMX: {} frames sent, {} universes active", 
-                            self.frames_sent, 
+                            "DMX: {} frames sent, {} universes active",
+                            self.frames_sent,
                             last_dmx_data.len()
                         ))).await;
                     }
@@ -121,12 +134,16 @@ impl AsyncModule for DmxModule {
             }
         }
 
-        log::info!("DMX module shutting down after sending {} frames", self.frames_sent);
+        log::info!(
+            "DMX module shutting down after sending {} frames",
+            self.frames_sent
+        );
         Ok(())
     }
 
     async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.status.insert("status".to_string(), "shutdown".to_string());
+        self.status
+            .insert("status".to_string(), "shutdown".to_string());
         log::info!("DMX module shutdown complete");
         Ok(())
     }

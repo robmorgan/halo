@@ -1,8 +1,8 @@
+use eframe::egui;
+use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
-use eframe::egui;
-use halo_core::ConsoleCommand;
 
 pub struct ShowPanelState {
     new_show_name: String,

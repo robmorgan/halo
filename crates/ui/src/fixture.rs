@@ -1,9 +1,9 @@
-use tokio::sync::mpsc;
-
-use crate::state::ConsoleState;
 use eframe::egui::{self, Color32, CornerRadius, Rect, Stroke, Vec2};
 use halo_core::ConsoleCommand;
 use halo_fixtures::FixtureType;
+use tokio::sync::mpsc;
+
+use crate::state::ConsoleState;
 
 const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [
     (FixtureType::MovingHead, Color32::from_rgb(255, 165, 0)), // Orange

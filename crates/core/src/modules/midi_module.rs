@@ -1,10 +1,11 @@
-use async_trait::async_trait;
 use std::collections::HashMap;
+
+use async_trait::async_trait;
+use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use tokio::sync::mpsc;
 
-use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
-use crate::midi::midi::MidiMessage;
 use super::traits::{AsyncModule, ModuleEvent, ModuleId, ModuleMessage};
+use crate::midi::midi::MidiMessage;
 
 pub struct MidiModule {
     device_name: String,
@@ -25,7 +26,10 @@ impl MidiModule {
         }
     }
 
-    async fn connect_midi(&mut self, tx: mpsc::Sender<ModuleMessage>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn connect_midi(
+        &mut self,
+        tx: mpsc::Sender<ModuleMessage>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let midi_in = MidiInput::new("halo_async_controller")?;
         let midi_out = MidiOutput::new("halo_async_controller")?;
 
@@ -65,7 +69,7 @@ impl MidiModule {
 
                         if let Some(midi_msg) = midi_msg {
                             let event = ModuleEvent::MidiInput(midi_msg);
-                            
+
                             // Since we're in a callback, we need to use try_send
                             // to avoid blocking if the channel is full
                             if let Err(e) = tx_clone.try_send(ModuleMessage::Event(event)) {
@@ -98,16 +102,21 @@ impl MidiModule {
         self.output_connection = Some(output_connection);
         self.midi_sender = Some(tx);
 
-        self.status.insert("input_connected".to_string(), "true".to_string());
-        self.status.insert("output_connected".to_string(), "true".to_string());
-        self.status.insert("device".to_string(), self.device_name.clone());
+        self.status
+            .insert("input_connected".to_string(), "true".to_string());
+        self.status
+            .insert("output_connected".to_string(), "true".to_string());
+        self.status
+            .insert("device".to_string(), self.device_name.clone());
 
         Ok(())
     }
 
     pub fn send_midi_message(&mut self, data: &[u8]) -> Result<(), String> {
         if let Some(output) = &mut self.output_connection {
-            output.send(data).map_err(|e| format!("Failed to send MIDI: {}", e))?;
+            output
+                .send(data)
+                .map_err(|e| format!("Failed to send MIDI: {}", e))?;
             Ok(())
         } else {
             Err("MIDI output not connected".to_string())
@@ -123,12 +132,16 @@ impl AsyncModule for MidiModule {
 
     async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Initializing MIDI module for device: {}", self.device_name);
-        
-        self.status.insert("device_name".to_string(), self.device_name.clone());
-        self.status.insert("status".to_string(), "initialized".to_string());
-        self.status.insert("input_connected".to_string(), "false".to_string());
-        self.status.insert("output_connected".to_string(), "false".to_string());
-        
+
+        self.status
+            .insert("device_name".to_string(), self.device_name.clone());
+        self.status
+            .insert("status".to_string(), "initialized".to_string());
+        self.status
+            .insert("input_connected".to_string(), "false".to_string());
+        self.status
+            .insert("output_connected".to_string(), "false".to_string());
+
         Ok(())
     }
 
@@ -138,20 +151,26 @@ impl AsyncModule for MidiModule {
         tx: mpsc::Sender<ModuleMessage>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log::info!("MIDI module starting for device: {}", self.device_name);
-        
+
         // Connect to MIDI device
         match self.connect_midi(tx.clone()).await {
             Ok(_) => {
                 log::info!("MIDI device '{}' connected successfully", self.device_name);
-                let _ = tx.send(ModuleMessage::Status(format!(
-                    "MIDI device '{}' connected", self.device_name
-                ))).await;
+                let _ = tx
+                    .send(ModuleMessage::Status(format!(
+                        "MIDI device '{}' connected",
+                        self.device_name
+                    )))
+                    .await;
             }
             Err(e) => {
-                let error_msg = format!("Failed to connect MIDI device '{}': {}", self.device_name, e);
+                let error_msg = format!(
+                    "Failed to connect MIDI device '{}': {}",
+                    self.device_name, e
+                );
                 log::error!("{}", error_msg);
                 let _ = tx.send(ModuleMessage::Error(error_msg)).await;
-                
+
                 // Continue running even if MIDI connection fails
                 // This allows the system to run without MIDI hardware
             }
@@ -180,11 +199,14 @@ impl AsyncModule for MidiModule {
         // Drop connections to properly close MIDI ports
         self.input_connection = None;
         self.output_connection = None;
-        
-        self.status.insert("status".to_string(), "shutdown".to_string());
-        self.status.insert("input_connected".to_string(), "false".to_string());
-        self.status.insert("output_connected".to_string(), "false".to_string());
-        
+
+        self.status
+            .insert("status".to_string(), "shutdown".to_string());
+        self.status
+            .insert("input_connected".to_string(), "false".to_string());
+        self.status
+            .insert("output_connected".to_string(), "false".to_string());
+
         log::info!("MIDI module shutdown complete");
         Ok(())
     }

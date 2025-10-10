@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
 
 use halo_fixtures::{Fixture, FixtureLibrary};
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::task::JoinHandle;
 
 use crate::artnet::network_config::NetworkConfig;
 use crate::cue::cue_manager::{CueManager, PlaybackState};

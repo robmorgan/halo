@@ -1,8 +1,9 @@
 use std::collections::HashMap;
-use tokio::sync::mpsc;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Stroke, Vec2};
 use halo_core::ConsoleCommand;
+use tokio::sync::mpsc;
+
 use crate::state::ConsoleState;
 
 // Override button state
@@ -46,7 +47,11 @@ impl MasterFader {
     }
 }
 
-pub fn render(ui: &mut eframe::egui::Ui, state: &ConsoleState, console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
+pub fn render(
+    ui: &mut eframe::egui::Ui,
+    state: &ConsoleState,
+    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+) {
     ui.vertical(|ui| {
         // Overrides section
         ui.heading("OVERRIDES");
@@ -63,7 +68,8 @@ pub fn render(ui: &mut eframe::egui::Ui, state: &ConsoleState, console_tx: &mpsc
             ui.add_space(5.0);
 
             // Green override
-            let green_button = draw_override_button(ui, "Green", Color32::GREEN, false, 120.0, 40.0);
+            let green_button =
+                draw_override_button(ui, "Green", Color32::GREEN, false, 120.0, 40.0);
             if green_button.clicked() {
                 // TODO: Send override command
             }
@@ -98,15 +104,15 @@ pub fn render(ui: &mut eframe::egui::Ui, state: &ConsoleState, console_tx: &mpsc
             if ui.button("Play").clicked() {
                 let _ = console_tx.send(ConsoleCommand::Play);
             }
-            
+
             if ui.button("Stop").clicked() {
                 let _ = console_tx.send(ConsoleCommand::Stop);
             }
-            
+
             if ui.button("Pause").clicked() {
                 let _ = console_tx.send(ConsoleCommand::Pause);
             }
-            
+
             if ui.button("Resume").clicked() {
                 let _ = console_tx.send(ConsoleCommand::Resume);
             }
@@ -119,10 +125,13 @@ pub fn render(ui: &mut eframe::egui::Ui, state: &ConsoleState, console_tx: &mpsc
         ui.horizontal(|ui| {
             ui.label("BPM:");
             let mut bpm = state.bpm;
-            if ui.add(egui::Slider::new(&mut bpm, 60.0..=200.0).text("BPM")).changed() {
+            if ui
+                .add(egui::Slider::new(&mut bpm, 60.0..=200.0).text("BPM"))
+                .changed()
+            {
                 let _ = console_tx.send(ConsoleCommand::SetBpm { bpm });
             }
-            
+
             if ui.button("Tap").clicked() {
                 let _ = console_tx.send(ConsoleCommand::TapTempo);
             }
@@ -148,7 +157,8 @@ fn draw_override_button(
     width: f32,
     height: f32,
 ) -> Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(width, height), Sense::click_and_drag());
 
     // Determine button colors
     let (bg_color, text_color, stroke_color) = if is_active {

@@ -1,5 +1,6 @@
-use rusty_link::{AblLink, SessionState};
 use std::sync::Arc;
+
+use rusty_link::{AblLink, SessionState};
 use tokio::sync::Mutex;
 
 /// A thread-safe wrapper for Ableton Link using tokio::sync::Mutex
