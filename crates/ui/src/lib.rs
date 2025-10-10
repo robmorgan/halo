@@ -48,6 +48,7 @@ pub struct HaloApp {
     cue_editor_state: cue_editor::CueEditor,
     patch_panel_state: patch_panel::PatchPanelState,
     show_panel_state: show_panel::ShowPanelState,
+    session_panel_state: session::SessionPanel,
 }
 
 impl HaloApp {
@@ -78,6 +79,7 @@ impl HaloApp {
             cue_editor_state: cue_editor::CueEditor::new(),
             patch_panel_state: patch_panel::PatchPanelState::default(),
             show_panel_state: show_panel::ShowPanelState::default(),
+            session_panel_state: session::SessionPanel::default(),
         }
     }
 
@@ -118,7 +120,8 @@ impl HaloApp {
             ActiveTab::Dashboard => {
                 egui::SidePanel::right("right_panel").show(ctx, |ui| {
                     ui.set_min_width(400.0);
-                    session::render(ui, &self.state, &self.console_tx);
+                    self.session_panel_state
+                        .render(ui, &self.state, &self.console_tx);
                     ui.separator();
                     cue::render(ui, &self.state, &self.console_tx);
                 });
