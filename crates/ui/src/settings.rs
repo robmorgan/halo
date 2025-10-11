@@ -1,5 +1,5 @@
 use eframe::egui;
-use halo_core::ConsoleCommand;
+use halo_core::{ConsoleCommand, Settings};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
@@ -84,14 +84,58 @@ impl SettingsPanel {
         self.open = true;
     }
 
+    /// Request audio devices from the console
+    pub fn request_audio_devices(console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
+        let _ = console_tx.send(ConsoleCommand::QueryAudioDevices);
+    }
+
+    /// Load settings from console state
+    pub fn load_from_state(&mut self, state: &ConsoleState) {
+        let settings = &state.settings;
+
+        // Load general settings
+        self.target_fps = settings.target_fps.to_string();
+        self.enable_autosave = settings.enable_autosave;
+        self.autosave_interval = settings.autosave_interval_secs.to_string();
+
+        // Load audio settings
+        self.audio_device = settings.audio_device.clone();
+        self.audio_buffer_size = settings.audio_buffer_size.to_string();
+        self.audio_sample_rate = settings.audio_sample_rate.to_string();
+
+        // Load MIDI settings
+        self.midi_enabled = settings.midi_enabled;
+        self.midi_device = settings.midi_device.clone();
+        self.midi_channel = settings.midi_channel.to_string();
+
+        // Load output settings
+        self.dmx_enabled = settings.dmx_enabled;
+        self.dmx_broadcast = settings.dmx_broadcast;
+        self.dmx_source_ip = settings.dmx_source_ip.clone();
+        self.dmx_dest_ip = settings.dmx_dest_ip.clone();
+        self.dmx_port = settings.dmx_port.to_string();
+        self.wled_enabled = settings.wled_enabled;
+        self.wled_ip = settings.wled_ip.clone();
+    }
+
     pub fn render(
         &mut self,
         ctx: &egui::Context,
-        _state: &ConsoleState,
-        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
         if !self.open {
             return;
+        }
+
+        // Load settings from state on first render and request audio devices
+        static mut FIRST_OPEN: bool = true;
+        unsafe {
+            if FIRST_OPEN {
+                self.load_from_state(state);
+                Self::request_audio_devices(console_tx);
+                FIRST_OPEN = false;
+            }
         }
 
         let mut open = self.open;
@@ -103,7 +147,7 @@ impl SettingsPanel {
             .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                self.render_content(ui, _console_tx);
+                self.render_content(ui, state, console_tx);
             });
 
         self.open = open;
@@ -112,7 +156,8 @@ impl SettingsPanel {
     fn render_content(
         &mut self,
         ui: &mut egui::Ui,
-        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.active_tab, SettingsTab::General, "General");
@@ -124,10 +169,10 @@ impl SettingsPanel {
         ui.separator();
 
         egui::ScrollArea::vertical().show(ui, |ui| match self.active_tab {
-            SettingsTab::General => self.render_general_tab(ui, _console_tx),
-            SettingsTab::Audio => self.render_audio_tab(ui, _console_tx),
-            SettingsTab::Midi => self.render_midi_tab(ui, _console_tx),
-            SettingsTab::Outputs => self.render_outputs_tab(ui, _console_tx),
+            SettingsTab::General => self.render_general_tab(ui, console_tx),
+            SettingsTab::Audio => self.render_audio_tab(ui, state, console_tx),
+            SettingsTab::Midi => self.render_midi_tab(ui, console_tx),
+            SettingsTab::Outputs => self.render_outputs_tab(ui, console_tx),
         });
 
         ui.separator();
@@ -140,7 +185,7 @@ impl SettingsPanel {
                 }
                 if ui.button("Apply").clicked() {
                     // Apply settings
-                    self.apply_settings(_console_tx);
+                    self.apply_settings(console_tx);
                 }
             });
         });
@@ -196,7 +241,8 @@ impl SettingsPanel {
     fn render_audio_tab(
         &mut self,
         ui: &mut egui::Ui,
-        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
         ui.heading("Audio Settings");
         ui.add_space(10.0);
@@ -210,18 +256,26 @@ impl SettingsPanel {
                 egui::ComboBox::from_id_salt("audio_device_combo")
                     .selected_text(&self.audio_device)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut self.audio_device,
-                            "Default".to_string(),
-                            "Default",
-                        );
-                        ui.selectable_value(
-                            &mut self.audio_device,
-                            "System Audio".to_string(),
-                            "System Audio",
-                        );
-                        // In a real implementation, enumerate actual audio devices here
-                        ui.label("(More devices would be listed here)");
+                        // Show actual audio devices from the state
+                        if state.audio_devices.is_empty() {
+                            ui.label("Loading devices...");
+                            if ui.button("Refresh").clicked() {
+                                Self::request_audio_devices(console_tx);
+                            }
+                        } else {
+                            for device in &state.audio_devices {
+                                let label = if device.is_default {
+                                    format!("{} (Default)", device.name)
+                                } else {
+                                    device.name.clone()
+                                };
+                                ui.selectable_value(
+                                    &mut self.audio_device,
+                                    device.name.clone(),
+                                    label,
+                                );
+                            }
+                        }
                     });
                 ui.end_row();
 
@@ -402,15 +456,32 @@ impl SettingsPanel {
         ui.label("Note: Output changes require restart to take effect.");
     }
 
-    fn apply_settings(&self, _console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
-        // TODO: Implement settings application
-        // For now, settings are mostly UI state
-        // Future implementation would send commands to update runtime settings
-        println!("Settings applied (placeholder)");
+    fn apply_settings(&self, console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
+        // Convert UI settings to Settings struct
+        let settings = Settings {
+            target_fps: self.target_fps.parse().unwrap_or(60),
+            enable_autosave: self.enable_autosave,
+            autosave_interval_secs: self.autosave_interval.parse().unwrap_or(300),
 
-        // Example of what could be done:
-        // if let Ok(fps) = self.target_fps.parse::<u32>() {
-        //     let _ = console_tx.send(ConsoleCommand::SetTargetFps { fps });
-        // }
+            audio_device: self.audio_device.clone(),
+            audio_buffer_size: self.audio_buffer_size.parse().unwrap_or(512),
+            audio_sample_rate: self.audio_sample_rate.parse().unwrap_or(48000),
+
+            midi_enabled: self.midi_enabled,
+            midi_device: self.midi_device.clone(),
+            midi_channel: self.midi_channel.parse().unwrap_or(1),
+
+            dmx_enabled: self.dmx_enabled,
+            dmx_broadcast: self.dmx_broadcast,
+            dmx_source_ip: self.dmx_source_ip.clone(),
+            dmx_dest_ip: self.dmx_dest_ip.clone(),
+            dmx_port: self.dmx_port.parse().unwrap_or(6454),
+            wled_enabled: self.wled_enabled,
+            wled_ip: self.wled_ip.clone(),
+        };
+
+        // Send update command
+        let _ = console_tx.send(ConsoleCommand::UpdateSettings { settings });
+        println!("Settings applied and sent to console");
     }
 }

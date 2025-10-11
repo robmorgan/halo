@@ -6,8 +6,9 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 
 use crate::artnet::network_config::NetworkConfig;
+use crate::audio::device_enumerator;
 use crate::cue::cue_manager::{CueManager, PlaybackState};
-use crate::messages::{ConsoleCommand, ConsoleEvent};
+use crate::messages::{ConsoleCommand, ConsoleEvent, Settings};
 use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::modules::{
     AudioModule, DmxModule, MidiModule, ModuleEvent, ModuleId, ModuleManager, ModuleMessage,
@@ -41,6 +42,9 @@ pub struct LightingConsole {
 
     // Ableton Link integration
     link_manager: Arc<Mutex<AbletonLinkManager>>,
+
+    // Settings
+    settings: Arc<RwLock<Settings>>,
 
     // System state
     is_running: bool,
@@ -80,6 +84,7 @@ impl LightingConsole {
                 tap_count: 0,
             })),
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
+            settings: Arc::new(RwLock::new(Settings::default())),
             is_running: false,
         })
     }
@@ -87,6 +92,11 @@ impl LightingConsole {
     /// Initialize the async console and all modules
     pub async fn initialize(&mut self) -> Result<(), anyhow::Error> {
         log::info!("Initializing async lighting console...");
+
+        // Load settings from file
+        if let Err(e) = self.load_settings().await {
+            log::warn!("Failed to load settings: {}", e);
+        }
 
         // Initialize all modules
         self.module_manager
@@ -388,6 +398,35 @@ impl LightingConsole {
     pub async fn get_ableton_link_peers(&self) -> u64 {
         let link_manager = self.link_manager.lock().await;
         link_manager.num_peers()
+    }
+
+    /// Save settings to file
+    pub async fn save_settings(&self) -> Result<(), anyhow::Error> {
+        let settings = self.settings.read().await.clone();
+        let settings_path = std::env::current_dir()?.join("settings.json");
+
+        let json = serde_json::to_string_pretty(&settings)?;
+        std::fs::write(settings_path, json)?;
+
+        log::info!("Settings saved to file");
+        Ok(())
+    }
+
+    /// Load settings from file
+    pub async fn load_settings(&mut self) -> Result<(), anyhow::Error> {
+        let settings_path = std::env::current_dir()?.join("settings.json");
+
+        if !settings_path.exists() {
+            log::info!("No settings file found, using defaults");
+            return Ok(());
+        }
+
+        let json = std::fs::read_to_string(settings_path)?;
+        let settings: Settings = serde_json::from_str(&json)?;
+
+        *self.settings.write().await = settings;
+        log::info!("Settings loaded from file");
+        Ok(())
     }
 
     /// Set the BPM/tempo
@@ -1023,6 +1062,35 @@ impl LightingConsole {
                 let num_peers = self.get_ableton_link_peers().await;
                 let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
             }
+
+            // Settings management
+            UpdateSettings { settings } => {
+                log::info!("Updating settings");
+                *self.settings.write().await = settings.clone();
+
+                // Save settings to file
+                if let Err(e) = self.save_settings().await {
+                    log::error!("Failed to save settings: {}", e);
+                }
+
+                let _ = event_tx.send(ConsoleEvent::SettingsUpdated { settings });
+            }
+            QuerySettings => {
+                let settings = self.settings.read().await.clone();
+                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
+            }
+            QueryAudioDevices => match device_enumerator::enumerate_audio_devices() {
+                Ok(devices) => {
+                    log::info!("Found {} audio devices", devices.len());
+                    let _ = event_tx.send(ConsoleEvent::AudioDevicesList { devices });
+                }
+                Err(e) => {
+                    log::error!("Failed to enumerate audio devices: {}", e);
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to enumerate audio devices: {e}"),
+                    });
+                }
+            },
         }
 
         Ok(())
