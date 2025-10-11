@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use halo_core::{ConsoleCommand, CueList, PlaybackState, RhythmState, Show, TimeCode};
+use halo_core::{
+    AudioDeviceInfo, ConsoleCommand, CueList, PlaybackState, RhythmState, Settings, Show, TimeCode,
+};
 use halo_fixtures::Fixture;
 use tokio::sync::mpsc;
 
@@ -28,6 +30,8 @@ pub struct ConsoleState {
     pub selected_fixtures: Vec<usize>,
     pub programmer_values: HashMap<(usize, String), u8>, // (fixture_id, channel) -> value
     pub programmer_effects: Vec<(String, halo_core::EffectType, Vec<usize>)>, /* (name, effect_type, fixture_ids) */
+    pub settings: Settings,
+    pub audio_devices: Vec<AudioDeviceInfo>,
 }
 
 impl Default for ConsoleState {
@@ -62,6 +66,8 @@ impl Default for ConsoleState {
             selected_fixtures: Vec::new(),
             programmer_values: HashMap::new(),
             programmer_effects: Vec::new(),
+            settings: Settings::default(),
+            audio_devices: Vec::new(),
         }
     }
 }
@@ -178,6 +184,15 @@ impl ConsoleState {
                 self.cue_lists = show.cue_lists.clone();
                 self.current_cue_list_index = 0; // Reset to first cue list when show is loaded
                 self.show = Some(show);
+            }
+            halo_core::ConsoleEvent::SettingsUpdated { settings } => {
+                self.settings = settings;
+            }
+            halo_core::ConsoleEvent::CurrentSettings { settings } => {
+                self.settings = settings;
+            }
+            halo_core::ConsoleEvent::AudioDevicesList { devices } => {
+                self.audio_devices = devices;
             }
             _ => {
                 // Handle other events as needed

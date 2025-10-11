@@ -80,12 +80,12 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Show saving and loading
 - [ ] Performance optimization and bug fixes (e.g: measure DMX packet latency in Wireshark)
 - [x] Add patch panel functionality
-- [ ] Add settings modal functionality (audio device, midi device, dmx, fixture library)
+- [x] Add settings modal functionality (audio device, midi device, dmx, fixture library)
 - [ ] Final UI polish and documentation
 
 ## Future
 
-- [ ] Use tokio for async io + UDP
+- [x] Use tokio for async io + UDP
 - [ ] Bring back a headless console mode with keyboard input
 - [ ] 2D fixture visualization with different fixture types
 - [ ] Sequences/Chases with looping functionality

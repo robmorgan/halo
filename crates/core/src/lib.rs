@@ -1,13 +1,14 @@
 pub use ableton_link::AbletonLinkManager;
 pub use artnet::network_config::NetworkConfig;
 pub use audio::audio_player::AudioPlayer;
+pub use audio::device_enumerator::{enumerate_audio_devices, AudioDeviceInfo};
 pub use console::{LightingConsole, SyncLightingConsole};
 pub use cue::cue::{Cue, CueList, EffectDistribution, EffectMapping, StaticValue};
 pub use cue::cue_manager::{CueManager, PlaybackState};
 pub use effect::effect::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectParams, EffectType,
 };
-pub use messages::{ConsoleCommand, ConsoleEvent};
+pub use messages::{ConsoleCommand, ConsoleEvent, Settings};
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
 // Async module system exports
 pub use modules::{

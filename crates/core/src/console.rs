@@ -6,8 +6,9 @@ use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 
 use crate::artnet::network_config::NetworkConfig;
+use crate::audio::device_enumerator;
 use crate::cue::cue_manager::{CueManager, PlaybackState};
-use crate::messages::{ConsoleCommand, ConsoleEvent};
+use crate::messages::{ConsoleCommand, ConsoleEvent, Settings};
 use crate::midi::midi::{MidiMessage, MidiOverride};
 use crate::modules::{
     AudioModule, DmxModule, MidiModule, ModuleEvent, ModuleId, ModuleManager, ModuleMessage,
@@ -41,6 +42,9 @@ pub struct LightingConsole {
 
     // Ableton Link integration
     link_manager: Arc<Mutex<AbletonLinkManager>>,
+
+    // Settings
+    settings: Arc<RwLock<Settings>>,
 
     // System state
     is_running: bool,
@@ -80,6 +84,7 @@ impl LightingConsole {
                 tap_count: 0,
             })),
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
+            settings: Arc::new(RwLock::new(Settings::default())),
             is_running: false,
         })
     }
@@ -497,6 +502,9 @@ impl LightingConsole {
         self.set_cue_lists(show.cue_lists).await;
         self.show_name = show.name;
 
+        // Load settings from the show
+        *self.settings.write().await = show.settings;
+
         Ok(())
     }
 
@@ -504,9 +512,11 @@ impl LightingConsole {
     pub async fn get_show(&self) -> crate::show::show::Show {
         let fixtures = self.fixtures.read().await;
         let cue_lists = self.cue_manager.read().await.get_cue_lists().clone();
+        let settings = self.settings.read().await.clone();
         let mut show = crate::show::show::Show::new(self.show_name.clone());
         show.fixtures = fixtures.clone();
         show.cue_lists = cue_lists;
+        show.settings = settings;
         show.modified_at = std::time::SystemTime::now();
         show
     }
@@ -563,7 +573,9 @@ impl LightingConsole {
                 log::info!("Processing LoadShow command for path: {:?}", path);
                 self.load_show(&path).await?;
                 let show = self.get_show().await;
+                let settings = self.settings.read().await.clone();
                 let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
                 log::info!("LoadShow command completed successfully");
             }
             SaveShow => {
@@ -577,7 +589,9 @@ impl LightingConsole {
             ReloadShow => {
                 self.reload_show().await?;
                 let show = self.get_show().await;
+                let settings = self.settings.read().await.clone();
                 let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
             }
 
             // Fixture management
@@ -1023,6 +1037,29 @@ impl LightingConsole {
                 let num_peers = self.get_ableton_link_peers().await;
                 let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
             }
+
+            // Settings management
+            UpdateSettings { settings } => {
+                log::info!("Updating settings");
+                *self.settings.write().await = settings.clone();
+                let _ = event_tx.send(ConsoleEvent::SettingsUpdated { settings });
+            }
+            QuerySettings => {
+                let settings = self.settings.read().await.clone();
+                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
+            }
+            QueryAudioDevices => match device_enumerator::enumerate_audio_devices() {
+                Ok(devices) => {
+                    log::info!("Found {} audio devices", devices.len());
+                    let _ = event_tx.send(ConsoleEvent::AudioDevicesList { devices });
+                }
+                Err(e) => {
+                    log::error!("Failed to enumerate audio devices: {}", e);
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to enumerate audio devices: {e}"),
+                    });
+                }
+            },
         }
 
         Ok(())

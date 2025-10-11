@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use halo_fixtures::Fixture;
+use serde::{Deserialize, Serialize};
 
+use crate::audio::device_enumerator::AudioDeviceInfo;
 use crate::{CueList, EffectType, MidiOverride, PlaybackState, RhythmState, Show, TimeCode};
 
 /// Commands sent from UI to Console
@@ -168,6 +170,13 @@ pub enum ConsoleCommand {
         wave_offset: Option<f32>,
     },
 
+    // Settings commands
+    UpdateSettings {
+        settings: Settings,
+    },
+    QuerySettings,
+    QueryAudioDevices,
+
     // Query commands (request state)
     QueryFixtures,
     QueryCueLists,
@@ -177,6 +186,64 @@ pub enum ConsoleCommand {
     QueryRhythmState,
     QueryShow,
     QueryLinkState,
+}
+
+/// Settings configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Settings {
+    // General settings
+    pub target_fps: u32,
+    pub enable_autosave: bool,
+    pub autosave_interval_secs: u32,
+
+    // Audio settings
+    pub audio_device: String,
+    pub audio_buffer_size: u32,
+    pub audio_sample_rate: u32,
+
+    // MIDI settings
+    pub midi_enabled: bool,
+    pub midi_device: String,
+    pub midi_channel: u8,
+
+    // Output settings (DMX/Art-Net)
+    pub dmx_enabled: bool,
+    pub dmx_broadcast: bool,
+    pub dmx_source_ip: String,
+    pub dmx_dest_ip: String,
+    pub dmx_port: u16,
+    pub wled_enabled: bool,
+    pub wled_ip: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            // General defaults
+            target_fps: 60,
+            enable_autosave: false,
+            autosave_interval_secs: 300,
+
+            // Audio defaults
+            audio_device: "Default".to_string(),
+            audio_buffer_size: 512,
+            audio_sample_rate: 48000,
+
+            // MIDI defaults
+            midi_enabled: false,
+            midi_device: "None".to_string(),
+            midi_channel: 1,
+
+            // Output defaults
+            dmx_enabled: true,
+            dmx_broadcast: false,
+            dmx_source_ip: "192.168.1.100".to_string(),
+            dmx_dest_ip: "192.168.1.200".to_string(),
+            dmx_port: 6454,
+            wled_enabled: false,
+            wled_ip: "192.168.1.50".to_string(),
+        }
+    }
 }
 
 /// Events sent from Console to UI
@@ -317,5 +384,16 @@ pub enum ConsoleEvent {
     },
     CurrentShow {
         show: Show,
+    },
+
+    // Settings events
+    SettingsUpdated {
+        settings: Settings,
+    },
+    CurrentSettings {
+        settings: Settings,
+    },
+    AudioDevicesList {
+        devices: Vec<AudioDeviceInfo>,
     },
 }
