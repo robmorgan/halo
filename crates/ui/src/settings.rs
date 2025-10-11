@@ -40,6 +40,9 @@ pub struct SettingsPanel {
     pub dmx_port: String,
     pub wled_enabled: bool,
     pub wled_ip: String,
+
+    // Internal state
+    initialized: bool,
 }
 
 impl Default for SettingsPanel {
@@ -71,6 +74,9 @@ impl Default for SettingsPanel {
             dmx_port: "6454".to_string(),
             wled_enabled: false,
             wled_ip: "192.168.1.50".to_string(),
+
+            // Internal state
+            initialized: false,
         }
     }
 }
@@ -129,13 +135,10 @@ impl SettingsPanel {
         }
 
         // Load settings from state on first render and request audio devices
-        static mut FIRST_OPEN: bool = true;
-        unsafe {
-            if FIRST_OPEN {
-                self.load_from_state(state);
-                Self::request_audio_devices(console_tx);
-                FIRST_OPEN = false;
-            }
+        if !self.initialized {
+            self.load_from_state(state);
+            Self::request_audio_devices(console_tx);
+            self.initialized = true;
         }
 
         let mut open = self.open;

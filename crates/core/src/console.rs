@@ -93,11 +93,6 @@ impl LightingConsole {
     pub async fn initialize(&mut self) -> Result<(), anyhow::Error> {
         log::info!("Initializing async lighting console...");
 
-        // Load settings from file
-        if let Err(e) = self.load_settings().await {
-            log::warn!("Failed to load settings: {}", e);
-        }
-
         // Initialize all modules
         self.module_manager
             .initialize()
@@ -400,35 +395,6 @@ impl LightingConsole {
         link_manager.num_peers()
     }
 
-    /// Save settings to file
-    pub async fn save_settings(&self) -> Result<(), anyhow::Error> {
-        let settings = self.settings.read().await.clone();
-        let settings_path = std::env::current_dir()?.join("settings.json");
-
-        let json = serde_json::to_string_pretty(&settings)?;
-        std::fs::write(settings_path, json)?;
-
-        log::info!("Settings saved to file");
-        Ok(())
-    }
-
-    /// Load settings from file
-    pub async fn load_settings(&mut self) -> Result<(), anyhow::Error> {
-        let settings_path = std::env::current_dir()?.join("settings.json");
-
-        if !settings_path.exists() {
-            log::info!("No settings file found, using defaults");
-            return Ok(());
-        }
-
-        let json = std::fs::read_to_string(settings_path)?;
-        let settings: Settings = serde_json::from_str(&json)?;
-
-        *self.settings.write().await = settings;
-        log::info!("Settings loaded from file");
-        Ok(())
-    }
-
     /// Set the BPM/tempo
     pub async fn set_bpm(&mut self, bpm: f64) -> Result<(), anyhow::Error> {
         // Set the tempo using ableton's boundary
@@ -536,6 +502,9 @@ impl LightingConsole {
         self.set_cue_lists(show.cue_lists).await;
         self.show_name = show.name;
 
+        // Load settings from the show
+        *self.settings.write().await = show.settings;
+
         Ok(())
     }
 
@@ -543,9 +512,11 @@ impl LightingConsole {
     pub async fn get_show(&self) -> crate::show::show::Show {
         let fixtures = self.fixtures.read().await;
         let cue_lists = self.cue_manager.read().await.get_cue_lists().clone();
+        let settings = self.settings.read().await.clone();
         let mut show = crate::show::show::Show::new(self.show_name.clone());
         show.fixtures = fixtures.clone();
         show.cue_lists = cue_lists;
+        show.settings = settings;
         show.modified_at = std::time::SystemTime::now();
         show
     }
@@ -602,7 +573,9 @@ impl LightingConsole {
                 log::info!("Processing LoadShow command for path: {:?}", path);
                 self.load_show(&path).await?;
                 let show = self.get_show().await;
+                let settings = self.settings.read().await.clone();
                 let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
                 log::info!("LoadShow command completed successfully");
             }
             SaveShow => {
@@ -616,7 +589,9 @@ impl LightingConsole {
             ReloadShow => {
                 self.reload_show().await?;
                 let show = self.get_show().await;
+                let settings = self.settings.read().await.clone();
                 let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
             }
 
             // Fixture management
@@ -1067,12 +1042,6 @@ impl LightingConsole {
             UpdateSettings { settings } => {
                 log::info!("Updating settings");
                 *self.settings.write().await = settings.clone();
-
-                // Save settings to file
-                if let Err(e) = self.save_settings().await {
-                    log::error!("Failed to save settings: {}", e);
-                }
-
                 let _ = event_tx.send(ConsoleEvent::SettingsUpdated { settings });
             }
             QuerySettings => {
