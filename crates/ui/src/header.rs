@@ -2,6 +2,7 @@ use eframe::egui;
 use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
 
+use crate::settings::SettingsPanel;
 use crate::ActiveTab;
 
 pub fn render(
@@ -9,6 +10,7 @@ pub fn render(
     active_tab: &mut ActiveTab,
     console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     state: &crate::state::ConsoleState,
+    settings_panel: &mut SettingsPanel,
 ) {
     ui.menu_button("File", |ui| {
         if ui.button("New Show").clicked() {
@@ -63,6 +65,13 @@ pub fn render(
 
         if ui.button("Show Manager").clicked() {
             *active_tab = ActiveTab::ShowManager;
+            ui.close();
+        }
+
+        ui.separator();
+
+        if ui.button("Settings").clicked() {
+            settings_panel.open();
             ui.close();
         }
 

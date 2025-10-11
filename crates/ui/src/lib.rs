@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use crate::state::ConsoleState;
 mod footer;
 mod header;
+mod settings;
 mod state;
 mod utils;
 
@@ -53,6 +54,7 @@ pub struct HaloApp {
     patch_panel_state: patch_panel::PatchPanelState,
     show_panel_state: show_panel::ShowPanelState,
     session_panel_state: session::SessionPanel,
+    settings_panel: settings::SettingsPanel,
 }
 
 impl HaloApp {
@@ -88,6 +90,7 @@ impl HaloApp {
             patch_panel_state: patch_panel::PatchPanelState::default(),
             show_panel_state: show_panel::ShowPanelState::default(),
             session_panel_state: session::SessionPanel::default(),
+            settings_panel: settings::SettingsPanel::new(),
         }
     }
 
@@ -101,7 +104,13 @@ impl HaloApp {
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                header::render(ui, &mut self.active_tab, &self.console_tx, &self.state);
+                header::render(
+                    ui,
+                    &mut self.active_tab,
+                    &self.console_tx,
+                    &self.state,
+                    &mut self.settings_panel,
+                );
             });
         });
 
@@ -171,6 +180,10 @@ impl HaloApp {
                     .render(ctx, &self.state, &self.console_tx);
             }
         }
+
+        // Render settings panel (modal window)
+        self.settings_panel
+            .render(ctx, &self.state, &self.console_tx);
     }
 }
 
