@@ -1,9 +1,11 @@
-use std::net::IpAddr;
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
 use halo_core::{
+    ArtNetDestination, ArtNetMode,
     ConfigManager, ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig, Settings,
 };
 use tokio::sync::mpsc;
@@ -18,8 +20,25 @@ struct Args {
     source_ip: IpAddr,
 
     /// Art-Net Destination IP address (optional - if not provided, broadcast mode will be used)
+    /// This is for backward compatibility - use --lighting-dest-ip and --pixel-dest-ip for multi-destination setup
     #[arg(long, value_parser = parse_ip)]
     dest_ip: Option<IpAddr>,
+
+    /// Lighting fixtures destination IP (for Enttec Ode MK2, etc.)
+    #[arg(long, value_parser = parse_ip)]
+    lighting_dest_ip: Option<IpAddr>,
+
+    /// Pixel fixtures destination IP (for Enttec Octo MK2, etc.)
+    #[arg(long, value_parser = parse_ip)]
+    pixel_dest_ip: Option<IpAddr>,
+
+    /// Universe for lighting fixtures (default: 1)
+    #[arg(long, default_value = "1")]
+    lighting_universe: u8,
+
+    /// Starting universe for pixel fixtures (default: 2)
+    #[arg(long, default_value = "2")]
+    pixel_start_universe: u8,
 
     /// Art-Net port (default: 6454)
     #[arg(long, default_value = "6454")]
@@ -67,12 +86,67 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Apply CLI overrides to settings if provided
-    let network_config = NetworkConfig::new(
-        args.source_ip,
-        args.dest_ip,
-        args.artnet_port,
-        args.broadcast,
-    );
+    let network_config = if args.lighting_dest_ip.is_some() || args.pixel_dest_ip.is_some() {
+        // Multi-destination setup
+        let mut destinations = Vec::new();
+        let mut universe_routing = HashMap::new();
+
+        // Add lighting destination if specified
+        if let Some(lighting_ip) = args.lighting_dest_ip {
+            let lighting_dest = ArtNetDestination {
+                name: "lighting".to_string(),
+                mode: if args.broadcast {
+                    ArtNetMode::Broadcast
+                } else {
+                    ArtNetMode::Unicast(
+                        SocketAddr::new(args.source_ip, args.artnet_port),
+                        SocketAddr::new(lighting_ip, args.artnet_port),
+                    )
+                },
+            };
+            let lighting_index = destinations.len();
+            destinations.push(lighting_dest);
+            universe_routing.insert(args.lighting_universe, lighting_index);
+            
+            println!("Lighting destination: {}:{} -> {}:{} (Universe {})", 
+                     args.source_ip, args.artnet_port, lighting_ip, args.artnet_port, args.lighting_universe);
+        }
+
+        // Add pixel destination if specified
+        if let Some(pixel_ip) = args.pixel_dest_ip {
+            let pixel_dest = ArtNetDestination {
+                name: "pixel".to_string(),
+                mode: if args.broadcast {
+                    ArtNetMode::Broadcast
+                } else {
+                    ArtNetMode::Unicast(
+                        SocketAddr::new(args.source_ip, args.artnet_port),
+                        SocketAddr::new(pixel_ip, args.artnet_port),
+                    )
+                },
+            };
+            let pixel_index = destinations.len();
+            destinations.push(pixel_dest);
+            
+            // Route pixel universes starting from pixel_start_universe (typically 2, 3, 4, etc.)
+            for universe in args.pixel_start_universe..=16 { // Support up to universe 16 for pixels
+                universe_routing.insert(universe, pixel_index);
+            }
+            
+            println!("Pixel destination: {}:{} -> {}:{} (Universes {} and up)", 
+                     args.source_ip, args.artnet_port, pixel_ip, args.artnet_port, args.pixel_start_universe);
+        }
+
+        if destinations.is_empty() {
+            // Fallback to single destination if no multi-destination args provided
+            NetworkConfig::new(args.source_ip, args.dest_ip, args.artnet_port, args.broadcast)
+        } else {
+            NetworkConfig::new_multi_destination(destinations, universe_routing, args.artnet_port)
+        }
+    } else {
+        // Legacy single destination setup
+        NetworkConfig::new(args.source_ip, args.dest_ip, args.artnet_port, args.broadcast)
+    };
 
     println!("Configuring Halo with Art-Net settings:");
     //    println!("Source IP: {}", network_config.source_ip);

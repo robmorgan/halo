@@ -1,5 +1,6 @@
 pub use ableton_link::AbletonLinkManager;
-pub use artnet::network_config::NetworkConfig;
+pub use artnet::artnet::ArtNetMode;
+pub use artnet::network_config::{ArtNetDestination, NetworkConfig};
 pub use audio::audio_player::AudioPlayer;
 pub use audio::device_enumerator::{enumerate_audio_devices, AudioDeviceInfo};
 pub use config::{ConfigError, ConfigManager, ConfigSchema};
