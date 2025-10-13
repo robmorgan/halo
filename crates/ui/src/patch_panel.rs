@@ -191,20 +191,23 @@ impl PatchPanelState {
                                         });
                                         ui.horizontal(|ui| {
                                             if ui.button("Apply Limits").clicked() {
-                                                let _ = console_tx.send(ConsoleCommand::SetPanTiltLimits {
-                                                    fixture_id: fixture.id,
-                                                    pan_min: self.limit_pan_min,
-                                                    pan_max: self.limit_pan_max,
-                                                    tilt_min: self.limit_tilt_min,
-                                                    tilt_max: self.limit_tilt_max,
-                                                });
+                                                let _ = console_tx.send(
+                                                    ConsoleCommand::SetPanTiltLimits {
+                                                        fixture_id: fixture.id,
+                                                        pan_min: self.limit_pan_min,
+                                                        pan_max: self.limit_pan_max,
+                                                        tilt_min: self.limit_tilt_min,
+                                                        tilt_max: self.limit_tilt_max,
+                                                    },
+                                                );
                                                 self.editing_limits_fixture_id = None;
                                             }
                                             if ui.button("Clear Limits").clicked() {
-                                                let _ =
-                                                    console_tx.send(ConsoleCommand::ClearPanTiltLimits {
+                                                let _ = console_tx.send(
+                                                    ConsoleCommand::ClearPanTiltLimits {
                                                         fixture_id: fixture.id,
-                                                    });
+                                                    },
+                                                );
                                                 self.editing_limits_fixture_id = None;
                                             }
                                             if ui.button("Cancel").clicked() {
@@ -221,21 +224,6 @@ impl PatchPanelState {
                 if let Some(fixture_id) = fixture_to_remove {
                     self.edit_values.remove(&fixture_id);
                 }
-                                    }
-                                });
-                            });
-                        }
-<<<<<<< HEAD
-                    });
-
-                // Remove fixture from edit values if requested
-                if let Some(fixture_id) = fixture_to_remove {
-                    self.edit_values.remove(&fixture_id);
-                }
-=======
-                    }
-                });
->>>>>>> main
 
                 ui.separator();
 
