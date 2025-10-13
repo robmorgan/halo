@@ -52,6 +52,14 @@ pub struct LightingConsole {
 
 impl LightingConsole {
     pub fn new(bpm: f64, network_config: NetworkConfig) -> Result<Self, anyhow::Error> {
+        Self::new_with_settings(bpm, network_config, Settings::default())
+    }
+
+    pub fn new_with_settings(
+        bpm: f64,
+        network_config: NetworkConfig,
+        settings: Settings,
+    ) -> Result<Self, anyhow::Error> {
         let mut module_manager = ModuleManager::new();
 
         // Register async modules
@@ -84,7 +92,7 @@ impl LightingConsole {
                 tap_count: 0,
             })),
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
-            settings: Arc::new(RwLock::new(Settings::default())),
+            settings: Arc::new(RwLock::new(settings)),
             is_running: false,
         })
     }
@@ -316,6 +324,7 @@ impl LightingConsole {
             channels: profile.channel_layout.clone(),
             universe,
             start_address: address,
+            pan_tilt_limits: None,
         };
 
         fixtures.push(fixture);
@@ -522,8 +531,7 @@ impl LightingConsole {
         self.set_cue_lists(show.cue_lists).await;
         self.show_name = show.name;
 
-        // Load settings from the show
-        *self.settings.write().await = show.settings;
+        // Settings are now loaded separately from config file, not from show
 
         Ok(())
     }
@@ -532,11 +540,9 @@ impl LightingConsole {
     pub async fn get_show(&self) -> crate::show::show::Show {
         let fixtures = self.fixtures.read().await;
         let cue_lists = self.cue_manager.read().await.get_cue_lists().clone();
-        let settings = self.settings.read().await.clone();
         let mut show = crate::show::show::Show::new(self.show_name.clone());
         show.fixtures = fixtures.clone();
         show.cue_lists = cue_lists;
-        show.settings = settings;
         show.modified_at = std::time::SystemTime::now();
         show
     }
@@ -661,6 +667,31 @@ impl LightingConsole {
                     fixture_id,
                     values: channel_values,
                 });
+            }
+            SetPanTiltLimits {
+                fixture_id,
+                pan_min,
+                pan_max,
+                tilt_min,
+                tilt_max,
+            } => {
+                let mut fixtures = self.fixtures.write().await;
+                if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == fixture_id) {
+                    fixture.set_pan_tilt_limits(halo_fixtures::PanTiltLimits {
+                        pan_min,
+                        pan_max,
+                        tilt_min,
+                        tilt_max,
+                    });
+                    log::info!("Set pan/tilt limits for fixture {fixture_id}: pan({pan_min}-{pan_max}), tilt({tilt_min}-{tilt_max})");
+                }
+            }
+            ClearPanTiltLimits { fixture_id } => {
+                let mut fixtures = self.fixtures.write().await;
+                if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == fixture_id) {
+                    fixture.clear_pan_tilt_limits();
+                    log::info!("Cleared pan/tilt limits for fixture {fixture_id}");
+                }
             }
 
             // Cue management
