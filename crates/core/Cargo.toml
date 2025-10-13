@@ -17,7 +17,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 dirs = "6.0"
 chrono = "0.4"
-rodio = "0.17.1"
-cpal = "0.15"
+rodio = "0.21.1"
+cpal = "0.16"
 tokio = { version = "1.47.1", features = ["full"] }
 async-trait = "0.1"
