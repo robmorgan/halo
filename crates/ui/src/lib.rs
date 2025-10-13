@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
-use halo_core::{ConsoleCommand, ConsoleEvent};
+use halo_core::{ConfigManager, ConsoleCommand, ConsoleEvent};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
@@ -48,6 +48,9 @@ pub struct HaloApp {
     initial_show_loaded: bool,
     show_file_path: Option<std::path::PathBuf>,
 
+    // Configuration manager
+    config_manager: ConfigManager,
+
     // Component state - maintain state between renders
     programmer_state: programmer::ProgrammerState,
     cue_editor_state: cue_editor::CueEditor,
@@ -63,6 +66,7 @@ impl HaloApp {
         console_tx: mpsc::UnboundedSender<ConsoleCommand>,
         console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
         show_file_path: Option<std::path::PathBuf>,
+        config_manager: ConfigManager,
     ) -> Self {
         // Request initial data from console
         let _ = console_tx.send(ConsoleCommand::QueryFixtures);
@@ -85,6 +89,7 @@ impl HaloApp {
             fps: 60,
             initial_show_loaded: false,
             show_file_path,
+            config_manager,
             programmer_state: programmer::ProgrammerState::default(),
             cue_editor_state: cue_editor::CueEditor::new(),
             patch_panel_state: patch_panel::PatchPanelState::default(),
@@ -229,6 +234,7 @@ pub fn run_ui(
     console_tx: mpsc::UnboundedSender<ConsoleCommand>,
     console_rx: std::sync::mpsc::Receiver<ConsoleEvent>,
     show_file_path: Option<std::path::PathBuf>,
+    config_manager: ConfigManager,
 ) -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder {
@@ -249,6 +255,7 @@ pub fn run_ui(
                 console_tx,
                 console_rx,
                 show_file_path,
+                config_manager,
             )))
         }),
     )

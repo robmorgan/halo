@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use halo_core::{
     AudioDeviceInfo, ConsoleCommand, CueList, PlaybackState, RhythmState, Settings, Show, TimeCode,
 };
-use halo_fixtures::Fixture;
+use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
@@ -32,6 +32,7 @@ pub struct ConsoleState {
     pub programmer_effects: Vec<(String, halo_core::EffectType, Vec<usize>)>, /* (name, effect_type, fixture_ids) */
     pub settings: Settings,
     pub audio_devices: Vec<AudioDeviceInfo>,
+    pub fixture_library: FixtureLibrary,
 }
 
 impl Default for ConsoleState {
@@ -68,6 +69,7 @@ impl Default for ConsoleState {
             programmer_effects: Vec::new(),
             settings: Settings::default(),
             audio_devices: Vec::new(),
+            fixture_library: FixtureLibrary::new(),
         }
     }
 }
@@ -115,6 +117,21 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::FixtureUnpatched { fixture_id } => {
                 self.fixtures.remove(&fixture_id.to_string());
+            }
+            halo_core::ConsoleEvent::FixtureUpdated {
+                fixture_id,
+                fixture,
+            } => {
+                self.fixtures.insert(fixture_id.to_string(), fixture);
+            }
+            halo_core::ConsoleEvent::FixtureLibraryList { profiles } => {
+                // Update the fixture library with the profiles from the console
+                for (id, _display_name) in profiles {
+                    // The library is already initialized with all profiles, so we don't need to do
+                    // anything here This event is mainly for UI updates
+                    // We could potentially use this to populate a cache if needed in the future
+                    let _ = id; // Suppress unused warning
+                }
             }
             halo_core::ConsoleEvent::ShowLoaded { show } => {
                 self.fixtures.clear();

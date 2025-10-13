@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 mod fixture_library;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PanTiltLimits {
+    pub pan_min: u8,
+    pub pan_max: u8,
+    pub tilt_min: u8,
+    pub tilt_max: u8,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Fixture {
     pub id: usize,
     pub name: String,
@@ -14,6 +22,8 @@ pub struct Fixture {
     pub channels: Vec<Channel>,
     pub universe: u8,
     pub start_address: u16,
+    #[serde(default)]
+    pub pan_tilt_limits: Option<PanTiltLimits>,
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -46,6 +56,7 @@ impl Fixture {
             channels,
             universe,
             start_address,
+            pan_tilt_limits: None,
         }
     }
 
@@ -55,7 +66,18 @@ impl Fixture {
             .iter_mut()
             .find(|c| c.channel_type == *channel_type)
         {
-            channel.value = value;
+            // Apply pan/tilt limits if they exist
+            let clamped_value = if let Some(limits) = &self.pan_tilt_limits {
+                match channel_type {
+                    ChannelType::Pan => value.clamp(limits.pan_min, limits.pan_max),
+                    ChannelType::Tilt => value.clamp(limits.tilt_min, limits.tilt_max),
+                    _ => value,
+                }
+            } else {
+                value
+            };
+
+            channel.value = clamped_value;
         }
     }
 
@@ -65,6 +87,18 @@ impl Fixture {
             values.push(channel.value);
         }
         values
+    }
+
+    pub fn set_pan_tilt_limits(&mut self, limits: PanTiltLimits) {
+        self.pan_tilt_limits = Some(limits);
+    }
+
+    pub fn clear_pan_tilt_limits(&mut self) {
+        self.pan_tilt_limits = None;
+    }
+
+    pub fn get_pan_tilt_limits(&self) -> Option<&PanTiltLimits> {
+        self.pan_tilt_limits.as_ref()
     }
 }
 

@@ -38,9 +38,25 @@ pub enum ConsoleCommand {
     UnpatchFixture {
         fixture_id: usize,
     },
+    UpdateFixture {
+        fixture_id: usize,
+        name: String,
+        universe: u8,
+        address: u16,
+    },
     UpdateFixtureChannels {
         fixture_id: usize,
         channel_values: Vec<(String, u8)>,
+    },
+    SetPanTiltLimits {
+        fixture_id: usize,
+        pan_min: u8,
+        pan_max: u8,
+        tilt_min: u8,
+        tilt_max: u8,
+    },
+    ClearPanTiltLimits {
+        fixture_id: usize,
     },
 
     // Cue management
@@ -202,10 +218,11 @@ pub enum ConsoleCommand {
     QueryRhythmState,
     QueryShow,
     QueryLinkState,
+    QueryFixtureLibrary,
 }
 
 /// Settings configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
     // General settings
     pub target_fps: u32,
@@ -235,6 +252,9 @@ pub struct Settings {
     pub pixel_engine_enabled: bool,
     pub pixel_engine_fps: f64,
     pub pixel_universe_mapping: std::collections::HashMap<usize, u8>,
+
+    // Fixture settings
+    pub enable_pan_tilt_limits: bool,
 }
 
 impl Default for Settings {
@@ -268,6 +288,9 @@ impl Default for Settings {
             pixel_engine_enabled: false,
             pixel_engine_fps: 44.0,
             pixel_universe_mapping: std::collections::HashMap::new(),
+
+            // Fixture defaults
+            enable_pan_tilt_limits: true,
         }
     }
 }
@@ -320,6 +343,10 @@ pub enum ConsoleEvent {
     },
     FixtureUnpatched {
         fixture_id: usize,
+    },
+    FixtureUpdated {
+        fixture_id: usize,
+        fixture: Fixture,
     },
     FixtureValuesChanged {
         fixture_id: usize,
@@ -421,5 +448,8 @@ pub enum ConsoleEvent {
     },
     AudioDevicesList {
         devices: Vec<AudioDeviceInfo>,
+    },
+    FixtureLibraryList {
+        profiles: Vec<(String, String)>, // (id, display_name)
     },
 }

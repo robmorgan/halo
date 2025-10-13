@@ -46,6 +46,9 @@ pub struct SettingsPanel {
     pub pixel_engine_enabled: bool,
     pub pixel_engine_fps: String,
 
+    // Fixture settings
+    pub enable_pan_tilt_limits: bool,
+
     // Internal state
     initialized: bool,
 }
@@ -83,6 +86,9 @@ impl Default for SettingsPanel {
             // Pixel engine defaults
             pixel_engine_enabled: false,
             pixel_engine_fps: "44.0".to_string(),
+
+            // Fixture defaults
+            enable_pan_tilt_limits: true,
 
             // Internal state
             initialized: false,
@@ -135,6 +141,9 @@ impl SettingsPanel {
         // Load pixel engine settings
         self.pixel_engine_enabled = settings.pixel_engine_enabled;
         self.pixel_engine_fps = settings.pixel_engine_fps.to_string();
+
+        // Load fixture settings
+        self.enable_pan_tilt_limits = settings.enable_pan_tilt_limits;
     }
 
     pub fn render(
@@ -596,6 +605,8 @@ impl SettingsPanel {
             pixel_engine_enabled: self.pixel_engine_enabled,
             pixel_engine_fps: self.pixel_engine_fps.parse().unwrap_or(44.0),
             pixel_universe_mapping: std::collections::HashMap::new(),
+
+            enable_pan_tilt_limits: self.enable_pan_tilt_limits,
         };
 
         // Send update command

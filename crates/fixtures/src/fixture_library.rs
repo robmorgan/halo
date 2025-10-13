@@ -19,7 +19,7 @@ impl std::fmt::Display for FixtureProfile {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FixtureLibrary {
     pub profiles: HashMap<String, FixtureProfile>,
 }
