@@ -189,7 +189,7 @@ pub enum ConsoleCommand {
 }
 
 /// Settings configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Settings {
     // General settings
     pub target_fps: u32,

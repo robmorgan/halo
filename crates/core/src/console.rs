@@ -52,6 +52,14 @@ pub struct LightingConsole {
 
 impl LightingConsole {
     pub fn new(bpm: f64, network_config: NetworkConfig) -> Result<Self, anyhow::Error> {
+        Self::new_with_settings(bpm, network_config, Settings::default())
+    }
+
+    pub fn new_with_settings(
+        bpm: f64,
+        network_config: NetworkConfig,
+        settings: Settings,
+    ) -> Result<Self, anyhow::Error> {
         let mut module_manager = ModuleManager::new();
 
         // Register async modules
@@ -84,7 +92,7 @@ impl LightingConsole {
                 tap_count: 0,
             })),
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
-            settings: Arc::new(RwLock::new(Settings::default())),
+            settings: Arc::new(RwLock::new(settings)),
             is_running: false,
         })
     }
@@ -502,8 +510,7 @@ impl LightingConsole {
         self.set_cue_lists(show.cue_lists).await;
         self.show_name = show.name;
 
-        // Load settings from the show
-        *self.settings.write().await = show.settings;
+        // Settings are now loaded separately from config file, not from show
 
         Ok(())
     }
@@ -512,11 +519,9 @@ impl LightingConsole {
     pub async fn get_show(&self) -> crate::show::show::Show {
         let fixtures = self.fixtures.read().await;
         let cue_lists = self.cue_manager.read().await.get_cue_lists().clone();
-        let settings = self.settings.read().await.clone();
         let mut show = crate::show::show::Show::new(self.show_name.clone());
         show.fixtures = fixtures.clone();
         show.cue_lists = cue_lists;
-        show.settings = settings;
         show.modified_at = std::time::SystemTime::now();
         show
     }

@@ -1,9 +1,9 @@
 use std::net::IpAddr;
 use std::time::Duration;
 
-use anyhow::Ok;
+use anyhow::Result;
 use clap::Parser;
-use halo_core::{ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig};
+use halo_core::{ConfigManager, ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig, Settings};
 use tokio::sync::mpsc;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -41,8 +41,24 @@ fn parse_ip(s: &str) -> Result<IpAddr, String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), anyhow::Error> {
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    
+    // Load configuration before initializing anything else
+    println!("Loading configuration...");
+    let mut config_manager = ConfigManager::new(None);
+    let settings = match config_manager.load() {
+        Ok(settings) => {
+            println!("Configuration loaded successfully from: {:?}", config_manager.config_path());
+            settings
+        }
+        Err(e) => {
+            println!("Warning: Failed to load configuration: {}. Using defaults.", e);
+            Settings::default()
+        }
+    };
+    
+    // Apply CLI overrides to settings if provided
     let network_config = NetworkConfig::new(
         args.source_ip,
         args.dest_ip,
@@ -74,8 +90,8 @@ async fn main() -> Result<(), anyhow::Error> {
         log::info!("Event forwarder task completed");
     });
 
-    // Create the async console
-    let console = LightingConsole::new(80., network_config.clone()).unwrap();
+    // Create the async console with loaded settings
+    let console = LightingConsole::new_with_settings(80., network_config.clone(), settings.clone()).unwrap();
 
     // // Blue Strobe Fast
     // console.add_midi_override(
@@ -233,7 +249,7 @@ async fn main() -> Result<(), anyhow::Error> {
             .map_err(|e| anyhow::anyhow!("Failed to send SetCueLists command: {}", e))?;
 
         println!("Initialization task completed successfully");
-        Ok(())
+        anyhow::Ok(())
     });
 
     // Wait for initialization to complete
@@ -252,7 +268,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Run the UI with the channels (this will block until UI closes)
     log::info!("Starting UI...");
     let show_path = show_file_path.map(std::path::PathBuf::from);
-    let ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx, show_path);
+    let ui_result = halo_ui::run_ui(command_tx.clone(), ui_event_rx, show_path, config_manager);
     log::info!("UI completed");
 
     // Send shutdown command
@@ -275,7 +291,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     log::info!("Application shutting down");
-    Ok(())
+    anyhow::Ok(())
 }
 
 #[macro_export]
