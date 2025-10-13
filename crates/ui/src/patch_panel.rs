@@ -9,6 +9,11 @@ pub struct PatchPanelState {
     new_fixture_profile: String,
     new_fixture_universe: u8,
     new_fixture_address: u16,
+    editing_limits_fixture_id: Option<usize>,
+    limit_pan_min: u8,
+    limit_pan_max: u8,
+    limit_tilt_min: u8,
+    limit_tilt_max: u8,
 }
 
 impl Default for PatchPanelState {
@@ -18,6 +23,11 @@ impl Default for PatchPanelState {
             new_fixture_profile: String::new(),
             new_fixture_universe: 1,
             new_fixture_address: 1,
+            editing_limits_fixture_id: None,
+            limit_pan_min: 0,
+            limit_pan_max: 255,
+            limit_tilt_min: 0,
+            limit_tilt_max: 255,
         }
     }
 }
@@ -42,12 +52,96 @@ impl PatchPanelState {
                             ui.label(format!("Profile: {}", fixture.profile_id));
                             ui.label(format!("Channels: {}", fixture.channels.len()));
 
+                            // Show limits badge if set
+                            if let Some(limits) = &fixture.pan_tilt_limits {
+                                ui.label(format!(
+                                    "🔒 P:{}-{} T:{}-{}",
+                                    limits.pan_min,
+                                    limits.pan_max,
+                                    limits.tilt_min,
+                                    limits.tilt_max
+                                ));
+                            }
+
+                            if ui.button("Limits").clicked() {
+                                // Toggle limit editor for this fixture
+                                if self.editing_limits_fixture_id == Some(fixture.id) {
+                                    self.editing_limits_fixture_id = None;
+                                } else {
+                                    self.editing_limits_fixture_id = Some(fixture.id);
+                                    // Load current limits if they exist
+                                    if let Some(limits) = &fixture.pan_tilt_limits {
+                                        self.limit_pan_min = limits.pan_min;
+                                        self.limit_pan_max = limits.pan_max;
+                                        self.limit_tilt_min = limits.tilt_min;
+                                        self.limit_tilt_max = limits.tilt_max;
+                                    } else {
+                                        self.limit_pan_min = 0;
+                                        self.limit_pan_max = 255;
+                                        self.limit_tilt_min = 0;
+                                        self.limit_tilt_max = 255;
+                                    }
+                                }
+                            }
+
                             if ui.button("Remove").clicked() {
                                 let _ = console_tx.send(ConsoleCommand::UnpatchFixture {
                                     fixture_id: fixture.id,
                                 });
                             }
                         });
+
+                        // Show limit editor if this fixture is being edited
+                        if self.editing_limits_fixture_id == Some(fixture.id) {
+                            ui.indent(format!("limits_editor_{}", fixture.id), |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label("Pan Min:");
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.limit_pan_min)
+                                            .range(0..=255),
+                                    );
+                                    ui.label("Max:");
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.limit_pan_max)
+                                            .range(0..=255),
+                                    );
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Tilt Min:");
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.limit_tilt_min)
+                                            .range(0..=255),
+                                    );
+                                    ui.label("Max:");
+                                    ui.add(
+                                        egui::DragValue::new(&mut self.limit_tilt_max)
+                                            .range(0..=255),
+                                    );
+                                });
+                                ui.horizontal(|ui| {
+                                    if ui.button("Apply Limits").clicked() {
+                                        let _ = console_tx.send(ConsoleCommand::SetPanTiltLimits {
+                                            fixture_id: fixture.id,
+                                            pan_min: self.limit_pan_min,
+                                            pan_max: self.limit_pan_max,
+                                            tilt_min: self.limit_tilt_min,
+                                            tilt_max: self.limit_tilt_max,
+                                        });
+                                        self.editing_limits_fixture_id = None;
+                                    }
+                                    if ui.button("Clear Limits").clicked() {
+                                        let _ =
+                                            console_tx.send(ConsoleCommand::ClearPanTiltLimits {
+                                                fixture_id: fixture.id,
+                                            });
+                                        self.editing_limits_fixture_id = None;
+                                    }
+                                    if ui.button("Cancel").clicked() {
+                                        self.editing_limits_fixture_id = None;
+                                    }
+                                });
+                            });
+                        }
                     }
                 });
 

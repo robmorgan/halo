@@ -41,6 +41,9 @@ pub struct SettingsPanel {
     pub wled_enabled: bool,
     pub wled_ip: String,
 
+    // Fixture settings
+    pub enable_pan_tilt_limits: bool,
+
     // Internal state
     initialized: bool,
 }
@@ -74,6 +77,9 @@ impl Default for SettingsPanel {
             dmx_port: "6454".to_string(),
             wled_enabled: false,
             wled_ip: "192.168.1.50".to_string(),
+
+            // Fixture defaults
+            enable_pan_tilt_limits: true,
 
             // Internal state
             initialized: false,
@@ -122,6 +128,9 @@ impl SettingsPanel {
         self.dmx_port = settings.dmx_port.to_string();
         self.wled_enabled = settings.wled_enabled;
         self.wled_ip = settings.wled_ip.clone();
+
+        // Load fixture settings
+        self.enable_pan_tilt_limits = settings.enable_pan_tilt_limits;
     }
 
     pub fn render(
@@ -481,6 +490,8 @@ impl SettingsPanel {
             dmx_port: self.dmx_port.parse().unwrap_or(6454),
             wled_enabled: self.wled_enabled,
             wled_ip: self.wled_ip.clone(),
+
+            enable_pan_tilt_limits: self.enable_pan_tilt_limits,
         };
 
         // Send update command
