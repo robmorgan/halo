@@ -322,6 +322,26 @@ impl LightingConsole {
         Ok(id)
     }
 
+    /// Update an existing fixture
+    pub async fn update_fixture(
+        &mut self,
+        fixture_id: usize,
+        name: String,
+        universe: u8,
+        address: u16,
+    ) -> Result<Fixture, String> {
+        let mut fixtures = self.fixtures.write().await;
+        let fixture = fixtures
+            .get_mut(fixture_id)
+            .ok_or_else(|| format!("Fixture {} not found", fixture_id))?;
+
+        fixture.name = name;
+        fixture.universe = universe;
+        fixture.start_address = address;
+
+        Ok(fixture.clone())
+    }
+
     /// Set cue lists
     pub async fn set_cue_lists(&self, cue_lists: Vec<CueList>) {
         let mut cue_manager = self.cue_manager.write().await;
@@ -616,6 +636,21 @@ impl LightingConsole {
             UnpatchFixture { fixture_id } => {
                 // TODO: Implement unpatch_fixture method
                 let _ = event_tx.send(ConsoleEvent::FixtureUnpatched { fixture_id });
+            }
+            UpdateFixture {
+                fixture_id,
+                name,
+                universe,
+                address,
+            } => {
+                let fixture = self
+                    .update_fixture(fixture_id, name, universe, address)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                let _ = event_tx.send(ConsoleEvent::FixtureUpdated {
+                    fixture_id,
+                    fixture,
+                });
             }
             UpdateFixtureChannels {
                 fixture_id,
@@ -1019,6 +1054,15 @@ impl LightingConsole {
                 let enabled = self.is_ableton_link_enabled().await;
                 let num_peers = self.get_ableton_link_peers().await;
                 let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+            }
+            QueryFixtureLibrary => {
+                let profiles: Vec<(String, String)> = self
+                    .fixture_library
+                    .profiles
+                    .iter()
+                    .map(|(id, profile)| (id.clone(), profile.to_string()))
+                    .collect();
+                let _ = event_tx.send(ConsoleEvent::FixtureLibraryList { profiles });
             }
             EnableAbletonLink => {
                 if let Err(e) = self.enable_ableton_link().await {
