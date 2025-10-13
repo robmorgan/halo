@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::Settings;
 
 /// Configuration manager for Halo settings
-/// Provides a layered configuration system that separates schema, available options, and persisted values
-/// Configuration is stored in config.json in the repository root by default
+/// Provides a layered configuration system that separates schema, available options, and persisted
+/// values Configuration is stored in config.json in the repository root by default
 pub struct ConfigManager {
     config_path: PathBuf,
     settings: Settings,
@@ -20,6 +20,7 @@ pub struct ConfigSchema {
     pub audio: AudioConfigSchema,
     pub midi: MidiConfigSchema,
     pub output: OutputConfigSchema,
+    pub fixture: FixtureConfigSchema,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +53,11 @@ pub struct OutputConfigSchema {
     pub dmx_port: ConfigOption<u16>,
     pub wled_enabled: ConfigOption<bool>,
     pub wled_ip: ConfigOption<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FixtureConfigSchema {
+    pub enable_pan_tilt_limits: ConfigOption<bool>,
 }
 
 /// Configuration option with validation and available choices
@@ -100,8 +106,8 @@ impl ConfigManager {
         let content = fs::read_to_string(&self.config_path)
             .map_err(|e| ConfigError::ReadError(e.to_string()))?;
 
-        let config_file: ConfigFile = serde_json::from_str(&content)
-            .map_err(|e| ConfigError::ParseError(e.to_string()))?;
+        let config_file: ConfigFile =
+            serde_json::from_str(&content).map_err(|e| ConfigError::ParseError(e.to_string()))?;
 
         // Validate version compatibility
         if config_file.version != env!("CARGO_PKG_VERSION") {
@@ -121,8 +127,7 @@ impl ConfigManager {
         // Ensure config directory exists (if config is in a subdirectory)
         if let Some(parent) = self.config_path.parent() {
             if parent != std::path::Path::new("") && parent != std::path::Path::new(".") {
-                fs::create_dir_all(parent)
-                    .map_err(|e| ConfigError::WriteError(e.to_string()))?;
+                fs::create_dir_all(parent).map_err(|e| ConfigError::WriteError(e.to_string()))?;
             }
         }
 
@@ -281,6 +286,15 @@ impl ConfigManager {
                     requires_restart: true,
                 },
             },
+            fixture: FixtureConfigSchema {
+                enable_pan_tilt_limits: ConfigOption {
+                    default: true,
+                    valid_range: None,
+                    valid_choices: None,
+                    description: "Enable pan/tilt limiting for moving heads".to_string(),
+                    requires_restart: false,
+                },
+            },
         }
     }
 
@@ -298,7 +312,10 @@ impl ConfigManager {
 
         if let Some((min, max)) = schema.general.autosave_interval_secs.valid_range {
             if settings.autosave_interval_secs < min || settings.autosave_interval_secs > max {
-                errors.push(format!("autosave_interval_secs must be between {} and {}", min, max));
+                errors.push(format!(
+                    "autosave_interval_secs must be between {} and {}",
+                    min, max
+                ));
             }
         }
 
@@ -371,14 +388,15 @@ impl std::error::Error for ConfigError {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_config_manager_new() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("test_config.json");
-        
+
         let manager = ConfigManager::new(Some(config_path.clone()));
         assert_eq!(manager.config_path(), config_path);
         assert_eq!(manager.settings(), &Settings::default());
@@ -388,21 +406,21 @@ mod tests {
     fn test_save_and_load() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("test_config.json");
-        
+
         let mut manager = ConfigManager::new(Some(config_path.clone()));
-        
+
         // Modify settings
         let mut settings = Settings::default();
         settings.target_fps = 90;
         settings.audio_device = "Test Device".to_string();
-        
+
         // Save settings
         manager.update_settings(settings.clone()).unwrap();
-        
+
         // Load into new manager
         let mut manager2 = ConfigManager::new(Some(config_path));
         let loaded_settings = manager2.load().unwrap();
-        
+
         assert_eq!(loaded_settings.target_fps, 90);
         assert_eq!(loaded_settings.audio_device, "Test Device");
     }
@@ -410,14 +428,14 @@ mod tests {
     #[test]
     fn test_validation() {
         let mut settings = Settings::default();
-        
+
         // Valid settings should pass
         assert!(ConfigManager::validate_settings(&settings).is_ok());
-        
+
         // Invalid settings should fail
         settings.target_fps = 200; // Outside valid range
         assert!(ConfigManager::validate_settings(&settings).is_err());
-        
+
         settings.target_fps = 60; // Back to valid
         settings.midi_channel = 20; // Outside valid range
         assert!(ConfigManager::validate_settings(&settings).is_err());
@@ -426,7 +444,7 @@ mod tests {
     #[test]
     fn test_schema_completeness() {
         let schema = ConfigManager::schema();
-        
+
         // Ensure all settings have corresponding schema entries
         assert!(schema.general.target_fps.default > 0);
         assert!(!schema.audio.audio_device.description.is_empty());

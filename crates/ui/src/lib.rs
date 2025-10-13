@@ -47,7 +47,7 @@ pub struct HaloApp {
     // Track if initial show load has been triggered
     initial_show_loaded: bool,
     show_file_path: Option<std::path::PathBuf>,
-    
+
     // Configuration manager
     config_manager: ConfigManager,
 

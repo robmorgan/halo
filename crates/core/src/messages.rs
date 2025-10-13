@@ -42,6 +42,16 @@ pub enum ConsoleCommand {
         fixture_id: usize,
         channel_values: Vec<(String, u8)>,
     },
+    SetPanTiltLimits {
+        fixture_id: usize,
+        pan_min: u8,
+        pan_max: u8,
+        tilt_min: u8,
+        tilt_max: u8,
+    },
+    ClearPanTiltLimits {
+        fixture_id: usize,
+    },
 
     // Cue management
     SetCueLists {
@@ -214,6 +224,9 @@ pub struct Settings {
     pub dmx_port: u16,
     pub wled_enabled: bool,
     pub wled_ip: String,
+
+    // Fixture settings
+    pub enable_pan_tilt_limits: bool,
 }
 
 impl Default for Settings {
@@ -242,6 +255,9 @@ impl Default for Settings {
             dmx_port: 6454,
             wled_enabled: false,
             wled_ip: "192.168.1.50".to_string(),
+
+            // Fixture defaults
+            enable_pan_tilt_limits: true,
         }
     }
 }

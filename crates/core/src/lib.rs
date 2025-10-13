@@ -2,7 +2,7 @@ pub use ableton_link::AbletonLinkManager;
 pub use artnet::network_config::NetworkConfig;
 pub use audio::audio_player::AudioPlayer;
 pub use audio::device_enumerator::{enumerate_audio_devices, AudioDeviceInfo};
-pub use config::{ConfigManager, ConfigError, ConfigSchema};
+pub use config::{ConfigError, ConfigManager, ConfigSchema};
 pub use console::{LightingConsole, SyncLightingConsole};
 pub use cue::cue::{Cue, CueList, EffectDistribution, EffectMapping, StaticValue};
 pub use cue::cue_manager::{CueManager, PlaybackState};

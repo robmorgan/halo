@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
-use halo_core::{ConfigManager, ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig, Settings};
+use halo_core::{
+    ConfigManager, ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig, Settings,
+};
 use tokio::sync::mpsc;
 
 /// Lighting Console for live performances with precise automation and control.
@@ -43,21 +45,27 @@ fn parse_ip(s: &str) -> Result<IpAddr, String> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    
+
     // Load configuration before initializing anything else
     println!("Loading configuration...");
     let mut config_manager = ConfigManager::new(None);
     let settings = match config_manager.load() {
         Ok(settings) => {
-            println!("Configuration loaded successfully from: {:?}", config_manager.config_path());
+            println!(
+                "Configuration loaded successfully from: {:?}",
+                config_manager.config_path()
+            );
             settings
         }
         Err(e) => {
-            println!("Warning: Failed to load configuration: {}. Using defaults.", e);
+            println!(
+                "Warning: Failed to load configuration: {}. Using defaults.",
+                e
+            );
             Settings::default()
         }
     };
-    
+
     // Apply CLI overrides to settings if provided
     let network_config = NetworkConfig::new(
         args.source_ip,
@@ -91,7 +99,8 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Create the async console with loaded settings
-    let console = LightingConsole::new_with_settings(80., network_config.clone(), settings.clone()).unwrap();
+    let console =
+        LightingConsole::new_with_settings(80., network_config.clone(), settings.clone()).unwrap();
 
     // // Blue Strobe Fast
     // console.add_midi_override(

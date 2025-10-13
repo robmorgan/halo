@@ -324,6 +324,7 @@ impl LightingConsole {
             channels: profile.channel_layout.clone(),
             universe,
             start_address: address,
+            pan_tilt_limits: None,
         };
 
         fixtures.push(fixture);
@@ -631,6 +632,31 @@ impl LightingConsole {
                     fixture_id,
                     values: channel_values,
                 });
+            }
+            SetPanTiltLimits {
+                fixture_id,
+                pan_min,
+                pan_max,
+                tilt_min,
+                tilt_max,
+            } => {
+                let mut fixtures = self.fixtures.write().await;
+                if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == fixture_id) {
+                    fixture.set_pan_tilt_limits(halo_fixtures::PanTiltLimits {
+                        pan_min,
+                        pan_max,
+                        tilt_min,
+                        tilt_max,
+                    });
+                    log::info!("Set pan/tilt limits for fixture {fixture_id}: pan({pan_min}-{pan_max}), tilt({tilt_min}-{tilt_max})");
+                }
+            }
+            ClearPanTiltLimits { fixture_id } => {
+                let mut fixtures = self.fixtures.write().await;
+                if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == fixture_id) {
+                    fixture.clear_pan_tilt_limits();
+                    log::info!("Cleared pan/tilt limits for fixture {fixture_id}");
+                }
             }
 
             // Cue management

@@ -71,7 +71,7 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
 - [x] Implement effects engine (waveforms, parameters)
 - [x] Build effects UI in programmer panel
 - [x] Add override buttons with quick-access functionality
-- [ ] Bounding box for moving head lights
+- [x] Bounding box for moving head lights
 
 ## Week 5 (CW14): Integration & Polish
 
