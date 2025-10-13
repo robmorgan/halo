@@ -5,12 +5,13 @@ use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
 
-const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 6] = [
+const FIXTURE_TYPE_COLORS: [(FixtureType, Color32); 7] = [
     (FixtureType::MovingHead, Color32::from_rgb(255, 165, 0)), // Orange
     (FixtureType::PAR, Color32::from_rgb(0, 255, 255)),        // Cyan
     (FixtureType::Wash, Color32::from_rgb(255, 0, 255)),       // Magenta
     (FixtureType::Pinspot, Color32::from_rgb(255, 255, 0)),    // Yellow
     (FixtureType::LEDBar, Color32::from_rgb(0, 255, 0)),       // Green
+    (FixtureType::PixelBar, Color32::from_rgb(255, 20, 147)),  // Deep Pink
     (FixtureType::Smoke, Color32::from_rgb(128, 128, 128)),    // Gray
 ];
 
@@ -77,6 +78,7 @@ pub fn render_grid(
                     for (i, (fixture_id, fixture)) in state.fixtures.iter().enumerate() {
                         // Create a fixture button
                         let fixture_height = if fixture.profile.fixture_type == FixtureType::LEDBar
+                            || fixture.profile.fixture_type == FixtureType::PixelBar
                         {
                             70.0
                         } else {

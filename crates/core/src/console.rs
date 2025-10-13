@@ -14,6 +14,7 @@ use crate::modules::{
     AudioModule, DmxModule, MidiModule, ModuleEvent, ModuleId, ModuleManager, ModuleMessage,
     SmpteModule,
 };
+use crate::pixel::PixelEngine;
 use crate::programmer::Programmer;
 use crate::rhythm::rhythm::RhythmState;
 use crate::show::show_manager::ShowManager;
@@ -45,6 +46,9 @@ pub struct LightingConsole {
 
     // Settings
     settings: Arc<RwLock<Settings>>,
+
+    // Pixel engine
+    pixel_engine: Arc<RwLock<PixelEngine>>,
 
     // System state
     is_running: bool,
@@ -85,6 +89,7 @@ impl LightingConsole {
             })),
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
             settings: Arc::new(RwLock::new(Settings::default())),
+            pixel_engine: Arc::new(RwLock::new(PixelEngine::new())),
             is_running: false,
         })
     }
@@ -251,6 +256,24 @@ impl LightingConsole {
 
         // Apply effects would go here - similar to the original implementation
         // but we'd need to access the rhythm state
+
+        // Apply pixel effects to pixel engine
+        if !cue.pixel_effects.is_empty() {
+            let mut pixel_engine = self.pixel_engine.write().await;
+            let pixel_effect_data: Vec<_> = cue
+                .pixel_effects
+                .iter()
+                .map(|pm| {
+                    (
+                        pm.name.clone(),
+                        pm.fixture_ids.clone(),
+                        pm.effect.clone(),
+                        pm.distribution.clone(),
+                    )
+                })
+                .collect();
+            pixel_engine.set_effects(pixel_effect_data);
+        }
     }
 
     async fn apply_programmer_values(&self) {
@@ -271,17 +294,32 @@ impl LightingConsole {
         let fixtures = self.fixtures.read().await;
         let mut dmx_data = vec![0; 512];
 
+        // Render regular fixtures (non-pixel bars)
         for fixture in fixtures.iter() {
-            let start_channel = (fixture.start_address - 1) as usize;
-            let end_channel = (start_channel + fixture.channels.len()).min(dmx_data.len());
-            dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
+            if fixture.profile.fixture_type != halo_fixtures::FixtureType::PixelBar {
+                let start_channel = (fixture.start_address - 1) as usize;
+                let end_channel = (start_channel + fixture.channels.len()).min(dmx_data.len());
+                dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
+            }
         }
 
-        // Send to DMX module
+        // Send regular fixtures to DMX module (universe 1)
         self.module_manager
             .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(1, dmx_data))
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
+
+        // Render and send pixel fixtures
+        let pixel_engine = self.pixel_engine.read().await;
+        let rhythm_state = self.rhythm_state.read().await;
+        let pixel_universe_data = pixel_engine.render(&fixtures, &rhythm_state);
+
+        for (universe, data) in pixel_universe_data {
+            self.module_manager
+                .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(universe, data))
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+        }
 
         Ok(())
     }
@@ -1060,6 +1098,40 @@ impl LightingConsole {
                     });
                 }
             },
+
+            // Pixel engine commands
+            ConfigurePixelEngine {
+                enabled,
+                universe_mapping,
+            } => {
+                log::info!("Configuring pixel engine: enabled={}", enabled);
+                let mut pixel_engine = self.pixel_engine.write().await;
+                pixel_engine.set_enabled(enabled);
+                pixel_engine.clear_universe_mappings();
+                for (fixture_id, universe) in universe_mapping {
+                    pixel_engine.set_fixture_universe(fixture_id, universe);
+                }
+            }
+            AddPixelEffect {
+                name,
+                fixture_ids,
+                effect,
+                distribution,
+            } => {
+                log::info!("Adding pixel effect: {}", name);
+                let mut pixel_engine = self.pixel_engine.write().await;
+                pixel_engine.add_effect(name, fixture_ids, effect, distribution);
+            }
+            RemovePixelEffect { name } => {
+                log::info!("Removing pixel effect: {}", name);
+                let mut pixel_engine = self.pixel_engine.write().await;
+                pixel_engine.remove_effect(&name);
+            }
+            ClearPixelEffects => {
+                log::info!("Clearing all pixel effects");
+                let mut pixel_engine = self.pixel_engine.write().await;
+                pixel_engine.clear_effects();
+            }
         }
 
         Ok(())
@@ -1319,6 +1391,7 @@ impl SyncLightingConsole {
                 fade_time: std::time::Duration::from_secs_f64(fade_time),
                 static_values: values,
                 effects: vec![],
+                pixel_effects: vec![],
                 timecode: None,
                 is_blocking: false,
             };

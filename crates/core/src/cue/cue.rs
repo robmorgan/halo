@@ -3,7 +3,7 @@ use std::time::Duration;
 use halo_fixtures::ChannelType;
 use serde::{Deserialize, Serialize};
 
-use crate::Effect;
+use crate::{Effect, PixelEffect};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CueList {
@@ -22,6 +22,7 @@ pub struct Cue {
     //pub delay_time: Duration,
     pub static_values: Vec<StaticValue>,
     pub effects: Vec<EffectMapping>,
+    pub pixel_effects: Vec<PixelEffectMapping>,
     pub timecode: Option<String>,
     // A blocking cue prevents level changes from tracking through it and successive cues.
     pub is_blocking: bool,
@@ -37,6 +38,7 @@ impl Default for Cue {
             timecode: None,
             static_values: vec![],
             effects: vec![],
+            pixel_effects: vec![],
             is_blocking: false,
         }
     }
@@ -63,4 +65,12 @@ pub enum EffectDistribution {
     All,
     Step(usize),
     Wave(f64), // Phase offset between fixtures
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PixelEffectMapping {
+    pub name: String,
+    pub effect: PixelEffect,
+    pub fixture_ids: Vec<usize>,
+    pub distribution: EffectDistribution,
 }

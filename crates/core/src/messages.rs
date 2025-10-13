@@ -177,6 +177,22 @@ pub enum ConsoleCommand {
     QuerySettings,
     QueryAudioDevices,
 
+    // Pixel engine commands
+    ConfigurePixelEngine {
+        enabled: bool,
+        universe_mapping: std::collections::HashMap<usize, u8>,
+    },
+    AddPixelEffect {
+        name: String,
+        fixture_ids: Vec<usize>,
+        effect: crate::pixel::PixelEffect,
+        distribution: crate::EffectDistribution,
+    },
+    RemovePixelEffect {
+        name: String,
+    },
+    ClearPixelEffects,
+
     // Query commands (request state)
     QueryFixtures,
     QueryCueLists,
@@ -214,6 +230,11 @@ pub struct Settings {
     pub dmx_port: u16,
     pub wled_enabled: bool,
     pub wled_ip: String,
+
+    // Pixel engine settings
+    pub pixel_engine_enabled: bool,
+    pub pixel_engine_fps: f64,
+    pub pixel_universe_mapping: std::collections::HashMap<usize, u8>,
 }
 
 impl Default for Settings {
@@ -242,6 +263,11 @@ impl Default for Settings {
             dmx_port: 6454,
             wled_enabled: false,
             wled_ip: "192.168.1.50".to_string(),
+
+            // Pixel engine defaults
+            pixel_engine_enabled: false,
+            pixel_engine_fps: 44.0,
+            pixel_universe_mapping: std::collections::HashMap::new(),
         }
     }
 }

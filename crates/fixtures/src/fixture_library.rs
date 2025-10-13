@@ -400,7 +400,64 @@ impl FixtureLibrary {
             },
         );
 
+        // Pixel Bar Fixtures
+        profiles.insert(
+            "generic-rgb-pixel-bar-30".to_string(),
+            FixtureProfile {
+                id: "generic-rgb-pixel-bar-30".to_string(),
+                fixture_type: FixtureType::PixelBar,
+                manufacturer: "Generic".to_string(),
+                model: "RGB Pixel Bar 30 Pixels".to_string(),
+                channel_layout: Self::create_pixel_bar_channels(30),
+            },
+        );
+
+        profiles.insert(
+            "generic-rgb-pixel-bar-60".to_string(),
+            FixtureProfile {
+                id: "generic-rgb-pixel-bar-60".to_string(),
+                fixture_type: FixtureType::PixelBar,
+                manufacturer: "Generic".to_string(),
+                model: "RGB Pixel Bar 60 Pixels".to_string(),
+                channel_layout: Self::create_pixel_bar_channels(60),
+            },
+        );
+
+        profiles.insert(
+            "generic-rgb-pixel-bar-144".to_string(),
+            FixtureProfile {
+                id: "generic-rgb-pixel-bar-144".to_string(),
+                fixture_type: FixtureType::PixelBar,
+                manufacturer: "Generic".to_string(),
+                model: "RGB Pixel Bar 144 Pixels".to_string(),
+                channel_layout: Self::create_pixel_bar_channels(144),
+            },
+        );
+
         FixtureLibrary { profiles }
+    }
+
+    /// Create channel layout for a pixel bar with given number of pixels
+    fn create_pixel_bar_channels(pixel_count: usize) -> Vec<Channel> {
+        let mut channels = Vec::with_capacity(pixel_count * 3);
+        for i in 0..pixel_count {
+            channels.push(Channel {
+                name: format!("Pixel {} Red", i + 1),
+                channel_type: ChannelType::PixelRed(i),
+                value: 0,
+            });
+            channels.push(Channel {
+                name: format!("Pixel {} Green", i + 1),
+                channel_type: ChannelType::PixelGreen(i),
+                value: 0,
+            });
+            channels.push(Channel {
+                name: format!("Pixel {} Blue", i + 1),
+                channel_type: ChannelType::PixelBlue(i),
+                value: 0,
+            });
+        }
+        channels
     }
 }
 
@@ -431,6 +488,9 @@ pub enum ChannelType {
     Zoom,
     Function,
     FunctionSpeed,
+    PixelRed(usize),
+    PixelGreen(usize),
+    PixelBlue(usize),
     Other(String),
 }
 
@@ -455,6 +515,9 @@ impl std::fmt::Display for ChannelType {
             ChannelType::Zoom => write!(f, "Zoom"),
             ChannelType::Function => write!(f, "Function"),
             ChannelType::FunctionSpeed => write!(f, "FunctionSpeed"),
+            ChannelType::PixelRed(idx) => write!(f, "PixelRed({})", idx),
+            ChannelType::PixelGreen(idx) => write!(f, "PixelGreen({})", idx),
+            ChannelType::PixelBlue(idx) => write!(f, "PixelBlue({})", idx),
             ChannelType::Other(s) => write!(f, "Other({})", s),
         }
     }

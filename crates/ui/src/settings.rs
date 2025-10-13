@@ -10,6 +10,7 @@ enum SettingsTab {
     Audio,
     Midi,
     Outputs,
+    PixelEngine,
 }
 
 #[derive(Clone)]
@@ -40,6 +41,10 @@ pub struct SettingsPanel {
     pub dmx_port: String,
     pub wled_enabled: bool,
     pub wled_ip: String,
+
+    // Pixel engine settings
+    pub pixel_engine_enabled: bool,
+    pub pixel_engine_fps: String,
 
     // Internal state
     initialized: bool,
@@ -74,6 +79,10 @@ impl Default for SettingsPanel {
             dmx_port: "6454".to_string(),
             wled_enabled: false,
             wled_ip: "192.168.1.50".to_string(),
+
+            // Pixel engine defaults
+            pixel_engine_enabled: false,
+            pixel_engine_fps: "44.0".to_string(),
 
             // Internal state
             initialized: false,
@@ -122,6 +131,10 @@ impl SettingsPanel {
         self.dmx_port = settings.dmx_port.to_string();
         self.wled_enabled = settings.wled_enabled;
         self.wled_ip = settings.wled_ip.clone();
+
+        // Load pixel engine settings
+        self.pixel_engine_enabled = settings.pixel_engine_enabled;
+        self.pixel_engine_fps = settings.pixel_engine_fps.to_string();
     }
 
     pub fn render(
@@ -167,6 +180,11 @@ impl SettingsPanel {
             ui.selectable_value(&mut self.active_tab, SettingsTab::Audio, "Audio");
             ui.selectable_value(&mut self.active_tab, SettingsTab::Midi, "MIDI");
             ui.selectable_value(&mut self.active_tab, SettingsTab::Outputs, "Outputs");
+            ui.selectable_value(
+                &mut self.active_tab,
+                SettingsTab::PixelEngine,
+                "Pixel Engine",
+            );
         });
 
         ui.separator();
@@ -176,6 +194,7 @@ impl SettingsPanel {
             SettingsTab::Audio => self.render_audio_tab(ui, state, console_tx),
             SettingsTab::Midi => self.render_midi_tab(ui, console_tx),
             SettingsTab::Outputs => self.render_outputs_tab(ui, console_tx),
+            SettingsTab::PixelEngine => self.render_pixel_engine_tab(ui, state, console_tx),
         });
 
         ui.separator();
@@ -459,6 +478,98 @@ impl SettingsPanel {
         ui.label("Note: Output changes require restart to take effect.");
     }
 
+    fn render_pixel_engine_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &ConsoleState,
+        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
+        ui.heading("Pixel Engine Settings");
+        ui.add_space(10.0);
+
+        ui.label(
+            "Configure the pixel engine for driving LED pixel bars via Art-Net (e.g., Enttec Octo MK2).",
+        );
+        ui.add_space(10.0);
+
+        egui::Grid::new("pixel_engine_settings_grid")
+            .num_columns(2)
+            .spacing([40.0, 8.0])
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("Pixel Engine:");
+                ui.checkbox(&mut self.pixel_engine_enabled, "Enable pixel engine");
+                ui.end_row();
+
+                if self.pixel_engine_enabled {
+                    ui.label("Target FPS:");
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.pixel_engine_fps)
+                                .desired_width(100.0),
+                        );
+                        ui.label("Hz (default: 44Hz for DMX)");
+                    });
+                    ui.end_row();
+                }
+            });
+
+        ui.add_space(20.0);
+
+        if self.pixel_engine_enabled {
+            ui.label("Universe Mapping");
+            ui.separator();
+            ui.add_space(5.0);
+
+            ui.label("Map pixel bar fixtures to Art-Net universes:");
+            ui.add_space(5.0);
+
+            // Show current pixel bar fixtures and their universe mappings
+            egui::ScrollArea::vertical()
+                .max_height(200.0)
+                .show(ui, |ui| {
+                    let pixel_fixtures: Vec<_> = state
+                        .fixtures
+                        .iter()
+                        .filter(|(_, f)| {
+                            f.profile.fixture_type == halo_fixtures::FixtureType::PixelBar
+                        })
+                        .collect();
+
+                    if pixel_fixtures.is_empty() {
+                        ui.label("No pixel bar fixtures patched.");
+                    } else {
+                        egui::Grid::new("pixel_universe_mapping")
+                            .num_columns(3)
+                            .spacing([20.0, 8.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                ui.label("Fixture");
+                                ui.label("Default Universe");
+                                ui.label("Info");
+                                ui.end_row();
+
+                                for (_, fixture) in pixel_fixtures {
+                                    ui.label(&fixture.name);
+                                    ui.label(format!("{}", fixture.universe));
+                                    ui.label(format!(
+                                        "{} @ {}",
+                                        fixture.profile.model, fixture.start_address
+                                    ));
+                                    ui.end_row();
+                                }
+                            });
+                    }
+                });
+
+            ui.add_space(10.0);
+            ui.label("Note: Use ConfigurePixelEngine command to map fixtures to custom universes.");
+        }
+
+        ui.add_space(10.0);
+        ui.label("Pixel effects can be applied through cues or the programmer panel.");
+    }
+
     fn apply_settings(&self, console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
         // Convert UI settings to Settings struct
         let settings = Settings {
@@ -481,6 +592,10 @@ impl SettingsPanel {
             dmx_port: self.dmx_port.parse().unwrap_or(6454),
             wled_enabled: self.wled_enabled,
             wled_ip: self.wled_ip.clone(),
+
+            pixel_engine_enabled: self.pixel_engine_enabled,
+            pixel_engine_fps: self.pixel_engine_fps.parse().unwrap_or(44.0),
+            pixel_universe_mapping: std::collections::HashMap::new(),
         };
 
         // Send update command
