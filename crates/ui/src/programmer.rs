@@ -14,6 +14,7 @@ pub enum ActiveProgrammerTab {
     Color,
     Position,
     Beam,
+    PixelEffects,
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +210,7 @@ impl ProgrammerState {
                     self.draw_tab_button(ui, "Color", ActiveProgrammerTab::Color);
                     self.draw_tab_button(ui, "Position", ActiveProgrammerTab::Position);
                     self.draw_tab_button(ui, "Beam", ActiveProgrammerTab::Beam);
+                    self.draw_tab_button(ui, "Pixel FX", ActiveProgrammerTab::PixelEffects);
                 });
 
                 ui.separator();
@@ -220,6 +222,9 @@ impl ProgrammerState {
                         ActiveProgrammerTab::Color => self.show_color_tab(ui, console_tx),
                         ActiveProgrammerTab::Position => self.show_position_tab(ui, console_tx),
                         ActiveProgrammerTab::Beam => self.show_beam_tab(ui, console_tx),
+                        ActiveProgrammerTab::PixelEffects => {
+                            self.show_pixel_effects_tab(ui, console_tx)
+                        }
                     });
                     ui.set_min_size(Vec2::new(ui.available_width() - 250.0, 0.0));
 
@@ -237,6 +242,7 @@ impl ProgrammerState {
                             ActiveProgrammerTab::Color => "Color",
                             ActiveProgrammerTab::Position => "Position",
                             ActiveProgrammerTab::Beam => "Beam",
+                            ActiveProgrammerTab::PixelEffects => "Pixel FX",
                         };
 
                         ui.label(format!(
@@ -269,6 +275,9 @@ impl ProgrammerState {
                                     self.get_param("pan").round(),
                                     self.get_param("tilt").round()
                                 ));
+                            }
+                            ActiveProgrammerTab::PixelEffects => {
+                                ui.label("Pixel FX Ready");
                             }
                             _ => {}
                         }
@@ -530,6 +539,52 @@ impl ProgrammerState {
                         .line(Line::new("", plot_points).color(Color32::from_rgb(100, 200, 255)));
                 });
         });
+    }
+
+    fn show_pixel_effects_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
+        ui.heading("Pixel Effects");
+        ui.add_space(10.0);
+
+        ui.label("Configure effects for pixel bar fixtures");
+        ui.add_space(10.0);
+
+        ui.label("Effect Type:");
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut 0, 0, "Chase");
+            ui.radio_value(&mut 0, 1, "Wave");
+            ui.radio_value(&mut 0, 2, "Strobe");
+            ui.radio_value(&mut 0, 3, "Color Cycle");
+        });
+
+        ui.add_space(10.0);
+
+        ui.label("Scope:");
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut 0, 0, "Bar (all pixels same)");
+            ui.radio_value(&mut 0, 1, "Individual (per-pixel)");
+        });
+
+        ui.add_space(10.0);
+
+        ui.label("Color:");
+        ui.horizontal(|ui| {
+            ui.color_edit_button_rgb(&mut [1.0f32, 1.0, 1.0]);
+        });
+
+        ui.add_space(20.0);
+
+        ui.label("Note: Pixel effects are applied directly to pixel bar fixtures.");
+        ui.label("Use 'Apply Effect' button to add pixel effects to selected fixtures.");
+
+        ui.add_space(10.0);
+
+        if ui.button("Apply Pixel Effect").clicked() {
+            ui.label("Pixel effect applied to selected pixel bars");
+        }
     }
 
     // Helper function to draw tab buttons
@@ -969,6 +1024,7 @@ impl ProgrammerState {
                     ActiveProgrammerTab::Color => "Effects on Color",
                     ActiveProgrammerTab::Position => "Effects on Position",
                     ActiveProgrammerTab::Beam => "Effects on Beam",
+                    ActiveProgrammerTab::PixelEffects => "Pixel Effects",
                 };
                 ui.label(effects_subtitle);
 
@@ -1121,6 +1177,7 @@ impl ProgrammerState {
                         ActiveProgrammerTab::Color => "color".to_string(),
                         ActiveProgrammerTab::Position => "pan".to_string(),
                         ActiveProgrammerTab::Beam => "beam".to_string(),
+                        ActiveProgrammerTab::PixelEffects => "pixel".to_string(),
                     };
 
                     let _ = console_tx.send(ConsoleCommand::ApplyProgrammerEffect {
@@ -1208,6 +1265,7 @@ impl ProgrammerState {
             ActiveProgrammerTab::Color => egui::Color32::from_rgb(255, 100, 100),
             ActiveProgrammerTab::Position => egui::Color32::from_rgb(100, 255, 100),
             ActiveProgrammerTab::Beam => egui::Color32::from_rgb(255, 200, 0),
+            ActiveProgrammerTab::PixelEffects => egui::Color32::from_rgb(255, 20, 147),
         });
 
         // Create and show the plot

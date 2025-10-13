@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::{Cue, CueList, EffectMapping, StaticValue, TimeCode};
+use crate::{Cue, CueList, EffectMapping, PixelEffectMapping, StaticValue, TimeCode};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum PlaybackState {
@@ -391,6 +391,7 @@ impl CueManager {
         fade_time: f32,
         values: Vec<StaticValue>,
         effects: Vec<EffectMapping>,
+        pixel_effects: Vec<PixelEffectMapping>,
     ) {
         if let Some(id) = self.get_next_cue_id() {
             self.cue_lists[cue_list_idx].cues.push(Cue {
@@ -399,6 +400,7 @@ impl CueManager {
                 fade_time: Duration::from_secs_f32(fade_time),
                 static_values: values,
                 effects,
+                pixel_effects,
                 timecode: None,
                 is_blocking: false,
             });

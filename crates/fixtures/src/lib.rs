@@ -36,6 +36,7 @@ pub enum FixtureType {
     LEDBar,
     Pinspot,
     Smoke,
+    PixelBar,
 }
 
 impl Fixture {
