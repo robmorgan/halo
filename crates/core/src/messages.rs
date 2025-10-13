@@ -38,6 +38,12 @@ pub enum ConsoleCommand {
     UnpatchFixture {
         fixture_id: usize,
     },
+    UpdateFixture {
+        fixture_id: usize,
+        name: String,
+        universe: u8,
+        address: u16,
+    },
     UpdateFixtureChannels {
         fixture_id: usize,
         channel_values: Vec<(String, u8)>,
@@ -196,6 +202,7 @@ pub enum ConsoleCommand {
     QueryRhythmState,
     QueryShow,
     QueryLinkState,
+    QueryFixtureLibrary,
 }
 
 /// Settings configuration
@@ -311,6 +318,10 @@ pub enum ConsoleEvent {
     FixtureUnpatched {
         fixture_id: usize,
     },
+    FixtureUpdated {
+        fixture_id: usize,
+        fixture: Fixture,
+    },
     FixtureValuesChanged {
         fixture_id: usize,
         values: Vec<(String, u8)>,
@@ -411,5 +422,8 @@ pub enum ConsoleEvent {
     },
     AudioDevicesList {
         devices: Vec<AudioDeviceInfo>,
+    },
+    FixtureLibraryList {
+        profiles: Vec<(String, String)>, // (id, display_name)
     },
 }
