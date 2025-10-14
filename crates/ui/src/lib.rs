@@ -150,6 +150,11 @@ impl HaloApp {
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            // Sync programmer state from console state before rendering
+            self.programmer_state
+                .set_selected_fixtures(self.state.selected_fixtures.clone());
+            self.programmer_state.sync_from_console_state(&self.state);
+
             // Show programmer panel
             programmer::render_compact(
                 ui,

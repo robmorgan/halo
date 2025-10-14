@@ -155,6 +155,12 @@ impl ProgrammerState {
         }
     }
 
+    /// Sync programmer state from console state
+    pub fn sync_from_console_state(&mut self, console_state: &ConsoleState) {
+        self.preview_mode = console_state.programmer_preview_mode;
+        self.collapsed = console_state.programmer_collapsed;
+    }
+
     // Main rendering function for the programmer panel
     pub fn show(
         &mut self,

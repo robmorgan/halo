@@ -423,6 +423,35 @@ impl LightingConsole {
         self.fixture_library = FixtureLibrary::new();
     }
 
+    /// Convert a channel name string to a ChannelType
+    fn channel_string_to_type(channel: &str) -> halo_fixtures::ChannelType {
+        use halo_fixtures::ChannelType;
+
+        match channel.to_lowercase().as_str() {
+            "dimmer" => ChannelType::Dimmer,
+            "color" => ChannelType::Color,
+            "gobo" => ChannelType::Gobo,
+            "red" => ChannelType::Red,
+            "green" => ChannelType::Green,
+            "blue" => ChannelType::Blue,
+            "white" => ChannelType::White,
+            "amber" => ChannelType::Amber,
+            "uv" => ChannelType::UV,
+            "strobe" => ChannelType::Strobe,
+            "pan" => ChannelType::Pan,
+            "tilt" => ChannelType::Tilt,
+            "tiltspeed" | "tilt_speed" => ChannelType::TiltSpeed,
+            "beam" => ChannelType::Beam,
+            "focus" => ChannelType::Focus,
+            "zoom" => ChannelType::Zoom,
+            "function" => ChannelType::Function,
+            "functionspeed" | "function_speed" => ChannelType::FunctionSpeed,
+            "gobo_rotation" | "gobo_rot" => ChannelType::Other("gobo_rotation".to_string()),
+            "gobo_selection" | "gobo_sel" => ChannelType::Other("gobo_selection".to_string()),
+            _ => ChannelType::Other(channel.to_string()),
+        }
+    }
+
     /// Patch a fixture
     pub async fn patch_fixture(
         &mut self,
@@ -1136,11 +1165,12 @@ impl LightingConsole {
                 channel,
                 value,
             } => {
-                // TODO: Implement programmer channel value setting
-                println!(
-                    "Setting programmer value: fixture {}, channel {}, value {}",
-                    fixture_id, channel, value
-                );
+                // Convert channel string to ChannelType
+                let channel_type = Self::channel_string_to_type(&channel);
+                self.programmer
+                    .write()
+                    .await
+                    .add_value(fixture_id, channel_type, value);
             }
             SetProgrammerPreviewMode { preview_mode } => {
                 self.programmer.write().await.set_preview_mode(preview_mode);
