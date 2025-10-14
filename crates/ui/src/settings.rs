@@ -165,6 +165,8 @@ impl SettingsPanel {
 
         let mut open = self.open;
 
+        let mut should_close_from_button = false;
+
         egui::Window::new("Settings")
             .open(&mut open)
             .default_width(600.0)
@@ -172,10 +174,15 @@ impl SettingsPanel {
             .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                self.render_content(ui, state, console_tx);
+                should_close_from_button = self.render_content(ui, state, console_tx);
             });
 
-        self.open = open;
+        // Handle close from either X button or Close button
+        if should_close_from_button {
+            self.open = false;
+        } else {
+            self.open = open;
+        }
     }
 
     fn render_content(
@@ -183,7 +190,7 @@ impl SettingsPanel {
         ui: &mut egui::Ui,
         state: &ConsoleState,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
-    ) {
+    ) -> bool {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.active_tab, SettingsTab::General, "General");
             ui.selectable_value(&mut self.active_tab, SettingsTab::Audio, "Audio");
@@ -209,10 +216,11 @@ impl SettingsPanel {
         ui.separator();
 
         // Footer buttons
+        let mut should_close = false;
         ui.horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("Close").clicked() {
-                    self.open = false;
+                    should_close = true;
                 }
                 if ui.button("Apply").clicked() {
                     // Apply settings
@@ -220,6 +228,9 @@ impl SettingsPanel {
                 }
             });
         });
+
+        // Return whether the close button was clicked
+        should_close
     }
 
     fn render_general_tab(
