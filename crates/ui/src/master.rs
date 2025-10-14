@@ -97,54 +97,6 @@ pub fn render(
         draw_master_fader(ui, "Smoke %", 0.75, Color32::from_rgb(100, 100, 100));
 
         ui.add_space(20.0);
-
-        // Transport controls
-        ui.heading("TRANSPORT");
-        ui.horizontal(|ui| {
-            if ui.button("Play").clicked() {
-                let _ = console_tx.send(ConsoleCommand::Play);
-            }
-
-            if ui.button("Stop").clicked() {
-                let _ = console_tx.send(ConsoleCommand::Stop);
-            }
-
-            if ui.button("Pause").clicked() {
-                let _ = console_tx.send(ConsoleCommand::Pause);
-            }
-
-            if ui.button("Resume").clicked() {
-                let _ = console_tx.send(ConsoleCommand::Resume);
-            }
-        });
-
-        ui.add_space(10.0);
-
-        // BPM control
-        ui.heading("TEMPO");
-        ui.horizontal(|ui| {
-            ui.label("BPM:");
-            let mut bpm = state.bpm;
-            if ui
-                .add(egui::Slider::new(&mut bpm, 60.0..=200.0).text("BPM"))
-                .changed()
-            {
-                let _ = console_tx.send(ConsoleCommand::SetBpm { bpm });
-            }
-
-            if ui.button("Tap").clicked() {
-                let _ = console_tx.send(ConsoleCommand::TapTempo);
-            }
-        });
-
-        ui.add_space(10.0);
-
-        // Status
-        ui.heading("STATUS");
-        ui.label(format!("Playback: {:?}", state.playback_state));
-        ui.label(format!("BPM: {:.1}", state.bpm));
-        ui.label(format!("Fixtures: {}", state.fixtures.len()));
-        ui.label(format!("Cue Lists: {}", state.cue_lists.len()));
     });
 }
 
