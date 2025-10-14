@@ -394,6 +394,61 @@
           ],
           "timecode": null,
           "is_blocking": false
+        },
+        {
+          "id": 8,
+          "name": "Pixel Bar Test",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 7,
+              "channel_type": {
+                "PixelRed": 0
+              },
+              "value": 255
+            },
+            {
+              "fixture_id": 7,
+              "channel_type": {
+                "PixelGreen": 0
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 7,
+              "channel_type": {
+                "PixelBlue": 0
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 7,
+              "channel_type": {
+                "PixelRed": 10
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 7,
+              "channel_type": {
+                "PixelGreen": 10
+              },
+              "value": 255
+            },
+            {
+              "fixture_id": 7,
+              "channel_type": {
+                "PixelBlue": 10
+              },
+              "value": 0
+            }
+          ],
+          "effects": [],
+          "timecode": null,
+          "is_blocking": false
         }
       ],
       "audio_file": null
