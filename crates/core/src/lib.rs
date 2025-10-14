@@ -12,6 +12,7 @@ pub use cue::cue_manager::{CueManager, PlaybackState};
 pub use effect::effect::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectParams, EffectType,
 };
+pub use effect::EffectRelease;
 pub use messages::{ConsoleCommand, ConsoleEvent, Settings};
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
 // Async module system exports
@@ -24,6 +25,7 @@ pub use rhythm::rhythm::{Interval, RhythmState};
 pub use show::show::Show;
 pub use show::show_manager::ShowManager;
 pub use timecode::timecode::TimeCode;
+pub use tracking_state::TrackingState;
 
 mod ableton_link;
 mod artnet;
@@ -41,3 +43,4 @@ mod programmer;
 mod rhythm;
 mod show;
 mod timecode;
+mod tracking_state;

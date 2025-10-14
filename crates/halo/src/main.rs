@@ -5,8 +5,8 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::Parser;
 use halo_core::{
-    ArtNetDestination, ArtNetMode,
-    ConfigManager, ConsoleCommand, ConsoleEvent, CueList, LightingConsole, NetworkConfig, Settings,
+    ArtNetDestination, ArtNetMode, ConfigManager, ConsoleCommand, ConsoleEvent, CueList,
+    LightingConsole, NetworkConfig, Settings,
 };
 use tokio::sync::mpsc;
 
@@ -20,7 +20,8 @@ struct Args {
     source_ip: IpAddr,
 
     /// Art-Net Destination IP address (optional - if not provided, broadcast mode will be used)
-    /// This is for backward compatibility - use --lighting-dest-ip and --pixel-dest-ip for multi-destination setup
+    /// This is for backward compatibility - use --lighting-dest-ip and --pixel-dest-ip for
+    /// multi-destination setup
     #[arg(long, value_parser = parse_ip)]
     dest_ip: Option<IpAddr>,
 
@@ -107,9 +108,15 @@ async fn main() -> anyhow::Result<()> {
             let lighting_index = destinations.len();
             destinations.push(lighting_dest);
             universe_routing.insert(args.lighting_universe, lighting_index);
-            
-            println!("Lighting destination: {}:{} -> {}:{} (Universe {})", 
-                     args.source_ip, args.artnet_port, lighting_ip, args.artnet_port, args.lighting_universe);
+
+            println!(
+                "Lighting destination: {}:{} -> {}:{} (Universe {})",
+                args.source_ip,
+                args.artnet_port,
+                lighting_ip,
+                args.artnet_port,
+                args.lighting_universe
+            );
         }
 
         // Add pixel destination if specified
@@ -127,25 +134,42 @@ async fn main() -> anyhow::Result<()> {
             };
             let pixel_index = destinations.len();
             destinations.push(pixel_dest);
-            
+
             // Route pixel universes starting from pixel_start_universe (typically 2, 3, 4, etc.)
-            for universe in args.pixel_start_universe..=16 { // Support up to universe 16 for pixels
+            for universe in args.pixel_start_universe..=16 {
+                // Support up to universe 16 for pixels
                 universe_routing.insert(universe, pixel_index);
             }
-            
-            println!("Pixel destination: {}:{} -> {}:{} (Universes {} and up)", 
-                     args.source_ip, args.artnet_port, pixel_ip, args.artnet_port, args.pixel_start_universe);
+
+            println!(
+                "Pixel destination: {}:{} -> {}:{} (Universes {} and up)",
+                args.source_ip,
+                args.artnet_port,
+                pixel_ip,
+                args.artnet_port,
+                args.pixel_start_universe
+            );
         }
 
         if destinations.is_empty() {
             // Fallback to single destination if no multi-destination args provided
-            NetworkConfig::new(args.source_ip, args.dest_ip, args.artnet_port, args.broadcast)
+            NetworkConfig::new(
+                args.source_ip,
+                args.dest_ip,
+                args.artnet_port,
+                args.broadcast,
+            )
         } else {
             NetworkConfig::new_multi_destination(destinations, universe_routing, args.artnet_port)
         }
     } else {
         // Legacy single destination setup
-        NetworkConfig::new(args.source_ip, args.dest_ip, args.artnet_port, args.broadcast)
+        NetworkConfig::new(
+            args.source_ip,
+            args.dest_ip,
+            args.artnet_port,
+            args.broadcast,
+        )
     };
 
     println!("Configuring Halo with Art-Net settings:");

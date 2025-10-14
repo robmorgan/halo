@@ -3,7 +3,7 @@ use std::time::Duration;
 use halo_fixtures::ChannelType;
 use serde::{Deserialize, Serialize};
 
-use crate::{Effect, PixelEffect};
+use crate::{Effect, EffectRelease, PixelEffect};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CueList {
@@ -58,6 +58,8 @@ pub struct EffectMapping {
     pub fixture_ids: Vec<usize>,
     pub channel_type: ChannelType,
     pub distribution: EffectDistribution,
+    #[serde(default)]
+    pub release: EffectRelease,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,4 +75,6 @@ pub struct PixelEffectMapping {
     pub effect: PixelEffect,
     pub fixture_ids: Vec<usize>,
     pub distribution: EffectDistribution,
+    #[serde(default)]
+    pub release: EffectRelease,
 }

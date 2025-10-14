@@ -318,6 +318,9 @@ pub enum ConsoleEvent {
     RhythmStateUpdated {
         state: RhythmState,
     },
+    TrackingStateUpdated {
+        active_effect_count: usize,
+    },
     TimecodeUpdated {
         timecode: TimeCode,
     },

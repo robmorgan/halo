@@ -33,6 +33,7 @@ pub struct ConsoleState {
     pub settings: Settings,
     pub audio_devices: Vec<AudioDeviceInfo>,
     pub fixture_library: FixtureLibrary,
+    pub active_effects_count: usize,
 }
 
 impl Default for ConsoleState {
@@ -70,6 +71,7 @@ impl Default for ConsoleState {
             settings: Settings::default(),
             audio_devices: Vec::new(),
             fixture_library: FixtureLibrary::new(),
+            active_effects_count: 0,
         }
     }
 }
@@ -210,6 +212,11 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::AudioDevicesList { devices } => {
                 self.audio_devices = devices;
+            }
+            halo_core::ConsoleEvent::TrackingStateUpdated {
+                active_effect_count,
+            } => {
+                self.active_effects_count = active_effect_count;
             }
             _ => {
                 // Handle other events as needed

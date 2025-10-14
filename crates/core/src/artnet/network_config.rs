@@ -88,13 +88,17 @@ impl NetworkConfig {
         if self.destinations.is_empty() {
             return "No destinations configured".to_string();
         }
-        
+
         let mut result = String::new();
         for (i, dest) in self.destinations.iter().enumerate() {
             if i > 0 {
                 result.push_str(", ");
             }
-            result.push_str(&format!("{}: {}", dest.name, self.get_destination_string(&dest.mode)));
+            result.push_str(&format!(
+                "{}: {}",
+                dest.name,
+                self.get_destination_string(&dest.mode)
+            ));
         }
         result
     }
@@ -113,7 +117,13 @@ impl NetworkConfig {
     fn get_destination_string(&self, mode: &ArtNetMode) -> String {
         match mode {
             ArtNetMode::Unicast(src, destination) => {
-                format!("{}:{} -> {}:{}", src.ip(), self.port, destination.ip(), self.port)
+                format!(
+                    "{}:{} -> {}:{}",
+                    src.ip(),
+                    self.port,
+                    destination.ip(),
+                    self.port
+                )
             }
             ArtNetMode::Broadcast => format!("255.255.255.255:{}", self.port),
         }

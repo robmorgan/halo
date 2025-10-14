@@ -18,6 +18,7 @@ use crate::pixel::PixelEngine;
 use crate::programmer::Programmer;
 use crate::rhythm::rhythm::RhythmState;
 use crate::show::show_manager::ShowManager;
+use crate::tracking_state::TrackingState;
 use crate::{AbletonLinkManager, CueList};
 
 pub struct LightingConsole {
@@ -49,6 +50,9 @@ pub struct LightingConsole {
 
     // Pixel engine
     pixel_engine: Arc<RwLock<PixelEngine>>,
+
+    // Tracking state for tracking console behavior
+    tracking_state: Arc<RwLock<TrackingState>>,
 
     // System state
     is_running: bool,
@@ -98,6 +102,7 @@ impl LightingConsole {
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
             settings: Arc::new(RwLock::new(settings)),
             pixel_engine: Arc::new(RwLock::new(PixelEngine::new())),
+            tracking_state: Arc::new(RwLock::new(TrackingState::new())),
             is_running: false,
         })
     }
@@ -218,18 +223,21 @@ impl LightingConsole {
             }
         }
 
-        // Process current cue if playing
+        // Process current cue if playing - update tracking state
         {
             let cue_manager = self.cue_manager.read().await;
             if cue_manager.get_playback_state() == PlaybackState::Playing {
                 if let Some(current_cue) = cue_manager.get_current_cue() {
-                    // Apply cue values and effects
-                    self.apply_cue_data(current_cue.clone()).await;
+                    // Update tracking state with current cue
+                    self.update_tracking_state(current_cue.clone()).await;
                 }
             }
         }
 
-        // Apply programmer values
+        // Apply accumulated tracking state to fixtures
+        self.apply_tracking_state().await;
+
+        // Apply programmer values (highest priority)
         self.apply_programmer_values().await;
 
         // Generate and send DMX data
@@ -252,24 +260,42 @@ impl LightingConsole {
             (beat_time / (rhythm.beats_per_bar * rhythm.bars_per_phrase) as f64).fract();
     }
 
-    async fn apply_cue_data(&self, cue: crate::cue::cue::Cue) {
+    /// Update tracking state with current cue
+    async fn update_tracking_state(&self, cue: crate::cue::cue::Cue) {
+        let mut tracking_state = self.tracking_state.write().await;
+
+        if cue.is_blocking {
+            // Blocking cue: clear state and apply this cue
+            tracking_state.apply_blocking_cue(&cue);
+        } else {
+            // Non-blocking cue: merge into tracking state
+            tracking_state.apply_cue(&cue);
+        }
+    }
+
+    /// Apply accumulated tracking state to fixtures
+    async fn apply_tracking_state(&self) {
+        let tracking_state = self.tracking_state.read().await;
         let mut fixtures = self.fixtures.write().await;
 
-        // Apply static values
-        for value in &cue.static_values {
+        // Apply static values from tracking state
+        for value in tracking_state.get_static_values() {
             if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == value.fixture_id) {
                 fixture.set_channel_value(&value.channel_type, value.value);
             }
         }
 
-        // Apply effects would go here - similar to the original implementation
-        // but we'd need to access the rhythm state
+        // Release fixtures lock before processing effects
+        drop(fixtures);
 
-        // Apply pixel effects to pixel engine
-        if !cue.pixel_effects.is_empty() {
+        // Apply effects from tracking state
+        self.apply_effects().await;
+
+        // Apply pixel effects from tracking state
+        let pixel_effects = tracking_state.get_pixel_effects();
+        if !pixel_effects.is_empty() {
             let mut pixel_engine = self.pixel_engine.write().await;
-            let pixel_effect_data: Vec<_> = cue
-                .pixel_effects
+            let pixel_effect_data: Vec<_> = pixel_effects
                 .iter()
                 .map(|pm| {
                     (
@@ -281,6 +307,66 @@ impl LightingConsole {
                 })
                 .collect();
             pixel_engine.set_effects(pixel_effect_data);
+        }
+    }
+
+    /// Apply effects from tracking state to fixtures
+    async fn apply_effects(&self) {
+        let tracking_state = self.tracking_state.read().await;
+        let effects = tracking_state.get_effects();
+        let rhythm_state = self.rhythm_state.read().await;
+        let mut fixtures = self.fixtures.write().await;
+
+        for effect_mapping in effects {
+            // Calculate effect phase based on rhythm state
+            let phase = crate::effect::effect::get_effect_phase(
+                &rhythm_state,
+                &effect_mapping.effect.params,
+            );
+
+            // Apply the effect to get normalized value (0.0 to 1.0)
+            let normalized_value = effect_mapping.effect.apply(phase);
+
+            // Scale to min/max range
+            let min = effect_mapping.effect.min as f64;
+            let max = effect_mapping.effect.max as f64;
+            let scaled_value = (min + (max - min) * normalized_value) as u8;
+
+            // Apply effect to fixtures based on distribution
+            match &effect_mapping.distribution {
+                crate::EffectDistribution::All => {
+                    // Apply same value to all fixtures
+                    for fixture_id in &effect_mapping.fixture_ids {
+                        if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
+                            fixture.set_channel_value(&effect_mapping.channel_type, scaled_value);
+                        }
+                    }
+                }
+                crate::EffectDistribution::Step(step_size) => {
+                    // Apply effect with step distribution
+                    for (idx, fixture_id) in effect_mapping.fixture_ids.iter().enumerate() {
+                        let step_phase = (phase + (idx / step_size) as f64) % 1.0;
+                        let step_normalized = effect_mapping.effect.apply(step_phase);
+                        let step_value = (min + (max - min) * step_normalized) as u8;
+
+                        if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
+                            fixture.set_channel_value(&effect_mapping.channel_type, step_value);
+                        }
+                    }
+                }
+                crate::EffectDistribution::Wave(phase_offset) => {
+                    // Apply effect with wave distribution (phase offset per fixture)
+                    for (idx, fixture_id) in effect_mapping.fixture_ids.iter().enumerate() {
+                        let wave_phase = (phase + idx as f64 * phase_offset) % 1.0;
+                        let wave_normalized = effect_mapping.effect.apply(wave_phase);
+                        let wave_value = (min + (max - min) * wave_normalized) as u8;
+
+                        if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
+                            fixture.set_channel_value(&effect_mapping.channel_type, wave_value);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -875,6 +961,9 @@ impl LightingConsole {
                 let state = self.cue_manager.read().await.get_playback_state();
                 let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
 
+                // Clear tracking state when stopping
+                self.tracking_state.write().await.clear();
+
                 // Stop audio playback when stopping the cuelist
                 if let Err(e) = self
                     .module_manager
@@ -1281,6 +1370,11 @@ impl LightingConsole {
                         tap_count: rhythm_guard.tap_count,
                     };
                     let _ = event_tx.send(ConsoleEvent::RhythmStateUpdated { state: rhythm_state });
+
+                    // Send tracking state information
+                    let tracking_state = self.tracking_state.read().await;
+                    let active_effect_count = tracking_state.active_effect_count();
+                    let _ = event_tx.send(ConsoleEvent::TrackingStateUpdated { active_effect_count });
                 }
             }
         }

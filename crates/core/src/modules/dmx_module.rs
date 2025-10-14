@@ -24,7 +24,7 @@ impl DmxModule {
         for _ in 0..num_destinations {
             artnet_connections.push(None);
         }
-        
+
         Self {
             artnet_connections,
             network_config,
@@ -56,9 +56,10 @@ impl AsyncModule for DmxModule {
         for (i, destination) in self.network_config.destinations.iter().enumerate() {
             log::info!(
                 "Setting up ArtNet connection {} for destination: {}",
-                i, destination.name
+                i,
+                destination.name
             );
-            
+
             let artnet = ArtNet::new(destination.mode.clone())?;
             self.artnet_connections[i] = Some(artnet);
         }
@@ -100,14 +101,18 @@ impl AsyncModule for DmxModule {
         let mut last_dmx_data: HashMap<u8, Vec<u8>> = HashMap::new();
         let mut shutdown = false;
 
-        log::info!("DMX module started with {} destinations, running at {}Hz", 
-                  self.artnet_connections.len(), self.target_fps);
+        log::info!(
+            "DMX module started with {} destinations, running at {}Hz",
+            self.artnet_connections.len(),
+            self.target_fps
+        );
 
         // Send initial status
         let _ = tx
             .send(ModuleMessage::Status(format!(
                 "DMX module running at {}Hz with {} destinations",
-                self.target_fps, self.artnet_connections.len()
+                self.target_fps,
+                self.artnet_connections.len()
             )))
             .await;
 
