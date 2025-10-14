@@ -1751,3 +1751,15 @@ impl SyncLightingConsole {
         });
     }
 }
+
+impl Drop for SyncLightingConsole {
+    fn drop(&mut self) {
+        // Ensure module manager is properly shut down
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().await;
+            if let Err(e) = console.module_manager.shutdown().await {
+                log::error!("Error shutting down module manager during drop: {}", e);
+            }
+        });
+    }
+}

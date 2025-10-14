@@ -132,6 +132,9 @@ impl ModuleManager {
             }
         }
 
+        // Clear the senders map as well
+        self.module_senders.clear();
+
         self.running = false;
         log::info!("Module manager shutdown complete");
         Ok(())
