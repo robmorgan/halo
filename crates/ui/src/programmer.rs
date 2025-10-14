@@ -3,7 +3,10 @@ use std::f64::consts::PI;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
-use halo_core::{ConsoleCommand, EffectType};
+use halo_core::{
+    ConsoleCommand, EffectDistribution, EffectType, Interval, PixelEffect, PixelEffectParams,
+    PixelEffectScope, PixelEffectType,
+};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
@@ -51,6 +54,10 @@ pub struct ProgrammerState {
     tab_effects: HashMap<ActiveProgrammerTab, TabEffectConfig>,
     preview_mode: bool,
     collapsed: bool,
+    // Pixel effect state
+    pixel_effect_type: usize,
+    pixel_effect_scope: usize,
+    pixel_effect_color: [f32; 3],
 }
 
 impl Default for ProgrammerState {
@@ -99,6 +106,10 @@ impl Default for ProgrammerState {
             tab_effects,
             preview_mode: false,
             collapsed: false,
+            // Pixel effect defaults
+            pixel_effect_type: 0,                // Chase
+            pixel_effect_scope: 1,               // Individual
+            pixel_effect_color: [1.0, 1.0, 1.0], // White
         }
     }
 }
@@ -544,7 +555,7 @@ impl ProgrammerState {
     fn show_pixel_effects_tab(
         &mut self,
         ui: &mut egui::Ui,
-        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
         ui.heading("Pixel Effects");
         ui.add_space(10.0);
@@ -554,36 +565,117 @@ impl ProgrammerState {
 
         ui.label("Effect Type:");
         ui.horizontal(|ui| {
-            ui.radio_value(&mut 0, 0, "Chase");
-            ui.radio_value(&mut 0, 1, "Wave");
-            ui.radio_value(&mut 0, 2, "Strobe");
-            ui.radio_value(&mut 0, 3, "Color Cycle");
+            ui.radio_value(&mut self.pixel_effect_type, 0, "Chase");
+            ui.radio_value(&mut self.pixel_effect_type, 1, "Wave");
+            ui.radio_value(&mut self.pixel_effect_type, 2, "Strobe");
+            ui.radio_value(&mut self.pixel_effect_type, 3, "Color Cycle");
         });
 
         ui.add_space(10.0);
 
         ui.label("Scope:");
         ui.horizontal(|ui| {
-            ui.radio_value(&mut 0, 0, "Bar (all pixels same)");
-            ui.radio_value(&mut 0, 1, "Individual (per-pixel)");
+            ui.radio_value(&mut self.pixel_effect_scope, 0, "Bar (all pixels same)");
+            ui.radio_value(&mut self.pixel_effect_scope, 1, "Individual (per-pixel)");
         });
 
         ui.add_space(10.0);
 
         ui.label("Color:");
         ui.horizontal(|ui| {
-            ui.color_edit_button_rgb(&mut [1.0f32, 1.0, 1.0]);
+            ui.color_edit_button_rgb(&mut self.pixel_effect_color);
         });
 
         ui.add_space(20.0);
 
-        ui.label("Note: Pixel effects are applied directly to pixel bar fixtures.");
-        ui.label("Use 'Apply Effect' button to add pixel effects to selected fixtures.");
+        // Show current settings
+        ui.group(|ui| {
+            ui.label("Current Settings:");
+            let effect_name = match self.pixel_effect_type {
+                0 => "Chase",
+                1 => "Wave",
+                2 => "Strobe",
+                3 => "Color Cycle",
+                _ => "Unknown",
+            };
+            let scope_name = if self.pixel_effect_scope == 0 {
+                "Bar"
+            } else {
+                "Individual"
+            };
+            let color_rgb = (
+                (self.pixel_effect_color[0] * 255.0) as u8,
+                (self.pixel_effect_color[1] * 255.0) as u8,
+                (self.pixel_effect_color[2] * 255.0) as u8,
+            );
+
+            ui.label(format!("Effect: {} | Scope: {}", effect_name, scope_name));
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "Color: RGB({}, {}, {})",
+                    color_rgb.0, color_rgb.1, color_rgb.2
+                ));
+                let color = Color32::from_rgb(color_rgb.0, color_rgb.1, color_rgb.2);
+                ui.colored_label(color, "███");
+            });
+        });
 
         ui.add_space(10.0);
 
-        if ui.button("Apply Pixel Effect").clicked() {
-            ui.label("Pixel effect applied to selected pixel bars");
+        ui.label("Note: Pixel effects will be applied when in preview mode.");
+        ui.label(format!(
+            "{} pixel bar fixture(s) selected",
+            self.selected_fixtures.len()
+        ));
+
+        ui.add_space(10.0);
+
+        if ui
+            .button("Apply Pixel Effect to Selected Fixtures")
+            .clicked()
+        {
+            // Convert settings to pixel effect command
+            let color_rgb = (
+                (self.pixel_effect_color[0] * 255.0) as u8,
+                (self.pixel_effect_color[1] * 255.0) as u8,
+                (self.pixel_effect_color[2] * 255.0) as u8,
+            );
+
+            // Map UI values to PixelEffect types
+            let effect_type = match self.pixel_effect_type {
+                0 => PixelEffectType::Chase,
+                1 => PixelEffectType::Wave,
+                2 => PixelEffectType::Strobe,
+                3 => PixelEffectType::ColorCycle,
+                _ => PixelEffectType::Chase,
+            };
+
+            let scope = if self.pixel_effect_scope == 0 {
+                PixelEffectScope::Bar
+            } else {
+                PixelEffectScope::Individual
+            };
+
+            // Create the pixel effect
+            let pixel_effect = PixelEffect {
+                effect_type,
+                scope,
+                color: color_rgb,
+                params: PixelEffectParams {
+                    interval: Interval::Beat,
+                    interval_ratio: 1.0,
+                    phase: 0.0,
+                    speed: 1.0,
+                },
+            };
+
+            // Send command to apply pixel effect
+            let _ = console_tx.send(ConsoleCommand::AddPixelEffect {
+                name: format!("Programmer_PixelFX_{}", self.selected_fixtures.len()),
+                fixture_ids: self.selected_fixtures.clone(),
+                effect: pixel_effect,
+                distribution: EffectDistribution::All,
+            });
         }
     }
 
