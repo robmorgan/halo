@@ -5,8 +5,8 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::Parser;
 use halo_core::{
-    ArtNetDestination, ArtNetMode, ConfigManager, ConsoleCommand, ConsoleEvent, CueList,
-    LightingConsole, NetworkConfig, Settings,
+    ArtNetDestination, ArtNetMode, ConfigManager, ConsoleCommand, ConsoleEvent, LightingConsole,
+    NetworkConfig, Settings,
 };
 use tokio::sync::mpsc;
 
@@ -276,84 +276,6 @@ async fn main() -> anyhow::Result<()> {
         // Allow time for initialization
         println!("Waiting for initialization...");
         tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Patch fixtures via commands
-        println!("Patching fixtures...");
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Left PAR".to_string(),
-                profile_name: "shehds-rgbw-par".to_string(),
-                universe: 1,
-                address: 1,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Right PAR".to_string(),
-                profile_name: "shehds-rgbw-par".to_string(),
-                universe: 1,
-                address: 9,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Left Spot".to_string(),
-                profile_name: "shehds-led-spot-60w".to_string(),
-                universe: 1,
-                address: 18,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Right Spot".to_string(),
-                profile_name: "shehds-led-spot-60w".to_string(),
-                universe: 1,
-                address: 28,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Left Wash".to_string(),
-                profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
-                universe: 1,
-                address: 38,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Right Wash".to_string(),
-                profile_name: "shehds-led-wash-7x18w-rgbwa-uv".to_string(),
-                universe: 1,
-                address: 48,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Smoke #1".to_string(),
-                profile_name: "dl-geyser-1000-led-smoke-machine-1000w-3x9w-rgb".to_string(),
-                universe: 1,
-                address: 69,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-        init_command_tx
-            .send(ConsoleCommand::PatchFixture {
-                name: "Pinspot".to_string(),
-                profile_name: "shehds-mini-led-pinspot-10w".to_string(),
-                universe: 1,
-                address: 80,
-            })
-            .map_err(|e| anyhow::anyhow!("Failed to send PatchFixture command: {}", e))?;
-
-        // Set up cue lists
-        println!("Setting up cue lists...");
-        let cue_lists = vec![CueList {
-            name: "Default".to_string(),
-            cues: vec![],
-            audio_file: None,
-        }];
-        init_command_tx
-            .send(ConsoleCommand::SetCueLists { cue_lists })
-            .map_err(|e| anyhow::anyhow!("Failed to send SetCueLists command: {}", e))?;
 
         println!("Initialization task completed successfully");
         anyhow::Ok(())

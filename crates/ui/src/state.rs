@@ -34,6 +34,7 @@ pub struct ConsoleState {
     pub audio_devices: Vec<AudioDeviceInfo>,
     pub fixture_library: FixtureLibrary,
     pub active_effects_count: usize,
+    pub last_error: Option<String>,
 }
 
 impl Default for ConsoleState {
@@ -72,6 +73,7 @@ impl Default for ConsoleState {
             audio_devices: Vec::new(),
             fixture_library: FixtureLibrary::new(),
             active_effects_count: 0,
+            last_error: None,
         }
     }
 }
@@ -217,6 +219,9 @@ impl ConsoleState {
                 active_effect_count,
             } => {
                 self.active_effects_count = active_effect_count;
+            }
+            halo_core::ConsoleEvent::Error { message } => {
+                self.last_error = Some(message);
             }
             _ => {
                 // Handle other events as needed

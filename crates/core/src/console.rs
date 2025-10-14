@@ -620,7 +620,25 @@ impl LightingConsole {
 
     /// Load a show from a path
     pub async fn load_show(&mut self, path: &std::path::Path) -> Result<(), anyhow::Error> {
-        let show = self.show_manager.write().await.load_show(path)?;
+        // Validate that the file exists
+        if !path.exists() {
+            return Err(anyhow::anyhow!("Show file not found: {}", path.display()));
+        }
+
+        // Load the show from the file
+        let show = self
+            .show_manager
+            .write()
+            .await
+            .load_show(path)
+            .map_err(|e| anyhow::anyhow!("Failed to load show file '{}': {}", path.display(), e))?;
+
+        log::info!(
+            "Loaded show '{}' with {} fixtures and {} cue lists",
+            show.name,
+            show.fixtures.len(),
+            show.cue_lists.len()
+        );
 
         // Clear current fixtures and cue lists before loading
         {
@@ -628,13 +646,18 @@ impl LightingConsole {
             fixtures.clear();
         }
 
+        // Track missing profiles for better error reporting
+        let mut missing_profiles = Vec::new();
+
         // For each fixture in the loaded show
         for mut fixture in show.fixtures {
             // Preserve the original fixture ID
             let fixture_id = fixture.id;
+            let fixture_name = fixture.name.clone();
+            let profile_id = fixture.profile_id.clone();
 
             // Look up the profile by ID in the fixture library
-            if let Some(profile) = self.fixture_library.profiles.get(&fixture.profile_id) {
+            if let Some(profile) = self.fixture_library.profiles.get(&profile_id) {
                 // Set the profile field with the one from the library
                 fixture.profile = profile.clone();
                 fixture.channels = profile.channel_layout.clone();
@@ -643,17 +666,34 @@ impl LightingConsole {
                 fixture.id = fixture_id;
                 let mut fixtures = self.fixtures.write().await;
                 fixtures.push(fixture);
+                log::debug!(
+                    "Loaded fixture '{}' with profile '{}'",
+                    fixture_name,
+                    profile_id
+                );
             } else {
-                return Err(anyhow::anyhow!(
-                    "Fixture profile '{}' not found in library",
-                    fixture.profile_id
+                missing_profiles.push(format!(
+                    "  - Fixture '{}' (ID: {}) requires profile '{}'",
+                    fixture_name, fixture_id, profile_id
                 ));
             }
         }
 
+        // If any profiles are missing, return a detailed error
+        if !missing_profiles.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Failed to load show '{}': {} fixture profile(s) not found in library:\n{}",
+                path.display(),
+                missing_profiles.len(),
+                missing_profiles.join("\n")
+            ));
+        }
+
         // After all fixtures are loaded with their original IDs, set the cue lists
         self.set_cue_lists(show.cue_lists).await;
-        self.show_name = show.name;
+        self.show_name = show.name.clone();
+
+        log::info!("Successfully loaded show '{}'", show.name);
 
         // Settings are now loaded separately from config file, not from show
 
@@ -721,12 +761,22 @@ impl LightingConsole {
             }
             LoadShow { path } => {
                 log::info!("Processing LoadShow command for path: {:?}", path);
-                self.load_show(&path).await?;
-                let show = self.get_show().await;
-                let settings = self.settings.read().await.clone();
-                let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
-                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
-                log::info!("LoadShow command completed successfully");
+                match self.load_show(&path).await {
+                    Ok(_) => {
+                        let show = self.get_show().await;
+                        let settings = self.settings.read().await.clone();
+                        let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                        let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
+                        log::info!("LoadShow command completed successfully");
+                    }
+                    Err(e) => {
+                        let error_message = format!("Failed to load show: {}", e);
+                        log::error!("{}", error_message);
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: error_message,
+                        });
+                    }
+                }
             }
             SaveShow => {
                 let path = self.save_show().await?;
@@ -736,13 +786,22 @@ impl LightingConsole {
                 let saved_path = self.save_show_as(name, path).await?;
                 let _ = event_tx.send(ConsoleEvent::ShowSaved { path: saved_path });
             }
-            ReloadShow => {
-                self.reload_show().await?;
-                let show = self.get_show().await;
-                let settings = self.settings.read().await.clone();
-                let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
-                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
-            }
+            ReloadShow => match self.reload_show().await {
+                Ok(_) => {
+                    let show = self.get_show().await;
+                    let settings = self.settings.read().await.clone();
+                    let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                    let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
+                    log::info!("ReloadShow command completed successfully");
+                }
+                Err(e) => {
+                    let error_message = format!("Failed to reload show: {}", e);
+                    log::error!("{}", error_message);
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: error_message,
+                    });
+                }
+            },
 
             // Fixture management
             PatchFixture {

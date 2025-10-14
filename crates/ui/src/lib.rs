@@ -105,6 +105,35 @@ impl HaloApp {
         }
     }
 
+    fn render_error_dialog(&mut self, ctx: &egui::Context) {
+        if let Some(error) = self.state.last_error.clone() {
+            egui::Window::new("Error")
+                .collapsible(false)
+                .resizable(true)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_min_width(400.0);
+                    ui.vertical(|ui| {
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("⚠")
+                                .size(40.0)
+                                .color(egui::Color32::from_rgb(255, 100, 100)),
+                        );
+                        ui.add_space(10.0);
+
+                        ui.label(egui::RichText::new(&error).color(egui::Color32::WHITE));
+
+                        ui.add_space(20.0);
+
+                        if ui.button("OK").clicked() {
+                            self.state.last_error = None;
+                        }
+                    });
+                });
+        }
+    }
+
     fn render_ui(&mut self, ctx: &egui::Context) {
         // Header
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -220,6 +249,9 @@ impl eframe::App for HaloApp {
 
         // Render UI
         self.render_ui(ctx);
+
+        // Render error dialog on top of everything
+        self.render_error_dialog(ctx);
 
         // Smart repaint based on playback state
         if matches!(self.state.playback_state, halo_core::PlaybackState::Playing) {
