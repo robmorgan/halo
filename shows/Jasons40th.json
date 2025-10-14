@@ -1,0 +1,1626 @@
+{
+  "name": "Guys 40th Show",
+  "created_at": {
+    "secs_since_epoch": 1746263048,
+    "nanos_since_epoch": 442836000
+  },
+  "modified_at": {
+    "secs_since_epoch": 1746263048,
+    "nanos_since_epoch": 442882000
+  },
+  "fixtures": [
+    {
+      "id": 0,
+      "name": "LED PAR",
+      "profile_id": "hyulights-led-rgbw-par",
+      "universe": 1,
+      "start_address": 1
+    },
+    {
+      "id": 1,
+      "name": "Left LED Beam",
+      "profile_id": "shehds-led-bar-beam-8x12w",
+      "universe": 1,
+      "start_address": 12
+    },
+    {
+      "id": 2,
+      "name": "Right LED Beam",
+      "profile_id": "shehds-led-bar-beam-8x12w",
+      "universe": 1,
+      "start_address": 22
+    },
+    {
+      "id": 3,
+      "name": "Left Strobe",
+      "profile_id": "hyulights-led-rgbw-4in1-48-partition-strobe",
+      "universe": 1,
+      "start_address": 32
+    },
+    {
+      "id": 4,
+      "name": "Right Strobe",
+      "profile_id": "hyulights-led-rgbw-4in1-48-partition-strobe",
+      "universe": 1,
+      "start_address": 42
+    },
+    {
+      "id": 5,
+      "name": "Left Spot",
+      "profile_id": "shehds-led-spot-60w",
+      "universe": 1,
+      "start_address": 50
+    },
+    {
+      "id": 6,
+      "name": "Right Spot",
+      "profile_id": "shehds-led-spot-60w",
+      "universe": 1,
+      "start_address": 60
+    },
+    {
+      "id": 7,
+      "name": "Clen Pixel Bar",
+      "profile_id": "clen-led-pixel-bar-64",
+      "universe": 2,
+      "start_address": 1
+    }
+  ],
+  "cue_lists": [
+    {
+      "name": "Default",
+      "cues": [
+        {
+          "id": 0,
+          "name": "Arm",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:00:00",
+          "is_blocking": false
+        },
+        {
+          "id": 1,
+          "name": "Cue 1",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:01:00",
+          "is_blocking": false
+        },
+        {
+          "id": 2,
+          "name": "Cue 2",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:10:00",
+          "is_blocking": false
+        },
+        {
+          "id": 3,
+          "name": "Cue 3",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Strobe",
+              "value": 180
+            }
+          ],
+          "effects": [],
+          "timecode": "00:00:16:10",
+          "is_blocking": false
+        },
+        {
+          "id": 4,
+          "name": "Chorus",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Strobe",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 127
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 127
+            }
+          ],
+          "effects": [],
+          "timecode": "00:01:20:00",
+          "is_blocking": false
+        },
+        {
+          "id": 5,
+          "name": "Drop",
+          "fade_time": {
+            "secs": 5,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 80
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Strobe",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 127
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 127
+            }
+          ],
+          "effects": [],
+          "timecode": "00:04:02:00",
+          "is_blocking": false
+        },
+        {
+          "id": 6,
+          "name": "PAR Strobe",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Strobe",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "White",
+              "value": 255
+            }
+          ],
+          "effects": [],
+          "timecode": null,
+          "is_blocking": false
+        },
+        {
+          "id": 7,
+          "name": "Spot Tilt Sweep",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 5,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Red",
+              "value": 103
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Color",
+              "value": 103
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Red",
+              "value": 103
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Color",
+              "value": 103
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Green",
+              "value": 127
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Green",
+              "value": 127
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Pan",
+              "value": 105
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Pan",
+              "value": 105
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Tilt",
+              "value": 245
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Tilt",
+              "value": 245
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on Left Spot, Right Spot",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 0.4740234613418579,
+                  "phase": 0.4972330629825592
+                }
+              },
+              "fixture_ids": [5, 6],
+              "channel_type": "Pan",
+              "distribution": "All"
+            }
+          ],
+          "timecode": null,
+          "is_blocking": false
+        }
+      ],
+      "audio_file": null
+    },
+    {
+      "name": "Intro",
+      "cues": [
+        {
+          "id": 0,
+          "name": "Arm",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:00:00",
+          "is_blocking": false
+        },
+        {
+          "id": 1,
+          "name": "Make Luv",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Function",
+              "value": 201
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "FunctionSpeed",
+              "value": 100
+            }
+          ],
+          "effects": [],
+          "timecode": "00:00:01:00",
+          "is_blocking": false
+        }
+      ],
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/11 - Make Luv (Extended Mix).mp3"
+    },
+    {
+      "name": "Start",
+      "cues": [
+        {
+          "id": 0,
+          "name": "Arm",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:00:00",
+          "is_blocking": false
+        },
+        {
+          "id": 1,
+          "name": "Intro",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:01:00",
+          "is_blocking": false
+        },
+        {
+          "id": 2,
+          "name": "Tilt Beams",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 255
+            }
+          ],
+          "effects": [],
+          "timecode": "00:00:13:00",
+          "is_blocking": false
+        },
+        {
+          "id": 3,
+          "name": "Beams Cycle on DJ",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 127
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 127
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 255
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.9956380128860474,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [1, 2],
+              "channel_type": "Dimmer",
+              "distribution": {
+                "Step": 1
+              }
+            }
+          ],
+          "timecode": "00:00:20:00",
+          "is_blocking": false
+        },
+        {
+          "id": 4,
+          "name": "Purple Cycle - Center",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 139
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 139
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 139
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 139
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 130
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 130
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.02734375,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [2, 1],
+              "channel_type": "Dimmer",
+              "distribution": {
+                "Step": 1
+              }
+            }
+          ],
+          "timecode": "00:00:25:00",
+          "is_blocking": false
+        },
+        {
+          "id": 5,
+          "name": "Strobe",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 3,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 3,
+              "channel_type": "Strobe",
+              "value": 243
+            },
+            {
+              "fixture_id": 3,
+              "channel_type": "White",
+              "value": 255
+            }
+          ],
+          "effects": [],
+          "timecode": null,
+          "is_blocking": false
+        }
+      ],
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Ride on Time x PW.wav"
+    },
+    {
+      "name": "Build",
+      "cues": [
+        {
+          "id": 0,
+          "name": "Arm",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [],
+          "effects": [],
+          "timecode": "00:00:00:00",
+          "is_blocking": false
+        },
+        {
+          "id": 3,
+          "name": "Blue PAR Pulse",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 117
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 241
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "White",
+              "value": 20
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 241
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 46
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 241
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 46
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 255
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on LED PAR",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0],
+              "channel_type": "Dimmer",
+              "distribution": "All"
+            }
+          ],
+          "timecode": "00:00:01:00",
+          "is_blocking": false
+        },
+        {
+          "id": 4,
+          "name": "Piano Beams",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 241
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 241
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 46
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 46
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [1, 2],
+              "channel_type": "Dimmer",
+              "distribution": "All"
+            }
+          ],
+          "timecode": "00:00:31:00",
+          "is_blocking": false
+        },
+        {
+          "id": 5,
+          "name": "Piano Beams x Strobe",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Strobe",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "White",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 241
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 241
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 46
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 46
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 100
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 100
+            }
+          ],
+          "effects": [],
+          "timecode": "00:01:27:00",
+          "is_blocking": false
+        },
+        {
+          "id": 6,
+          "name": "Lola Drop",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 33
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 33
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 180
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 255
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Red",
+              "value": 98
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Color",
+              "value": 98
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Red",
+              "value": 98
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Color",
+              "value": 98
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Pan",
+              "value": 208
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Pan",
+              "value": 208
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Tilt",
+              "value": 222
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Tilt",
+              "value": 222
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [1, 2],
+              "channel_type": "Dimmer",
+              "distribution": {
+                "Step": 1
+              }
+            },
+            {
+              "name": "Sine Effect on Left Spot, Right Spot",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [5, 6],
+              "channel_type": "Pan",
+              "distribution": "All"
+            }
+          ],
+          "timecode": "00:01:32:00",
+          "is_blocking": false
+        },
+        {
+          "id": 7,
+          "name": "DJ Red",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 98
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Color",
+              "value": 98
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 208
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Tilt",
+              "value": 130
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Red",
+              "value": 98
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Color",
+              "value": 98
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Pan",
+              "value": 208
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": "Tilt",
+              "value": 130
+            },
+            {
+              "fixture_id": 2,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Red",
+              "value": 98
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Color",
+              "value": 98
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Pan",
+              "value": 208
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": "Tilt",
+              "value": 130
+            },
+            {
+              "fixture_id": 5,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Dimmer",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Strobe",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Red",
+              "value": 98
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Color",
+              "value": 98
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "White",
+              "value": 0
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Pan",
+              "value": 208
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": "Tilt",
+              "value": 130
+            },
+            {
+              "fixture_id": 6,
+              "channel_type": {
+                "Other": "beam"
+              },
+              "value": 0
+            }
+          ],
+          "effects": [],
+          "timecode": "00:07:00:00",
+          "is_blocking": false
+        }
+      ],
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Lolas Theme x Gimme x Hung Up.wav"
+    },
+    {
+      "name": "Slow to Fast",
+      "cues": [],
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Cold Heart vs Born Again vs EDN vs Hot Stuff.wav"
+    },
+    {
+      "name": "Finale",
+      "cues": [],
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/Daft Punk - One More Time (Official Audio).wav"
+    },
+    {
+      "name": "Encore",
+      "cues": [],
+      "audio_file": "/Users/robbym/go/src/github.com/robmorgan/halo/assets/music/The Horses (Remastered).wav"
+    }
+  ],
+  "version": "0.1.0"
+}
