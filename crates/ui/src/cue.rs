@@ -83,16 +83,22 @@ impl CuePanel {
             // Column headers for cue list
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Cue").strong());
-                ui.add_space(80.0); // Adjust spacing based on your UI needs
-
-                ui.label(egui::RichText::new("Timecode").strong());
-                ui.add_space(60.0);
-
-                ui.label(egui::RichText::new("Duration").strong());
-                ui.add_space(40.0);
-
-                ui.label(egui::RichText::new("Progress").strong());
+                ui.add_sized(
+                    [100.0, 20.0],
+                    egui::Label::new(egui::RichText::new("Cue").strong()),
+                );
+                ui.add_sized(
+                    [100.0, 20.0],
+                    egui::Label::new(egui::RichText::new("Timecode").strong()),
+                );
+                ui.add_sized(
+                    [80.0, 20.0],
+                    egui::Label::new(egui::RichText::new("Duration").strong()),
+                );
+                ui.add_sized(
+                    [200.0, 20.0],
+                    egui::Label::new(egui::RichText::new("Progress").strong()),
+                );
             });
             ui.separator();
 
@@ -144,13 +150,20 @@ impl CuePanel {
                                 ui.style().visuals.text_color() // Default color for all other cues
                             };
 
-                            // Cue name with fixed width
+                            // Cue name with fixed width and truncation
                             ui.scope(|ui| {
                                 ui.style_mut().spacing.item_spacing.x = 0.0;
+                                let truncated_name = if cue.name.len() > 12 {
+                                    format!("{}...", &cue.name[..9])
+                                } else {
+                                    cue.name.clone()
+                                };
                                 ui.add_sized(
                                     [100.0, 20.0],
                                     egui::Label::new(
-                                        egui::RichText::new(&cue.name).color(active_color).strong(),
+                                        egui::RichText::new(truncated_name)
+                                            .color(active_color)
+                                            .strong(),
                                     ),
                                 );
                             });
@@ -188,10 +201,11 @@ impl CuePanel {
                                 0.0
                             };
 
-                            ui.add(
+                            ui.add_sized(
+                                [200.0, 20.0],
                                 egui::ProgressBar::new(progress)
                                     .desired_width(200.0)
-                                    .desired_height(30.0)
+                                    .desired_height(20.0)
                                     .corner_radius(0.0)
                                     .animate(is_current_cue)
                                     .fill(if is_current_cue {
