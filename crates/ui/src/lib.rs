@@ -176,18 +176,21 @@ impl HaloApp {
 
         match self.active_tab {
             ActiveTab::Dashboard => {
-                egui::SidePanel::right("right_panel").show(ctx, |ui| {
-                    ui.set_min_width(400.0);
-                    self.session_panel_state
-                        .render(ui, &self.state, &self.console_tx);
-                    ui.separator();
+                egui::SidePanel::right("right_panel")
+                    .frame(egui::Frame::default().fill(egui::Color32::from_gray(20)))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(400.0);
 
-                    // Update cue panel state and render with auto-scroll
-                    self.cue_panel_state
-                        .set_playback_state(self.state.playback_state);
-                    self.cue_panel_state
-                        .render(ui, &self.state, &self.console_tx);
-                });
+                        self.session_panel_state
+                            .render(ui, &self.state, &self.console_tx);
+                        ui.separator();
+
+                        // Update cue panel state and render with auto-scroll
+                        self.cue_panel_state
+                            .set_playback_state(self.state.playback_state);
+                        self.cue_panel_state
+                            .render(ui, &self.state, &self.console_tx);
+                    });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.horizontal(|ui| {
