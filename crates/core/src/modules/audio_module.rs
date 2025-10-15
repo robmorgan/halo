@@ -235,16 +235,15 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
             }
 
             AudioCommand::Stop { response } => {
-                let result = if let Some(s) = &sink {
+                if let Some(s) = &sink {
                     s.stop();
                     sink = None;
                     current_file = None;
                     log::info!("Audio thread: Stopped playback");
-                    Ok(())
                 } else {
-                    Err("No audio file loaded".to_string())
-                };
-                let _ = response.send(result);
+                    log::info!("Audio thread: Stop requested but no audio file loaded");
+                }
+                let _ = response.send(Ok(()));
             }
 
             AudioCommand::Pause { response } => {
