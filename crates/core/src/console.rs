@@ -34,6 +34,7 @@ pub struct LightingConsole {
     // Async module system
     module_manager: ModuleManager,
     message_handler: Option<JoinHandle<()>>,
+    message_rx: Option<mpsc::Receiver<ModuleMessage>>,
 
     // MIDI overrides
     midi_overrides: HashMap<u8, MidiOverride>,
@@ -74,7 +75,11 @@ impl LightingConsole {
         module_manager.register_module(Box::new(DmxModule::new(network_config)));
         module_manager.register_module(Box::new(AudioModule::new()));
         module_manager.register_module(Box::new(SmpteModule::new(30))); // 30fps default
-        module_manager.register_module(Box::new(MidiModule::new("MPK49".to_string())));
+
+        // Only register MIDI module if enabled and device is not "None"
+        if settings.midi_enabled && settings.midi_device != "None" {
+            module_manager.register_module(Box::new(MidiModule::new(settings.midi_device.clone())));
+        }
 
         let show_manager = ShowManager::new()?;
 
@@ -88,6 +93,7 @@ impl LightingConsole {
             show_manager: Arc::new(RwLock::new(show_manager)),
             module_manager,
             message_handler: None,
+            message_rx: None,
             midi_overrides: HashMap::new(),
             active_overrides: HashMap::new(),
             rhythm_state: Arc::new(RwLock::new(RhythmState {
@@ -123,51 +129,14 @@ impl LightingConsole {
             .await
             .map_err(|e| anyhow::anyhow!("Module start failed: {}", e))?;
 
-        // Start message handling
-        if let Some(mut message_rx) = self.module_manager.take_message_receiver() {
-            let rhythm_state = Arc::clone(&self.rhythm_state);
-            let cue_manager = Arc::clone(&self.cue_manager);
-            let fixtures = Arc::clone(&self.fixtures);
-
-            let handle = tokio::spawn(async move {
-                while let Some(message) = message_rx.recv().await {
-                    Self::handle_module_message(message, &rhythm_state, &cue_manager, &fixtures)
-                        .await;
-                }
-            });
-
-            self.message_handler = Some(handle);
+        // Store message receiver for main loop processing
+        if let Some(message_rx) = self.module_manager.take_message_receiver() {
+            self.message_rx = Some(message_rx);
         }
 
         self.is_running = true;
         log::info!("Async lighting console initialized successfully");
         Ok(())
-    }
-
-    async fn handle_module_message(
-        message: ModuleMessage,
-        rhythm_state: &Arc<RwLock<RhythmState>>,
-        cue_manager: &Arc<RwLock<CueManager>>,
-        _fixtures: &Arc<RwLock<Vec<Fixture>>>,
-    ) {
-        match message {
-            ModuleMessage::Event(event) => {
-                match event {
-                    ModuleEvent::MidiInput(midi_msg) => {
-                        Self::handle_midi_input(midi_msg, rhythm_state, cue_manager).await;
-                    }
-                    _ => {
-                        // Handle other inter-module events as needed
-                    }
-                }
-            }
-            ModuleMessage::Status(status) => {
-                log::info!("Module status: {}", status);
-            }
-            ModuleMessage::Error(error) => {
-                log::error!("Module error: {}", error);
-            }
-        }
     }
 
     async fn handle_midi_input(
@@ -1499,6 +1468,37 @@ impl LightingConsole {
                     let tracking_state = self.tracking_state.read().await;
                     let active_effect_count = tracking_state.active_effect_count();
                     let _ = event_tx.send(ConsoleEvent::TrackingStateUpdated { active_effect_count });
+                }
+
+                // Process module messages (if available)
+                Some(message) = async {
+                    if let Some(rx) = self.message_rx.as_mut() {
+                        rx.recv().await
+                    } else {
+                        // Return a future that never resolves if no receiver
+                        std::future::pending().await
+                    }
+                } => {
+                    match message {
+                        ModuleMessage::Event(event) => {
+                            match event {
+                                ModuleEvent::MidiInput(midi_msg) => {
+                                    Self::handle_midi_input(midi_msg, &self.rhythm_state, &self.cue_manager).await;
+                                }
+                                _ => {
+                                    // Handle other inter-module events as needed
+                                }
+                            }
+                        }
+                        ModuleMessage::Status(status) => {
+                            log::info!("Module status: {}", status);
+                        }
+                        ModuleMessage::Error(error) => {
+                            log::error!("Module error: {}", error);
+                            // Send error to UI
+                            let _ = event_tx.send(ConsoleEvent::Error { message: error });
+                        }
+                    }
                 }
             }
         }
