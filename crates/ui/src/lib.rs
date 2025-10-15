@@ -198,10 +198,6 @@ impl HaloApp {
                     ui.horizontal(|ui| {
                         // Master Panel with overrides and master faders
                         master::render(ui, &self.state, &self.console_tx);
-
-                        ui.add_space(10.0);
-                        ui.separator();
-                        ui.add_space(10.0);
                     });
 
                     // Fixtures Grid

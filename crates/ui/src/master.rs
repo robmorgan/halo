@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use eframe::egui::{self, Color32, Pos2, Rect, Response, Sense, Stroke, Vec2};
 use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
@@ -52,51 +50,59 @@ pub fn render(
     state: &ConsoleState,
     console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
 ) {
-    ui.vertical(|ui| {
-        // Overrides section
-        ui.heading("OVERRIDES");
-        ui.add_space(5.0);
-
-        // Static override buttons (similar to main branch implementation)
-        ui.horizontal(|ui| {
-            // Red override
-            let red_button = draw_override_button(ui, "Red", Color32::RED, false, 120.0, 40.0);
-            if red_button.clicked() {
-                // TODO: Send override command
-            }
-
+    ui.horizontal(|ui| {
+        // Left side - Overrides section
+        ui.vertical(|ui| {
+            ui.heading("OVERRIDES");
             ui.add_space(5.0);
 
-            // Green override
-            let green_button =
-                draw_override_button(ui, "Green", Color32::GREEN, false, 120.0, 40.0);
-            if green_button.clicked() {
-                // TODO: Send override command
-            }
+            // Static override buttons (similar to main branch implementation)
+            ui.horizontal(|ui| {
+                // Red override
+                let red_button = draw_override_button(ui, "Red", Color32::RED, false, 120.0, 40.0);
+                if red_button.clicked() {
+                    // TODO: Send override command
+                }
 
-            ui.add_space(5.0);
+                ui.add_space(5.0);
 
-            // Blue override
-            let blue_button = draw_override_button(ui, "Blue", Color32::BLUE, false, 120.0, 40.0);
-            if blue_button.clicked() {
-                // TODO: Send override command
-            }
+                // Green override
+                let green_button =
+                    draw_override_button(ui, "Green", Color32::GREEN, false, 120.0, 40.0);
+                if green_button.clicked() {
+                    // TODO: Send override command
+                }
+
+                ui.add_space(5.0);
+
+                // Blue override
+                let blue_button =
+                    draw_override_button(ui, "Blue", Color32::BLUE, false, 120.0, 40.0);
+                if blue_button.clicked() {
+                    // TODO: Send override command
+                }
+            });
         });
 
-        ui.add_space(15.0);
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(10.0);
 
-        // Master faders section
-        ui.heading("MASTER");
-        ui.add_space(5.0);
+        // Right side - Master faders section
+        ui.vertical(|ui| {
+            ui.heading("MASTER");
+            ui.add_space(5.0);
 
-        // Master fader
-        draw_master_fader(ui, "Master", 1.0, Color32::from_rgb(150, 150, 150));
-        ui.add_space(15.0);
+            // Stack faders vertically
+            ui.vertical(|ui| {
+                // Master fader
+                draw_master_fader(ui, "Master", 1.0, Color32::from_rgb(150, 150, 150));
+                ui.add_space(10.0);
 
-        // Smoke fader
-        draw_master_fader(ui, "Smoke %", 0.75, Color32::from_rgb(100, 100, 100));
-
-        ui.add_space(20.0);
+                // Smoke fader
+                draw_master_fader(ui, "Smoke", 0.75, Color32::from_rgb(100, 100, 100));
+            });
+        });
     });
 }
 
@@ -154,13 +160,8 @@ fn draw_override_button(
 // Draw a single master fader
 fn draw_master_fader(ui: &mut egui::Ui, name: &str, mut value: f32, color: Color32) {
     ui.vertical(|ui| {
-        // Fader label and value
-        ui.horizontal(|ui| {
-            ui.label(name);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(format!("{:.0}%", value * 100.0));
-            });
-        });
+        // Fader label with percentage immediately following
+        ui.label(format!("{} {:.0}%", name, value * 100.0));
 
         // Fader slider
         let response = ui.add(
