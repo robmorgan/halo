@@ -1218,6 +1218,17 @@ impl LightingConsole {
                     .write()
                     .await
                     .add_value(fixture_id, channel_type, value);
+
+                // Send updated programmer values to UI
+                let programmer = self.programmer.read().await;
+                let values: Vec<(usize, String, u8)> = programmer
+                    .get_values()
+                    .iter()
+                    .map(|v| (v.fixture_id, v.channel_type.to_string(), v.value))
+                    .collect();
+                drop(programmer);
+
+                let _ = event_tx.send(ConsoleEvent::ProgrammerValuesUpdated { values });
             }
             SetProgrammerPreviewMode { preview_mode } => {
                 self.programmer.write().await.set_preview_mode(preview_mode);
@@ -1267,6 +1278,9 @@ impl LightingConsole {
             }
             ClearProgrammer => {
                 self.programmer.write().await.clear();
+
+                // Send empty programmer values to UI
+                let _ = event_tx.send(ConsoleEvent::ProgrammerValuesUpdated { values: Vec::new() });
             }
             RecordProgrammerToCue {
                 cue_name,

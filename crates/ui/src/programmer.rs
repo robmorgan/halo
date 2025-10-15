@@ -331,6 +331,9 @@ impl ProgrammerState {
         state: &ConsoleState,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
+        // Sync all current dashboard programmer values to console
+        self.sync_all_values_to_console(console_tx);
+
         // Render the record dialog if needed
         self.render_record_dialog(ctx, console_tx);
 
@@ -433,11 +436,15 @@ impl ProgrammerState {
 
     // Helper method to render the parameter grid
     fn render_parameter_grid(&self, ui: &mut egui::Ui, state: &ConsoleState) {
+        if state.programmer_values.is_empty() {
+            ui.label("No values in programmer");
+            return;
+        }
+
         // Collect all unique channels and group fixtures by type
         let mut channels = std::collections::HashSet::new();
         let mut fixtures_by_type: HashMap<FixtureType, Vec<(usize, String)>> = HashMap::new();
 
-        // First, collect from console state programmer values
         for ((fixture_id, channel), _value) in &state.programmer_values {
             channels.insert(channel.clone());
 
@@ -447,25 +454,6 @@ impl ProgrammerState {
                     .or_insert_with(Vec::new)
                     .push((fixture.id, fixture.name.clone()));
             }
-        }
-
-        // Also collect from dashboard programmer's local params for selected fixtures
-        for &fixture_id in &self.selected_fixtures {
-            for channel in self.params.keys() {
-                channels.insert(channel.clone());
-
-                if let Some(fixture) = state.fixtures.get(&fixture_id.to_string()) {
-                    fixtures_by_type
-                        .entry(fixture.profile.fixture_type.clone())
-                        .or_insert_with(Vec::new)
-                        .push((fixture.id, fixture.name.clone()));
-                }
-            }
-        }
-
-        if channels.is_empty() {
-            ui.label("No values in programmer");
-            return;
         }
 
         // Sort channels for consistent column order
@@ -1059,6 +1047,23 @@ impl ProgrammerState {
                     channel: channel.clone(),
                     value: *value as u8,
                 });
+            }
+        }
+    }
+
+    /// Sync all current dashboard programmer values to the console
+    /// This ensures the full view shows the current state of the dashboard programmer
+    fn sync_all_values_to_console(&self, console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
+        for &fixture_id in &self.selected_fixtures {
+            for (channel, value) in &self.params {
+                // Only send non-zero values to avoid cluttering the console state
+                if *value > 0.0 {
+                    let _ = console_tx.send(ConsoleCommand::SetProgrammerValue {
+                        fixture_id,
+                        channel: channel.clone(),
+                        value: *value as u8,
+                    });
+                }
             }
         }
     }
