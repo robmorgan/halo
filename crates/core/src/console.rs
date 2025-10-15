@@ -1121,9 +1121,36 @@ impl LightingConsole {
                         message: format!("Failed to seek audio: {}", e),
                     });
                 } else {
+                    // Update cue manager timing to reflect new position
+                    let mut cue_manager = self.cue_manager.write().await;
+
+                    // Update show elapsed time to the seek position
+                    cue_manager.show_elapsed_time = position_seconds;
+
+                    // Adjust show start time so that elapsed time calculation reflects the new
+                    // position
+                    if cue_manager.show_start_time.is_some() {
+                        let now = std::time::Instant::now();
+                        let adjusted_start_time =
+                            now - std::time::Duration::from_secs_f64(position_seconds);
+                        cue_manager.show_start_time = Some(adjusted_start_time);
+                    }
+
                     // Update timecode to reflect new position
                     let new_timecode = TimeCode::from_seconds(position_seconds, 30);
-                    self.cue_manager.write().await.current_timecode = Some(new_timecode);
+                    cue_manager.current_timecode = Some(new_timecode);
+
+                    // Check if we need to jump to a different cue based on the new timecode
+                    if let Some(target_cue_idx) = cue_manager.find_cue_by_timecode(&new_timecode) {
+                        if target_cue_idx != cue_manager.get_current_cue_index() {
+                            if let Err(e) = cue_manager.jump_to_cue(target_cue_idx) {
+                                log::warn!("Failed to jump to cue {}: {}", target_cue_idx, e);
+                            } else {
+                                log::info!("Seek triggered cue jump to cue {}", target_cue_idx);
+                            }
+                        }
+                    }
+
                     let _ = event_tx.send(ConsoleEvent::TimecodeUpdated {
                         timecode: new_timecode,
                     });

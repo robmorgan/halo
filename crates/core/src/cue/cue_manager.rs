@@ -406,6 +406,69 @@ impl CueManager {
             });
         }
     }
+
+    /// Find the appropriate cue index based on a timecode position
+    /// Returns the index of the cue that should be active at the given timecode
+    pub fn find_cue_by_timecode(&self, timecode: &TimeCode) -> Option<usize> {
+        let cue_list = self.get_current_cue_list()?;
+        let target_seconds = timecode.to_seconds();
+
+        // Find the last cue whose timecode is <= the target timecode
+        let mut best_cue_idx = None;
+        let mut best_timecode_seconds = 0.0;
+
+        for (idx, cue) in cue_list.cues.iter().enumerate() {
+            if let Some(cue_timecode_str) = &cue.timecode {
+                let mut cue_timecode = TimeCode::default();
+                if cue_timecode.from_string(cue_timecode_str).is_ok() {
+                    let cue_seconds = cue_timecode.to_seconds();
+                    if cue_seconds <= target_seconds && cue_seconds >= best_timecode_seconds {
+                        best_cue_idx = Some(idx);
+                        best_timecode_seconds = cue_seconds;
+                    }
+                }
+            }
+        }
+
+        best_cue_idx
+    }
+
+    /// Jump to a specific cue by index
+    pub fn jump_to_cue(&mut self, cue_index: usize) -> Result<(), String> {
+        // Check bounds first
+        if self.current_cue_list >= self.cue_lists.len() {
+            return Err("No current cue list".to_string());
+        }
+
+        let cue_list = &self.cue_lists[self.current_cue_list];
+        if cue_index >= cue_list.cues.len() {
+            return Err(format!(
+                "Cue index {} out of range (max: {})",
+                cue_index,
+                cue_list.cues.len() - 1
+            ));
+        }
+
+        // Update current cue index
+        self.current_cue = cue_index;
+
+        // Reset cue timing
+        self.current_cue_start_time = Some(Instant::now());
+        self.current_cue_elapsed_time = 0.0;
+        self.progress = 0.0;
+
+        log::info!(
+            "Jumped to cue {}: {}",
+            cue_index,
+            cue_list.cues[cue_index].name
+        );
+        Ok(())
+    }
+
+    /// Get the current cue index (public accessor)
+    pub fn get_current_cue_index(&self) -> usize {
+        self.current_cue
+    }
 }
 
 impl Clone for CueManager {
