@@ -26,7 +26,7 @@ pub struct Fixture {
     pub pan_tilt_limits: Option<PanTiltLimits>,
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum FixtureType {
     #[default]
     MovingHead,
