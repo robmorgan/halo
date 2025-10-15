@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::thread;
 
 use async_trait::async_trait;
-use rodio::{Decoder, OutputStream, Sink};
+use rodio::{Decoder, OutputStreamBuilder, Sink};
 use tokio::sync::{mpsc, oneshot};
 
 use super::traits::{AsyncModule, ModuleEvent, ModuleId, ModuleMessage};
@@ -172,22 +172,13 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
     log::info!("Audio thread starting");
 
     // Create the OutputStream - this must live for the entire thread lifetime
-    let (_stream, stream_handle) = match OutputStream::try_default() {
-        Ok((stream, handle)) => {
+    let stream_handle = match OutputStreamBuilder::open_default_stream() {
+        Ok(handle) => {
             log::info!("Successfully created audio output stream");
-            (stream, handle)
+            handle
         }
         Err(e) => {
             log::error!("Failed to create audio output stream: {e}");
-            match e {
-                rodio::StreamError::NoDevice => {
-                    log::error!("No audio device available. This is a common issue on macOS.");
-                    log::error!("Try: sudo killall coreaudiod");
-                }
-                _ => {
-                    log::error!("Audio stream creation failed: {e}");
-                }
-            }
             return;
         }
     };
@@ -208,8 +199,7 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
 
                 let result = (|| -> Result<(), String> {
                     // Create a new sink
-                    let new_sink = Sink::try_new(&stream_handle)
-                        .map_err(|e| format!("Failed to create audio sink: {e}"))?;
+                    let new_sink = Sink::connect_new(stream_handle.mixer());
 
                     // Open and decode the audio file
                     let file = File::open(&file_path)

@@ -3,11 +3,10 @@ use std::io::BufReader;
 use std::path::Path;
 use std::time::Duration;
 
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink};
 
 pub struct AudioPlayer {
-    _stream: OutputStream,
-    stream_handle: OutputStreamHandle,
+    _stream_handle: OutputStream,
     sink: Option<Sink>,
     current_file: Option<String>,
     volume: f32,
@@ -15,12 +14,11 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new() -> Result<Self, String> {
-        let (stream, stream_handle) = OutputStream::try_default()
+        let stream_handle = OutputStreamBuilder::open_default_stream()
             .map_err(|e| format!("Failed to open audio output stream: {}", e))?;
 
         Ok(AudioPlayer {
-            _stream: stream,
-            stream_handle,
+            _stream_handle: stream_handle,
             sink: None,
             current_file: None,
             volume: 1.0,
@@ -31,8 +29,7 @@ impl AudioPlayer {
         let path_str = path.as_ref().to_string_lossy().to_string();
 
         // Create a new sink
-        let sink = Sink::try_new(&self.stream_handle)
-            .map_err(|e| format!("Failed to create audio sink: {}", e))?;
+        let sink = Sink::connect_new(self._stream_handle.mixer());
 
         // Open the audio file
         let file = File::open(&path).map_err(|e| format!("Failed to open audio file: {}", e))?;
