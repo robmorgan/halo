@@ -27,29 +27,6 @@ pub fn render(
 
         ui.add_space(20.0);
 
-        // Timecode display
-        if let Some(timecode) = &state.timecode {
-            ui.label("Timecode:");
-            ui.strong(format!("{:?}", timecode));
-        } else {
-            ui.label("No timecode");
-        }
-
-        ui.add_space(20.0);
-
-        // Playback controls
-        if ui.button("Play").clicked() {
-            let _ = console_tx.send(ConsoleCommand::Play);
-        }
-        if ui.button("Stop").clicked() {
-            let _ = console_tx.send(ConsoleCommand::Stop);
-        }
-        if ui.button("Pause").clicked() {
-            let _ = console_tx.send(ConsoleCommand::Pause);
-        }
-
-        ui.add_space(20.0);
-
         // Expand/collapse toggle
         let toggle_text = if timeline_state.is_expanded {
             "▼"
@@ -58,21 +35,6 @@ pub fn render(
         };
         if ui.button(toggle_text).clicked() {
             timeline_state.is_expanded = !timeline_state.is_expanded;
-        }
-
-        ui.add_space(20.0);
-
-        // Quick timeline visualization
-        if let Some(cue_list) = state.cue_lists.first() {
-            ui.label("Cues:");
-            for (idx, cue) in cue_list.cues.iter().take(3).enumerate() {
-                ui.label(format!("{}:{}", idx + 1, cue.name));
-            }
-            if cue_list.cues.len() > 3 {
-                ui.label("...");
-            }
-        } else {
-            ui.label("No cue list available");
         }
     });
 
@@ -136,19 +98,6 @@ fn draw_timeline_content(
         }
     }
 
-    // Get BPM for gridlines (prefer audio BPM, fallback to state BPM)
-    let bpm = state.audio_bpm.unwrap_or(state.bpm);
-    let beats_per_bar = state.rhythm_state.beats_per_bar as f64;
-
-    // Draw beat/bar gridlines
-    draw_gridlines(
-        painter,
-        rect,
-        bpm,
-        beats_per_bar,
-        waveform_data.duration_seconds,
-    );
-
     // Draw waveform
     draw_waveform(painter, rect, waveform_data);
 
@@ -165,52 +114,6 @@ fn draw_timeline_content(
             ],
             Stroke::new(2.0, Color32::from_rgb(255, 100, 50)),
         );
-    }
-}
-
-fn draw_gridlines(
-    painter: &Painter,
-    rect: Rect,
-    bpm: f64,
-    beats_per_bar: f64,
-    duration_seconds: f64,
-) {
-    let width = rect.width();
-    let beat_duration = 60.0 / bpm; // seconds per beat
-    let bar_duration = beat_duration * beats_per_bar; // seconds per bar
-
-    // Draw beat lines (subtle)
-    let mut beat_time = 0.0;
-    while beat_time <= duration_seconds {
-        let time_ratio = beat_time / duration_seconds;
-        let x = rect.min.x + (time_ratio * width as f64) as f32;
-
-        painter.line_segment(
-            [
-                eframe::egui::pos2(x, rect.min.y),
-                eframe::egui::pos2(x, rect.max.y),
-            ],
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 50)),
-        );
-
-        beat_time += beat_duration;
-    }
-
-    // Draw bar lines (brighter)
-    let mut bar_time = 0.0;
-    while bar_time <= duration_seconds {
-        let time_ratio = bar_time / duration_seconds;
-        let x = rect.min.x + (time_ratio * width as f64) as f32;
-
-        painter.line_segment(
-            [
-                eframe::egui::pos2(x, rect.min.y),
-                eframe::egui::pos2(x, rect.max.y),
-            ],
-            Stroke::new(2.0, Color32::from_rgba_unmultiplied(255, 255, 255, 120)),
-        );
-
-        bar_time += bar_duration;
     }
 }
 

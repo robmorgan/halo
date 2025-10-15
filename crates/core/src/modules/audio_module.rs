@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
-use std::thread;
+use std::{io, thread};
 
 use async_trait::async_trait;
 use rodio::{Decoder, OutputStreamBuilder, Sink};
@@ -220,11 +219,12 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
                     // Create a new sink
                     let new_sink = Sink::connect_new(stream_handle.mixer());
 
-                    // Open and decode the audio file
+                    // Open the audio file
                     let file = File::open(&file_path)
                         .map_err(|e| format!("Failed to open audio file: {e}"))?;
-                    let reader = BufReader::new(file);
-                    let source = Decoder::new(reader)
+
+                    // Create decoder using try_from for seeking support
+                    let source = Decoder::try_from(file)
                         .map_err(|e| format!("Failed to decode audio file: {e}"))?;
 
                     // Add source to sink and configure
@@ -236,7 +236,7 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
                     sink = Some(new_sink);
                     current_file = Some(file_path.to_string_lossy().to_string());
 
-                    log::info!("Audio thread: File loaded and playing");
+                    log::info!("Audio thread: File loaded and playing with seeking support");
                     Ok(())
                 })();
 
