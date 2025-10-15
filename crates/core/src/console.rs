@@ -1398,14 +1398,6 @@ impl LightingConsole {
     ) -> Result<(), anyhow::Error> {
         log::info!("Console run_with_channels starting...");
 
-        // Initialize the console
-        log::info!("Initializing console...");
-        self.initialize().await?;
-        log::info!("Console initialized successfully");
-
-        let _ = event_tx.send(ConsoleEvent::Initialized);
-        log::info!("Sent Initialized event");
-
         // Start the update loop
         let mut update_interval = tokio::time::interval(std::time::Duration::from_millis(23)); // ~44Hz
         log::info!("Starting console main loop...");
