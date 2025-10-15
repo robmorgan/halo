@@ -51,15 +51,57 @@ pub struct StaticValue {
     pub value: u8,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct EffectMapping {
     pub name: String,
     pub effect: Effect,
     pub fixture_ids: Vec<usize>,
-    pub channel_type: ChannelType,
+    pub channel_types: Vec<ChannelType>,
     pub distribution: EffectDistribution,
     #[serde(default)]
     pub release: EffectRelease,
+}
+
+impl<'de> Deserialize<'de> for EffectMapping {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct EffectMappingHelper {
+            name: String,
+            effect: Effect,
+            fixture_ids: Vec<usize>,
+            #[serde(flatten)]
+            channel_data: ChannelData,
+            distribution: EffectDistribution,
+            #[serde(default)]
+            release: EffectRelease,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum ChannelData {
+            Old { channel_type: ChannelType },
+            New { channel_types: Vec<ChannelType> },
+        }
+
+        let helper = EffectMappingHelper::deserialize(deserializer)?;
+
+        let channel_types = match helper.channel_data {
+            ChannelData::Old { channel_type } => vec![channel_type],
+            ChannelData::New { channel_types } => channel_types,
+        };
+
+        Ok(EffectMapping {
+            name: helper.name,
+            effect: helper.effect,
+            fixture_ids: helper.fixture_ids,
+            channel_types,
+            distribution: helper.distribution,
+            release: helper.release,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

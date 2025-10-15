@@ -99,6 +99,12 @@ impl TrackingState {
     pub fn active_effect_count(&self) -> usize {
         self.active_effects.len() + self.active_pixel_effects.len()
     }
+
+    /// Add or update an effect in the tracking state
+    pub fn add_effect(&mut self, effect_mapping: EffectMapping) {
+        self.active_effects
+            .insert(effect_mapping.name.clone(), effect_mapping);
+    }
 }
 
 impl Default for TrackingState {

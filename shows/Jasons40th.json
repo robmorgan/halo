@@ -1451,7 +1451,7 @@
                 }
               },
               "fixture_ids": [5, 6],
-              "channel_type": "Pan",
+              "channel_types": ["Pan", "Tilt"],
               "distribution": "All"
             }
           ],

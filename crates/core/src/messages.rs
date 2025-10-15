@@ -175,7 +175,7 @@ pub enum ConsoleCommand {
     ClearProgrammer,
     ApplyProgrammerEffect {
         fixture_ids: Vec<usize>,
-        channel_type: String,
+        channel_types: Vec<String>,
         effect_type: EffectType,
         waveform: u8,
         interval: u8,

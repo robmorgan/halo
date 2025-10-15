@@ -338,7 +338,9 @@ impl LightingConsole {
                     // Apply same value to all fixtures
                     for fixture_id in &effect_mapping.fixture_ids {
                         if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
-                            fixture.set_channel_value(&effect_mapping.channel_type, scaled_value);
+                            for channel_type in &effect_mapping.channel_types {
+                                fixture.set_channel_value(channel_type, scaled_value);
+                            }
                         }
                     }
                 }
@@ -350,7 +352,9 @@ impl LightingConsole {
                         let step_value = (min + (max - min) * step_normalized) as u8;
 
                         if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
-                            fixture.set_channel_value(&effect_mapping.channel_type, step_value);
+                            for channel_type in &effect_mapping.channel_types {
+                                fixture.set_channel_value(channel_type, step_value);
+                            }
                         }
                     }
                 }
@@ -362,7 +366,9 @@ impl LightingConsole {
                         let wave_value = (min + (max - min) * wave_normalized) as u8;
 
                         if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
-                            fixture.set_channel_value(&effect_mapping.channel_type, wave_value);
+                            for channel_type in &effect_mapping.channel_types {
+                                fixture.set_channel_value(channel_type, wave_value);
+                            }
                         }
                     }
                 }
@@ -1237,7 +1243,7 @@ impl LightingConsole {
             }
             ApplyProgrammerEffect {
                 fixture_ids,
-                channel_type,
+                channel_types,
                 effect_type,
                 waveform,
                 interval,
@@ -1247,11 +1253,55 @@ impl LightingConsole {
                 step_value,
                 wave_offset,
             } => {
-                // TODO: Implement programmer effect application
-                println!(
-                    "Applying programmer effect: {:?} to fixtures {:?}",
-                    effect_type, fixture_ids
-                );
+                // Convert string channel types to ChannelType enum
+                let channel_types_enum: Vec<halo_fixtures::ChannelType> = channel_types
+                    .iter()
+                    .map(|s| Self::channel_string_to_type(s))
+                    .collect();
+
+                // Convert UI parameters to effect parameters
+                let interval_enum = match interval {
+                    0 => crate::Interval::Beat,
+                    1 => crate::Interval::Bar,
+                    2 => crate::Interval::Phrase,
+                    _ => crate::Interval::Beat,
+                };
+
+                let distribution_enum = match distribution {
+                    0 => crate::EffectDistribution::All,
+                    1 => crate::EffectDistribution::Step(step_value.unwrap_or(1)),
+                    2 => crate::EffectDistribution::Wave(wave_offset.unwrap_or(0.0) as f64),
+                    _ => crate::EffectDistribution::All,
+                };
+
+                // Create the effect
+                let effect = crate::Effect {
+                    effect_type,
+                    min: 0,
+                    max: 255,
+                    amplitude: 1.0,
+                    frequency: 1.0,
+                    offset: 0.0,
+                    params: crate::EffectParams {
+                        interval: interval_enum,
+                        interval_ratio: ratio as f64,
+                        phase: phase as f64,
+                    },
+                };
+
+                // Create effect mapping
+                let effect_mapping = crate::EffectMapping {
+                    name: format!("Programmer_{}_{}", effect_type.as_str(), fixture_ids.len()),
+                    effect,
+                    fixture_ids,
+                    channel_types: channel_types_enum,
+                    distribution: distribution_enum,
+                    release: crate::EffectRelease::Hold,
+                };
+
+                // Add to tracking state
+                let mut tracking_state = self.tracking_state.write().await;
+                tracking_state.add_effect(effect_mapping);
             }
 
             // Query commands

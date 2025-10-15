@@ -29,6 +29,9 @@ pub struct TabEffectConfig {
     pub effect_distribution: u8,
     pub effect_step_value: usize,
     pub effect_wave_offset: f32,
+    // Channel selection for position effects
+    pub pan_selected: bool,
+    pub tilt_selected: bool,
 }
 
 impl Default for TabEffectConfig {
@@ -41,6 +44,8 @@ impl Default for TabEffectConfig {
             effect_distribution: 0,
             effect_step_value: 1,
             effect_wave_offset: 0.0,
+            pan_selected: true,
+            tilt_selected: true,
         }
     }
 }
@@ -1019,6 +1024,22 @@ impl ProgrammerState {
                     }
                 }
             });
+
+            ui.add_space(spacing);
+
+            // Channel selection for effects
+            ui.vertical(|ui| {
+                ui.label("Effect Channels");
+                ui.add_space(5.0);
+
+                let active_tab = self.active_tab.clone();
+                let tab_effect_mut = self.tab_effects.get_mut(&active_tab);
+
+                if let Some(tab_effect) = tab_effect_mut {
+                    ui.checkbox(&mut tab_effect.pan_selected, "Pan");
+                    ui.checkbox(&mut tab_effect.tilt_selected, "Tilt");
+                }
+            });
         });
     }
 
@@ -1270,17 +1291,26 @@ impl ProgrammerState {
                         _ => EffectType::Sine,
                     };
 
-                    let channel_type = match self.active_tab {
-                        ActiveProgrammerTab::Intensity => "dimmer".to_string(),
-                        ActiveProgrammerTab::Color => "color".to_string(),
-                        ActiveProgrammerTab::Position => "pan".to_string(),
-                        ActiveProgrammerTab::Beam => "beam".to_string(),
-                        ActiveProgrammerTab::PixelEffects => "pixel".to_string(),
+                    let channel_types = match self.active_tab {
+                        ActiveProgrammerTab::Intensity => vec!["dimmer".to_string()],
+                        ActiveProgrammerTab::Color => vec!["color".to_string()],
+                        ActiveProgrammerTab::Position => {
+                            let mut channels = Vec::new();
+                            if tab_effect.pan_selected {
+                                channels.push("pan".to_string());
+                            }
+                            if tab_effect.tilt_selected {
+                                channels.push("tilt".to_string());
+                            }
+                            channels
+                        }
+                        ActiveProgrammerTab::Beam => vec!["beam".to_string()],
+                        ActiveProgrammerTab::PixelEffects => vec!["pixel".to_string()],
                     };
 
                     let _ = console_tx.send(ConsoleCommand::ApplyProgrammerEffect {
                         fixture_ids: self.selected_fixtures.clone(),
-                        channel_type,
+                        channel_types,
                         effect_type,
                         waveform: tab_effect.effect_waveform,
                         interval: tab_effect.effect_interval,
