@@ -21,6 +21,13 @@ rodio = "0.21.1"
 cpal = "0.16"
 tokio = { version = "1.47.1", features = ["full"] }
 async-trait = "0.1"
+symphonia = { version = "0.5", features = [
+    "mp3",
+    "aac",
+    "flac",
+    "wav",
+    "vorbis",
+] }
 
 [dev-dependencies]
 tempfile = "3.0"

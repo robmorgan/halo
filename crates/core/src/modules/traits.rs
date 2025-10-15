@@ -25,6 +25,9 @@ pub enum ModuleEvent {
     AudioResume,
     AudioStop,
     AudioSetVolume(f32),
+    AudioSeek {
+        position_seconds: f64,
+    },
     /// SMPTE timecode sync
     SmpteSync {
         timecode: crate::timecode::timecode::TimeCode,

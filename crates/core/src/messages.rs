@@ -106,6 +106,9 @@ pub enum ConsoleCommand {
     SetTimecode {
         timecode: TimeCode,
     },
+    SeekAudio {
+        position_seconds: f64,
+    },
 
     // MIDI
     AddMidiOverride {
@@ -447,6 +450,11 @@ pub enum ConsoleEvent {
     },
     AudioDevicesList {
         devices: Vec<AudioDeviceInfo>,
+    },
+    WaveformAnalyzed {
+        waveform_data: crate::audio::waveform::WaveformData,
+        duration: f64,
+        bpm: Option<f64>,
     },
     FixtureLibraryList {
         profiles: Vec<(String, String)>, // (id, display_name)

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
+use halo_core::audio::waveform::WaveformData;
 use halo_core::{
     AudioDeviceInfo, ConsoleCommand, CueList, PlaybackState, RhythmState, Settings, Show, TimeCode,
 };
@@ -34,6 +35,9 @@ pub struct ConsoleState {
     pub fixture_library: FixtureLibrary,
     pub active_effects_count: usize,
     pub last_error: Option<String>,
+    pub audio_waveform: Option<WaveformData>,
+    pub audio_duration: Option<f64>,
+    pub audio_bpm: Option<f64>,
 }
 
 impl Default for ConsoleState {
@@ -72,6 +76,9 @@ impl Default for ConsoleState {
             fixture_library: FixtureLibrary::new(),
             active_effects_count: 0,
             last_error: None,
+            audio_waveform: None,
+            audio_duration: None,
+            audio_bpm: None,
         }
     }
 }
@@ -218,6 +225,15 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::Error { message } => {
                 self.last_error = Some(message);
+            }
+            halo_core::ConsoleEvent::WaveformAnalyzed {
+                waveform_data,
+                duration,
+                bpm,
+            } => {
+                self.audio_waveform = Some(waveform_data);
+                self.audio_duration = Some(duration);
+                self.audio_bpm = bpm;
             }
             _ => {
                 // Handle other events as needed

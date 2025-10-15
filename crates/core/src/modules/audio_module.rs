@@ -40,6 +40,11 @@ enum AudioCommand {
     GetStatus {
         response: oneshot::Sender<AudioStatus>,
     },
+    /// Seek to a specific position
+    Seek {
+        position_seconds: f64,
+        response: oneshot::Sender<Result<(), String>>,
+    },
     /// Shutdown the audio thread
     Shutdown,
 }
@@ -165,6 +170,20 @@ impl AudioModule {
             .await
             .map_err(|_| "Audio thread did not respond".to_string())
     }
+
+    /// Seek to a specific position
+    async fn seek(&mut self, position_seconds: f64) -> Result<(), String> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.send_command(AudioCommand::Seek {
+            position_seconds,
+            response: response_tx,
+        })
+        .await?;
+
+        response_rx
+            .await
+            .map_err(|_| "Audio thread did not respond".to_string())?
+    }
 }
 
 /// The audio thread worker that handles all rodio operations
@@ -281,6 +300,28 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
                     volume,
                 };
                 let _ = response.send(status);
+            }
+
+            AudioCommand::Seek {
+                position_seconds,
+                response,
+            } => {
+                let result = if let Some(s) = &sink {
+                    let position = std::time::Duration::from_secs_f64(position_seconds);
+                    match s.try_seek(position) {
+                        Ok(_) => {
+                            log::info!("Audio thread: Seeked to {position_seconds}s");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            log::warn!("Audio thread: Seek failed: {e}");
+                            Err(format!("Seek failed: {e}"))
+                        }
+                    }
+                } else {
+                    Err("No audio file loaded".to_string())
+                };
+                let _ = response.send(result);
             }
 
             AudioCommand::Shutdown => {
@@ -414,6 +455,20 @@ impl AsyncModule for AudioModule {
                     } else {
                         let _ = tx
                             .send(ModuleMessage::Status(format!("Volume set to {volume:.2}")))
+                            .await;
+                    }
+                }
+
+                ModuleEvent::AudioSeek { position_seconds } => {
+                    if let Err(e) = self.seek(position_seconds).await {
+                        let error_msg = format!("Failed to seek audio: {e}");
+                        log::error!("{error_msg}");
+                        let _ = tx.send(ModuleMessage::Error(error_msg)).await;
+                    } else {
+                        let _ = tx
+                            .send(ModuleMessage::Status(format!(
+                                "Seeked to {position_seconds:.2}s"
+                            )))
                             .await;
                     }
                 }

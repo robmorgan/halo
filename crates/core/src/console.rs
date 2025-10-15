@@ -18,6 +18,7 @@ use crate::pixel::PixelEngine;
 use crate::programmer::Programmer;
 use crate::rhythm::rhythm::RhythmState;
 use crate::show::show_manager::ShowManager;
+use crate::timecode::timecode::TimeCode;
 use crate::tracking_state::TrackingState;
 use crate::{AbletonLinkManager, CueList};
 
@@ -997,7 +998,31 @@ impl LightingConsole {
                     if let Some(audio_file) = &current_cue_list.audio_file {
                         println!("Found audio file for cuelist: {}", audio_file);
                         log::info!("Found audio file for cuelist: {}", audio_file);
-                        if let Err(e) = self.play_audio(audio_file.clone()).await {
+
+                        // Analyze waveform for timeline visualization
+                        if let Ok(waveform_data) =
+                            crate::audio::waveform::analyze_audio_file(audio_file)
+                        {
+                            let _ = event_tx.send(ConsoleEvent::WaveformAnalyzed {
+                                waveform_data: waveform_data.clone(),
+                                duration: waveform_data.duration_seconds,
+                                bpm: waveform_data.bpm,
+                            });
+                            log::info!("Waveform analysis completed for: {}", audio_file);
+                        } else {
+                            log::warn!("Failed to analyze waveform for: {}", audio_file);
+                        }
+
+                        if let Err(e) = self
+                            .module_manager
+                            .send_to_module(
+                                ModuleId::Audio,
+                                ModuleEvent::AudioPlay {
+                                    file_path: audio_file.clone(),
+                                },
+                            )
+                            .await
+                        {
                             println!("ERROR: Failed to play audio file {}: {}", audio_file, e);
                             log::error!("Failed to play audio file {}: {}", audio_file, e);
                         } else {
@@ -1083,6 +1108,26 @@ impl LightingConsole {
             SetTimecode { timecode } => {
                 self.cue_manager.write().await.current_timecode = Some(timecode);
                 let _ = event_tx.send(ConsoleEvent::TimecodeUpdated { timecode });
+            }
+            SeekAudio { position_seconds } => {
+                // Send seek command to audio module
+                if let Err(e) = self
+                    .module_manager
+                    .send_to_module(ModuleId::Audio, ModuleEvent::AudioSeek { position_seconds })
+                    .await
+                {
+                    log::error!("Failed to seek audio: {}", e);
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to seek audio: {}", e),
+                    });
+                } else {
+                    // Update timecode to reflect new position
+                    let new_timecode = TimeCode::from_seconds(position_seconds, 30);
+                    self.cue_manager.write().await.current_timecode = Some(new_timecode);
+                    let _ = event_tx.send(ConsoleEvent::TimecodeUpdated {
+                        timecode: new_timecode,
+                    });
+                }
             }
 
             // MIDI

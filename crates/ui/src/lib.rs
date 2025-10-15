@@ -59,6 +59,7 @@ pub struct HaloApp {
     session_panel_state: session::SessionPanel,
     cue_panel_state: cue::CuePanel,
     settings_panel: settings::SettingsPanel,
+    timeline_state: timeline::TimelineState,
 }
 
 impl HaloApp {
@@ -98,6 +99,7 @@ impl HaloApp {
             session_panel_state: session::SessionPanel::default(),
             cue_panel_state: cue::CuePanel::default(),
             settings_panel: settings::SettingsPanel::new(),
+            timeline_state: timeline::TimelineState::default(),
         }
     }
 
@@ -167,7 +169,7 @@ impl HaloApp {
             ui.separator();
 
             // Show timeline
-            timeline::render(ui, &self.state, &self.console_tx);
+            timeline::render(ui, &self.state, &mut self.timeline_state, &self.console_tx);
             ui.separator();
 
             // Show footer status

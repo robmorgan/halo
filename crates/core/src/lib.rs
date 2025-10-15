@@ -29,7 +29,7 @@ pub use tracking_state::TrackingState;
 
 mod ableton_link;
 mod artnet;
-mod audio;
+pub mod audio;
 mod config;
 mod console;
 
