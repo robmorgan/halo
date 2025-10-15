@@ -10,6 +10,10 @@ use crate::state::ConsoleState;
 #[derive(Default)]
 pub struct CuePanel {
     playback_state: PlaybackState,
+    /// Track if we need to scroll to the current cue
+    needs_scroll_to_current: bool,
+    /// Track the last cue index to detect changes
+    last_cue_index: usize,
 }
 
 impl CuePanel {
@@ -111,7 +115,35 @@ impl CuePanel {
         if let Some(current_list) = cue_lists.get(state.current_cue_list_index) {
             let cues = &current_list.cues;
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            // Check if we need to scroll to the current cue
+            let current_cue_changed = self.playback_state != state.playback_state
+                || (state.playback_state == PlaybackState::Playing && self.needs_scroll_to_current)
+                || (state.playback_state == PlaybackState::Playing
+                    && self.last_cue_index != state.current_cue_index);
+
+            if current_cue_changed {
+                self.needs_scroll_to_current = false;
+                self.last_cue_index = state.current_cue_index;
+            }
+
+            // Create scroll area with auto-scroll capability
+            let mut scroll_area = egui::ScrollArea::vertical();
+
+            // If we need to scroll to current cue and it's playing, scroll to it
+            if current_cue_changed && state.playback_state == PlaybackState::Playing {
+                let target_cue_index = state.current_cue_index;
+                if target_cue_index < cues.len() {
+                    // Calculate scroll position with some padding to center the cue
+                    let cue_row_height = 22.0;
+                    let visible_height = ui.available_height();
+                    let target_scroll_offset = (target_cue_index as f32 * cue_row_height)
+                        .max(0.0)
+                        .min((target_cue_index as f32 * cue_row_height) - (visible_height / 2.0));
+                    scroll_area = scroll_area.vertical_scroll_offset(target_scroll_offset);
+                }
+            }
+
+            scroll_area.show(ui, |ui| {
                 for (cue_index, cue) in cues.iter().enumerate() {
                     ui.horizontal(|ui| {
                         // Check if this is the current active cue
@@ -201,7 +233,13 @@ impl CuePanel {
     }
 
     pub fn set_playback_state(&mut self, state: PlaybackState) {
-        self.playback_state = state;
+        if self.playback_state != state {
+            self.playback_state = state;
+            // Trigger auto-scroll when playback state changes to playing
+            if state == PlaybackState::Playing {
+                self.needs_scroll_to_current = true;
+            }
+        }
     }
 
     fn format_duration(duration: Duration) -> String {
@@ -210,14 +248,4 @@ impl CuePanel {
         let seconds = total_secs % 60;
         format!("{:02}:{:02}", minutes, seconds)
     }
-}
-
-pub fn render(
-    ui: &mut eframe::egui::Ui,
-    state: &ConsoleState,
-    console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
-) {
-    let mut cue_panel = CuePanel::default();
-    cue_panel.set_playback_state(state.playback_state);
-    cue_panel.render(ui, state, console_tx);
 }

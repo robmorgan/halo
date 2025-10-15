@@ -1181,9 +1181,6 @@ impl LightingConsole {
             SetProgrammerPreviewMode { preview_mode } => {
                 self.programmer.write().await.set_preview_mode(preview_mode);
             }
-            SetProgrammerCollapsed { collapsed: _ } => {
-                // TODO: Handle collapsed state in UI state
-            }
             SetSelectedFixtures { fixture_ids } => {
                 self.programmer
                     .write()
@@ -1192,7 +1189,6 @@ impl LightingConsole {
                 let programmer = self.programmer.read().await;
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures: fixture_ids,
                 });
             }
@@ -1205,7 +1201,6 @@ impl LightingConsole {
                 let selected_fixtures = programmer.get_selected_fixtures().clone();
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures,
                 });
             }
@@ -1218,7 +1213,6 @@ impl LightingConsole {
                 let selected_fixtures = programmer.get_selected_fixtures().clone();
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures,
                 });
             }
@@ -1227,7 +1221,6 @@ impl LightingConsole {
                 let programmer = self.programmer.read().await;
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures: Vec::new(),
                 });
             }

@@ -155,9 +155,6 @@ pub enum ConsoleCommand {
     SetProgrammerPreviewMode {
         preview_mode: bool,
     },
-    SetProgrammerCollapsed {
-        collapsed: bool,
-    },
     SetSelectedFixtures {
         fixture_ids: Vec<usize>,
     },
@@ -408,7 +405,6 @@ pub enum ConsoleEvent {
     // Programmer events
     ProgrammerStateUpdated {
         preview_mode: bool,
-        collapsed: bool,
         selected_fixtures: Vec<usize>,
     },
     ProgrammerValuesUpdated {

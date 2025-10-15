@@ -163,7 +163,6 @@ impl ProgrammerState {
     /// Sync programmer state from console state
     pub fn sync_from_console_state(&mut self, console_state: &ConsoleState) {
         self.preview_mode = console_state.programmer_preview_mode;
-        self.collapsed = console_state.programmer_collapsed;
     }
 
     // Main rendering function for the programmer panel
@@ -179,9 +178,6 @@ impl ProgrammerState {
                 let collapse_icon = if self.collapsed { "▶" } else { "▼" };
                 if ui.button(collapse_icon).clicked() {
                     self.collapsed = !self.collapsed;
-                    let _ = console_tx.send(ConsoleCommand::SetProgrammerCollapsed {
-                        collapsed: self.collapsed,
-                    });
                 }
 
                 ui.heading("PROGRAMMER");

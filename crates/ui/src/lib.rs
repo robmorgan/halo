@@ -57,6 +57,7 @@ pub struct HaloApp {
     patch_panel_state: patch_panel::PatchPanelState,
     show_panel_state: show_panel::ShowPanelState,
     session_panel_state: session::SessionPanel,
+    cue_panel_state: cue::CuePanel,
     settings_panel: settings::SettingsPanel,
 }
 
@@ -95,6 +96,7 @@ impl HaloApp {
             patch_panel_state: patch_panel::PatchPanelState::default(),
             show_panel_state: show_panel::ShowPanelState::default(),
             session_panel_state: session::SessionPanel::default(),
+            cue_panel_state: cue::CuePanel::default(),
             settings_panel: settings::SettingsPanel::new(),
         }
     }
@@ -179,7 +181,12 @@ impl HaloApp {
                     self.session_panel_state
                         .render(ui, &self.state, &self.console_tx);
                     ui.separator();
-                    cue::render(ui, &self.state, &self.console_tx);
+
+                    // Update cue panel state and render with auto-scroll
+                    self.cue_panel_state
+                        .set_playback_state(self.state.playback_state);
+                    self.cue_panel_state
+                        .render(ui, &self.state, &self.console_tx);
                 });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
