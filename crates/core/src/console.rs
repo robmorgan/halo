@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -7,6 +8,7 @@ use tokio::task::JoinHandle;
 
 use crate::artnet::network_config::NetworkConfig;
 use crate::audio::device_enumerator;
+use crate::cue::cue::Cue;
 use crate::cue::cue_manager::{CueManager, PlaybackState};
 use crate::messages::{ConsoleCommand, ConsoleEvent, Settings};
 use crate::midi::midi::{MidiMessage, MidiOverride};
@@ -886,6 +888,127 @@ impl LightingConsole {
             SetCueLists { cue_lists } => {
                 self.set_cue_lists(cue_lists.clone()).await;
                 let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+            }
+            UpdateCue {
+                list_index,
+                cue_index,
+                name,
+                fade_time,
+                timecode,
+                is_blocking,
+            } => {
+                let result = self.cue_manager.write().await.update_cue(
+                    list_index,
+                    cue_index,
+                    name,
+                    fade_time,
+                    timecode,
+                    is_blocking,
+                );
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to update cue: {}", e),
+                        });
+                    }
+                }
+            }
+            DeleteCue {
+                list_index,
+                cue_index,
+            } => {
+                let result = self
+                    .cue_manager
+                    .write()
+                    .await
+                    .remove_cue(list_index, cue_index);
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to delete cue: {}", e),
+                        });
+                    }
+                }
+            }
+            DeleteCueList { list_index } => {
+                let result = self.cue_manager.write().await.remove_cue_list(list_index);
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to delete cue list: {}", e),
+                        });
+                    }
+                }
+            }
+            SetCueListAudioFile {
+                list_index,
+                audio_file,
+            } => {
+                let result = if let Some(file_path) = &audio_file {
+                    self.cue_manager
+                        .write()
+                        .await
+                        .set_audio_file(list_index, file_path.clone())
+                } else {
+                    // Clear the audio file
+                    self.cue_manager
+                        .write()
+                        .await
+                        .set_audio_file(list_index, String::new())
+                };
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to set audio file: {}", e),
+                        });
+                    }
+                }
+            }
+            AddCue {
+                list_index,
+                name,
+                fade_time,
+                timecode,
+                is_blocking,
+            } => {
+                let cue = Cue {
+                    id: 0, // Will be set by the cue manager
+                    name,
+                    fade_time: Duration::from_secs_f64(fade_time),
+                    timecode,
+                    static_values: Vec::new(),
+                    effects: Vec::new(),
+                    pixel_effects: Vec::new(),
+                    is_blocking,
+                };
+                let result = self.cue_manager.write().await.add_cue(list_index, cue);
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to add cue: {}", e),
+                        });
+                    }
+                }
             }
             PlayCue {
                 list_index,

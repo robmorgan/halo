@@ -183,6 +183,31 @@ impl CueManager {
         self.cue_lists[self.current_cue_list].cues.get_mut(cue_idx)
     }
 
+    pub fn update_cue(
+        &mut self,
+        cue_list_idx: usize,
+        cue_idx: usize,
+        name: String,
+        fade_time: f64,
+        timecode: Option<String>,
+        is_blocking: bool,
+    ) -> Result<(), String> {
+        if cue_list_idx >= self.cue_lists.len() {
+            return Err("Invalid cue list index".to_string());
+        }
+
+        let cue_list = &mut self.cue_lists[cue_list_idx];
+        if let Some(cue) = cue_list.cues.get_mut(cue_idx) {
+            cue.name = name;
+            cue.fade_time = Duration::from_secs_f64(fade_time);
+            cue.timecode = timecode;
+            cue.is_blocking = is_blocking;
+            Ok(())
+        } else {
+            Err("Invalid cue index".to_string())
+        }
+    }
+
     pub fn remove_cue(&mut self, cue_list_idx: usize, cue_idx: usize) -> Result<(), String> {
         if cue_list_idx >= self.cue_lists.len() {
             return Err("Invalid cue list index".to_string());

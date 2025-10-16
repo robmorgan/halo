@@ -63,6 +63,32 @@ pub enum ConsoleCommand {
     SetCueLists {
         cue_lists: Vec<CueList>,
     },
+    UpdateCue {
+        list_index: usize,
+        cue_index: usize,
+        name: String,
+        fade_time: f64,
+        timecode: Option<String>,
+        is_blocking: bool,
+    },
+    DeleteCue {
+        list_index: usize,
+        cue_index: usize,
+    },
+    DeleteCueList {
+        list_index: usize,
+    },
+    SetCueListAudioFile {
+        list_index: usize,
+        audio_file: Option<String>,
+    },
+    AddCue {
+        list_index: usize,
+        name: String,
+        fade_time: f64,
+        timecode: Option<String>,
+        is_blocking: bool,
+    },
     PlayCue {
         list_index: usize,
         cue_index: usize,
