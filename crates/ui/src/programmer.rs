@@ -67,6 +67,7 @@ pub struct ProgrammerState {
     // Modal dialog state
     show_record_dialog: bool,
     record_dialog_cue_name: String,
+    record_dialog_cue_list_index: usize,
 }
 
 impl Default for ProgrammerState {
@@ -122,6 +123,7 @@ impl Default for ProgrammerState {
             // Modal dialog defaults
             show_record_dialog: false,
             record_dialog_cue_name: String::new(),
+            record_dialog_cue_list_index: 0,
         }
     }
 }
@@ -335,7 +337,7 @@ impl ProgrammerState {
         self.sync_all_values_to_console(console_tx);
 
         // Render the record dialog if needed
-        self.render_record_dialog(ctx, console_tx);
+        self.render_record_dialog(ctx, state, console_tx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
@@ -352,6 +354,7 @@ impl ProgrammerState {
                         if ui.button("RECORD TO CUE").clicked() {
                             // Open the record dialog
                             self.show_record_dialog = true;
+                            self.record_dialog_cue_list_index = state.current_cue_list_index;
                         }
                     });
                 });
@@ -674,6 +677,7 @@ impl ProgrammerState {
     fn render_record_dialog(
         &mut self,
         ctx: &egui::Context,
+        state: &ConsoleState,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
         if self.show_record_dialog {
@@ -693,6 +697,27 @@ impl ProgrammerState {
                                 .hint_text("Enter cue name..."),
                         );
 
+                        ui.add_space(10.0);
+
+                        ui.label("Cue List:");
+                        egui::ComboBox::from_id_salt("cue_list_selector")
+                            .selected_text(
+                                if self.record_dialog_cue_list_index < state.cue_lists.len() {
+                                    &state.cue_lists[self.record_dialog_cue_list_index].name
+                                } else {
+                                    "No cue lists available"
+                                },
+                            )
+                            .show_ui(ui, |ui| {
+                                for (index, cue_list) in state.cue_lists.iter().enumerate() {
+                                    ui.selectable_value(
+                                        &mut self.record_dialog_cue_list_index,
+                                        index,
+                                        &cue_list.name,
+                                    );
+                                }
+                            });
+
                         ui.add_space(20.0);
 
                         ui.horizontal(|ui| {
@@ -701,7 +726,7 @@ impl ProgrammerState {
                                     let _ =
                                         console_tx.send(ConsoleCommand::RecordProgrammerToCue {
                                             cue_name: self.record_dialog_cue_name.clone(),
-                                            list_index: None,
+                                            list_index: Some(self.record_dialog_cue_list_index),
                                         });
                                     self.show_record_dialog = false;
                                     self.record_dialog_cue_name.clear();
