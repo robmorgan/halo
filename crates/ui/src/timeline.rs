@@ -1,6 +1,5 @@
-use eframe::egui;
-use eframe::egui::{Color32, Painter, Rect, Stroke};
-use halo_core::ConsoleCommand;
+use eframe::egui::{Align2, Color32, FontId, Painter, Rect, Stroke};
+use halo_core::{ConsoleCommand, TimeCode};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
@@ -83,8 +82,6 @@ fn draw_timeline_content(
 ) {
     let rect = response.rect;
     let width = rect.width();
-    let height = rect.height();
-    let center_y = rect.center().y;
 
     // Handle click for needle drop
     if response.clicked() {
@@ -100,6 +97,9 @@ fn draw_timeline_content(
 
     // Draw waveform
     draw_waveform(painter, rect, waveform_data);
+
+    // Draw cue markers
+    draw_cue_markers(painter, rect, state, waveform_data);
 
     // Draw playback position indicator
     if let Some(timecode) = &state.timecode {
@@ -165,5 +165,67 @@ fn draw_waveform(
             points,
             Stroke::new(1.0, Color32::from_rgb(100, 200, 255)),
         ));
+    }
+}
+
+/// Extract timecoded cues from the current cue list
+fn get_timecoded_cues(state: &ConsoleState) -> Vec<(usize, String, f64)> {
+    let mut timecoded_cues = Vec::new();
+
+    if let Some(cue_list) = state.cue_lists.get(state.current_cue_list_index) {
+        for (index, cue) in cue_list.cues.iter().enumerate() {
+            if let Some(timecode_str) = &cue.timecode {
+                let mut timecode = TimeCode::default();
+                if timecode.from_string(timecode_str).is_ok() {
+                    let seconds = timecode.to_seconds();
+                    timecoded_cues.push((index, cue.name.clone(), seconds));
+                }
+            }
+        }
+    }
+
+    // Sort by timecode position
+    timecoded_cues.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+    timecoded_cues
+}
+
+/// Draw cue markers and labels on the timeline
+fn draw_cue_markers(
+    painter: &Painter,
+    rect: Rect,
+    state: &ConsoleState,
+    waveform_data: &halo_core::audio::waveform::WaveformData,
+) {
+    let timecoded_cues = get_timecoded_cues(state);
+
+    for (cue_index, cue_name, cue_seconds) in timecoded_cues {
+        // Only draw cues that are within the audio duration
+        if cue_seconds > waveform_data.duration_seconds {
+            continue;
+        }
+
+        let time_ratio = (cue_seconds / waveform_data.duration_seconds).clamp(0.0, 1.0);
+        let position_x = rect.min.x + (time_ratio * rect.width() as f64) as f32;
+
+        // Draw thin vertical marker line
+        painter.line_segment(
+            [
+                eframe::egui::pos2(position_x, rect.min.y),
+                eframe::egui::pos2(position_x, rect.max.y),
+            ],
+            Stroke::new(1.0, Color32::from_rgb(255, 255, 100)),
+        );
+
+        // Draw cue label above the marker
+        let label_text = format!("Cue {}: {}", cue_index + 1, cue_name);
+        let label_pos = eframe::egui::pos2(position_x, rect.min.y - 5.0);
+
+        painter.text(
+            label_pos,
+            Align2::CENTER_BOTTOM,
+            label_text,
+            FontId::proportional(10.0),
+            Color32::from_rgb(255, 255, 100),
+        );
     }
 }
