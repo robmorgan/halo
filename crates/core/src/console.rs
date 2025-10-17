@@ -482,6 +482,22 @@ impl LightingConsole {
         Ok(fixture.clone())
     }
 
+    /// Remove a fixture
+    pub async fn unpatch_fixture(&mut self, fixture_id: usize) -> Result<(), String> {
+        let mut fixtures = self.fixtures.write().await;
+
+        // Find if fixture exists
+        if !fixtures.iter().any(|f| f.id == fixture_id) {
+            return Err(format!("Fixture {fixture_id} not found"));
+        }
+
+        // Remove the fixture by ID
+        fixtures.retain(|f| f.id != fixture_id);
+
+        log::info!("Unpatched fixture {fixture_id}");
+        Ok(())
+    }
+
     /// Set cue lists
     pub async fn set_cue_lists(&self, cue_lists: Vec<CueList>) {
         let mut cue_manager = self.cue_manager.write().await;
@@ -829,10 +845,17 @@ impl LightingConsole {
                     });
                 }
             }
-            UnpatchFixture { fixture_id } => {
-                // TODO: Implement unpatch_fixture method
-                let _ = event_tx.send(ConsoleEvent::FixtureUnpatched { fixture_id });
-            }
+            UnpatchFixture { fixture_id } => match self.unpatch_fixture(fixture_id).await {
+                Ok(_) => {
+                    let _ = event_tx.send(ConsoleEvent::FixtureUnpatched { fixture_id });
+                }
+                Err(e) => {
+                    log::error!("Failed to unpatch fixture: {e}");
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to unpatch fixture: {e}"),
+                    });
+                }
+            },
             UpdateFixture {
                 fixture_id,
                 name,

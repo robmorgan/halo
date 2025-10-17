@@ -17,6 +17,8 @@ pub struct PatchPanelState {
     limit_pan_max: u8,
     limit_tilt_min: u8,
     limit_tilt_max: u8,
+    fixture_to_remove: Option<usize>,
+    fixture_to_remove_name: String,
 }
 
 #[derive(Clone)]
@@ -39,6 +41,8 @@ impl Default for PatchPanelState {
             limit_pan_max: 255,
             limit_tilt_min: 0,
             limit_tilt_max: 255,
+            fixture_to_remove: None,
+            fixture_to_remove_name: String::new(),
         }
     }
 }
@@ -50,6 +54,33 @@ impl PatchPanelState {
         state: &ConsoleState,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
+        // Render confirmation modal for fixture removal
+        if let Some(fixture_id) = self.fixture_to_remove {
+            egui::Window::new("Remove Fixture")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(format!(
+                        "Are you sure you want to remove fixture \"{}\"?",
+                        self.fixture_to_remove_name
+                    ));
+                    ui.label("This action cannot be undone.");
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.fixture_to_remove = None;
+                            self.fixture_to_remove_name.clear();
+                        }
+
+                        if ui.button("Remove").clicked() {
+                            let _ = console_tx.send(ConsoleCommand::UnpatchFixture { fixture_id });
+                            self.fixture_to_remove = None;
+                            self.fixture_to_remove_name.clear();
+                        }
+                    });
+                });
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.heading("Patch Panel");
@@ -57,14 +88,18 @@ impl PatchPanelState {
                 // Fixture list
                 ui.heading("Patched Fixtures");
 
-                let mut fixture_to_remove: Option<usize> = None;
-
                 egui::ScrollArea::vertical()
                     .max_height(400.0)
                     .show(ui, |ui| {
                         // Convert to vector and sort by fixture ID for consistent ordering
                         let mut fixtures: Vec<_> = state.fixtures.iter().collect();
                         fixtures.sort_by_key(|(_, f)| f.id);
+
+                        // Clean up edit_values for fixtures that no longer exist
+                        let current_fixture_ids: std::collections::HashSet<_> =
+                            fixtures.iter().map(|(_, f)| f.id).collect();
+                        self.edit_values
+                            .retain(|id, _| current_fixture_ids.contains(id));
 
                         for (_, fixture) in fixtures {
                             // Initialize edit values if not present
@@ -83,30 +118,44 @@ impl PatchPanelState {
                                 let edit_value = self.edit_values.get_mut(&fixture.id).unwrap();
 
                                 ui.horizontal(|ui| {
-                                    ui.label(format!("ID {}:", fixture.id + 1));
+                                    ui.add_sized(
+                                        [50.0, 20.0],
+                                        egui::Label::new(format!("ID {}:", fixture.id + 1)),
+                                    );
 
                                     ui.label("Name:");
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut edit_value.name)
-                                            .desired_width(120.0),
+                                    ui.add_sized(
+                                        [120.0, 20.0],
+                                        egui::TextEdit::singleline(&mut edit_value.name),
                                     );
 
                                     ui.label("Profile:");
-                                    ui.label(&fixture.profile_id);
+                                    ui.add_sized(
+                                        [150.0, 20.0],
+                                        egui::Label::new(&fixture.profile_id),
+                                    );
 
                                     ui.label("Universe:");
-                                    ui.add(
+                                    ui.add_sized(
+                                        [60.0, 20.0],
                                         egui::DragValue::new(&mut edit_value.universe)
                                             .range(1..=255),
                                     );
 
                                     ui.label("Address:");
-                                    ui.add(
+                                    ui.add_sized(
+                                        [60.0, 20.0],
                                         egui::DragValue::new(&mut edit_value.address)
                                             .range(1..=512),
                                     );
 
-                                    ui.label(format!("Channels: {}", fixture.channels.len()));
+                                    ui.add_sized(
+                                        [100.0, 20.0],
+                                        egui::Label::new(format!(
+                                            "Channels: {}",
+                                            fixture.channels.len()
+                                        )),
+                                    );
 
                                     // Show limits badge if set
                                     if let Some(limits) = &fixture.pan_tilt_limits {
@@ -117,20 +166,6 @@ impl PatchPanelState {
                                             limits.tilt_min,
                                             limits.tilt_max
                                         ));
-                                    }
-
-                                    // Check if values have changed
-                                    let changed = edit_value.name != fixture.name
-                                        || edit_value.universe != fixture.universe
-                                        || edit_value.address != fixture.start_address;
-
-                                    if changed && ui.button("Save").clicked() {
-                                        let _ = console_tx.send(ConsoleCommand::UpdateFixture {
-                                            fixture_id: fixture.id,
-                                            name: edit_value.name.clone(),
-                                            universe: edit_value.universe,
-                                            address: edit_value.address,
-                                        });
                                     }
 
                                     if ui.button("Limits").clicked() {
@@ -155,10 +190,8 @@ impl PatchPanelState {
                                     }
 
                                     if ui.button("Remove").clicked() {
-                                        let _ = console_tx.send(ConsoleCommand::UnpatchFixture {
-                                            fixture_id: fixture.id,
-                                        });
-                                        fixture_to_remove = Some(fixture.id);
+                                        self.fixture_to_remove = Some(fixture.id);
+                                        self.fixture_to_remove_name = fixture.name.clone();
                                     }
                                 });
 
@@ -220,10 +253,66 @@ impl PatchPanelState {
                         }
                     });
 
-                // Remove fixture from edit values if requested
-                if let Some(fixture_id) = fixture_to_remove {
-                    self.edit_values.remove(&fixture_id);
+                // Global save/cancel buttons
+                ui.separator();
+
+                // Check if there are any pending changes
+                let mut has_changes = false;
+                let mut fixtures: Vec<_> = state.fixtures.iter().collect();
+                fixtures.sort_by_key(|(_, f)| f.id);
+
+                for (_, fixture) in &fixtures {
+                    if let Some(edit_value) = self.edit_values.get(&fixture.id) {
+                        if edit_value.name != fixture.name
+                            || edit_value.universe != fixture.universe
+                            || edit_value.address != fixture.start_address
+                        {
+                            has_changes = true;
+                            break;
+                        }
+                    }
                 }
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(has_changes, egui::Button::new("Save All Changes"))
+                        .clicked()
+                    {
+                        // Apply all changes
+                        for (_, fixture) in &fixtures {
+                            if let Some(edit_value) = self.edit_values.get(&fixture.id) {
+                                if edit_value.name != fixture.name
+                                    || edit_value.universe != fixture.universe
+                                    || edit_value.address != fixture.start_address
+                                {
+                                    let _ = console_tx.send(ConsoleCommand::UpdateFixture {
+                                        fixture_id: fixture.id,
+                                        name: edit_value.name.clone(),
+                                        universe: edit_value.universe,
+                                        address: edit_value.address,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    if ui
+                        .add_enabled(has_changes, egui::Button::new("Cancel"))
+                        .clicked()
+                    {
+                        // Reset all edit values to current fixture values
+                        for (_, fixture) in &fixtures {
+                            self.edit_values.insert(
+                                fixture.id,
+                                EditingFixture {
+                                    name: fixture.name.clone(),
+                                    universe: fixture.universe,
+                                    address: fixture.start_address,
+                                },
+                            );
+                        }
+                    }
+                });
 
                 ui.separator();
 
