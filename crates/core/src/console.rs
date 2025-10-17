@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -60,6 +60,10 @@ pub struct LightingConsole {
 
     // System state
     is_running: bool,
+
+    // Time-based rhythm tracking (for when Link isn't available)
+    last_rhythm_update: Arc<Mutex<Instant>>,
+    internal_beat_time: Arc<Mutex<f64>>,
 }
 
 impl LightingConsole {
@@ -113,6 +117,8 @@ impl LightingConsole {
             pixel_engine: Arc::new(RwLock::new(PixelEngine::new())),
             tracking_state: Arc::new(RwLock::new(TrackingState::new())),
             is_running: false,
+            last_rhythm_update: Arc::new(Mutex::new(Instant::now())),
+            internal_beat_time: Arc::new(Mutex::new(0.0)),
         })
     }
 
@@ -186,13 +192,28 @@ impl LightingConsole {
 
     /// Main update loop - call this regularly to process lighting data
     pub async fn update(&mut self) -> Result<(), anyhow::Error> {
-        // Update Ableton Link state
-        {
+        // Update Ableton Link state or use internal time-based rhythm
+        let link_provided_update = {
             let mut link_manager = self.link_manager.lock().await;
             if let Some((tempo, beat_time)) = link_manager.update().await {
                 self.tempo = tempo;
                 self.update_rhythm_state(beat_time).await;
+
+                // Sync internal beat time with Link
+                let mut internal_beat = self.internal_beat_time.lock().await;
+                *internal_beat = beat_time;
+                let mut last_update = self.last_rhythm_update.lock().await;
+                *last_update = Instant::now();
+
+                true
+            } else {
+                false
             }
+        };
+
+        // If Link didn't provide an update, use internal time-based rhythm
+        if !link_provided_update {
+            self.update_internal_rhythm().await;
         }
 
         // Process current cue if playing - update tracking state
@@ -230,6 +251,29 @@ impl LightingConsole {
         rhythm.bar_phase = (beat_time / rhythm.beats_per_bar as f64).fract();
         rhythm.phrase_phase =
             (beat_time / (rhythm.beats_per_bar * rhythm.bars_per_phrase) as f64).fract();
+    }
+
+    /// Update rhythm state based on internal time when Link isn't available
+    async fn update_internal_rhythm(&self) {
+        let now = Instant::now();
+        let mut last_update = self.last_rhythm_update.lock().await;
+        let elapsed = now.duration_since(*last_update).as_secs_f64();
+        *last_update = now;
+
+        // Protect against large time jumps (lag spikes, window focus loss, etc.)
+        // Cap elapsed time to 100ms to prevent discontinuities
+        let elapsed = elapsed.min(0.1);
+
+        // Calculate how many beats have passed based on tempo
+        let beats_per_second = self.tempo / 60.0;
+        let beats_elapsed = elapsed * beats_per_second;
+
+        // Update internal beat time
+        let mut internal_beat = self.internal_beat_time.lock().await;
+        *internal_beat += beats_elapsed;
+
+        // Update rhythm state
+        self.update_rhythm_state(*internal_beat).await;
     }
 
     /// Update tracking state with current cue
