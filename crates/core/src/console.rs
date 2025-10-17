@@ -1355,6 +1355,12 @@ impl LightingConsole {
             }
             SetProgrammerPreviewMode { preview_mode } => {
                 self.programmer.write().await.set_preview_mode(preview_mode);
+                let programmer = self.programmer.read().await;
+                let selected_fixtures = programmer.get_selected_fixtures().clone();
+                let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
+                    preview_mode: programmer.get_preview_mode(),
+                    selected_fixtures,
+                });
             }
             SetSelectedFixtures { fixture_ids } => {
                 self.programmer
