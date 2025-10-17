@@ -57,7 +57,9 @@ pub struct HaloApp {
     patch_panel_state: patch_panel::PatchPanelState,
     show_panel_state: show_panel::ShowPanelState,
     session_panel_state: session::SessionPanel,
+    cue_panel_state: cue::CuePanel,
     settings_panel: settings::SettingsPanel,
+    timeline_state: timeline::TimelineState,
 }
 
 impl HaloApp {
@@ -95,13 +97,44 @@ impl HaloApp {
             patch_panel_state: patch_panel::PatchPanelState::default(),
             show_panel_state: show_panel::ShowPanelState::default(),
             session_panel_state: session::SessionPanel::default(),
+            cue_panel_state: cue::CuePanel::default(),
             settings_panel: settings::SettingsPanel::new(),
+            timeline_state: timeline::TimelineState::default(),
         }
     }
 
     fn process_engine_updates(&mut self) {
         while let Ok(event) = self.console_rx.try_recv() {
             self.state.update(event);
+        }
+    }
+
+    fn render_error_dialog(&mut self, ctx: &egui::Context) {
+        if let Some(error) = self.state.last_error.clone() {
+            egui::Window::new("Error")
+                .collapsible(false)
+                .resizable(true)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_min_width(400.0);
+                    ui.vertical(|ui| {
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("⚠")
+                                .size(40.0)
+                                .color(egui::Color32::from_rgb(255, 100, 100)),
+                        );
+                        ui.add_space(10.0);
+
+                        ui.label(egui::RichText::new(&error).color(egui::Color32::WHITE));
+
+                        ui.add_space(20.0);
+
+                        if ui.button("OK").clicked() {
+                            self.state.last_error = None;
+                        }
+                    });
+                });
         }
     }
 
@@ -121,6 +154,11 @@ impl HaloApp {
 
         // Bottom UI
         egui::TopBottomPanel::bottom("footer_panel").show(ctx, |ui| {
+            // Sync programmer state from console state before rendering
+            self.programmer_state
+                .set_selected_fixtures(self.state.selected_fixtures.clone());
+            self.programmer_state.sync_from_console_state(&self.state);
+
             // Show programmer panel
             programmer::render_compact(
                 ui,
@@ -131,7 +169,7 @@ impl HaloApp {
             ui.separator();
 
             // Show timeline
-            timeline::render(ui, &self.state, &self.console_tx);
+            timeline::render(ui, &self.state, &mut self.timeline_state, &self.console_tx);
             ui.separator();
 
             // Show footer status
@@ -140,22 +178,26 @@ impl HaloApp {
 
         match self.active_tab {
             ActiveTab::Dashboard => {
-                egui::SidePanel::right("right_panel").show(ctx, |ui| {
-                    ui.set_min_width(400.0);
-                    self.session_panel_state
-                        .render(ui, &self.state, &self.console_tx);
-                    ui.separator();
-                    cue::render(ui, &self.state, &self.console_tx);
-                });
+                egui::SidePanel::right("right_panel")
+                    .frame(egui::Frame::default().fill(egui::Color32::from_gray(20)))
+                    .show(ctx, |ui| {
+                        ui.set_min_width(400.0);
+
+                        self.session_panel_state
+                            .render(ui, &self.state, &self.console_tx);
+                        ui.separator();
+
+                        // Update cue panel state and render with auto-scroll
+                        self.cue_panel_state
+                            .set_playback_state(self.state.playback_state);
+                        self.cue_panel_state
+                            .render(ui, &self.state, &self.console_tx);
+                    });
 
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         // Master Panel with overrides and master faders
                         master::render(ui, &self.state, &self.console_tx);
-
-                        ui.add_space(10.0);
-                        ui.separator();
-                        ui.add_space(10.0);
                     });
 
                     // Fixtures Grid
@@ -220,6 +262,9 @@ impl eframe::App for HaloApp {
 
         // Render UI
         self.render_ui(ctx);
+
+        // Render error dialog on top of everything
+        self.render_error_dialog(ctx);
 
         // Smart repaint based on playback state
         if matches!(self.state.playback_state, halo_core::PlaybackState::Playing) {

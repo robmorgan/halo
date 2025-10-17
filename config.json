@@ -16,7 +16,11 @@
     "dmx_dest_ip": "192.168.1.200",
     "dmx_port": 6454,
     "wled_enabled": false,
-    "wled_ip": "192.168.1.50"
+    "wled_ip": "192.168.1.50",
+    "pixel_engine_enabled": true,
+    "pixel_engine_fps": 44.0,
+    "pixel_universe_mapping": {},
+    "enable_pan_tilt_limits": true
   },
   "created_at": "2025-10-13T02:53:54.682044+00:00",
   "modified_at": "2025-10-13T02:53:54.682105+00:00"

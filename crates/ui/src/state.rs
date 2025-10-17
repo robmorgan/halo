@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
+use halo_core::audio::waveform::WaveformData;
 use halo_core::{
     AudioDeviceInfo, ConsoleCommand, CueList, PlaybackState, RhythmState, Settings, Show, TimeCode,
 };
@@ -26,13 +27,17 @@ pub struct ConsoleState {
     pub show: Option<Show>,
     pub timecode: Option<TimeCode>,
     pub programmer_preview_mode: bool,
-    pub programmer_collapsed: bool,
     pub selected_fixtures: Vec<usize>,
     pub programmer_values: HashMap<(usize, String), u8>, // (fixture_id, channel) -> value
     pub programmer_effects: Vec<(String, halo_core::EffectType, Vec<usize>)>, /* (name, effect_type, fixture_ids) */
     pub settings: Settings,
     pub audio_devices: Vec<AudioDeviceInfo>,
     pub fixture_library: FixtureLibrary,
+    pub active_effects_count: usize,
+    pub last_error: Option<String>,
+    pub audio_waveform: Option<WaveformData>,
+    pub audio_duration: Option<f64>,
+    pub audio_bpm: Option<f64>,
 }
 
 impl Default for ConsoleState {
@@ -63,13 +68,17 @@ impl Default for ConsoleState {
             show: None,
             timecode: None,
             programmer_preview_mode: false,
-            programmer_collapsed: false,
             selected_fixtures: Vec::new(),
             programmer_values: HashMap::new(),
             programmer_effects: Vec::new(),
             settings: Settings::default(),
             audio_devices: Vec::new(),
             fixture_library: FixtureLibrary::new(),
+            active_effects_count: 0,
+            last_error: None,
+            audio_waveform: None,
+            audio_duration: None,
+            audio_bpm: None,
         }
     }
 }
@@ -148,11 +157,9 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::ProgrammerStateUpdated {
                 preview_mode,
-                collapsed,
                 selected_fixtures,
             } => {
                 self.programmer_preview_mode = preview_mode;
-                self.programmer_collapsed = collapsed;
                 self.selected_fixtures = selected_fixtures;
             }
             halo_core::ConsoleEvent::ProgrammerValuesUpdated { values } => {
@@ -210,6 +217,23 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::AudioDevicesList { devices } => {
                 self.audio_devices = devices;
+            }
+            halo_core::ConsoleEvent::TrackingStateUpdated {
+                active_effect_count,
+            } => {
+                self.active_effects_count = active_effect_count;
+            }
+            halo_core::ConsoleEvent::Error { message } => {
+                self.last_error = Some(message);
+            }
+            halo_core::ConsoleEvent::WaveformAnalyzed {
+                waveform_data,
+                duration,
+                bpm,
+            } => {
+                self.audio_waveform = Some(waveform_data);
+                self.audio_duration = Some(duration);
+                self.audio_bpm = bpm;
             }
             _ => {
                 // Handle other events as needed

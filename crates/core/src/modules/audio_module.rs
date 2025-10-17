@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
-use std::thread;
+use std::{io, thread};
 
 use async_trait::async_trait;
-use rodio::{Decoder, OutputStream, Sink};
+use rodio::{Decoder, OutputStreamBuilder, Sink};
 use tokio::sync::{mpsc, oneshot};
 
 use super::traits::{AsyncModule, ModuleEvent, ModuleId, ModuleMessage};
@@ -39,6 +38,11 @@ enum AudioCommand {
     #[allow(dead_code)]
     GetStatus {
         response: oneshot::Sender<AudioStatus>,
+    },
+    /// Seek to a specific position
+    Seek {
+        position_seconds: f64,
+        response: oneshot::Sender<Result<(), String>>,
     },
     /// Shutdown the audio thread
     Shutdown,
@@ -165,6 +169,20 @@ impl AudioModule {
             .await
             .map_err(|_| "Audio thread did not respond".to_string())
     }
+
+    /// Seek to a specific position
+    async fn seek(&mut self, position_seconds: f64) -> Result<(), String> {
+        let (response_tx, response_rx) = oneshot::channel();
+        self.send_command(AudioCommand::Seek {
+            position_seconds,
+            response: response_tx,
+        })
+        .await?;
+
+        response_rx
+            .await
+            .map_err(|_| "Audio thread did not respond".to_string())?
+    }
 }
 
 /// The audio thread worker that handles all rodio operations
@@ -172,22 +190,13 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
     log::info!("Audio thread starting");
 
     // Create the OutputStream - this must live for the entire thread lifetime
-    let (_stream, stream_handle) = match OutputStream::try_default() {
-        Ok((stream, handle)) => {
+    let stream_handle = match OutputStreamBuilder::open_default_stream() {
+        Ok(handle) => {
             log::info!("Successfully created audio output stream");
-            (stream, handle)
+            handle
         }
         Err(e) => {
             log::error!("Failed to create audio output stream: {e}");
-            match e {
-                rodio::StreamError::NoDevice => {
-                    log::error!("No audio device available. This is a common issue on macOS.");
-                    log::error!("Try: sudo killall coreaudiod");
-                }
-                _ => {
-                    log::error!("Audio stream creation failed: {e}");
-                }
-            }
             return;
         }
     };
@@ -208,14 +217,14 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
 
                 let result = (|| -> Result<(), String> {
                     // Create a new sink
-                    let new_sink = Sink::try_new(&stream_handle)
-                        .map_err(|e| format!("Failed to create audio sink: {e}"))?;
+                    let new_sink = Sink::connect_new(stream_handle.mixer());
 
-                    // Open and decode the audio file
+                    // Open the audio file
                     let file = File::open(&file_path)
                         .map_err(|e| format!("Failed to open audio file: {e}"))?;
-                    let reader = BufReader::new(file);
-                    let source = Decoder::new(reader)
+
+                    // Create decoder using try_from for seeking support
+                    let source = Decoder::try_from(file)
                         .map_err(|e| format!("Failed to decode audio file: {e}"))?;
 
                     // Add source to sink and configure
@@ -227,7 +236,7 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
                     sink = Some(new_sink);
                     current_file = Some(file_path.to_string_lossy().to_string());
 
-                    log::info!("Audio thread: File loaded and playing");
+                    log::info!("Audio thread: File loaded and playing with seeking support");
                     Ok(())
                 })();
 
@@ -235,16 +244,15 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
             }
 
             AudioCommand::Stop { response } => {
-                let result = if let Some(s) = &sink {
+                if let Some(s) = &sink {
                     s.stop();
                     sink = None;
                     current_file = None;
                     log::info!("Audio thread: Stopped playback");
-                    Ok(())
                 } else {
-                    Err("No audio file loaded".to_string())
-                };
-                let _ = response.send(result);
+                    log::info!("Audio thread: Stop requested but no audio file loaded");
+                }
+                let _ = response.send(Ok(()));
             }
 
             AudioCommand::Pause { response } => {
@@ -292,6 +300,28 @@ fn audio_thread_worker(mut command_rx: mpsc::Receiver<AudioCommand>) {
                     volume,
                 };
                 let _ = response.send(status);
+            }
+
+            AudioCommand::Seek {
+                position_seconds,
+                response,
+            } => {
+                let result = if let Some(s) = &sink {
+                    let position = std::time::Duration::from_secs_f64(position_seconds);
+                    match s.try_seek(position) {
+                        Ok(_) => {
+                            log::info!("Audio thread: Seeked to {position_seconds}s");
+                            Ok(())
+                        }
+                        Err(e) => {
+                            log::warn!("Audio thread: Seek failed: {e}");
+                            Err(format!("Seek failed: {e}"))
+                        }
+                    }
+                } else {
+                    Err("No audio file loaded".to_string())
+                };
+                let _ = response.send(result);
             }
 
             AudioCommand::Shutdown => {
@@ -425,6 +455,20 @@ impl AsyncModule for AudioModule {
                     } else {
                         let _ = tx
                             .send(ModuleMessage::Status(format!("Volume set to {volume:.2}")))
+                            .await;
+                    }
+                }
+
+                ModuleEvent::AudioSeek { position_seconds } => {
+                    if let Err(e) = self.seek(position_seconds).await {
+                        let error_msg = format!("Failed to seek audio: {e}");
+                        log::error!("{error_msg}");
+                        let _ = tx.send(ModuleMessage::Error(error_msg)).await;
+                    } else {
+                        let _ = tx
+                            .send(ModuleMessage::Status(format!(
+                                "Seeked to {position_seconds:.2}s"
+                            )))
                             .await;
                     }
                 }

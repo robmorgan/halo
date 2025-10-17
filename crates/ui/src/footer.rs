@@ -14,6 +14,7 @@ pub fn render(
     let fixture_count = state.fixtures.len();
     let bpm = state.bpm;
     let rhythm_state = &state.rhythm_state;
+    let active_effects_count = state.active_effects_count;
 
     ui.painter().rect_filled(
         ui.available_rect_before_wrap(),
@@ -34,8 +35,12 @@ pub fn render(
             |ui| {
                 ui.label(
                     RichText::new(format!(
-                        "{} Fixtures | 42 Parameters | {:.1} BPM | Beat {:.2} | Phase {:.2}",
-                        fixture_count, bpm, rhythm_state.beat_phase, rhythm_state.bar_phase
+                        "{} Fixtures | {} Active Effects | {:.1} BPM | Beat {:.2} | Phase {:.2}",
+                        fixture_count,
+                        active_effects_count,
+                        bpm,
+                        rhythm_state.beat_phase,
+                        rhythm_state.bar_phase
                     ))
                     .size(12.0)
                     .color(theme.text_dim),

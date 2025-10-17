@@ -3,7 +3,11 @@ use std::f64::consts::PI;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use egui_plot::{Line, Plot, PlotPoints};
-use halo_core::{ConsoleCommand, EffectType};
+use halo_core::{
+    ConsoleCommand, EffectDistribution, EffectType, Interval, PixelEffect, PixelEffectParams,
+    PixelEffectScope, PixelEffectType,
+};
+use halo_fixtures::FixtureType;
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
@@ -26,6 +30,9 @@ pub struct TabEffectConfig {
     pub effect_distribution: u8,
     pub effect_step_value: usize,
     pub effect_wave_offset: f32,
+    // Channel selection for position effects
+    pub pan_selected: bool,
+    pub tilt_selected: bool,
 }
 
 impl Default for TabEffectConfig {
@@ -38,6 +45,8 @@ impl Default for TabEffectConfig {
             effect_distribution: 0,
             effect_step_value: 1,
             effect_wave_offset: 0.0,
+            pan_selected: true,
+            tilt_selected: true,
         }
     }
 }
@@ -51,6 +60,14 @@ pub struct ProgrammerState {
     tab_effects: HashMap<ActiveProgrammerTab, TabEffectConfig>,
     preview_mode: bool,
     collapsed: bool,
+    // Pixel effect state
+    pixel_effect_type: usize,
+    pixel_effect_scope: usize,
+    pixel_effect_color: [f32; 3],
+    // Modal dialog state
+    show_record_dialog: bool,
+    record_dialog_cue_name: String,
+    record_dialog_cue_list_index: usize,
 }
 
 impl Default for ProgrammerState {
@@ -99,6 +116,14 @@ impl Default for ProgrammerState {
             tab_effects,
             preview_mode: false,
             collapsed: false,
+            // Pixel effect defaults
+            pixel_effect_type: 0,                // Chase
+            pixel_effect_scope: 1,               // Individual
+            pixel_effect_color: [1.0, 1.0, 1.0], // White
+            // Modal dialog defaults
+            show_record_dialog: false,
+            record_dialog_cue_name: String::new(),
+            record_dialog_cue_list_index: 0,
         }
     }
 }
@@ -144,6 +169,11 @@ impl ProgrammerState {
         }
     }
 
+    /// Sync programmer state from console state
+    pub fn sync_from_console_state(&mut self, console_state: &ConsoleState) {
+        self.preview_mode = console_state.programmer_preview_mode;
+    }
+
     // Main rendering function for the programmer panel
     pub fn show(
         &mut self,
@@ -157,9 +187,6 @@ impl ProgrammerState {
                 let collapse_icon = if self.collapsed { "▶" } else { "▼" };
                 if ui.button(collapse_icon).clicked() {
                     self.collapsed = !self.collapsed;
-                    let _ = console_tx.send(ConsoleCommand::SetProgrammerCollapsed {
-                        collapsed: self.collapsed,
-                    });
                 }
 
                 ui.heading("PROGRAMMER");
@@ -306,6 +333,12 @@ impl ProgrammerState {
         state: &ConsoleState,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
+        // Sync all current dashboard programmer values to console
+        self.sync_all_values_to_console(console_tx);
+
+        // Render the record dialog if needed
+        self.render_record_dialog(ctx, state, console_tx);
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 // Header area with global controls
@@ -313,99 +346,29 @@ impl ProgrammerState {
                     ui.heading("PROGRAMMER");
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("RECORD").clicked() {
-                            // Record the current programmer state to a cue
-                            if !self.new_cue_name.is_empty() {
-                                let _ = console_tx.send(ConsoleCommand::RecordProgrammerToCue {
-                                    cue_name: self.new_cue_name.clone(),
-                                    list_index: None,
-                                });
-                            }
-                        }
-
-                        if ui.button("CLEAR").clicked() {
+                        if ui.button("CLEAR ALL").clicked() {
                             // Clear the programmer
                             let _ = console_tx.send(ConsoleCommand::ClearProgrammer);
                         }
 
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.new_cue_name)
-                                .hint_text("New cue name...")
-                                .desired_width(150.0),
-                        );
+                        if ui.button("RECORD TO CUE").clicked() {
+                            // Open the record dialog
+                            self.show_record_dialog = true;
+                            self.record_dialog_cue_list_index = state.current_cue_list_index;
+                        }
                     });
                 });
 
                 ui.separator();
 
-                // Fixture selection
-                ui.heading("Fixtures");
-                egui::ScrollArea::horizontal().show(ui, |ui| {
-                    for (_, fixture) in state.fixtures.iter() {
-                        let is_selected = self.selected_fixtures.contains(&fixture.id);
-                        if ui.selectable_label(is_selected, &fixture.name).clicked() {
-                            if is_selected {
-                                self.remove_selected_fixture(fixture.id);
-                            } else {
-                                self.add_selected_fixture(fixture.id);
-                            }
-                            let _ = console_tx.send(ConsoleCommand::SetSelectedFixtures {
-                                fixture_ids: self.selected_fixtures.clone(),
-                            });
-                        }
-                    }
-                });
+                // Parameter grid
+                ui.heading("Programmer Values");
+                self.render_parameter_grid(ui, state);
 
-                ui.separator();
+                ui.add_space(20.0);
 
-                // Display programmer values grouped by fixture
-                if !state.programmer_values.is_empty() {
-                    ui.heading("Programmer Values");
-                    egui::ScrollArea::vertical().show(ui, |ui| {
-                        // Group values by fixture_id
-                        let mut fixture_values: HashMap<usize, Vec<(String, u8)>> = HashMap::new();
-                        for ((fixture_id, channel), value) in &state.programmer_values {
-                            fixture_values
-                                .entry(*fixture_id)
-                                .or_insert_with(Vec::new)
-                                .push((channel.clone(), *value));
-                        }
-
-                        // Sort fixtures by ID
-                        let mut sorted_fixtures: Vec<(usize, Vec<(String, u8)>)> =
-                            fixture_values.into_iter().collect();
-                        sorted_fixtures.sort_by_key(|(fixture_id, _)| *fixture_id);
-
-                        for (fixture_id, values) in sorted_fixtures {
-                            // Find the actual fixture to get its name
-                            let fixture_name = state
-                                .fixtures
-                                .values()
-                                .find(|f| f.id == fixture_id)
-                                .map(|f| f.name.clone())
-                                .unwrap_or_else(|| format!("Fixture #{}", fixture_id));
-
-                            ui.collapsing(format!("{} (ID: {})", fixture_name, fixture_id), |ui| {
-                                self.render_fixture_parameters(ui, &values);
-                            });
-                        }
-                    });
-                }
-
-                // If there are any effects, show them in a separate section
-                if !state.programmer_effects.is_empty() {
-                    ui.add_space(10.0);
-                    ui.heading("EFFECTS");
-                    ui.separator();
-
-                    for (i, (name, effect_type, fixture_ids)) in
-                        state.programmer_effects.iter().enumerate()
-                    {
-                        ui.collapsing(format!("Effect #{}: {}", i + 1, name), |ui| {
-                            self.render_effect_details(ui, name, *effect_type, fixture_ids);
-                        });
-                    }
-                }
+                // Effects summary
+                self.render_effects_summary(ui, state);
             });
         });
     }
@@ -472,6 +435,312 @@ impl ProgrammerState {
                     ui.end_row();
                 }
             });
+    }
+
+    // Helper method to render the parameter grid
+    fn render_parameter_grid(&self, ui: &mut egui::Ui, state: &ConsoleState) {
+        if state.programmer_values.is_empty() {
+            ui.label("No values in programmer");
+            return;
+        }
+
+        // Collect all unique channels and group fixtures by type
+        let mut channels = std::collections::HashSet::new();
+        let mut fixtures_by_type: HashMap<FixtureType, Vec<(usize, String)>> = HashMap::new();
+
+        for ((fixture_id, channel), _value) in &state.programmer_values {
+            channels.insert(channel.clone());
+
+            if let Some(fixture) = state.fixtures.get(&fixture_id.to_string()) {
+                fixtures_by_type
+                    .entry(fixture.profile.fixture_type.clone())
+                    .or_insert_with(Vec::new)
+                    .push((fixture.id, fixture.name.clone()));
+            }
+        }
+
+        // Sort channels for consistent column order
+        let mut sorted_channels: Vec<String> = channels.into_iter().collect();
+        sorted_channels.sort();
+
+        // Sort fixtures within each type by ID
+        for fixtures in fixtures_by_type.values_mut() {
+            fixtures.sort_by_key(|(id, _)| *id);
+        }
+
+        // Sort fixture types for consistent display order
+        let mut sorted_fixture_types: Vec<FixtureType> = fixtures_by_type.keys().cloned().collect();
+        sorted_fixture_types.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
+
+        egui::ScrollArea::both().show(ui, |ui| {
+            egui::Grid::new("parameter_grid")
+                .striped(true)
+                .spacing([10.0, 5.0])
+                .show(ui, |ui| {
+                    // Header row
+                    ui.label("Fixture");
+                    for channel in &sorted_channels {
+                        ui.label(channel);
+                    }
+                    ui.end_row();
+
+                    // Data rows grouped by fixture type
+                    for fixture_type in &sorted_fixture_types {
+                        if let Some(fixtures) = fixtures_by_type.get(fixture_type) {
+                            // Group header
+                            ui.colored_label(
+                                Color32::from_rgb(100, 150, 255),
+                                format!("{:?} ({})", fixture_type, fixtures.len()),
+                            );
+                            for _ in &sorted_channels {
+                                ui.label(""); // Empty cells for group header
+                            }
+                            ui.end_row();
+
+                            // Fixture rows
+                            for (fixture_id, fixture_name) in fixtures {
+                                ui.label(fixture_name);
+
+                                for channel in &sorted_channels {
+                                    let value = state
+                                        .programmer_values
+                                        .get(&(*fixture_id, channel.clone()))
+                                        .copied()
+                                        .unwrap_or(0);
+
+                                    self.render_parameter_cell(ui, channel, value);
+                                }
+                                ui.end_row();
+                            }
+                        }
+                    }
+                });
+        });
+    }
+
+    // Helper method to render individual parameter cells
+    fn render_parameter_cell(&self, ui: &mut egui::Ui, channel: &str, value: u8) {
+        let cell_size = Vec2::new(60.0, 30.0);
+        let (rect, _response) = ui.allocate_exact_size(cell_size, Sense::hover());
+
+        // Determine if this is a color channel
+        let is_color_channel = channel.to_lowercase().contains("red")
+            || channel.to_lowercase().contains("green")
+            || channel.to_lowercase().contains("blue")
+            || channel.to_lowercase().contains("white")
+            || channel.to_lowercase().contains("amber")
+            || channel.to_lowercase().contains("uv");
+
+        if is_color_channel {
+            // Render color cell
+            let color = if channel.to_lowercase().contains("red") {
+                Color32::from_rgb(value, 0, 0)
+            } else if channel.to_lowercase().contains("green") {
+                Color32::from_rgb(0, value, 0)
+            } else if channel.to_lowercase().contains("blue") {
+                Color32::from_rgb(0, 0, value)
+            } else if channel.to_lowercase().contains("white") {
+                Color32::from_rgb(value, value, value)
+            } else if channel.to_lowercase().contains("amber") {
+                Color32::from_rgb(value, (value as f32 * 0.7) as u8, 0)
+            } else if channel.to_lowercase().contains("uv") {
+                Color32::from_rgb((value as f32 * 0.3) as u8, 0, value)
+            } else {
+                Color32::from_gray(value)
+            };
+
+            ui.painter().rect_filled(rect, 4.0, color);
+            ui.painter().rect_stroke(
+                rect,
+                4.0,
+                Stroke::new(1.0, Color32::from_gray(100)),
+                egui::StrokeKind::Inside,
+            );
+
+            // Add value text
+            let text_color = if value > 127 {
+                Color32::BLACK
+            } else {
+                Color32::WHITE
+            };
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                value.to_string(),
+                egui::FontId::proportional(10.0),
+                text_color,
+            );
+        } else {
+            // Render progress bar cell
+            let progress = value as f32 / 255.0;
+
+            // Background
+            ui.painter().rect_filled(rect, 4.0, Color32::from_gray(30));
+            ui.painter().rect_stroke(
+                rect,
+                4.0,
+                Stroke::new(1.0, Color32::from_gray(100)),
+                egui::StrokeKind::Inside,
+            );
+
+            // Progress fill
+            let fill_width = rect.width() * progress;
+            let fill_rect = Rect::from_min_size(rect.min, Vec2::new(fill_width, rect.height()));
+            ui.painter()
+                .rect_filled(fill_rect, 4.0, Color32::from_rgb(0, 150, 255));
+
+            // Value text
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                value.to_string(),
+                egui::FontId::proportional(10.0),
+                Color32::WHITE,
+            );
+        }
+    }
+
+    // Helper method to render effects summary
+    fn render_effects_summary(&self, ui: &mut egui::Ui, state: &ConsoleState) {
+        ui.heading("EFFECTS");
+        ui.separator();
+
+        if state.programmer_effects.is_empty() {
+            ui.label("No effects in programmer");
+            return;
+        }
+
+        for (i, (name, effect_type, fixture_ids)) in state.programmer_effects.iter().enumerate() {
+            ui.collapsing(format!("Effect #{}: {}", i + 1, name), |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(format!("Name: {}", name));
+                        ui.label(format!("Type: {:?}", effect_type));
+                        ui.label(format!("Fixtures: {} fixtures", fixture_ids.len()));
+                    });
+
+                    // Add a small waveform preview
+                    let plot_height = 80.0;
+                    let plot_width = 150.0;
+
+                    Plot::new(format!("effect_plot_{}", i))
+                        .height(plot_height)
+                        .width(plot_width)
+                        .show_axes([false, false])
+                        .view_aspect(2.0)
+                        .show(ui, |plot_ui| {
+                            // Generate the waveform for this effect
+                            let n_points = 50;
+                            let mut points = Vec::with_capacity(n_points);
+
+                            for i in 0..n_points {
+                                let x =
+                                    i as f64 / (n_points - 1) as f64 * 2.0 * std::f64::consts::PI;
+
+                                // This is a simplified version - the actual effect could be more
+                                // complex
+                                let y = match effect_type {
+                                    EffectType::Sine => x.sin(),
+                                    EffectType::Square => {
+                                        if (x % (2.0 * std::f64::consts::PI)).sin() >= 0.0 {
+                                            1.0
+                                        } else {
+                                            -1.0
+                                        }
+                                    }
+                                    EffectType::Sawtooth => {
+                                        let mut v = (x % (2.0 * std::f64::consts::PI))
+                                            / std::f64::consts::PI
+                                            - 1.0;
+                                        if v > 1.0 {
+                                            v -= 2.0
+                                        };
+                                        v
+                                    }
+                                    _ => x.sin(), // Default
+                                };
+
+                                points.push([x, y]);
+                            }
+
+                            let plot_points = PlotPoints::from(points);
+                            plot_ui.line(
+                                Line::new("", plot_points).color(Color32::from_rgb(100, 200, 255)),
+                            );
+                        });
+                });
+            });
+        }
+    }
+
+    // Helper method to render the record dialog
+    fn render_record_dialog(
+        &mut self,
+        ctx: &egui::Context,
+        state: &ConsoleState,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
+        if self.show_record_dialog {
+            egui::Window::new("Record to Cue")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.set_min_width(300.0);
+                    ui.vertical(|ui| {
+                        ui.heading("Record Programmer to Cue");
+                        ui.add_space(10.0);
+
+                        ui.label("Cue Name:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.record_dialog_cue_name)
+                                .hint_text("Enter cue name..."),
+                        );
+
+                        ui.add_space(10.0);
+
+                        ui.label("Cue List:");
+                        egui::ComboBox::from_id_salt("cue_list_selector")
+                            .selected_text(
+                                if self.record_dialog_cue_list_index < state.cue_lists.len() {
+                                    &state.cue_lists[self.record_dialog_cue_list_index].name
+                                } else {
+                                    "No cue lists available"
+                                },
+                            )
+                            .show_ui(ui, |ui| {
+                                for (index, cue_list) in state.cue_lists.iter().enumerate() {
+                                    ui.selectable_value(
+                                        &mut self.record_dialog_cue_list_index,
+                                        index,
+                                        &cue_list.name,
+                                    );
+                                }
+                            });
+
+                        ui.add_space(20.0);
+
+                        ui.horizontal(|ui| {
+                            if ui.button("Record").clicked() {
+                                if !self.record_dialog_cue_name.is_empty() {
+                                    let _ =
+                                        console_tx.send(ConsoleCommand::RecordProgrammerToCue {
+                                            cue_name: self.record_dialog_cue_name.clone(),
+                                            list_index: Some(self.record_dialog_cue_list_index),
+                                        });
+                                    self.show_record_dialog = false;
+                                    self.record_dialog_cue_name.clear();
+                                }
+                            }
+
+                            if ui.button("Cancel").clicked() {
+                                self.show_record_dialog = false;
+                                self.record_dialog_cue_name.clear();
+                            }
+                        });
+                    });
+                });
+        }
     }
 
     // Helper method to render effect details
@@ -544,7 +813,7 @@ impl ProgrammerState {
     fn show_pixel_effects_tab(
         &mut self,
         ui: &mut egui::Ui,
-        _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
         ui.heading("Pixel Effects");
         ui.add_space(10.0);
@@ -554,36 +823,117 @@ impl ProgrammerState {
 
         ui.label("Effect Type:");
         ui.horizontal(|ui| {
-            ui.radio_value(&mut 0, 0, "Chase");
-            ui.radio_value(&mut 0, 1, "Wave");
-            ui.radio_value(&mut 0, 2, "Strobe");
-            ui.radio_value(&mut 0, 3, "Color Cycle");
+            ui.radio_value(&mut self.pixel_effect_type, 0, "Chase");
+            ui.radio_value(&mut self.pixel_effect_type, 1, "Wave");
+            ui.radio_value(&mut self.pixel_effect_type, 2, "Strobe");
+            ui.radio_value(&mut self.pixel_effect_type, 3, "Color Cycle");
         });
 
         ui.add_space(10.0);
 
         ui.label("Scope:");
         ui.horizontal(|ui| {
-            ui.radio_value(&mut 0, 0, "Bar (all pixels same)");
-            ui.radio_value(&mut 0, 1, "Individual (per-pixel)");
+            ui.radio_value(&mut self.pixel_effect_scope, 0, "Bar (all pixels same)");
+            ui.radio_value(&mut self.pixel_effect_scope, 1, "Individual (per-pixel)");
         });
 
         ui.add_space(10.0);
 
         ui.label("Color:");
         ui.horizontal(|ui| {
-            ui.color_edit_button_rgb(&mut [1.0f32, 1.0, 1.0]);
+            ui.color_edit_button_rgb(&mut self.pixel_effect_color);
         });
 
         ui.add_space(20.0);
 
-        ui.label("Note: Pixel effects are applied directly to pixel bar fixtures.");
-        ui.label("Use 'Apply Effect' button to add pixel effects to selected fixtures.");
+        // Show current settings
+        ui.group(|ui| {
+            ui.label("Current Settings:");
+            let effect_name = match self.pixel_effect_type {
+                0 => "Chase",
+                1 => "Wave",
+                2 => "Strobe",
+                3 => "Color Cycle",
+                _ => "Unknown",
+            };
+            let scope_name = if self.pixel_effect_scope == 0 {
+                "Bar"
+            } else {
+                "Individual"
+            };
+            let color_rgb = (
+                (self.pixel_effect_color[0] * 255.0) as u8,
+                (self.pixel_effect_color[1] * 255.0) as u8,
+                (self.pixel_effect_color[2] * 255.0) as u8,
+            );
+
+            ui.label(format!("Effect: {} | Scope: {}", effect_name, scope_name));
+            ui.horizontal(|ui| {
+                ui.label(format!(
+                    "Color: RGB({}, {}, {})",
+                    color_rgb.0, color_rgb.1, color_rgb.2
+                ));
+                let color = Color32::from_rgb(color_rgb.0, color_rgb.1, color_rgb.2);
+                ui.colored_label(color, "███");
+            });
+        });
 
         ui.add_space(10.0);
 
-        if ui.button("Apply Pixel Effect").clicked() {
-            ui.label("Pixel effect applied to selected pixel bars");
+        ui.label("Note: Pixel effects will be applied when in preview mode.");
+        ui.label(format!(
+            "{} pixel bar fixture(s) selected",
+            self.selected_fixtures.len()
+        ));
+
+        ui.add_space(10.0);
+
+        if ui
+            .button("Apply Pixel Effect to Selected Fixtures")
+            .clicked()
+        {
+            // Convert settings to pixel effect command
+            let color_rgb = (
+                (self.pixel_effect_color[0] * 255.0) as u8,
+                (self.pixel_effect_color[1] * 255.0) as u8,
+                (self.pixel_effect_color[2] * 255.0) as u8,
+            );
+
+            // Map UI values to PixelEffect types
+            let effect_type = match self.pixel_effect_type {
+                0 => PixelEffectType::Chase,
+                1 => PixelEffectType::Wave,
+                2 => PixelEffectType::Strobe,
+                3 => PixelEffectType::ColorCycle,
+                _ => PixelEffectType::Chase,
+            };
+
+            let scope = if self.pixel_effect_scope == 0 {
+                PixelEffectScope::Bar
+            } else {
+                PixelEffectScope::Individual
+            };
+
+            // Create the pixel effect
+            let pixel_effect = PixelEffect {
+                effect_type,
+                scope,
+                color: color_rgb,
+                params: PixelEffectParams {
+                    interval: Interval::Beat,
+                    interval_ratio: 1.0,
+                    phase: 0.0,
+                    speed: 1.0,
+                },
+            };
+
+            // Send command to apply pixel effect
+            let _ = console_tx.send(ConsoleCommand::AddPixelEffect {
+                name: format!("Programmer_PixelFX_{}", self.selected_fixtures.len()),
+                fixture_ids: self.selected_fixtures.clone(),
+                effect: pixel_effect,
+                distribution: EffectDistribution::All,
+            });
         }
     }
 
@@ -722,6 +1072,23 @@ impl ProgrammerState {
                     channel: channel.clone(),
                     value: *value as u8,
                 });
+            }
+        }
+    }
+
+    /// Sync all current dashboard programmer values to the console
+    /// This ensures the full view shows the current state of the dashboard programmer
+    fn sync_all_values_to_console(&self, console_tx: &mpsc::UnboundedSender<ConsoleCommand>) {
+        for &fixture_id in &self.selected_fixtures {
+            for (channel, value) in &self.params {
+                // Only send non-zero values to avoid cluttering the console state
+                if *value > 0.0 {
+                    let _ = console_tx.send(ConsoleCommand::SetProgrammerValue {
+                        fixture_id,
+                        channel: channel.clone(),
+                        value: *value as u8,
+                    });
+                }
             }
         }
     }
@@ -919,6 +1286,22 @@ impl ProgrammerState {
                         self.set_param("tilt", new_tilt.clamp(0.0, 270.0));
                         self.update_fixture_values(console_tx);
                     }
+                }
+            });
+
+            ui.add_space(spacing);
+
+            // Channel selection for effects
+            ui.vertical(|ui| {
+                ui.label("Effect Channels");
+                ui.add_space(5.0);
+
+                let active_tab = self.active_tab.clone();
+                let tab_effect_mut = self.tab_effects.get_mut(&active_tab);
+
+                if let Some(tab_effect) = tab_effect_mut {
+                    ui.checkbox(&mut tab_effect.pan_selected, "Pan");
+                    ui.checkbox(&mut tab_effect.tilt_selected, "Tilt");
                 }
             });
         });
@@ -1172,17 +1555,26 @@ impl ProgrammerState {
                         _ => EffectType::Sine,
                     };
 
-                    let channel_type = match self.active_tab {
-                        ActiveProgrammerTab::Intensity => "dimmer".to_string(),
-                        ActiveProgrammerTab::Color => "color".to_string(),
-                        ActiveProgrammerTab::Position => "pan".to_string(),
-                        ActiveProgrammerTab::Beam => "beam".to_string(),
-                        ActiveProgrammerTab::PixelEffects => "pixel".to_string(),
+                    let channel_types = match self.active_tab {
+                        ActiveProgrammerTab::Intensity => vec!["dimmer".to_string()],
+                        ActiveProgrammerTab::Color => vec!["color".to_string()],
+                        ActiveProgrammerTab::Position => {
+                            let mut channels = Vec::new();
+                            if tab_effect.pan_selected {
+                                channels.push("pan".to_string());
+                            }
+                            if tab_effect.tilt_selected {
+                                channels.push("tilt".to_string());
+                            }
+                            channels
+                        }
+                        ActiveProgrammerTab::Beam => vec!["beam".to_string()],
+                        ActiveProgrammerTab::PixelEffects => vec!["pixel".to_string()],
                     };
 
                     let _ = console_tx.send(ConsoleCommand::ApplyProgrammerEffect {
                         fixture_ids: self.selected_fixtures.clone(),
-                        channel_type,
+                        channel_types,
                         effect_type,
                         waveform: tab_effect.effect_waveform,
                         interval: tab_effect.effect_interval,

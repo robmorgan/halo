@@ -434,6 +434,17 @@ impl FixtureLibrary {
             },
         );
 
+        profiles.insert(
+            "clen-led-pixel-bar-64".to_string(),
+            FixtureProfile {
+                id: "clen-led-pixel-bar-64".to_string(),
+                fixture_type: FixtureType::PixelBar,
+                manufacturer: "Clen".to_string(),
+                model: "LED Pixel Bar 64 Pixels RGB".to_string(),
+                channel_layout: Self::create_pixel_bar_channels(64),
+            },
+        );
+
         FixtureLibrary { profiles }
     }
 

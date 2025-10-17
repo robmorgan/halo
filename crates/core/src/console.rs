@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -7,6 +8,7 @@ use tokio::task::JoinHandle;
 
 use crate::artnet::network_config::NetworkConfig;
 use crate::audio::device_enumerator;
+use crate::cue::cue::Cue;
 use crate::cue::cue_manager::{CueManager, PlaybackState};
 use crate::messages::{ConsoleCommand, ConsoleEvent, Settings};
 use crate::midi::midi::{MidiMessage, MidiOverride};
@@ -18,6 +20,8 @@ use crate::pixel::PixelEngine;
 use crate::programmer::Programmer;
 use crate::rhythm::rhythm::RhythmState;
 use crate::show::show_manager::ShowManager;
+use crate::timecode::timecode::TimeCode;
+use crate::tracking_state::TrackingState;
 use crate::{AbletonLinkManager, CueList};
 
 pub struct LightingConsole {
@@ -33,6 +37,7 @@ pub struct LightingConsole {
     // Async module system
     module_manager: ModuleManager,
     message_handler: Option<JoinHandle<()>>,
+    message_rx: Option<mpsc::Receiver<ModuleMessage>>,
 
     // MIDI overrides
     midi_overrides: HashMap<u8, MidiOverride>,
@@ -49,6 +54,9 @@ pub struct LightingConsole {
 
     // Pixel engine
     pixel_engine: Arc<RwLock<PixelEngine>>,
+
+    // Tracking state for tracking console behavior
+    tracking_state: Arc<RwLock<TrackingState>>,
 
     // System state
     is_running: bool,
@@ -70,7 +78,11 @@ impl LightingConsole {
         module_manager.register_module(Box::new(DmxModule::new(network_config)));
         module_manager.register_module(Box::new(AudioModule::new()));
         module_manager.register_module(Box::new(SmpteModule::new(30))); // 30fps default
-        module_manager.register_module(Box::new(MidiModule::new("MPK49".to_string())));
+
+        // Only register MIDI module if enabled and device is not "None"
+        if settings.midi_enabled && settings.midi_device != "None" {
+            module_manager.register_module(Box::new(MidiModule::new(settings.midi_device.clone())));
+        }
 
         let show_manager = ShowManager::new()?;
 
@@ -84,6 +96,7 @@ impl LightingConsole {
             show_manager: Arc::new(RwLock::new(show_manager)),
             module_manager,
             message_handler: None,
+            message_rx: None,
             midi_overrides: HashMap::new(),
             active_overrides: HashMap::new(),
             rhythm_state: Arc::new(RwLock::new(RhythmState {
@@ -98,6 +111,7 @@ impl LightingConsole {
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
             settings: Arc::new(RwLock::new(settings)),
             pixel_engine: Arc::new(RwLock::new(PixelEngine::new())),
+            tracking_state: Arc::new(RwLock::new(TrackingState::new())),
             is_running: false,
         })
     }
@@ -118,51 +132,14 @@ impl LightingConsole {
             .await
             .map_err(|e| anyhow::anyhow!("Module start failed: {}", e))?;
 
-        // Start message handling
-        if let Some(mut message_rx) = self.module_manager.take_message_receiver() {
-            let rhythm_state = Arc::clone(&self.rhythm_state);
-            let cue_manager = Arc::clone(&self.cue_manager);
-            let fixtures = Arc::clone(&self.fixtures);
-
-            let handle = tokio::spawn(async move {
-                while let Some(message) = message_rx.recv().await {
-                    Self::handle_module_message(message, &rhythm_state, &cue_manager, &fixtures)
-                        .await;
-                }
-            });
-
-            self.message_handler = Some(handle);
+        // Store message receiver for main loop processing
+        if let Some(message_rx) = self.module_manager.take_message_receiver() {
+            self.message_rx = Some(message_rx);
         }
 
         self.is_running = true;
         log::info!("Async lighting console initialized successfully");
         Ok(())
-    }
-
-    async fn handle_module_message(
-        message: ModuleMessage,
-        rhythm_state: &Arc<RwLock<RhythmState>>,
-        cue_manager: &Arc<RwLock<CueManager>>,
-        _fixtures: &Arc<RwLock<Vec<Fixture>>>,
-    ) {
-        match message {
-            ModuleMessage::Event(event) => {
-                match event {
-                    ModuleEvent::MidiInput(midi_msg) => {
-                        Self::handle_midi_input(midi_msg, rhythm_state, cue_manager).await;
-                    }
-                    _ => {
-                        // Handle other inter-module events as needed
-                    }
-                }
-            }
-            ModuleMessage::Status(status) => {
-                log::info!("Module status: {}", status);
-            }
-            ModuleMessage::Error(error) => {
-                log::error!("Module error: {}", error);
-            }
-        }
     }
 
     async fn handle_midi_input(
@@ -218,18 +195,21 @@ impl LightingConsole {
             }
         }
 
-        // Process current cue if playing
+        // Process current cue if playing - update tracking state
         {
             let cue_manager = self.cue_manager.read().await;
             if cue_manager.get_playback_state() == PlaybackState::Playing {
                 if let Some(current_cue) = cue_manager.get_current_cue() {
-                    // Apply cue values and effects
-                    self.apply_cue_data(current_cue.clone()).await;
+                    // Update tracking state with current cue
+                    self.update_tracking_state(current_cue.clone()).await;
                 }
             }
         }
 
-        // Apply programmer values
+        // Apply accumulated tracking state to fixtures
+        self.apply_tracking_state().await;
+
+        // Apply programmer values (highest priority)
         self.apply_programmer_values().await;
 
         // Generate and send DMX data
@@ -252,24 +232,42 @@ impl LightingConsole {
             (beat_time / (rhythm.beats_per_bar * rhythm.bars_per_phrase) as f64).fract();
     }
 
-    async fn apply_cue_data(&self, cue: crate::cue::cue::Cue) {
+    /// Update tracking state with current cue
+    async fn update_tracking_state(&self, cue: crate::cue::cue::Cue) {
+        let mut tracking_state = self.tracking_state.write().await;
+
+        if cue.is_blocking {
+            // Blocking cue: clear state and apply this cue
+            tracking_state.apply_blocking_cue(&cue);
+        } else {
+            // Non-blocking cue: merge into tracking state
+            tracking_state.apply_cue(&cue);
+        }
+    }
+
+    /// Apply accumulated tracking state to fixtures
+    async fn apply_tracking_state(&self) {
+        let tracking_state = self.tracking_state.read().await;
         let mut fixtures = self.fixtures.write().await;
 
-        // Apply static values
-        for value in &cue.static_values {
+        // Apply static values from tracking state
+        for value in tracking_state.get_static_values() {
             if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == value.fixture_id) {
                 fixture.set_channel_value(&value.channel_type, value.value);
             }
         }
 
-        // Apply effects would go here - similar to the original implementation
-        // but we'd need to access the rhythm state
+        // Release fixtures lock before processing effects
+        drop(fixtures);
 
-        // Apply pixel effects to pixel engine
-        if !cue.pixel_effects.is_empty() {
+        // Apply effects from tracking state
+        self.apply_effects().await;
+
+        // Apply pixel effects from tracking state
+        let pixel_effects = tracking_state.get_pixel_effects();
+        if !pixel_effects.is_empty() {
             let mut pixel_engine = self.pixel_engine.write().await;
-            let pixel_effect_data: Vec<_> = cue
-                .pixel_effects
+            let pixel_effect_data: Vec<_> = pixel_effects
                 .iter()
                 .map(|pm| {
                     (
@@ -281,6 +279,72 @@ impl LightingConsole {
                 })
                 .collect();
             pixel_engine.set_effects(pixel_effect_data);
+        }
+    }
+
+    /// Apply effects from tracking state to fixtures
+    async fn apply_effects(&self) {
+        let tracking_state = self.tracking_state.read().await;
+        let effects = tracking_state.get_effects();
+        let rhythm_state = self.rhythm_state.read().await;
+        let mut fixtures = self.fixtures.write().await;
+
+        for effect_mapping in effects {
+            // Calculate effect phase based on rhythm state
+            let phase = crate::effect::effect::get_effect_phase(
+                &rhythm_state,
+                &effect_mapping.effect.params,
+            );
+
+            // Apply the effect to get normalized value (0.0 to 1.0)
+            let normalized_value = effect_mapping.effect.apply(phase);
+
+            // Scale to min/max range
+            let min = effect_mapping.effect.min as f64;
+            let max = effect_mapping.effect.max as f64;
+            let scaled_value = (min + (max - min) * normalized_value) as u8;
+
+            // Apply effect to fixtures based on distribution
+            match &effect_mapping.distribution {
+                crate::EffectDistribution::All => {
+                    // Apply same value to all fixtures
+                    for fixture_id in &effect_mapping.fixture_ids {
+                        if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
+                            for channel_type in &effect_mapping.channel_types {
+                                fixture.set_channel_value(channel_type, scaled_value);
+                            }
+                        }
+                    }
+                }
+                crate::EffectDistribution::Step(step_size) => {
+                    // Apply effect with step distribution
+                    for (idx, fixture_id) in effect_mapping.fixture_ids.iter().enumerate() {
+                        let step_phase = (phase + (idx / step_size) as f64) % 1.0;
+                        let step_normalized = effect_mapping.effect.apply(step_phase);
+                        let step_value = (min + (max - min) * step_normalized) as u8;
+
+                        if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
+                            for channel_type in &effect_mapping.channel_types {
+                                fixture.set_channel_value(channel_type, step_value);
+                            }
+                        }
+                    }
+                }
+                crate::EffectDistribution::Wave(phase_offset) => {
+                    // Apply effect with wave distribution (phase offset per fixture)
+                    for (idx, fixture_id) in effect_mapping.fixture_ids.iter().enumerate() {
+                        let wave_phase = (phase + idx as f64 * phase_offset) % 1.0;
+                        let wave_normalized = effect_mapping.effect.apply(wave_phase);
+                        let wave_value = (min + (max - min) * wave_normalized) as u8;
+
+                        if let Some(fixture) = fixtures.iter_mut().find(|f| f.id == *fixture_id) {
+                            for channel_type in &effect_mapping.channel_types {
+                                fixture.set_channel_value(channel_type, wave_value);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -337,6 +401,35 @@ impl LightingConsole {
         self.fixture_library = FixtureLibrary::new();
     }
 
+    /// Convert a channel name string to a ChannelType
+    fn channel_string_to_type(channel: &str) -> halo_fixtures::ChannelType {
+        use halo_fixtures::ChannelType;
+
+        match channel.to_lowercase().as_str() {
+            "dimmer" => ChannelType::Dimmer,
+            "color" => ChannelType::Color,
+            "gobo" => ChannelType::Gobo,
+            "red" => ChannelType::Red,
+            "green" => ChannelType::Green,
+            "blue" => ChannelType::Blue,
+            "white" => ChannelType::White,
+            "amber" => ChannelType::Amber,
+            "uv" => ChannelType::UV,
+            "strobe" => ChannelType::Strobe,
+            "pan" => ChannelType::Pan,
+            "tilt" => ChannelType::Tilt,
+            "tiltspeed" | "tilt_speed" => ChannelType::TiltSpeed,
+            "beam" => ChannelType::Beam,
+            "focus" => ChannelType::Focus,
+            "zoom" => ChannelType::Zoom,
+            "function" => ChannelType::Function,
+            "functionspeed" | "function_speed" => ChannelType::FunctionSpeed,
+            "gobo_rotation" | "gobo_rot" => ChannelType::Other("gobo_rotation".to_string()),
+            "gobo_selection" | "gobo_sel" => ChannelType::Other("gobo_selection".to_string()),
+            _ => ChannelType::Other(channel.to_string()),
+        }
+    }
+
     /// Patch a fixture
     pub async fn patch_fixture(
         &mut self,
@@ -387,6 +480,22 @@ impl LightingConsole {
         fixture.start_address = address;
 
         Ok(fixture.clone())
+    }
+
+    /// Remove a fixture
+    pub async fn unpatch_fixture(&mut self, fixture_id: usize) -> Result<(), String> {
+        let mut fixtures = self.fixtures.write().await;
+
+        // Find if fixture exists
+        if !fixtures.iter().any(|f| f.id == fixture_id) {
+            return Err(format!("Fixture {fixture_id} not found"));
+        }
+
+        // Remove the fixture by ID
+        fixtures.retain(|f| f.id != fixture_id);
+
+        log::info!("Unpatched fixture {fixture_id}");
+        Ok(())
     }
 
     /// Set cue lists
@@ -534,7 +643,25 @@ impl LightingConsole {
 
     /// Load a show from a path
     pub async fn load_show(&mut self, path: &std::path::Path) -> Result<(), anyhow::Error> {
-        let show = self.show_manager.write().await.load_show(path)?;
+        // Validate that the file exists
+        if !path.exists() {
+            return Err(anyhow::anyhow!("Show file not found: {}", path.display()));
+        }
+
+        // Load the show from the file
+        let show = self
+            .show_manager
+            .write()
+            .await
+            .load_show(path)
+            .map_err(|e| anyhow::anyhow!("Failed to load show file '{}': {}", path.display(), e))?;
+
+        log::info!(
+            "Loaded show '{}' with {} fixtures and {} cue lists",
+            show.name,
+            show.fixtures.len(),
+            show.cue_lists.len()
+        );
 
         // Clear current fixtures and cue lists before loading
         {
@@ -542,13 +669,18 @@ impl LightingConsole {
             fixtures.clear();
         }
 
+        // Track missing profiles for better error reporting
+        let mut missing_profiles = Vec::new();
+
         // For each fixture in the loaded show
         for mut fixture in show.fixtures {
             // Preserve the original fixture ID
             let fixture_id = fixture.id;
+            let fixture_name = fixture.name.clone();
+            let profile_id = fixture.profile_id.clone();
 
             // Look up the profile by ID in the fixture library
-            if let Some(profile) = self.fixture_library.profiles.get(&fixture.profile_id) {
+            if let Some(profile) = self.fixture_library.profiles.get(&profile_id) {
                 // Set the profile field with the one from the library
                 fixture.profile = profile.clone();
                 fixture.channels = profile.channel_layout.clone();
@@ -557,17 +689,34 @@ impl LightingConsole {
                 fixture.id = fixture_id;
                 let mut fixtures = self.fixtures.write().await;
                 fixtures.push(fixture);
+                log::debug!(
+                    "Loaded fixture '{}' with profile '{}'",
+                    fixture_name,
+                    profile_id
+                );
             } else {
-                return Err(anyhow::anyhow!(
-                    "Fixture profile '{}' not found in library",
-                    fixture.profile_id
+                missing_profiles.push(format!(
+                    "  - Fixture '{}' (ID: {}) requires profile '{}'",
+                    fixture_name, fixture_id, profile_id
                 ));
             }
         }
 
+        // If any profiles are missing, return a detailed error
+        if !missing_profiles.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Failed to load show '{}': {} fixture profile(s) not found in library:\n{}",
+                path.display(),
+                missing_profiles.len(),
+                missing_profiles.join("\n")
+            ));
+        }
+
         // After all fixtures are loaded with their original IDs, set the cue lists
         self.set_cue_lists(show.cue_lists).await;
-        self.show_name = show.name;
+        self.show_name = show.name.clone();
+
+        log::info!("Successfully loaded show '{}'", show.name);
 
         // Settings are now loaded separately from config file, not from show
 
@@ -635,12 +784,22 @@ impl LightingConsole {
             }
             LoadShow { path } => {
                 log::info!("Processing LoadShow command for path: {:?}", path);
-                self.load_show(&path).await?;
-                let show = self.get_show().await;
-                let settings = self.settings.read().await.clone();
-                let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
-                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
-                log::info!("LoadShow command completed successfully");
+                match self.load_show(&path).await {
+                    Ok(_) => {
+                        let show = self.get_show().await;
+                        let settings = self.settings.read().await.clone();
+                        let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                        let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
+                        log::info!("LoadShow command completed successfully");
+                    }
+                    Err(e) => {
+                        let error_message = format!("Failed to load show: {}", e);
+                        log::error!("{}", error_message);
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: error_message,
+                        });
+                    }
+                }
             }
             SaveShow => {
                 let path = self.save_show().await?;
@@ -650,13 +809,22 @@ impl LightingConsole {
                 let saved_path = self.save_show_as(name, path).await?;
                 let _ = event_tx.send(ConsoleEvent::ShowSaved { path: saved_path });
             }
-            ReloadShow => {
-                self.reload_show().await?;
-                let show = self.get_show().await;
-                let settings = self.settings.read().await.clone();
-                let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
-                let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
-            }
+            ReloadShow => match self.reload_show().await {
+                Ok(_) => {
+                    let show = self.get_show().await;
+                    let settings = self.settings.read().await.clone();
+                    let _ = event_tx.send(ConsoleEvent::ShowLoaded { show });
+                    let _ = event_tx.send(ConsoleEvent::CurrentSettings { settings });
+                    log::info!("ReloadShow command completed successfully");
+                }
+                Err(e) => {
+                    let error_message = format!("Failed to reload show: {}", e);
+                    log::error!("{}", error_message);
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: error_message,
+                    });
+                }
+            },
 
             // Fixture management
             PatchFixture {
@@ -677,10 +845,17 @@ impl LightingConsole {
                     });
                 }
             }
-            UnpatchFixture { fixture_id } => {
-                // TODO: Implement unpatch_fixture method
-                let _ = event_tx.send(ConsoleEvent::FixtureUnpatched { fixture_id });
-            }
+            UnpatchFixture { fixture_id } => match self.unpatch_fixture(fixture_id).await {
+                Ok(_) => {
+                    let _ = event_tx.send(ConsoleEvent::FixtureUnpatched { fixture_id });
+                }
+                Err(e) => {
+                    log::error!("Failed to unpatch fixture: {e}");
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to unpatch fixture: {e}"),
+                    });
+                }
+            },
             UpdateFixture {
                 fixture_id,
                 name,
@@ -736,6 +911,127 @@ impl LightingConsole {
             SetCueLists { cue_lists } => {
                 self.set_cue_lists(cue_lists.clone()).await;
                 let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+            }
+            UpdateCue {
+                list_index,
+                cue_index,
+                name,
+                fade_time,
+                timecode,
+                is_blocking,
+            } => {
+                let result = self.cue_manager.write().await.update_cue(
+                    list_index,
+                    cue_index,
+                    name,
+                    fade_time,
+                    timecode,
+                    is_blocking,
+                );
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to update cue: {}", e),
+                        });
+                    }
+                }
+            }
+            DeleteCue {
+                list_index,
+                cue_index,
+            } => {
+                let result = self
+                    .cue_manager
+                    .write()
+                    .await
+                    .remove_cue(list_index, cue_index);
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to delete cue: {}", e),
+                        });
+                    }
+                }
+            }
+            DeleteCueList { list_index } => {
+                let result = self.cue_manager.write().await.remove_cue_list(list_index);
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to delete cue list: {}", e),
+                        });
+                    }
+                }
+            }
+            SetCueListAudioFile {
+                list_index,
+                audio_file,
+            } => {
+                let result = if let Some(file_path) = &audio_file {
+                    self.cue_manager
+                        .write()
+                        .await
+                        .set_audio_file(list_index, file_path.clone())
+                } else {
+                    // Clear the audio file
+                    self.cue_manager
+                        .write()
+                        .await
+                        .set_audio_file(list_index, String::new())
+                };
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to set audio file: {}", e),
+                        });
+                    }
+                }
+            }
+            AddCue {
+                list_index,
+                name,
+                fade_time,
+                timecode,
+                is_blocking,
+            } => {
+                let cue = Cue {
+                    id: 0, // Will be set by the cue manager
+                    name,
+                    fade_time: Duration::from_secs_f64(fade_time),
+                    timecode,
+                    static_values: Vec::new(),
+                    effects: Vec::new(),
+                    pixel_effects: Vec::new(),
+                    is_blocking,
+                };
+                let result = self.cue_manager.write().await.add_cue(list_index, cue);
+                match result {
+                    Ok(_) => {
+                        let cue_lists = self.cue_manager.read().await.get_cue_lists();
+                        let _ = event_tx.send(ConsoleEvent::CueListsUpdated { cue_lists });
+                    }
+                    Err(e) => {
+                        let _ = event_tx.send(ConsoleEvent::Error {
+                            message: format!("Failed to add cue: {}", e),
+                        });
+                    }
+                }
             }
             PlayCue {
                 list_index,
@@ -848,7 +1144,31 @@ impl LightingConsole {
                     if let Some(audio_file) = &current_cue_list.audio_file {
                         println!("Found audio file for cuelist: {}", audio_file);
                         log::info!("Found audio file for cuelist: {}", audio_file);
-                        if let Err(e) = self.play_audio(audio_file.clone()).await {
+
+                        // Analyze waveform for timeline visualization
+                        if let Ok(waveform_data) =
+                            crate::audio::waveform::analyze_audio_file(audio_file)
+                        {
+                            let _ = event_tx.send(ConsoleEvent::WaveformAnalyzed {
+                                waveform_data: waveform_data.clone(),
+                                duration: waveform_data.duration_seconds,
+                                bpm: waveform_data.bpm,
+                            });
+                            log::info!("Waveform analysis completed for: {}", audio_file);
+                        } else {
+                            log::warn!("Failed to analyze waveform for: {}", audio_file);
+                        }
+
+                        if let Err(e) = self
+                            .module_manager
+                            .send_to_module(
+                                ModuleId::Audio,
+                                ModuleEvent::AudioPlay {
+                                    file_path: audio_file.clone(),
+                                },
+                            )
+                            .await
+                        {
                             println!("ERROR: Failed to play audio file {}: {}", audio_file, e);
                             log::error!("Failed to play audio file {}: {}", audio_file, e);
                         } else {
@@ -874,6 +1194,9 @@ impl LightingConsole {
                 let _ = self.cue_manager.write().await.stop();
                 let state = self.cue_manager.read().await.get_playback_state();
                 let _ = event_tx.send(ConsoleEvent::PlaybackStateChanged { state });
+
+                // Clear tracking state when stopping
+                self.tracking_state.write().await.clear();
 
                 // Stop audio playback when stopping the cuelist
                 if let Err(e) = self
@@ -932,6 +1255,53 @@ impl LightingConsole {
                 self.cue_manager.write().await.current_timecode = Some(timecode);
                 let _ = event_tx.send(ConsoleEvent::TimecodeUpdated { timecode });
             }
+            SeekAudio { position_seconds } => {
+                // Send seek command to audio module
+                if let Err(e) = self
+                    .module_manager
+                    .send_to_module(ModuleId::Audio, ModuleEvent::AudioSeek { position_seconds })
+                    .await
+                {
+                    log::error!("Failed to seek audio: {}", e);
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to seek audio: {}", e),
+                    });
+                } else {
+                    // Update cue manager timing to reflect new position
+                    let mut cue_manager = self.cue_manager.write().await;
+
+                    // Update show elapsed time to the seek position
+                    cue_manager.show_elapsed_time = position_seconds;
+
+                    // Adjust show start time so that elapsed time calculation reflects the new
+                    // position
+                    if cue_manager.show_start_time.is_some() {
+                        let now = std::time::Instant::now();
+                        let adjusted_start_time =
+                            now - std::time::Duration::from_secs_f64(position_seconds);
+                        cue_manager.show_start_time = Some(adjusted_start_time);
+                    }
+
+                    // Update timecode to reflect new position
+                    let new_timecode = TimeCode::from_seconds(position_seconds, 30);
+                    cue_manager.current_timecode = Some(new_timecode);
+
+                    // Check if we need to jump to a different cue based on the new timecode
+                    if let Some(target_cue_idx) = cue_manager.find_cue_by_timecode(&new_timecode) {
+                        if target_cue_idx != cue_manager.get_current_cue_index() {
+                            if let Err(e) = cue_manager.jump_to_cue(target_cue_idx) {
+                                log::warn!("Failed to jump to cue {}: {}", target_cue_idx, e);
+                            } else {
+                                log::info!("Seek triggered cue jump to cue {}", target_cue_idx);
+                            }
+                        }
+                    }
+
+                    let _ = event_tx.send(ConsoleEvent::TimecodeUpdated {
+                        timecode: new_timecode,
+                    });
+                }
+            }
 
             // MIDI
             AddMidiOverride {
@@ -988,17 +1358,32 @@ impl LightingConsole {
                 channel,
                 value,
             } => {
-                // TODO: Implement programmer channel value setting
-                println!(
-                    "Setting programmer value: fixture {}, channel {}, value {}",
-                    fixture_id, channel, value
-                );
+                // Convert channel string to ChannelType
+                let channel_type = Self::channel_string_to_type(&channel);
+                self.programmer
+                    .write()
+                    .await
+                    .add_value(fixture_id, channel_type, value);
+
+                // Send updated programmer values to UI
+                let programmer = self.programmer.read().await;
+                let values: Vec<(usize, String, u8)> = programmer
+                    .get_values()
+                    .iter()
+                    .map(|v| (v.fixture_id, v.channel_type.to_string(), v.value))
+                    .collect();
+                drop(programmer);
+
+                let _ = event_tx.send(ConsoleEvent::ProgrammerValuesUpdated { values });
             }
             SetProgrammerPreviewMode { preview_mode } => {
                 self.programmer.write().await.set_preview_mode(preview_mode);
-            }
-            SetProgrammerCollapsed { collapsed: _ } => {
-                // TODO: Handle collapsed state in UI state
+                let programmer = self.programmer.read().await;
+                let selected_fixtures = programmer.get_selected_fixtures().clone();
+                let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
+                    preview_mode: programmer.get_preview_mode(),
+                    selected_fixtures,
+                });
             }
             SetSelectedFixtures { fixture_ids } => {
                 self.programmer
@@ -1008,7 +1393,6 @@ impl LightingConsole {
                 let programmer = self.programmer.read().await;
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures: fixture_ids,
                 });
             }
@@ -1021,7 +1405,6 @@ impl LightingConsole {
                 let selected_fixtures = programmer.get_selected_fixtures().clone();
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures,
                 });
             }
@@ -1034,7 +1417,6 @@ impl LightingConsole {
                 let selected_fixtures = programmer.get_selected_fixtures().clone();
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures,
                 });
             }
@@ -1043,12 +1425,14 @@ impl LightingConsole {
                 let programmer = self.programmer.read().await;
                 let _ = event_tx.send(ConsoleEvent::ProgrammerStateUpdated {
                     preview_mode: programmer.get_preview_mode(),
-                    collapsed: programmer.get_collapsed(),
                     selected_fixtures: Vec::new(),
                 });
             }
             ClearProgrammer => {
                 self.programmer.write().await.clear();
+
+                // Send empty programmer values to UI
+                let _ = event_tx.send(ConsoleEvent::ProgrammerValuesUpdated { values: Vec::new() });
             }
             RecordProgrammerToCue {
                 cue_name,
@@ -1059,7 +1443,7 @@ impl LightingConsole {
             }
             ApplyProgrammerEffect {
                 fixture_ids,
-                channel_type,
+                channel_types,
                 effect_type,
                 waveform,
                 interval,
@@ -1069,11 +1453,55 @@ impl LightingConsole {
                 step_value,
                 wave_offset,
             } => {
-                // TODO: Implement programmer effect application
-                println!(
-                    "Applying programmer effect: {:?} to fixtures {:?}",
-                    effect_type, fixture_ids
-                );
+                // Convert string channel types to ChannelType enum
+                let channel_types_enum: Vec<halo_fixtures::ChannelType> = channel_types
+                    .iter()
+                    .map(|s| Self::channel_string_to_type(s))
+                    .collect();
+
+                // Convert UI parameters to effect parameters
+                let interval_enum = match interval {
+                    0 => crate::Interval::Beat,
+                    1 => crate::Interval::Bar,
+                    2 => crate::Interval::Phrase,
+                    _ => crate::Interval::Beat,
+                };
+
+                let distribution_enum = match distribution {
+                    0 => crate::EffectDistribution::All,
+                    1 => crate::EffectDistribution::Step(step_value.unwrap_or(1)),
+                    2 => crate::EffectDistribution::Wave(wave_offset.unwrap_or(0.0) as f64),
+                    _ => crate::EffectDistribution::All,
+                };
+
+                // Create the effect
+                let effect = crate::Effect {
+                    effect_type,
+                    min: 0,
+                    max: 255,
+                    amplitude: 1.0,
+                    frequency: 1.0,
+                    offset: 0.0,
+                    params: crate::EffectParams {
+                        interval: interval_enum,
+                        interval_ratio: ratio as f64,
+                        phase: phase as f64,
+                    },
+                };
+
+                // Create effect mapping
+                let effect_mapping = crate::EffectMapping {
+                    name: format!("Programmer_{}_{}", effect_type.as_str(), fixture_ids.len()),
+                    effect,
+                    fixture_ids,
+                    channel_types: channel_types_enum,
+                    distribution: distribution_enum,
+                    release: crate::EffectRelease::Hold,
+                };
+
+                // Add to tracking state
+                let mut tracking_state = self.tracking_state.write().await;
+                tracking_state.add_effect(effect_mapping);
             }
 
             // Query commands
@@ -1220,14 +1648,6 @@ impl LightingConsole {
     ) -> Result<(), anyhow::Error> {
         log::info!("Console run_with_channels starting...");
 
-        // Initialize the console
-        log::info!("Initializing console...");
-        self.initialize().await?;
-        log::info!("Console initialized successfully");
-
-        let _ = event_tx.send(ConsoleEvent::Initialized);
-        log::info!("Sent Initialized event");
-
         // Start the update loop
         let mut update_interval = tokio::time::interval(std::time::Duration::from_millis(23)); // ~44Hz
         log::info!("Starting console main loop...");
@@ -1281,6 +1701,42 @@ impl LightingConsole {
                         tap_count: rhythm_guard.tap_count,
                     };
                     let _ = event_tx.send(ConsoleEvent::RhythmStateUpdated { state: rhythm_state });
+
+                    // Send tracking state information
+                    let tracking_state = self.tracking_state.read().await;
+                    let active_effect_count = tracking_state.active_effect_count();
+                    let _ = event_tx.send(ConsoleEvent::TrackingStateUpdated { active_effect_count });
+                }
+
+                // Process module messages (if available)
+                Some(message) = async {
+                    if let Some(rx) = self.message_rx.as_mut() {
+                        rx.recv().await
+                    } else {
+                        // Return a future that never resolves if no receiver
+                        std::future::pending().await
+                    }
+                } => {
+                    match message {
+                        ModuleMessage::Event(event) => {
+                            match event {
+                                ModuleEvent::MidiInput(midi_msg) => {
+                                    Self::handle_midi_input(midi_msg, &self.rhythm_state, &self.cue_manager).await;
+                                }
+                                _ => {
+                                    // Handle other inter-module events as needed
+                                }
+                            }
+                        }
+                        ModuleMessage::Status(status) => {
+                            log::info!("Module status: {}", status);
+                        }
+                        ModuleMessage::Error(error) => {
+                            log::error!("Module error: {}", error);
+                            // Send error to UI
+                            let _ = event_tx.send(ConsoleEvent::Error { message: error });
+                        }
+                    }
                 }
             }
         }
@@ -1594,6 +2050,18 @@ impl SyncLightingConsole {
                         }
                     }
                 }
+            }
+        });
+    }
+}
+
+impl Drop for SyncLightingConsole {
+    fn drop(&mut self) {
+        // Ensure module manager is properly shut down
+        self.runtime.block_on(async {
+            let mut console = self.inner.lock().await;
+            if let Err(e) = console.module_manager.shutdown().await {
+                log::error!("Error shutting down module manager during drop: {}", e);
             }
         });
     }

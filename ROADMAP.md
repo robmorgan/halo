@@ -27,8 +27,8 @@ We introduced a 6-week challenge to hopefully get there in time for an autumn 20
   - [x] CLI path
 - [x] Cues advance to timecode
 - [ ] Lighting Engine
-  - [ ] Tracking functionality (copy params to stage, show footer counts)
-  - [ ] Blocking cues
+  - [x] Tracking functionality (copy params to stage, show footer counts)
+  - [x] Blocking cues
   - [ ] Fade time on cues and fixtures
   - [ ] UI: Master BPM should control effects
 - [ ] Ability to control FX (smoke, strobe, flash) and transport (go, change cuelists) with Traktor MIDI controller

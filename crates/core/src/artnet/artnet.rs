@@ -32,13 +32,18 @@ impl ArtNet {
 
         match mode {
             ArtNetMode::Broadcast => {
-                let socket = UdpSocket::bind((String::from("0.0.0.0"), 6455))?;
+                // Use port 0 to let OS assign an ephemeral port, allowing multiple broadcast
+                // sockets
+                let socket = UdpSocket::bind((String::from("0.0.0.0"), 0))?;
                 let broadcast_addr = (ART_NET_CONTROLLER_IP, 6454)
                     .to_socket_addrs()?
                     .next()
                     .unwrap();
                 socket.set_broadcast(true).unwrap();
-                debug!("Broadcast mode set up OK");
+                debug!(
+                    "Broadcast mode set up OK on local port {}",
+                    socket.local_addr()?.port()
+                );
                 Ok(ArtNet {
                     socket,
                     destination: broadcast_addr,
@@ -53,9 +58,15 @@ impl ArtNet {
                     "Will connect from interface {} to destination {}",
                     &src, &destination
                 );
-                let socket = UdpSocket::bind(src)?;
+                // Use ephemeral port for sending, only use src IP to select interface
+                let bind_addr = SocketAddr::new(src.ip(), 0);
+                let socket = UdpSocket::bind(bind_addr)?;
 
                 socket.set_broadcast(false)?;
+                debug!(
+                    "Unicast mode set up OK on local port {}",
+                    socket.local_addr()?.port()
+                );
                 Ok(ArtNet {
                     socket,
                     destination,

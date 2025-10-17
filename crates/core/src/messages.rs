@@ -63,6 +63,32 @@ pub enum ConsoleCommand {
     SetCueLists {
         cue_lists: Vec<CueList>,
     },
+    UpdateCue {
+        list_index: usize,
+        cue_index: usize,
+        name: String,
+        fade_time: f64,
+        timecode: Option<String>,
+        is_blocking: bool,
+    },
+    DeleteCue {
+        list_index: usize,
+        cue_index: usize,
+    },
+    DeleteCueList {
+        list_index: usize,
+    },
+    SetCueListAudioFile {
+        list_index: usize,
+        audio_file: Option<String>,
+    },
+    AddCue {
+        list_index: usize,
+        name: String,
+        fade_time: f64,
+        timecode: Option<String>,
+        is_blocking: bool,
+    },
     PlayCue {
         list_index: usize,
         cue_index: usize,
@@ -105,6 +131,9 @@ pub enum ConsoleCommand {
     TapTempo,
     SetTimecode {
         timecode: TimeCode,
+    },
+    SeekAudio {
+        position_seconds: f64,
     },
 
     // MIDI
@@ -155,9 +184,6 @@ pub enum ConsoleCommand {
     SetProgrammerPreviewMode {
         preview_mode: bool,
     },
-    SetProgrammerCollapsed {
-        collapsed: bool,
-    },
     SetSelectedFixtures {
         fixture_ids: Vec<usize>,
     },
@@ -175,7 +201,7 @@ pub enum ConsoleCommand {
     ClearProgrammer,
     ApplyProgrammerEffect {
         fixture_ids: Vec<usize>,
-        channel_type: String,
+        channel_types: Vec<String>,
         effect_type: EffectType,
         waveform: u8,
         interval: u8,
@@ -318,6 +344,9 @@ pub enum ConsoleEvent {
     RhythmStateUpdated {
         state: RhythmState,
     },
+    TrackingStateUpdated {
+        active_effect_count: usize,
+    },
     TimecodeUpdated {
         timecode: TimeCode,
     },
@@ -405,7 +434,6 @@ pub enum ConsoleEvent {
     // Programmer events
     ProgrammerStateUpdated {
         preview_mode: bool,
-        collapsed: bool,
         selected_fixtures: Vec<usize>,
     },
     ProgrammerValuesUpdated {
@@ -448,6 +476,11 @@ pub enum ConsoleEvent {
     },
     AudioDevicesList {
         devices: Vec<AudioDeviceInfo>,
+    },
+    WaveformAnalyzed {
+        waveform_data: crate::audio::waveform::WaveformData,
+        duration: f64,
+        bpm: Option<f64>,
     },
     FixtureLibraryList {
         profiles: Vec<(String, String)>, // (id, display_name)

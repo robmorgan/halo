@@ -1,8 +1,26 @@
 use std::f64::consts::PI;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::{Interval, RhythmState};
+
+/// Effect release behavior - controls what happens to effects when cues change
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum EffectRelease {
+    /// Continue running indefinitely (default for tracking consoles)
+    Hold,
+    /// Remove when cue changes
+    Remove,
+    /// Fade out over time (future enhancement)
+    FadeOut(Duration),
+}
+
+impl Default for EffectRelease {
+    fn default() -> Self {
+        EffectRelease::Hold
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Effect {
