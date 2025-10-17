@@ -445,7 +445,13 @@ impl LightingConsole {
             .ok_or_else(|| format!("Profile {} not found", profile_name))?;
 
         let mut fixtures = self.fixtures.write().await;
-        let id = fixtures.len();
+        // Find the next available ID by getting max ID + 1, or 0 if no fixtures exist
+        let id = fixtures
+            .iter()
+            .map(|f| f.id)
+            .max()
+            .map(|max| max + 1)
+            .unwrap_or(0);
 
         let fixture = Fixture {
             id,
@@ -472,8 +478,9 @@ impl LightingConsole {
     ) -> Result<Fixture, String> {
         let mut fixtures = self.fixtures.write().await;
         let fixture = fixtures
-            .get_mut(fixture_id)
-            .ok_or_else(|| format!("Fixture {} not found", fixture_id))?;
+            .iter_mut()
+            .find(|f| f.id == fixture_id)
+            .ok_or_else(|| format!("Fixture {fixture_id} not found"))?;
 
         fixture.name = name;
         fixture.universe = universe;
@@ -838,7 +845,7 @@ impl LightingConsole {
                     .await
                     .map_err(|e| anyhow::anyhow!(e))?;
                 let fixtures = self.fixtures.read().await;
-                if let Some(fixture) = fixtures.get(fixture_id) {
+                if let Some(fixture) = fixtures.iter().find(|f| f.id == fixture_id) {
                     let _ = event_tx.send(ConsoleEvent::FixturePatched {
                         fixture_id,
                         fixture: fixture.clone(),
