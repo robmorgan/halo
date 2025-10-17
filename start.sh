@@ -14,4 +14,4 @@ echo "Starting Halo..."
 #cargo run -- --source-ip 192.168.1.131 --dest-ip 192.168.1.131 --show-file shows/Guys40th.json
 #cargo run -- --source-ip 10.8.45.1 --dest-ip 10.8.45.80 --show-file shows/Guys40th.json
 
-cargo run -- --source-ip 10.8.45.1 --lighting-dest-ip 10.8.45.80 --pixel-dest-ip 127.0.0.1 --show-file shows/Jasons40th.json
+cargo run -- --source-ip 10.8.45.1 --lighting-dest-ip 10.8.45.80 --pixel-dest-ip 10.8.45.90 --pixel-start-universe 1 --show-file shows/Jasons40th.json
