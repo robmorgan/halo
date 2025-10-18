@@ -1,40 +1,16 @@
 {
   "name": "Jason's 40th Show",
   "created_at": {
-    "secs_since_epoch": 1760676629,
-    "nanos_since_epoch": 778043000
+    "secs_since_epoch": 1760755734,
+    "nanos_since_epoch": 822142000
   },
   "modified_at": {
-    "secs_since_epoch": 1760676629,
-    "nanos_since_epoch": 778079000
+    "secs_since_epoch": 1760755734,
+    "nanos_since_epoch": 822358000
   },
   "fixtures": [
     {
-      "id": 1,
-      "name": " LED Beam Bar",
-      "profile_id": "shehds-led-bar-beam-8x12w",
-      "universe": 1,
-      "start_address": 1,
-      "pan_tilt_limits": null
-    },
-    {
-      "id": 3,
-      "name": "Left Strobe",
-      "profile_id": "hyulights-led-rgbw-4in1-48-partition-strobe",
-      "universe": 1,
-      "start_address": 10,
-      "pan_tilt_limits": null
-    },
-    {
-      "id": 4,
-      "name": "Right Strobe",
-      "profile_id": "hyulights-led-rgbw-4in1-48-partition-strobe",
-      "universe": 1,
-      "start_address": 16,
-      "pan_tilt_limits": null
-    },
-    {
-      "id": 5,
+      "id": 0,
       "name": "Left Spot",
       "profile_id": "shehds-led-spot-60w",
       "universe": 1,
@@ -42,7 +18,7 @@
       "pan_tilt_limits": null
     },
     {
-      "id": 6,
+      "id": 1,
       "name": "Right Spot",
       "profile_id": "shehds-led-spot-60w",
       "universe": 1,
@@ -50,11 +26,51 @@
       "pan_tilt_limits": null
     },
     {
-      "id": 7,
-      "name": "Clen Pixel Bar",
+      "id": 2,
+      "name": "Pixel Bar 1",
       "profile_id": "clen-led-pixel-bar-64",
       "universe": 1,
-      "start_address": 70,
+      "start_address": 1,
+      "pan_tilt_limits": null
+    },
+    {
+      "id": 3,
+      "name": "Pixel Bar 2",
+      "profile_id": "clen-led-pixel-bar-64",
+      "universe": 1,
+      "start_address": 193,
+      "pan_tilt_limits": null
+    },
+    {
+      "id": 4,
+      "name": "Pixel Bar 3",
+      "profile_id": "clen-led-pixel-bar-64",
+      "universe": 2,
+      "start_address": 1,
+      "pan_tilt_limits": null
+    },
+    {
+      "id": 5,
+      "name": "Pixel Bar 4",
+      "profile_id": "clen-led-pixel-bar-64",
+      "universe": 2,
+      "start_address": 193,
+      "pan_tilt_limits": null
+    },
+    {
+      "id": 6,
+      "name": "Pixel Bar 5",
+      "profile_id": "clen-led-pixel-bar-64",
+      "universe": 3,
+      "start_address": 1,
+      "pan_tilt_limits": null
+    },
+    {
+      "id": 7,
+      "name": "Pixel Bar 6",
+      "profile_id": "clen-led-pixel-bar-64",
+      "universe": 3,
+      "start_address": 193,
       "pan_tilt_limits": null
     }
   ],
@@ -386,13 +402,8 @@
                   "phase": 0.4972330629825592
                 }
               },
-              "fixture_ids": [
-                5,
-                6
-              ],
-              "channel_types": [
-                "Pan"
-              ],
+              "fixture_ids": [5, 6],
+              "channel_types": ["Pan"],
               "distribution": "All",
               "release": "Hold"
             }
@@ -661,13 +672,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                1,
-                2
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [1, 2],
+              "channel_types": ["Dimmer"],
               "distribution": {
                 "Step": 1
               },
@@ -783,13 +789,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                2,
-                1
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [2, 1],
+              "channel_types": ["Dimmer"],
               "distribution": {
                 "Step": 1
               },
@@ -988,12 +989,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                0
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [0],
+              "channel_types": ["Dimmer"],
               "distribution": "All",
               "release": "Hold"
             }
@@ -1107,13 +1104,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                1,
-                2
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [1, 2],
+              "channel_types": ["Dimmer"],
               "distribution": "All",
               "release": "Hold"
             }
@@ -1450,13 +1442,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                1,
-                2
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [1, 2],
+              "channel_types": ["Dimmer"],
               "distribution": {
                 "Step": 1
               },
@@ -1477,14 +1464,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                5,
-                6
-              ],
-              "channel_types": [
-                "Pan",
-                "Tilt"
-              ],
+              "fixture_ids": [5, 6],
+              "channel_types": ["Pan", "Tilt"],
               "distribution": "All",
               "release": "Hold"
             }
