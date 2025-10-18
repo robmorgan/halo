@@ -1,12 +1,12 @@
 {
   "name": "Jason's 40th Show",
   "created_at": {
-    "secs_since_epoch": 1760755734,
-    "nanos_since_epoch": 822142000
+    "secs_since_epoch": 1760760657,
+    "nanos_since_epoch": 439474000
   },
   "modified_at": {
-    "secs_since_epoch": 1760755734,
-    "nanos_since_epoch": 822358000
+    "secs_since_epoch": 1760760657,
+    "nanos_since_epoch": 439624000
   },
   "fixtures": [
     {
@@ -14,7 +14,7 @@
       "name": "Left Spot",
       "profile_id": "shehds-led-spot-60w",
       "universe": 1,
-      "start_address": 22,
+      "start_address": 1,
       "pan_tilt_limits": null
     },
     {
@@ -22,7 +22,7 @@
       "name": "Right Spot",
       "profile_id": "shehds-led-spot-60w",
       "universe": 1,
-      "start_address": 31,
+      "start_address": 10,
       "pan_tilt_limits": null
     },
     {
@@ -402,8 +402,13 @@
                   "phase": 0.4972330629825592
                 }
               },
-              "fixture_ids": [5, 6],
-              "channel_types": ["Pan"],
+              "fixture_ids": [
+                5,
+                6
+              ],
+              "channel_types": [
+                "Pan"
+              ],
               "distribution": "All",
               "release": "Hold"
             }
@@ -672,8 +677,13 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [1, 2],
-              "channel_types": ["Dimmer"],
+              "fixture_ids": [
+                1,
+                2
+              ],
+              "channel_types": [
+                "Dimmer"
+              ],
               "distribution": {
                 "Step": 1
               },
@@ -789,8 +799,13 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [2, 1],
-              "channel_types": ["Dimmer"],
+              "fixture_ids": [
+                2,
+                1
+              ],
+              "channel_types": [
+                "Dimmer"
+              ],
               "distribution": {
                 "Step": 1
               },
@@ -989,8 +1004,12 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [0],
-              "channel_types": ["Dimmer"],
+              "fixture_ids": [
+                0
+              ],
+              "channel_types": [
+                "Dimmer"
+              ],
               "distribution": "All",
               "release": "Hold"
             }
@@ -1104,8 +1123,13 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [1, 2],
-              "channel_types": ["Dimmer"],
+              "fixture_ids": [
+                1,
+                2
+              ],
+              "channel_types": [
+                "Dimmer"
+              ],
               "distribution": "All",
               "release": "Hold"
             }
@@ -1442,8 +1466,13 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [1, 2],
-              "channel_types": ["Dimmer"],
+              "fixture_ids": [
+                1,
+                2
+              ],
+              "channel_types": [
+                "Dimmer"
+              ],
               "distribution": {
                 "Step": 1
               },
@@ -1464,8 +1493,14 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [5, 6],
-              "channel_types": ["Pan", "Tilt"],
+              "fixture_ids": [
+                5,
+                6
+              ],
+              "channel_types": [
+                "Pan",
+                "Tilt"
+              ],
               "distribution": "All",
               "release": "Hold"
             }
