@@ -408,29 +408,30 @@ impl LightingConsole {
 
     async fn send_dmx_data(&self) -> Result<(), anyhow::Error> {
         let fixtures = self.fixtures.read().await;
-        let mut dmx_data = vec![0; 512];
 
-        // Render regular fixtures (non-pixel bars)
+        // Render pixel fixtures first
+        let pixel_engine = self.pixel_engine.read().await;
+        let rhythm_state = self.rhythm_state.read().await;
+        let mut universe_data = pixel_engine.render(&fixtures, &rhythm_state);
+
+        // Merge regular fixtures into universe buffers
         for fixture in fixtures.iter() {
             if fixture.profile.fixture_type != halo_fixtures::FixtureType::PixelBar {
+                // Get or create universe buffer
+                let universe_buffer = universe_data
+                    .entry(fixture.universe)
+                    .or_insert_with(|| vec![0; 512]);
+
                 let start_channel = (fixture.start_address - 1) as usize;
-                let end_channel = (start_channel + fixture.channels.len()).min(dmx_data.len());
-                dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
+                let fixture_data = fixture.get_dmx_values();
+                let end_channel = (start_channel + fixture_data.len()).min(512);
+
+                universe_buffer[start_channel..end_channel].copy_from_slice(&fixture_data);
             }
         }
 
-        // Send regular fixtures to DMX module (universe 1)
-        self.module_manager
-            .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(1, dmx_data))
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-        // Render and send pixel fixtures
-        let pixel_engine = self.pixel_engine.read().await;
-        let rhythm_state = self.rhythm_state.read().await;
-        let pixel_universe_data = pixel_engine.render(&fixtures, &rhythm_state);
-
-        for (universe, data) in pixel_universe_data {
+        // Send all universe data
+        for (universe, data) in universe_data {
             self.module_manager
                 .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(universe, data))
                 .await
