@@ -888,53 +888,60 @@ impl ProgrammerState {
 
         ui.add_space(10.0);
 
-        if ui
-            .button("Apply Pixel Effect to Selected Fixtures")
-            .clicked()
-        {
-            // Convert settings to pixel effect command
-            let color_rgb = (
-                (self.pixel_effect_color[0] * 255.0) as u8,
-                (self.pixel_effect_color[1] * 255.0) as u8,
-                (self.pixel_effect_color[2] * 255.0) as u8,
-            );
+        ui.horizontal(|ui| {
+            if ui
+                .button("Apply Pixel Effect to Selected Fixtures")
+                .clicked()
+            {
+                // Convert settings to pixel effect command
+                let color_rgb = (
+                    (self.pixel_effect_color[0] * 255.0) as u8,
+                    (self.pixel_effect_color[1] * 255.0) as u8,
+                    (self.pixel_effect_color[2] * 255.0) as u8,
+                );
 
-            // Map UI values to PixelEffect types
-            let effect_type = match self.pixel_effect_type {
-                0 => PixelEffectType::Chase,
-                1 => PixelEffectType::Wave,
-                2 => PixelEffectType::Strobe,
-                3 => PixelEffectType::ColorCycle,
-                _ => PixelEffectType::Chase,
-            };
+                // Map UI values to PixelEffect types
+                let effect_type = match self.pixel_effect_type {
+                    0 => PixelEffectType::Chase,
+                    1 => PixelEffectType::Wave,
+                    2 => PixelEffectType::Strobe,
+                    3 => PixelEffectType::ColorCycle,
+                    _ => PixelEffectType::Chase,
+                };
 
-            let scope = if self.pixel_effect_scope == 0 {
-                PixelEffectScope::Bar
-            } else {
-                PixelEffectScope::Individual
-            };
+                let scope = if self.pixel_effect_scope == 0 {
+                    PixelEffectScope::Bar
+                } else {
+                    PixelEffectScope::Individual
+                };
 
-            // Create the pixel effect
-            let pixel_effect = PixelEffect {
-                effect_type,
-                scope,
-                color: color_rgb,
-                params: PixelEffectParams {
-                    interval: Interval::Beat,
-                    interval_ratio: 1.0,
-                    phase: 0.0,
-                    speed: 1.0,
-                },
-            };
+                // Create the pixel effect
+                let pixel_effect = PixelEffect {
+                    effect_type,
+                    scope,
+                    color: color_rgb,
+                    params: PixelEffectParams {
+                        interval: Interval::Beat,
+                        interval_ratio: 1.0,
+                        phase: 0.0,
+                        speed: 1.0,
+                    },
+                };
 
-            // Send command to apply pixel effect
-            let _ = console_tx.send(ConsoleCommand::AddPixelEffect {
-                name: format!("Programmer_PixelFX_{}", self.selected_fixtures.len()),
-                fixture_ids: self.selected_fixtures.clone(),
-                effect: pixel_effect,
-                distribution: EffectDistribution::All,
-            });
-        }
+                // Send command to apply pixel effect
+                let _ = console_tx.send(ConsoleCommand::AddPixelEffect {
+                    name: format!("Programmer_PixelFX_{}", self.selected_fixtures.len()),
+                    fixture_ids: self.selected_fixtures.clone(),
+                    effect: pixel_effect,
+                    distribution: EffectDistribution::All,
+                });
+            }
+
+            if ui.button("Clear Pixel Effects").clicked() {
+                // Clear all active pixel effects
+                let _ = console_tx.send(ConsoleCommand::ClearPixelEffects);
+            }
+        });
     }
 
     // Helper function to draw tab buttons
