@@ -45,8 +45,8 @@
       "id": 4,
       "name": "Pixel Bar 3",
       "profile_id": "clen-led-pixel-bar-64",
-      "universe": 2,
-      "start_address": 1,
+      "universe": 1,
+      "start_address": 385,
       "pan_tilt_limits": null
     },
     {
@@ -54,23 +54,23 @@
       "name": "Pixel Bar 4",
       "profile_id": "clen-led-pixel-bar-64",
       "universe": 2,
-      "start_address": 193,
+      "start_address": 67,
       "pan_tilt_limits": null
     },
     {
       "id": 6,
       "name": "Pixel Bar 5",
       "profile_id": "clen-led-pixel-bar-64",
-      "universe": 3,
-      "start_address": 1,
+      "universe": 2,
+      "start_address": 259,
       "pan_tilt_limits": null
     },
     {
       "id": 7,
       "name": "Pixel Bar 6",
       "profile_id": "clen-led-pixel-bar-64",
-      "universe": 3,
-      "start_address": 193,
+      "universe": 2,
+      "start_address": 451,
       "pan_tilt_limits": null
     }
   ],
