@@ -120,7 +120,7 @@ impl PatchPanelState {
                                 ui.horizontal(|ui| {
                                     ui.add_sized(
                                         [50.0, 20.0],
-                                        egui::Label::new(format!("ID {}:", fixture.id + 1)),
+                                        egui::Label::new(format!("ID {}:", fixture.id)),
                                     );
 
                                     ui.label("Name:");
