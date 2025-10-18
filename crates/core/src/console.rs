@@ -769,6 +769,13 @@ impl LightingConsole {
 
         log::info!("Successfully loaded show '{}'", show.name);
 
+        // Enable sequential packing for pixel bars
+        {
+            let fixtures = self.fixtures.read().await;
+            let mut pixel_engine = self.pixel_engine.write().await;
+            pixel_engine.enable_sequential_packing(&fixtures);
+        }
+
         // Settings are now loaded separately from config file, not from show
 
         Ok(())
