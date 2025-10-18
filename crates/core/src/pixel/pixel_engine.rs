@@ -162,7 +162,7 @@ impl PixelEngine {
 
         // Render each pixel
         for pixel_idx in 0..pixel_count {
-            let position = pixel_idx as f64 / pixel_count.max(1) as f64;
+            let position = (pixel_idx as f64 + 0.5) / pixel_count as f64;
             let mut r = 0u16;
             let mut g = 0u16;
             let mut b = 0u16;
