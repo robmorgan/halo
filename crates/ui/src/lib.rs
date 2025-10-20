@@ -196,7 +196,7 @@ impl HaloApp {
 
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.horizontal(|ui| {
-                        // Master Panel with overrides and master faders
+                        // Master Panel with the visualizer, overrides and master faders
                         master::render(ui, &self.state, &self.console_tx);
                     });
 
