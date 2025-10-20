@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Run with Art-Net broadcast**: `cargo run --release -- --source-ip <SOURCE_IP>`
 - **Run with unicast and MIDI**: `cargo run --release -- --source-ip 192.168.1.100 --dest-ip 192.168.1.200 --enable-midi`
 - **Run with multi-destination setup**: `cargo run --release -- --source-ip 192.168.1.100 --lighting-dest-ip 192.168.1.200 --pixel-dest-ip 192.168.1.201`
-- **Load a show file**: `cargo run --release -- --source-ip <SOURCE_IP> --show-file shows/Guys40th.json`
+- **Load a show file**: `cargo run --release -- --source-ip <SOURCE_IP> --show-file shows/Jasons40th.json`
 
 ### CLI Arguments
 - `--source-ip <IP>` - Art-Net source IP address (required)
@@ -119,6 +119,19 @@ Halo is a real-time lighting console built with Rust, designed for solo performe
 - Managed through UI Show Manager with save/load functionality
 
 ## Development Notes
+
+### Repository Conventions
+
+#### Rust Crates
+- Crate names are prefixed with `halo-`. For example, the `core` folder's crate is named `halo-core`
+- When using `format!` and you can inline variables into `{}`, always do that
+- Never use `unsafe` blocks or functions in any code
+
+#### Code Formatting
+After making any changes to Rust code, always run:
+```bash
+cargo +nightly fmt --all
+```
 
 ### macOS Platform Requirement
 - Development and execution require macOS due to system-specific audio and MIDI dependencies
