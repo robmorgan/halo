@@ -1,4 +1,4 @@
-use eframe::{egui, epi};
+use eframe::egui;
 use egui::{Color32, Pos2, Rect, RichText, Rounding, Stroke, Ui, Vec2};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -227,12 +227,8 @@ impl Default for HaloApp {
     }
 }
 
-impl epi::App for HaloApp {
-    fn name(&self) -> &str {
-        "Halo Lighting Console"
-    }
-
-    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
+impl eframe::App for HaloApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_update);
         self.last_update = now;
@@ -504,6 +500,7 @@ impl HaloApp {
                 let columns = columns.max(1); // At least 1 column
 
                 // Create a grid layout for fixtures
+                let num_fixtures = self.fixtures.len();
                 egui::Grid::new("fixtures_grid")
                     .num_columns(columns)
                     .spacing([spacing, spacing])
@@ -623,7 +620,7 @@ impl HaloApp {
                             }
 
                             // New row after each column
-                            if (i + 1) % columns == 0 && i < self.fixtures.len() - 1 {
+                            if (i + 1) % columns == 0 && i < num_fixtures - 1 {
                                 ui.end_row();
                             }
                         }
@@ -1282,9 +1279,6 @@ impl HaloApp {
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(1200.0, 800.0)),
-        min_window_size: Some(egui::vec2(800.0, 600.0)),
-        default_theme: eframe::Theme::Dark,
-        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
 
