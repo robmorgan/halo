@@ -4,11 +4,9 @@
   <img src="https://github.com/user-attachments/assets/66b08c09-defc-464e-a2d3-c734d92da5da" alt="Logo" width="128">
   <br>Halo
 </h1>
-  <p align="center">
-    <img src="https://github.com/user-attachments/assets/9c5dae6a-0f76-417e-bd9e-6472253865ba" alt="Halo Screenshot" width="600">
-    <br>
-    <strong>Lighting console bringing advanced features to solo performances.</strong>
-  </p>
+</p>
+<p align="center">
+  <strong>Lighting console bringing advanced features to solo performances.</strong>
 </p>
 
 ## About
@@ -19,6 +17,10 @@ designer. On the other hand, software designed for solo performers is often limi
 operate during a live show. Halo bridges this gap through a combination of pre-defined cues, beat-synchronized
 effects, and live improvisation through MIDI overrides. This enables performers to elevate their shows with immersive
 lighting that responds to their performance.
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/9c5dae6a-0f76-417e-bd9e-6472253865ba" alt="Halo Screenshot" width="600">
+</p>
 
 > [!WARNING]
 > This project is still in heavy development and unsuitable for production use (even though I'm using it for shows).
