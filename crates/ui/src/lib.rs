@@ -22,6 +22,7 @@ mod programmer;
 mod session;
 mod show_panel;
 mod timeline;
+mod visualizer;
 
 pub enum ActiveTab {
     Dashboard,
@@ -196,7 +197,7 @@ impl HaloApp {
 
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.horizontal(|ui| {
-                        // Master Panel with overrides and master faders
+                        // Master Panel with the visualizer, overrides and master faders
                         master::render(ui, &self.state, &self.console_tx);
                     });
 
@@ -266,9 +267,17 @@ impl eframe::App for HaloApp {
         // Render error dialog on top of everything
         self.render_error_dialog(ctx);
 
-        // Smart repaint based on playback state
-        if matches!(self.state.playback_state, halo_core::PlaybackState::Playing) {
-            ctx.request_repaint(); // Continuous
+        // Smart repaint based on playback state or active pixel effects
+        let has_pixel_fixtures = self
+            .state
+            .fixtures
+            .values()
+            .any(|f| f.profile.fixture_type == halo_fixtures::FixtureType::PixelBar);
+
+        if matches!(self.state.playback_state, halo_core::PlaybackState::Playing)
+            || (has_pixel_fixtures && !self.state.pixel_data.is_empty())
+        {
+            ctx.request_repaint(); // Continuous for playing or active pixel effects
         } else {
             ctx.request_repaint_after(Duration::from_millis(100)); // Slower
         }

@@ -485,4 +485,7 @@ pub enum ConsoleEvent {
     FixtureLibraryList {
         profiles: Vec<(String, String)>, // (id, display_name)
     },
+    PixelDataUpdated {
+        pixel_data: Vec<(usize, Vec<(u8, u8, u8)>)>, // (fixture_id, pixels_rgb)
+    },
 }

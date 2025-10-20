@@ -3,6 +3,7 @@ use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
+use crate::visualizer;
 
 // Override button state
 #[derive(Clone, Debug)]
@@ -51,6 +52,13 @@ pub fn render(
     console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
 ) {
     ui.horizontal(|ui| {
+        // Visualizer section
+        ui.vertical(|ui| {
+            ui.heading("VISUALIZER");
+            ui.add_space(5.0);
+            visualizer::render(ui, state, console_tx);
+        });
+
         // Left side - Overrides section
         ui.vertical(|ui| {
             ui.heading("OVERRIDES");

@@ -38,6 +38,7 @@ pub struct ConsoleState {
     pub audio_waveform: Option<WaveformData>,
     pub audio_duration: Option<f64>,
     pub audio_bpm: Option<f64>,
+    pub pixel_data: HashMap<usize, Vec<(u8, u8, u8)>>,
 }
 
 impl Default for ConsoleState {
@@ -79,6 +80,7 @@ impl Default for ConsoleState {
             audio_waveform: None,
             audio_duration: None,
             audio_bpm: None,
+            pixel_data: HashMap::new(),
         }
     }
 }
@@ -234,6 +236,12 @@ impl ConsoleState {
                 self.audio_waveform = Some(waveform_data);
                 self.audio_duration = Some(duration);
                 self.audio_bpm = bpm;
+            }
+            halo_core::ConsoleEvent::PixelDataUpdated { pixel_data } => {
+                self.pixel_data.clear();
+                for (fixture_id, pixels) in pixel_data {
+                    self.pixel_data.insert(fixture_id, pixels);
+                }
             }
             _ => {
                 // Handle other events as needed
