@@ -402,13 +402,8 @@
                   "phase": 0.4972330629825592
                 }
               },
-              "fixture_ids": [
-                5,
-                6
-              ],
-              "channel_types": [
-                "Pan"
-              ],
+              "fixture_ids": [5, 6],
+              "channel_types": ["Pan"],
               "distribution": "All",
               "release": "Hold"
             }
@@ -547,247 +542,553 @@
         },
         {
           "id": 1,
-          "name": "Intro",
+          "name": "Intro Pulse",
           "fade_time": {
-            "secs": 3,
+            "secs": 1,
             "nanos": 0
           },
           "static_values": [],
           "effects": [],
-          "pixel_effects": [],
+          "pixel_effects": [
+            {
+              "name": "Blue Wave on Pixel Bars",
+              "effect": {
+                "effect_type": "Wave",
+                "scope": "Individual",
+                "color": [0, 150, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
           "timecode": "00:00:01:00",
           "is_blocking": false
         },
         {
           "id": 2,
-          "name": "Tilt Beams",
+          "name": "Build Energy",
           "fade_time": {
-            "secs": 0,
+            "secs": 2,
             "nanos": 0
           },
           "static_values": [
             {
-              "fixture_id": 1,
-              "channel_type": "Tilt",
+              "fixture_id": 0,
+              "channel_type": "Red",
               "value": 0
             },
             {
-              "fixture_id": 2,
-              "channel_type": "Tilt",
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 150
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 150
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
               "value": 255
             }
           ],
-          "effects": [],
+          "effects": [
+            {
+              "name": "Sine Dimmer on Spots",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": {
+                "Step": 1
+              },
+              "release": "Hold"
+            }
+          ],
           "pixel_effects": [],
-          "timecode": "00:00:13:00",
+          "timecode": "00:00:08:00",
           "is_blocking": false
         },
         {
           "id": 3,
-          "name": "Beams Cycle on DJ",
+          "name": "First Drop",
           "fade_time": {
             "secs": 0,
             "nanos": 0
           },
           "static_values": [
             {
-              "fixture_id": 1,
-              "channel_type": "Dimmer",
-              "value": 255
-            },
-            {
-              "fixture_id": 2,
+              "fixture_id": 0,
               "channel_type": "Dimmer",
               "value": 255
             },
             {
               "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
               "channel_type": "Red",
               "value": 255
             },
             {
-              "fixture_id": 1,
-              "channel_type": "Color",
+              "fixture_id": 0,
+              "channel_type": "Green",
               "value": 255
             },
             {
-              "fixture_id": 2,
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
               "channel_type": "Red",
-              "value": 255
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Color",
-              "value": 255
+              "value": 200
             },
             {
               "fixture_id": 1,
               "channel_type": "Green",
-              "value": 127
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Green",
-              "value": 127
+              "value": 255
             },
             {
               "fixture_id": 1,
               "channel_type": "Blue",
-              "value": 0
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Blue",
-              "value": 0
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "White",
-              "value": 0
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "White",
-              "value": 0
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Tilt",
-              "value": 0
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Tilt",
               "value": 255
             }
           ],
-          "effects": [
+          "effects": [],
+          "pixel_effects": [
             {
-              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "name": "Fast Chase on Pixel Bars",
               "effect": {
-                "effect_type": "Sine",
-                "min": 0,
-                "max": 255,
-                "amplitude": 1.0,
-                "frequency": 1.0,
-                "offset": 0.0,
+                "effect_type": "Chase",
+                "scope": "Individual",
+                "color": [255, 255, 255],
                 "params": {
                   "interval": "Beat",
-                  "interval_ratio": 0.9956380128860474,
-                  "phase": 0.0
+                  "interval_ratio": 0.5,
+                  "phase": 0.0,
+                  "speed": 2.0
                 }
               },
-              "fixture_ids": [
-                1,
-                2
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
-              "distribution": {
-                "Step": 1
-              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
               "release": "Hold"
             }
           ],
-          "pixel_effects": [],
-          "timecode": "00:00:20:00",
+          "timecode": "00:00:15:00",
           "is_blocking": false
         },
         {
           "id": 4,
-          "name": "Purple Cycle - Center",
+          "name": "Verse Rhythm",
+          "fade_time": {
+            "secs": 1,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 180
+            }
+          ],
+          "effects": [],
+          "pixel_effects": [
+            {
+              "name": "Alternating Pixel Bars",
+              "effect": {
+                "effect_type": "Wave",
+                "scope": "Bar",
+                "color": [255, 100, 200],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": {
+                "Step": 2
+              },
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:00:23:00",
+          "is_blocking": false
+        },
+        {
+          "id": 5,
+          "name": "Color Shift",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 500000000
+          },
+          "static_values": [],
+          "effects": [],
+          "pixel_effects": [
+            {
+              "name": "Rainbow Color Cycle",
+              "effect": {
+                "effect_type": "ColorCycle",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Bar",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:00:31:00",
+          "is_blocking": false
+        },
+        {
+          "id": 6,
+          "name": "Spot Sweep",
           "fade_time": {
             "secs": 0,
             "nanos": 0
           },
           "static_values": [
             {
-              "fixture_id": 2,
+              "fixture_id": 0,
               "channel_type": "Dimmer",
-              "value": 0
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Dimmer",
-              "value": 0
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Red",
-              "value": 139
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Color",
-              "value": 139
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Red",
-              "value": 139
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Color",
-              "value": 139
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Green",
-              "value": 0
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Green",
-              "value": 0
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Blue",
               "value": 255
             },
             {
               "fixture_id": 1,
-              "channel_type": "Blue",
+              "channel_type": "Dimmer",
               "value": 255
             },
             {
-              "fixture_id": 2,
-              "channel_type": "White",
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 200
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
               "value": 0
             },
             {
               "fixture_id": 1,
-              "channel_type": "White",
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 200
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
               "value": 0
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Pan",
-              "value": 180
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Pan",
-              "value": 180
-            },
-            {
-              "fixture_id": 1,
-              "channel_type": "Tilt",
-              "value": 130
-            },
-            {
-              "fixture_id": 2,
-              "channel_type": "Tilt",
-              "value": 130
             }
           ],
           "effects": [
             {
-              "name": "Sine Effect on Left LED Beam, Right LED Beam",
+              "name": "Pan Tilt Sine on Spots",
               "effect": {
                 "effect_type": "Sine",
+                "min": 50,
+                "max": 200,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 0.5,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Pan", "Tilt"],
+              "distribution": {
+                "Wave": 0.5
+              },
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Strobe on Pixel Bars",
+              "effect": {
+                "effect_type": "Strobe",
+                "scope": "Bar",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.25,
+                  "phase": 0.0,
+                  "speed": 3.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:00:39:00",
+          "is_blocking": false
+        },
+        {
+          "id": 7,
+          "name": "Breakdown",
+          "fade_time": {
+            "secs": 3,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 100
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 100
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 100
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 180
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 100
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 180
+            }
+          ],
+          "effects": [],
+          "pixel_effects": [
+            {
+              "name": "Slow Wave",
+              "effect": {
+                "effect_type": "Wave",
+                "scope": "Individual",
+                "color": [80, 0, 150],
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 0.5
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:00:47:00",
+          "is_blocking": false
+        },
+        {
+          "id": 8,
+          "name": "Build 1",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sawtooth Build on Spots",
+              "effect": {
+                "effect_type": "Sawtooth",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Bar",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Red Chase Build",
+              "effect": {
+                "effect_type": "Chase",
+                "scope": "Individual",
+                "color": [255, 0, 0],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.5
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:00:55:00",
+          "is_blocking": false
+        },
+        {
+          "id": 9,
+          "name": "Build 2",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 100
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 100
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Square Wave Strobe",
+              "effect": {
+                "effect_type": "Square",
                 "min": 0,
                 "max": 255,
                 "amplitude": 1.0,
@@ -795,53 +1096,1090 @@
                 "offset": 0.0,
                 "params": {
                   "interval": "Beat",
-                  "interval_ratio": 1.02734375,
+                  "interval_ratio": 0.5,
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                2,
-                1
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
               "distribution": {
                 "Step": 1
               },
               "release": "Hold"
             }
           ],
-          "pixel_effects": [],
-          "timecode": "00:00:25:00",
+          "pixel_effects": [
+            {
+              "name": "Orange Strobe Build",
+              "effect": {
+                "effect_type": "Strobe",
+                "scope": "Bar",
+                "color": [255, 100, 0],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.5,
+                  "phase": 0.0,
+                  "speed": 2.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": {
+                "Step": 1
+              },
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:03:00",
           "is_blocking": false
         },
         {
-          "id": 5,
-          "name": "Strobe",
+          "id": 10,
+          "name": "Major Drop",
           "fade_time": {
             "secs": 0,
             "nanos": 0
           },
           "static_values": [
             {
-              "fixture_id": 3,
+              "fixture_id": 0,
               "channel_type": "Dimmer",
               "value": 255
             },
             {
-              "fixture_id": 3,
-              "channel_type": "Strobe",
-              "value": 243
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
             },
             {
-              "fixture_id": 3,
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "White",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
               "channel_type": "White",
               "value": 255
             }
           ],
           "effects": [],
-          "pixel_effects": [],
+          "pixel_effects": [
+            {
+              "name": "Ultra Fast Chase",
+              "effect": {
+                "effect_type": "Chase",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.25,
+                  "phase": 0.0,
+                  "speed": 3.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:11:00",
+          "is_blocking": false
+        },
+        {
+          "id": 11,
+          "name": "Peak Energy",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            }
+          ],
+          "effects": [
+            {
+              "name": "Triangle on Spots",
+              "effect": {
+                "effect_type": "Triangle",
+                "min": 150,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": {
+                "Wave": 0.25
+              },
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Rainbow Color Cycle Fast",
+              "effect": {
+                "effect_type": "ColorCycle",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.5,
+                  "phase": 0.0,
+                  "speed": 2.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": {
+                "Wave": 0.3
+              },
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:19:00",
+          "is_blocking": false
+        },
+        {
+          "id": 12,
+          "name": "Transition Wave",
+          "fade_time": {
+            "secs": 1,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 200
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 200
+            }
+          ],
+          "effects": [
+            {
+              "name": "Wave Distribution",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 100,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": {
+                "Wave": 0.5
+              },
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Cyan Wave Across All",
+              "effect": {
+                "effect_type": "Wave",
+                "scope": "Individual",
+                "color": [0, 255, 200],
+                "params": {
+                  "interval": "Bar",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": {
+                "Wave": 0.4
+              },
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:27:00",
+          "is_blocking": false
+        },
+        {
+          "id": 13,
+          "name": "Mid Section",
+          "fade_time": {
+            "secs": 2,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 80
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 80
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Triangle Dimmer",
+              "effect": {
+                "effect_type": "Triangle",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Bar",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Red Orange Chase",
+              "effect": {
+                "effect_type": "Chase",
+                "scope": "Individual",
+                "color": [255, 80, 0],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:35:00",
+          "is_blocking": false
+        },
+        {
+          "id": 14,
+          "name": "Spot Focus",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Pan",
+              "value": 127
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Pan",
+              "value": 127
+            }
+          ],
+          "effects": [
+            {
+              "name": "Spot Position Effects",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 30,
+                "max": 220,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 0.5,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Pan", "Tilt"],
+              "distribution": {
+                "Step": 1
+              },
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Purple Wave",
+              "effect": {
+                "effect_type": "Wave",
+                "scope": "Bar",
+                "color": [200, 0, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:43:00",
+          "is_blocking": false
+        },
+        {
+          "id": 15,
+          "name": "Pixel Showcase",
+          "fade_time": {
+            "secs": 1,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 150
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 150
+            }
+          ],
+          "effects": [],
+          "pixel_effects": [
+            {
+              "name": "Individual Color Cycle",
+              "effect": {
+                "effect_type": "ColorCycle",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.5
+                }
+              },
+              "fixture_ids": [2, 3, 4],
+              "distribution": {
+                "Wave": 0.2
+              },
+              "release": "Hold"
+            },
+            {
+              "name": "Individual Chase Reverse",
+              "effect": {
+                "effect_type": "Chase",
+                "scope": "Individual",
+                "color": [0, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.5,
+                  "speed": 1.5
+                }
+              },
+              "fixture_ids": [5, 6, 7],
+              "distribution": {
+                "Wave": 0.2
+              },
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:51:00",
+          "is_blocking": false
+        },
+        {
+          "id": 16,
+          "name": "Build 3",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Intensity Ramp Up",
+              "effect": {
+                "effect_type": "Sawtooth",
+                "min": 50,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Yellow Build",
+              "effect": {
+                "effect_type": "Wave",
+                "scope": "Individual",
+                "color": [255, 255, 0],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.5,
+                  "phase": 0.0,
+                  "speed": 2.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:01:59:00",
+          "is_blocking": false
+        },
+        {
+          "id": 17,
+          "name": "Pre-Final Drop",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 0
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 0
+            }
+          ],
+          "effects": [
+            {
+              "name": "Fast Beat Pulse",
+              "effect": {
+                "effect_type": "Square",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.25,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Tension Strobe",
+              "effect": {
+                "effect_type": "Strobe",
+                "scope": "Bar",
+                "color": [255, 0, 0],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.25,
+                  "phase": 0.0,
+                  "speed": 4.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": {
+                "Step": 1
+              },
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:02:07:00",
+          "is_blocking": false
+        },
+        {
+          "id": 18,
+          "name": "Final Drop",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "White",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 255
+            }
+          ],
+          "effects": [
+            {
+              "name": "Maximum Energy Pulse",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 200,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": {
+                "Wave": 0.5
+              },
+              "release": "Hold"
+            },
+            {
+              "name": "Spot Movement",
+              "effect": {
+                "effect_type": "Sine",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Bar",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Pan", "Tilt"],
+              "distribution": {
+                "Wave": 0.3
+              },
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Full Energy Chase",
+              "effect": {
+                "effect_type": "Chase",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.25,
+                  "phase": 0.0,
+                  "speed": 4.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            },
+            {
+              "name": "Rainbow Overlay",
+              "effect": {
+                "effect_type": "ColorCycle",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Bar",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": {
+                "Wave": 0.4
+              },
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:02:15:00",
+          "is_blocking": false
+        },
+        {
+          "id": 19,
+          "name": "Outro Ride",
+          "fade_time": {
+            "secs": 2,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 100
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 200
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 100
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 200
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            }
+          ],
+          "effects": [
+            {
+              "name": "Sustained Energy",
+              "effect": {
+                "effect_type": "Triangle",
+                "min": 180,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Bar",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Sustained Color Cycle",
+              "effect": {
+                "effect_type": "ColorCycle",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Phrase",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 1.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": "00:02:23:00",
+          "is_blocking": false
+        },
+        {
+          "id": 20,
+          "name": "White Flash",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 0,
+              "channel_type": "White",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Red",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Green",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Blue",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "White",
+              "value": 255
+            }
+          ],
+          "effects": [],
+          "pixel_effects": [
+            {
+              "name": "Full White Flash",
+              "effect": {
+                "effect_type": "Strobe",
+                "scope": "Bar",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 1.0,
+                  "phase": 0.0,
+                  "speed": 10.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
+          "timecode": null,
+          "is_blocking": false
+        },
+        {
+          "id": 21,
+          "name": "Color Blast",
+          "fade_time": {
+            "secs": 0,
+            "nanos": 0
+          },
+          "static_values": [
+            {
+              "fixture_id": 0,
+              "channel_type": "Dimmer",
+              "value": 255
+            },
+            {
+              "fixture_id": 1,
+              "channel_type": "Dimmer",
+              "value": 255
+            }
+          ],
+          "effects": [
+            {
+              "name": "Random Pulse",
+              "effect": {
+                "effect_type": "Square",
+                "min": 0,
+                "max": 255,
+                "amplitude": 1.0,
+                "frequency": 1.0,
+                "offset": 0.0,
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.5,
+                  "phase": 0.0
+                }
+              },
+              "fixture_ids": [0, 1],
+              "channel_types": ["Dimmer"],
+              "distribution": {
+                "Step": 1
+              },
+              "release": "Hold"
+            }
+          ],
+          "pixel_effects": [
+            {
+              "name": "Rainbow Explosion",
+              "effect": {
+                "effect_type": "ColorCycle",
+                "scope": "Individual",
+                "color": [255, 255, 255],
+                "params": {
+                  "interval": "Beat",
+                  "interval_ratio": 0.125,
+                  "phase": 0.0,
+                  "speed": 5.0
+                }
+              },
+              "fixture_ids": [2, 3, 4, 5, 6, 7],
+              "distribution": "All",
+              "release": "Hold"
+            }
+          ],
           "timecode": null,
           "is_blocking": false
         }
@@ -1004,12 +2342,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                0
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [0],
+              "channel_types": ["Dimmer"],
               "distribution": "All",
               "release": "Hold"
             }
@@ -1123,13 +2457,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                1,
-                2
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [1, 2],
+              "channel_types": ["Dimmer"],
               "distribution": "All",
               "release": "Hold"
             }
@@ -1466,13 +2795,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                1,
-                2
-              ],
-              "channel_types": [
-                "Dimmer"
-              ],
+              "fixture_ids": [1, 2],
+              "channel_types": ["Dimmer"],
               "distribution": {
                 "Step": 1
               },
@@ -1493,14 +2817,8 @@
                   "phase": 0.0
                 }
               },
-              "fixture_ids": [
-                5,
-                6
-              ],
-              "channel_types": [
-                "Pan",
-                "Tilt"
-              ],
+              "fixture_ids": [5, 6],
+              "channel_types": ["Pan", "Tilt"],
               "distribution": "All",
               "release": "Hold"
             }
