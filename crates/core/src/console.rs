@@ -61,9 +61,9 @@ pub struct LightingConsole {
     // System state
     is_running: bool,
 
-    // Time-based rhythm tracking (for when Link isn't available)
-    last_rhythm_update: Arc<Mutex<Instant>>,
-    internal_beat_time: Arc<Mutex<f64>>,
+    // Internal timing for rhythm state when Link is not active
+    last_update_time: std::time::Instant,
+    accumulated_beats: f64,
 }
 
 impl LightingConsole {
@@ -117,8 +117,8 @@ impl LightingConsole {
             pixel_engine: Arc::new(RwLock::new(PixelEngine::new())),
             tracking_state: Arc::new(RwLock::new(TrackingState::new())),
             is_running: false,
-            last_rhythm_update: Arc::new(Mutex::new(Instant::now())),
-            internal_beat_time: Arc::new(Mutex::new(0.0)),
+            last_update_time: std::time::Instant::now(),
+            accumulated_beats: 0.0,
         })
     }
 
@@ -191,29 +191,30 @@ impl LightingConsole {
     }
 
     /// Main update loop - call this regularly to process lighting data
-    pub async fn update(&mut self) -> Result<(), anyhow::Error> {
-        // Update Ableton Link state or use internal time-based rhythm
-        let link_provided_update = {
+    pub async fn update(&mut self) -> Result<Vec<(usize, Vec<(u8, u8, u8)>)>, anyhow::Error> {
+        // Update timing for rhythm state
+        let now = std::time::Instant::now();
+        let delta_time = now.duration_since(self.last_update_time).as_secs_f64();
+        self.last_update_time = now;
+
+        // Update Ableton Link state
+        let link_updated = {
             let mut link_manager = self.link_manager.lock().await;
             if let Some((tempo, beat_time)) = link_manager.update().await {
                 self.tempo = tempo;
+                self.accumulated_beats = beat_time;
                 self.update_rhythm_state(beat_time).await;
-
-                // Sync internal beat time with Link
-                let mut internal_beat = self.internal_beat_time.lock().await;
-                *internal_beat = beat_time;
-                let mut last_update = self.last_rhythm_update.lock().await;
-                *last_update = Instant::now();
-
                 true
             } else {
                 false
             }
         };
 
-        // If Link didn't provide an update, use internal time-based rhythm
-        if !link_provided_update {
-            self.update_internal_rhythm().await;
+        // If Link didn't update, advance rhythm state based on internal tempo
+        if !link_updated {
+            let beats_per_second = self.tempo / 60.0;
+            self.accumulated_beats += delta_time * beats_per_second;
+            self.update_rhythm_state(self.accumulated_beats).await;
         }
 
         // Process current cue if playing - update tracking state
@@ -234,7 +235,7 @@ impl LightingConsole {
         self.apply_programmer_values().await;
 
         // Generate and send DMX data
-        self.send_dmx_data().await?;
+        let pixel_data = self.send_dmx_data().await?;
 
         // Update cue manager
         {
@@ -242,7 +243,7 @@ impl LightingConsole {
             cue_manager.update();
         }
 
-        Ok(())
+        Ok(pixel_data)
     }
 
     async fn update_rhythm_state(&self, beat_time: f64) {
@@ -406,7 +407,7 @@ impl LightingConsole {
         }
     }
 
-    async fn send_dmx_data(&self) -> Result<(), anyhow::Error> {
+    async fn send_dmx_data(&self) -> Result<Vec<(usize, Vec<(u8, u8, u8)>)>, anyhow::Error> {
         let fixtures = self.fixtures.read().await;
 
         // Render pixel fixtures first
@@ -430,15 +431,52 @@ impl LightingConsole {
             }
         }
 
-        // Send all universe data
-        for (universe, data) in universe_data {
+        // Send regular fixtures to DMX module (universe 1)
+        self.module_manager
+            .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(1, dmx_data))
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        // Render and send pixel fixtures
+        let pixel_engine = self.pixel_engine.read().await;
+        let rhythm_state = self.rhythm_state.read().await;
+        let pixel_universe_data = pixel_engine.render(&fixtures, &rhythm_state);
+
+        // Extract pixel data for visualization
+        let mut pixel_data = Vec::new();
+        for fixture in fixtures.iter() {
+            if fixture.profile.fixture_type == halo_fixtures::FixtureType::PixelBar {
+                let universe = pixel_engine.get_fixture_universe(fixture.id, fixture.universe);
+                if let Some(universe_data) = pixel_universe_data.get(&universe) {
+                    let start_idx = (fixture.start_address - 1) as usize;
+                    let pixel_count = fixture.channels.len() / 3;
+                    let mut pixels = Vec::new();
+
+                    for pixel_idx in 0..pixel_count {
+                        let base = start_idx + pixel_idx * 3;
+                        if base + 2 < universe_data.len() {
+                            let r = universe_data[base];
+                            let g = universe_data[base + 1];
+                            let b = universe_data[base + 2];
+                            pixels.push((r, g, b));
+                        }
+                    }
+
+                    if !pixels.is_empty() {
+                        pixel_data.push((fixture.id, pixels));
+                    }
+                }
+            }
+        }
+
+        for (universe, data) in pixel_universe_data {
             self.module_manager
                 .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(universe, data))
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
         }
 
-        Ok(())
+        Ok(pixel_data)
     }
 
     /// Load fixture library
@@ -1734,9 +1772,16 @@ impl LightingConsole {
 
                 // Regular update tick
                 _ = update_interval.tick() => {
-                    if let Err(e) = self.update().await {
-                        log::error!("Update error: {}", e);
-                    }
+                    let pixel_data = match self.update().await {
+                        Ok(data) => data,
+                        Err(e) => {
+                            log::error!("Update error: {}", e);
+                            Vec::new()
+                        }
+                    };
+
+                    // Always send pixel data update for smooth animation and proper clearing
+                    let _ = event_tx.send(ConsoleEvent::PixelDataUpdated { pixel_data });
 
                     // Send periodic state updates
                     if let Some(timecode) = self.cue_manager.read().await.current_timecode {
