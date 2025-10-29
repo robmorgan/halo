@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -254,6 +254,27 @@ impl LightingConsole {
             (beat_time / (rhythm.beats_per_bar * rhythm.bars_per_phrase) as f64).fract();
     }
 
+    /// Update rhythm state based on internal time when Link isn't available
+    async fn update_internal_rhythm(&mut self) {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_update_time).as_secs_f64();
+        self.last_update_time = now;
+
+        // Protect against large time jumps (lag spikes, window focus loss, etc.)
+        // Cap elapsed time to 100ms to prevent discontinuities
+        let elapsed = elapsed.min(0.1);
+
+        // Calculate how many beats have passed based on tempo
+        let beats_per_second = self.tempo / 60.0;
+        let beats_elapsed = elapsed * beats_per_second;
+
+        // Accumulate beats
+        self.accumulated_beats += beats_elapsed;
+
+        // Update rhythm state
+        self.update_rhythm_state(self.accumulated_beats).await;
+    }
+
     /// Update tracking state with current cue
     async fn update_tracking_state(&self, cue: crate::cue::cue::Cue) {
         let mut tracking_state = self.tracking_state.write().await;
@@ -386,44 +407,44 @@ impl LightingConsole {
 
     async fn send_dmx_data(&self) -> Result<Vec<(usize, Vec<(u8, u8, u8)>)>, anyhow::Error> {
         let fixtures = self.fixtures.read().await;
-        let mut dmx_data = vec![0; 512];
 
-        // Render regular fixtures (non-pixel bars)
+        // Render pixel fixtures first
+        let pixel_engine = self.pixel_engine.read().await;
+        let rhythm_state = self.rhythm_state.read().await;
+        let mut universe_data = pixel_engine.render(&fixtures, &rhythm_state);
+
+        // Merge regular fixtures into universe buffers
         for fixture in fixtures.iter() {
             if fixture.profile.fixture_type != halo_fixtures::FixtureType::PixelBar {
+                // Get or create universe buffer
+                let universe_buffer = universe_data
+                    .entry(fixture.universe)
+                    .or_insert_with(|| vec![0; 512]);
+
                 let start_channel = (fixture.start_address - 1) as usize;
-                let end_channel = (start_channel + fixture.channels.len()).min(dmx_data.len());
-                dmx_data[start_channel..end_channel].copy_from_slice(&fixture.get_dmx_values());
+                let fixture_data = fixture.get_dmx_values();
+                let end_channel = (start_channel + fixture_data.len()).min(512);
+
+                universe_buffer[start_channel..end_channel].copy_from_slice(&fixture_data);
             }
         }
 
-        // Send regular fixtures to DMX module (universe 1)
-        self.module_manager
-            .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(1, dmx_data))
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-        // Render and send pixel fixtures
-        let pixel_engine = self.pixel_engine.read().await;
-        let rhythm_state = self.rhythm_state.read().await;
-        let pixel_universe_data = pixel_engine.render(&fixtures, &rhythm_state);
-
-        // Extract pixel data for visualization
+        // Extract pixel data for visualization before sending
         let mut pixel_data = Vec::new();
         for fixture in fixtures.iter() {
             if fixture.profile.fixture_type == halo_fixtures::FixtureType::PixelBar {
                 let universe = pixel_engine.get_fixture_universe(fixture.id, fixture.universe);
-                if let Some(universe_data) = pixel_universe_data.get(&universe) {
+                if let Some(universe_buffer) = universe_data.get(&universe) {
                     let start_idx = (fixture.start_address - 1) as usize;
                     let pixel_count = fixture.channels.len() / 3;
                     let mut pixels = Vec::new();
 
                     for pixel_idx in 0..pixel_count {
                         let base = start_idx + pixel_idx * 3;
-                        if base + 2 < universe_data.len() {
-                            let r = universe_data[base];
-                            let g = universe_data[base + 1];
-                            let b = universe_data[base + 2];
+                        if base + 2 < universe_buffer.len() {
+                            let r = universe_buffer[base];
+                            let g = universe_buffer[base + 1];
+                            let b = universe_buffer[base + 2];
                             pixels.push((r, g, b));
                         }
                     }
@@ -435,7 +456,8 @@ impl LightingConsole {
             }
         }
 
-        for (universe, data) in pixel_universe_data {
+        // Send all universes to DMX module
+        for (universe, data) in universe_data {
             self.module_manager
                 .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(universe, data))
                 .await
@@ -494,7 +516,13 @@ impl LightingConsole {
             .ok_or_else(|| format!("Profile {} not found", profile_name))?;
 
         let mut fixtures = self.fixtures.write().await;
-        let id = fixtures.len();
+        // Find the next available ID by getting max ID + 1, or 0 if no fixtures exist
+        let id = fixtures
+            .iter()
+            .map(|f| f.id)
+            .max()
+            .map(|max| max + 1)
+            .unwrap_or(0);
 
         let fixture = Fixture {
             id,
@@ -521,8 +549,9 @@ impl LightingConsole {
     ) -> Result<Fixture, String> {
         let mut fixtures = self.fixtures.write().await;
         let fixture = fixtures
-            .get_mut(fixture_id)
-            .ok_or_else(|| format!("Fixture {} not found", fixture_id))?;
+            .iter_mut()
+            .find(|f| f.id == fixture_id)
+            .ok_or_else(|| format!("Fixture {fixture_id} not found"))?;
 
         fixture.name = name;
         fixture.universe = universe;
@@ -767,6 +796,13 @@ impl LightingConsole {
 
         log::info!("Successfully loaded show '{}'", show.name);
 
+        // Enable sequential packing for pixel bars
+        {
+            let fixtures = self.fixtures.read().await;
+            let mut pixel_engine = self.pixel_engine.write().await;
+            pixel_engine.enable_sequential_packing(&fixtures);
+        }
+
         // Settings are now loaded separately from config file, not from show
 
         Ok(())
@@ -887,7 +923,7 @@ impl LightingConsole {
                     .await
                     .map_err(|e| anyhow::anyhow!(e))?;
                 let fixtures = self.fixtures.read().await;
-                if let Some(fixture) = fixtures.get(fixture_id) {
+                if let Some(fixture) = fixtures.iter().find(|f| f.id == fixture_id) {
                     let _ = event_tx.send(ConsoleEvent::FixturePatched {
                         fixture_id,
                         fixture: fixture.clone(),

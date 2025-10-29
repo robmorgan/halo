@@ -24,9 +24,13 @@ pub fn render(
         ui.vertical(|ui| {
             ui.heading("Fixtures");
 
+            // Convert to vector and sort by fixture ID for consistent ordering
+            let mut fixtures: Vec<_> = state.fixtures.iter().collect();
+            fixtures.sort_by_key(|(_, f)| f.id);
+
             // Fixture grid
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (idx, (_, fixture)) in state.fixtures.iter().enumerate() {
+                for (idx, (_, fixture)) in fixtures.iter().enumerate() {
                     ui.horizontal(|ui| {
                         ui.label(format!("{}: {}", idx + 1, fixture.name));
                         ui.label(format!("Profile: {}", fixture.profile_id));
@@ -70,12 +74,16 @@ pub fn render_grid(
                 ((available_width + spacing) / (fixture_width + spacing)).floor() as usize;
             let columns = columns.max(1); // At least 1 column
 
+            // Convert to vector and sort by fixture ID for consistent ordering
+            let mut fixtures: Vec<_> = state.fixtures.iter().collect();
+            fixtures.sort_by_key(|(_, f)| f.id);
+
             // Create a grid layout for fixtures
             egui::Grid::new("fixtures_grid")
                 .num_columns(columns)
                 .spacing([spacing, spacing])
                 .show(ui, |ui| {
-                    for (i, (fixture_id, fixture)) in state.fixtures.iter().enumerate() {
+                    for (i, (fixture_id, fixture)) in fixtures.iter().enumerate() {
                         // Create a fixture button
                         let fixture_height = if fixture.profile.fixture_type == FixtureType::LEDBar
                             || fixture.profile.fixture_type == FixtureType::PixelBar
