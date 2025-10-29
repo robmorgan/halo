@@ -255,11 +255,10 @@ impl LightingConsole {
     }
 
     /// Update rhythm state based on internal time when Link isn't available
-    async fn update_internal_rhythm(&self) {
+    async fn update_internal_rhythm(&mut self) {
         let now = Instant::now();
-        let mut last_update = self.last_rhythm_update.lock().await;
-        let elapsed = now.duration_since(*last_update).as_secs_f64();
-        *last_update = now;
+        let elapsed = now.duration_since(self.last_update_time).as_secs_f64();
+        self.last_update_time = now;
 
         // Protect against large time jumps (lag spikes, window focus loss, etc.)
         // Cap elapsed time to 100ms to prevent discontinuities
@@ -269,12 +268,11 @@ impl LightingConsole {
         let beats_per_second = self.tempo / 60.0;
         let beats_elapsed = elapsed * beats_per_second;
 
-        // Update internal beat time
-        let mut internal_beat = self.internal_beat_time.lock().await;
-        *internal_beat += beats_elapsed;
+        // Accumulate beats
+        self.accumulated_beats += beats_elapsed;
 
         // Update rhythm state
-        self.update_rhythm_state(*internal_beat).await;
+        self.update_rhythm_state(self.accumulated_beats).await;
     }
 
     /// Update tracking state with current cue
@@ -431,33 +429,22 @@ impl LightingConsole {
             }
         }
 
-        // Send regular fixtures to DMX module (universe 1)
-        self.module_manager
-            .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(1, dmx_data))
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-        // Render and send pixel fixtures
-        let pixel_engine = self.pixel_engine.read().await;
-        let rhythm_state = self.rhythm_state.read().await;
-        let pixel_universe_data = pixel_engine.render(&fixtures, &rhythm_state);
-
-        // Extract pixel data for visualization
+        // Extract pixel data for visualization before sending
         let mut pixel_data = Vec::new();
         for fixture in fixtures.iter() {
             if fixture.profile.fixture_type == halo_fixtures::FixtureType::PixelBar {
                 let universe = pixel_engine.get_fixture_universe(fixture.id, fixture.universe);
-                if let Some(universe_data) = pixel_universe_data.get(&universe) {
+                if let Some(universe_buffer) = universe_data.get(&universe) {
                     let start_idx = (fixture.start_address - 1) as usize;
                     let pixel_count = fixture.channels.len() / 3;
                     let mut pixels = Vec::new();
 
                     for pixel_idx in 0..pixel_count {
                         let base = start_idx + pixel_idx * 3;
-                        if base + 2 < universe_data.len() {
-                            let r = universe_data[base];
-                            let g = universe_data[base + 1];
-                            let b = universe_data[base + 2];
+                        if base + 2 < universe_buffer.len() {
+                            let r = universe_buffer[base];
+                            let g = universe_buffer[base + 1];
+                            let b = universe_buffer[base + 2];
                             pixels.push((r, g, b));
                         }
                     }
@@ -469,7 +456,8 @@ impl LightingConsole {
             }
         }
 
-        for (universe, data) in pixel_universe_data {
+        // Send all universes to DMX module
+        for (universe, data) in universe_data {
             self.module_manager
                 .send_to_module(ModuleId::Dmx, ModuleEvent::DmxOutput(universe, data))
                 .await
