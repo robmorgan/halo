@@ -45,7 +45,7 @@ lighting that responds to their performance.
 ## Requirements
 
 * **macOS** (required for Core Audio and MIDI dependencies)
-* **Rust toolchain** (cargo, rustc) - MSRV: 1.76.0
+* **Rust toolchain** (cargo, rustc) - MSRV: 1.90.0
 * **Network interface for Art-Net output** (e.g., [Enttec ODE MK2](https://support.enttec.com/support/solutions/articles/101000438016-ode-mk2-70405-70406-))
 * **Optional:** MIDI controller (e.g., Akai MPK49, Novation Launch Control XL)
 * **Optional:** Ableton Link compatible device/software for beat synchronization

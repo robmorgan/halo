@@ -63,7 +63,7 @@ All crates live in one Cargo **workspace**, so `cargo <cmd>` from the repo root 
 ## Dev Environment
 
   * **Platform**: Development and execution require **macOS**.
-  * **Rust (Build/Test)**: **Stable** toolchain, MSRV pinned in `rust-toolchain.toml` (currently *1.76.0*). Install via [rustup.rs][rustup.rs]. This is used by default for `cargo build`, `cargo check`, `cargo test`, etc.
+  * **Rust (Build/Test)**: **Stable** toolchain, MSRV pinned in `rust-toolchain.toml` (currently *1.90.0*). Install via [rustup.rs][rustup.rs]. This is used by default for `cargo build`, `cargo check`, `cargo test`, etc.
   * **Rust (Format)**: **Nightly** toolchain is required *only* for formatting (`cargo fmt`) due to unstable options used in our `rustfmt.toml` configuration.
       * Install via: `rustup toolchain install nightly`
   * **Rust Components**: `rustfmt`, `clippy` – install via `rustup component add rustfmt clippy`. Make sure these components are available for *both* your default stable toolchain and the nightly toolchain.

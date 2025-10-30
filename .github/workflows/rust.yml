@@ -26,11 +26,11 @@ jobs:
           components: rustfmt, clippy
           override: true
 
-      - name: Set Stable as Default (MSRV 1.76.0)
+      - name: Set Stable as Default (MSRV 1.90.0)
         if: success()
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.76.0
+          toolchain: 1.90.0
           components: clippy
 
       - name: Cache cargo registry & build artifacts
@@ -83,11 +83,11 @@ jobs:
           components: rustfmt, clippy
           override: true
 
-      - name: Set Stable as Default (MSRV 1.76.0)
+      - name: Set Stable as Default (MSRV 1.90.0)
         if: success()
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.76.0
+          toolchain: 1.90.0
           components: clippy
 
       - name: Cache cargo registry & build artifacts

@@ -33,7 +33,7 @@ See `docs/multi-destination-artnet.md` for detailed multi-destination Art-Net se
 - **Install nightly toolchain**: `rustup toolchain install nightly` (required for formatting only)
 
 ### Toolchain Requirements
-- **Stable Rust**: Used for building, testing, and linting (MSRV: 1.76.0)
+- **Stable Rust**: Used for building, testing, and linting (MSRV: 1.90.0)
 - **Nightly Rust**: Required only for formatting due to unstable options in `rustfmt.toml`
 
 ## Architecture Overview
