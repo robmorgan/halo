@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 halo-fixtures = { path = "../fixtures" }
-rusty_link = "0.4.5"
+rusty_link = "0.4.6"
 artnet_protocol = "0.4.4"
 anyhow = "1.0.100"
 log = "0.4.28"
