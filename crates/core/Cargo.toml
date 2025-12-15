@@ -9,7 +9,7 @@ halo-fixtures = { path = "../fixtures" }
 rusty_link = "0.4.6"
 artnet_protocol = "0.4.4"
 anyhow = "1.0.100"
-log = "0.4.28"
+log = "0.4.29"
 crossterm = "0.29.0"
 midir = "0.10.3"
 parking_lot = "0.12.5"

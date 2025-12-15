@@ -22,12 +22,12 @@ halo-fixtures = { path = "../fixtures" }
 rusty_link = "0.4.6"
 artnet_protocol = "0.4.4"
 anyhow = "1.0.100"
-log = "0.4.28"
+log = "0.4.29"
 midir = "0.10.3"
 clap = { version = "4.5.53", features = ["derive"] }
 crossterm = "0.29.0"
-eframe = "0.33.2"
+eframe = "0.33.3"
 parking_lot = "0.12.5"
-rfd = "0.15.4"
+rfd = "0.16.0"
 tokio = { version = "1.48.0", features = ["full"] }
 rodio = "0.21.1"
