@@ -173,7 +173,7 @@ impl DeckWidget {
         ui.add_space(8.0);
 
         // Waveform display
-        self.render_waveform(ui);
+        self.render_waveform(ui, deck_number, console_tx);
 
         ui.add_space(8.0);
 
@@ -436,11 +436,29 @@ impl DeckWidget {
     }
 
     /// Render the waveform display.
-    fn render_waveform(&self, ui: &mut egui::Ui) {
+    fn render_waveform(
+        &self,
+        ui: &mut egui::Ui,
+        deck_number: u8,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
         let available_width = ui.available_width();
         let height = 60.0;
-        let (rect, _response) =
-            ui.allocate_exact_size(Vec2::new(available_width, height), egui::Sense::hover());
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(available_width, height), egui::Sense::click());
+
+        // Handle needle drop (click to seek)
+        if response.clicked() {
+            if let Some(pointer_pos) = response.interact_pointer_pos() {
+                let x_offset = pointer_pos.x - rect.left();
+                let progress = (x_offset / available_width).clamp(0.0, 1.0);
+                let position_seconds = progress as f64 * self.duration_seconds;
+                let _ = console_tx.send(ConsoleCommand::DjSeek {
+                    deck: deck_number,
+                    position_seconds,
+                });
+            }
+        }
 
         let painter = ui.painter_at(rect);
 
@@ -526,6 +544,20 @@ impl DeckWidget {
                 ],
                 Stroke::new(2.0, Color32::WHITE),
             );
+        }
+
+        // Shadow playhead (hover preview)
+        if response.hovered() {
+            if let Some(hover_pos) = response.hover_pos() {
+                let hover_x = hover_pos.x.clamp(rect.left(), rect.right());
+                painter.line_segment(
+                    [
+                        egui::pos2(hover_x, rect.top()),
+                        egui::pos2(hover_x, rect.bottom()),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 80)),
+                );
+            }
         }
 
         // Cue point marker
