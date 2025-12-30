@@ -1673,6 +1673,19 @@ impl LightingConsole {
                 let num_peers = self.get_ableton_link_peers().await;
                 let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
             }
+            ToggleAbletonLink => {
+                let currently_enabled = self.is_ableton_link_enabled().await;
+                if currently_enabled {
+                    self.disable_ableton_link().await;
+                } else if let Err(e) = self.enable_ableton_link().await {
+                    let _ = event_tx.send(ConsoleEvent::Error {
+                        message: format!("Failed to enable Ableton Link: {}", e),
+                    });
+                }
+                let enabled = self.is_ableton_link_enabled().await;
+                let num_peers = self.get_ableton_link_peers().await;
+                let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+            }
 
             SetTempoSource { source } => {
                 log::info!("Setting tempo source to: {:?}", source);
@@ -1707,8 +1720,12 @@ impl LightingConsole {
                     .await;
             }
             DjLoadTrack { deck, track_id } => {
+                eprintln!(
+                    "DEBUG: Processing DjLoadTrack - deck={}, track_id={}",
+                    deck, track_id
+                );
                 log::info!("DJ: Loading track {} to deck {}", track_id, deck);
-                let _ = self
+                let result = self
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
@@ -1717,6 +1734,7 @@ impl LightingConsole {
                         ),
                     )
                     .await;
+                eprintln!("DEBUG: send_to_module result: {:?}", result);
             }
             DjPlay { deck } => {
                 log::info!("DJ: Play deck {}", deck);
@@ -1774,6 +1792,18 @@ impl LightingConsole {
                         crate::modules::traits::ModuleId::Dj,
                         crate::modules::traits::ModuleEvent::DjCommand(
                             ConsoleCommand::DjJumpToCue { deck },
+                        ),
+                    )
+                    .await;
+            }
+            DjCuePreview { deck, pressed } => {
+                log::debug!("DJ: Cue preview deck {} pressed={}", deck, pressed);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjCuePreview { deck, pressed },
                         ),
                     )
                     .await;
@@ -1851,6 +1881,30 @@ impl LightingConsole {
                             deck,
                             position_seconds,
                         }),
+                    )
+                    .await;
+            }
+            DjSeekBeats { deck, beats } => {
+                log::info!("DJ: Seek {} beats on deck {}", beats, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjSeekBeats { deck, beats },
+                        ),
+                    )
+                    .await;
+            }
+            DjNudgePitch { deck, delta } => {
+                log::debug!("DJ: Nudge pitch by {} on deck {}", delta, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjNudgePitch { deck, delta },
+                        ),
                     )
                     .await;
             }
@@ -1934,17 +1988,20 @@ impl LightingConsole {
         mut command_rx: mpsc::UnboundedReceiver<ConsoleCommand>,
         event_tx: mpsc::UnboundedSender<ConsoleEvent>,
     ) -> Result<(), anyhow::Error> {
+        eprintln!("DEBUG: run_with_channels starting...");
         log::info!("Console run_with_channels starting...");
 
         // Start the update loop
         let mut update_interval = tokio::time::interval(std::time::Duration::from_millis(23)); // ~44Hz
+        eprintln!("DEBUG: Starting console main loop...");
         log::info!("Starting console main loop...");
 
         loop {
             tokio::select! {
                 // Process commands from UI
                 Some(command) = command_rx.recv() => {
-                    log::debug!("Received command: {:?}", command);
+                    eprintln!("DEBUG: Console received command: {:?}", command);
+                    log::info!("Console received command: {:?}", command);
 
                     if let ConsoleCommand::Shutdown = command {
                         log::info!("Received shutdown command");
@@ -2040,6 +2097,54 @@ impl LightingConsole {
                                 ModuleEvent::DjLibraryTracks(tracks) => {
                                     log::debug!("Received {} tracks from DJ module", tracks.len());
                                     let _ = event_tx.send(ConsoleEvent::DjLibraryTracks { tracks });
+                                }
+                                ModuleEvent::DjDeckLoaded { deck, track_id, title, artist, duration_seconds, bpm } => {
+                                    log::info!("DJ deck {} loaded: {} - {}", deck, artist.as_deref().unwrap_or("Unknown"), title);
+                                    let _ = event_tx.send(ConsoleEvent::DjTrackLoaded {
+                                        deck,
+                                        track_id,
+                                        title,
+                                        artist,
+                                        duration_seconds,
+                                        bpm,
+                                    });
+                                }
+                                ModuleEvent::DjDeckStateChanged { deck, is_playing, position_seconds } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjDeckStateChanged {
+                                        deck,
+                                        is_playing,
+                                        position_seconds,
+                                    });
+                                }
+                                ModuleEvent::DjCuePointSet { deck, position_seconds } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjCuePointSet {
+                                        deck,
+                                        position_seconds,
+                                    });
+                                }
+                                ModuleEvent::DjWaveformProgress { deck, samples, progress } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjWaveformProgress {
+                                        deck,
+                                        samples,
+                                        progress,
+                                    });
+                                }
+                                ModuleEvent::DjWaveformLoaded { deck, samples, duration_seconds } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjWaveformLoaded {
+                                        deck,
+                                        samples,
+                                        duration_seconds,
+                                    });
+                                }
+                                ModuleEvent::DjCommand(command) => {
+                                    // Handle commands from Push 2 or other modules
+                                    log::debug!("Processing DjCommand from module: {:?}", command);
+                                    if let Err(e) = self.process_command(command, &event_tx).await {
+                                        log::error!("Module command processing error: {}", e);
+                                        let _ = event_tx.send(ConsoleEvent::Error {
+                                            message: format!("Module command error: {}", e)
+                                        });
+                                    }
                                 }
                                 _ => {
                                     // Handle other inter-module events as needed

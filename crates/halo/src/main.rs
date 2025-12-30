@@ -203,6 +203,12 @@ async fn main() -> anyhow::Result<()> {
     // Register the DJ module
     console.register_module(Box::new(halo_dj::DjModule::new()));
 
+    // Register the Push 2 module if enabled
+    if settings.push2_enabled {
+        console.register_module(Box::new(halo_push2::Push2Module::new()));
+        println!("Push 2 support: enabled");
+    }
+
     // // Blue Strobe Fast
     // console.add_midi_override(
     //     76,
@@ -257,10 +263,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Spawn the console task with channel communication
     let console_task = tokio::spawn(async move {
+        eprintln!("DEBUG: Console task started");
         // Run the console with channels
         if let Err(e) = console.run_with_channels(command_rx, event_tx).await {
             println!("Console error: {}", e);
         }
+        eprintln!("DEBUG: Console task ended");
     });
 
     // Store the show file path for later loading after UI starts

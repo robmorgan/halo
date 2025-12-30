@@ -199,6 +199,10 @@ pub enum ConsoleCommand {
     DjJumpToCue {
         deck: u8,
     },
+    DjCuePreview {
+        deck: u8,
+        pressed: bool,
+    },
     DjSetHotCue {
         deck: u8,
         slot: u8,
@@ -221,7 +225,18 @@ pub enum ConsoleCommand {
         deck: u8,
         position_seconds: f64,
     },
+    DjSeekBeats {
+        deck: u8,
+        beats: i32,
+    },
+    DjNudgePitch {
+        deck: u8,
+        delta: f64,
+    },
     DjQueryLibrary,
+
+    // Ableton Link toggle
+    ToggleAbletonLink,
 
     // Effects
     ApplyEffect {
@@ -343,6 +358,9 @@ pub struct Settings {
 
     // Fixture settings
     pub enable_pan_tilt_limits: bool,
+
+    // Push 2 settings
+    pub push2_enabled: bool,
 }
 
 impl Default for Settings {
@@ -379,6 +397,9 @@ impl Default for Settings {
 
             // Fixture defaults
             enable_pan_tilt_limits: true,
+
+            // Push 2 defaults
+            push2_enabled: false,
         }
     }
 }
@@ -518,6 +539,20 @@ pub enum ConsoleEvent {
         deck: u8,
         is_playing: bool,
         position_seconds: f64,
+    },
+    DjCuePointSet {
+        deck: u8,
+        position_seconds: f64,
+    },
+    DjWaveformProgress {
+        deck: u8,
+        samples: Vec<f32>,
+        progress: f32,
+    },
+    DjWaveformLoaded {
+        deck: u8,
+        samples: Vec<f32>,
+        duration_seconds: f64,
     },
     DjLibraryTracks {
         tracks: Vec<DjTrackInfo>,

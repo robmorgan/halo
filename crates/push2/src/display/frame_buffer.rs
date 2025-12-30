@@ -1,0 +1,262 @@
+//! Frame buffer for Push 2 display.
+//!
+//! The Push 2 display is 960x160 pixels using BGR565 format (16-bit color).
+
+/// Display width in pixels
+pub const DISPLAY_WIDTH: usize = 960;
+
+/// Display height in pixels
+pub const DISPLAY_HEIGHT: usize = 160;
+
+/// Total frame size in bytes (960 * 160 * 2 bytes per pixel)
+pub const FRAME_SIZE: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT * 2;
+
+/// XOR mask for USB transfer
+const XOR_MASK: [u8; 4] = [0xE7, 0xF3, 0xE7, 0xFF];
+
+/// Frame buffer for Push 2 display.
+///
+/// Stores pixels in BGR565 format (16-bit color):
+/// - Bits 0-4: Blue (5 bits)
+/// - Bits 5-10: Green (6 bits)
+/// - Bits 11-15: Red (5 bits)
+pub struct FrameBuffer {
+    /// Raw pixel data in BGR565 format
+    pixels: Vec<u16>,
+}
+
+impl FrameBuffer {
+    /// Create a new empty frame buffer (black).
+    pub fn new() -> Self {
+        Self {
+            pixels: vec![0; DISPLAY_WIDTH * DISPLAY_HEIGHT],
+        }
+    }
+
+    /// Clear the frame buffer to black.
+    pub fn clear(&mut self) {
+        self.pixels.fill(0);
+    }
+
+    /// Fill the entire frame buffer with a color.
+    pub fn fill(&mut self, color: u16) {
+        self.pixels.fill(color);
+    }
+
+    /// Set a single pixel.
+    #[inline]
+    pub fn set_pixel(&mut self, x: usize, y: usize, color: u16) {
+        if x < DISPLAY_WIDTH && y < DISPLAY_HEIGHT {
+            self.pixels[y * DISPLAY_WIDTH + x] = color;
+        }
+    }
+
+    /// Get a pixel value.
+    #[inline]
+    pub fn get_pixel(&self, x: usize, y: usize) -> u16 {
+        if x < DISPLAY_WIDTH && y < DISPLAY_HEIGHT {
+            self.pixels[y * DISPLAY_WIDTH + x]
+        } else {
+            0
+        }
+    }
+
+    /// Convert RGB888 to BGR565.
+    #[inline]
+    pub fn rgb_to_bgr565(r: u8, g: u8, b: u8) -> u16 {
+        let r5 = (r >> 3) as u16;
+        let g6 = (g >> 2) as u16;
+        let b5 = (b >> 3) as u16;
+        (r5 << 11) | (g6 << 5) | b5
+    }
+
+    /// Set a pixel using RGB888 values.
+    #[inline]
+    pub fn set_pixel_rgb(&mut self, x: usize, y: usize, r: u8, g: u8, b: u8) {
+        self.set_pixel(x, y, Self::rgb_to_bgr565(r, g, b));
+    }
+
+    /// Draw a filled rectangle.
+    pub fn draw_rect(&mut self, x: usize, y: usize, w: usize, h: usize, color: u16) {
+        for py in y..(y + h).min(DISPLAY_HEIGHT) {
+            for px in x..(x + w).min(DISPLAY_WIDTH) {
+                self.pixels[py * DISPLAY_WIDTH + px] = color;
+            }
+        }
+    }
+
+    /// Draw a horizontal line.
+    pub fn draw_hline(&mut self, x: usize, y: usize, w: usize, color: u16) {
+        if y >= DISPLAY_HEIGHT {
+            return;
+        }
+        let start = y * DISPLAY_WIDTH + x;
+        let end = start + w.min(DISPLAY_WIDTH - x);
+        for i in start..end {
+            self.pixels[i] = color;
+        }
+    }
+
+    /// Draw a vertical line.
+    pub fn draw_vline(&mut self, x: usize, y: usize, h: usize, color: u16) {
+        if x >= DISPLAY_WIDTH {
+            return;
+        }
+        for py in y..(y + h).min(DISPLAY_HEIGHT) {
+            self.pixels[py * DISPLAY_WIDTH + x] = color;
+        }
+    }
+
+    /// Draw a single character using a simple 5x7 font.
+    /// Returns the width of the character drawn.
+    pub fn draw_char(&mut self, x: usize, y: usize, c: char, color: u16, scale: usize) -> usize {
+        let bitmap = get_char_bitmap(c);
+        let char_width = 5 * scale;
+        let char_height = 7 * scale;
+
+        for (row, &bits) in bitmap.iter().enumerate() {
+            for col in 0..5 {
+                if (bits >> (4 - col)) & 1 == 1 {
+                    // Draw scaled pixel
+                    for sy in 0..scale {
+                        for sx in 0..scale {
+                            self.set_pixel(x + col * scale + sx, y + row * scale + sy, color);
+                        }
+                    }
+                }
+            }
+        }
+
+        char_width + scale // Include spacing
+    }
+
+    /// Draw a string.
+    pub fn draw_text(&mut self, x: usize, y: usize, text: &str, color: u16, scale: usize) {
+        let mut cursor_x = x;
+        for c in text.chars() {
+            cursor_x += self.draw_char(cursor_x, y, c, color, scale);
+        }
+    }
+
+    /// Convert frame buffer to USB transfer format with XOR encoding.
+    pub fn to_usb_frame(&self) -> Vec<u8> {
+        let mut data = Vec::with_capacity(FRAME_SIZE);
+
+        // Convert to bytes and apply XOR mask
+        for (i, &pixel) in self.pixels.iter().enumerate() {
+            let bytes = pixel.to_le_bytes();
+            let offset = (i * 2) % 4;
+            data.push(bytes[0] ^ XOR_MASK[offset]);
+            data.push(bytes[1] ^ XOR_MASK[(offset + 1) % 4]);
+        }
+
+        data
+    }
+}
+
+impl Default for FrameBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Get bitmap for a character (5x7 font).
+fn get_char_bitmap(c: char) -> [u8; 7] {
+    // Simple 5x7 bitmap font for ASCII printable characters
+    match c {
+        '0' => [0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E],
+        '1' => [0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E],
+        '2' => [0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F],
+        '3' => [0x0E, 0x11, 0x01, 0x06, 0x01, 0x11, 0x0E],
+        '4' => [0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02],
+        '5' => [0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E],
+        '6' => [0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E],
+        '7' => [0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
+        '8' => [0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E],
+        '9' => [0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C],
+        'A' => [0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11],
+        'B' => [0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E],
+        'C' => [0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E],
+        'D' => [0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E],
+        'E' => [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F],
+        'F' => [0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10],
+        'G' => [0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F],
+        'H' => [0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11],
+        'I' => [0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E],
+        'J' => [0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C],
+        'K' => [0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11],
+        'L' => [0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F],
+        'M' => [0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11],
+        'N' => [0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11],
+        'O' => [0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+        'P' => [0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10],
+        'Q' => [0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D],
+        'R' => [0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11],
+        'S' => [0x0E, 0x11, 0x10, 0x0E, 0x01, 0x11, 0x0E],
+        'T' => [0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04],
+        'U' => [0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E],
+        'V' => [0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04],
+        'W' => [0x11, 0x11, 0x11, 0x15, 0x15, 0x1B, 0x11],
+        'X' => [0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11],
+        'Y' => [0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04],
+        'Z' => [0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F],
+        'a' => [0x00, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F],
+        'b' => [0x10, 0x10, 0x1E, 0x11, 0x11, 0x11, 0x1E],
+        'c' => [0x00, 0x00, 0x0E, 0x11, 0x10, 0x11, 0x0E],
+        'd' => [0x01, 0x01, 0x0F, 0x11, 0x11, 0x11, 0x0F],
+        'e' => [0x00, 0x00, 0x0E, 0x11, 0x1F, 0x10, 0x0E],
+        'f' => [0x06, 0x08, 0x1E, 0x08, 0x08, 0x08, 0x08],
+        'g' => [0x00, 0x00, 0x0F, 0x11, 0x0F, 0x01, 0x0E],
+        'h' => [0x10, 0x10, 0x1E, 0x11, 0x11, 0x11, 0x11],
+        'i' => [0x04, 0x00, 0x0C, 0x04, 0x04, 0x04, 0x0E],
+        'j' => [0x02, 0x00, 0x06, 0x02, 0x02, 0x12, 0x0C],
+        'k' => [0x10, 0x10, 0x12, 0x14, 0x18, 0x14, 0x12],
+        'l' => [0x0C, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E],
+        'm' => [0x00, 0x00, 0x1A, 0x15, 0x15, 0x15, 0x15],
+        'n' => [0x00, 0x00, 0x1E, 0x11, 0x11, 0x11, 0x11],
+        'o' => [0x00, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E],
+        'p' => [0x00, 0x00, 0x1E, 0x11, 0x1E, 0x10, 0x10],
+        'q' => [0x00, 0x00, 0x0F, 0x11, 0x0F, 0x01, 0x01],
+        'r' => [0x00, 0x00, 0x16, 0x19, 0x10, 0x10, 0x10],
+        's' => [0x00, 0x00, 0x0E, 0x10, 0x0E, 0x01, 0x1E],
+        't' => [0x08, 0x08, 0x1E, 0x08, 0x08, 0x09, 0x06],
+        'u' => [0x00, 0x00, 0x11, 0x11, 0x11, 0x11, 0x0F],
+        'v' => [0x00, 0x00, 0x11, 0x11, 0x11, 0x0A, 0x04],
+        'w' => [0x00, 0x00, 0x11, 0x11, 0x15, 0x15, 0x0A],
+        'x' => [0x00, 0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11],
+        'y' => [0x00, 0x00, 0x11, 0x11, 0x0F, 0x01, 0x0E],
+        'z' => [0x00, 0x00, 0x1F, 0x02, 0x04, 0x08, 0x1F],
+        ' ' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ':' => [0x00, 0x04, 0x00, 0x00, 0x00, 0x04, 0x00],
+        '/' => [0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10],
+        '.' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04],
+        '-' => [0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00],
+        _ => [0x1F, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1F], // Box for unknown
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rgb_to_bgr565() {
+        // White
+        assert_eq!(FrameBuffer::rgb_to_bgr565(255, 255, 255), 0xFFFF);
+        // Black
+        assert_eq!(FrameBuffer::rgb_to_bgr565(0, 0, 0), 0x0000);
+        // Red
+        assert_eq!(FrameBuffer::rgb_to_bgr565(255, 0, 0), 0xF800);
+        // Green
+        assert_eq!(FrameBuffer::rgb_to_bgr565(0, 255, 0), 0x07E0);
+        // Blue
+        assert_eq!(FrameBuffer::rgb_to_bgr565(0, 0, 255), 0x001F);
+    }
+
+    #[test]
+    fn test_set_get_pixel() {
+        let mut fb = FrameBuffer::new();
+        fb.set_pixel(100, 50, 0xF800);
+        assert_eq!(fb.get_pixel(100, 50), 0xF800);
+    }
+}

@@ -11,6 +11,7 @@ pub enum ModuleId {
     Smpte,
     Midi,
     Dj,
+    Push2,
 }
 
 /// Events that can be sent between modules
@@ -52,6 +53,38 @@ pub enum ModuleEvent {
     DjCommand(crate::ConsoleCommand),
     /// DJ library tracks response
     DjLibraryTracks(Vec<crate::DjTrackInfo>),
+    /// DJ deck loaded event
+    DjDeckLoaded {
+        deck: u8,
+        track_id: i64,
+        title: String,
+        artist: Option<String>,
+        duration_seconds: f64,
+        bpm: Option<f64>,
+    },
+    /// DJ deck state changed
+    DjDeckStateChanged {
+        deck: u8,
+        is_playing: bool,
+        position_seconds: f64,
+    },
+    /// DJ cue point set
+    DjCuePointSet {
+        deck: u8,
+        position_seconds: f64,
+    },
+    /// DJ waveform progress (streaming analysis)
+    DjWaveformProgress {
+        deck: u8,
+        samples: Vec<f32>,
+        progress: f32,
+    },
+    /// DJ waveform loaded (complete)
+    DjWaveformLoaded {
+        deck: u8,
+        samples: Vec<f32>,
+        duration_seconds: f64,
+    },
     /// System events
     Shutdown,
 }
