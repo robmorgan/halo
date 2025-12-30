@@ -220,6 +220,7 @@ impl DeckWidget {
         // Transport controls
         ui.horizontal(|ui| {
             let button_size = Vec2::new(50.0, 40.0);
+            let small_button_size = Vec2::new(40.0, 40.0);
 
             // Play/Pause button
             let play_text = if self.is_playing { "||" } else { ">" };
@@ -311,6 +312,30 @@ impl DeckWidget {
                     let _ = console_tx.send(ConsoleCommand::DjSetCue { deck: deck_number });
                 }
             }
+
+            ui.add_space(8.0);
+
+            // Track search buttons (previous/next track)
+            if ui
+                .add_sized(
+                    small_button_size,
+                    egui::Button::new(egui::RichText::new("<<").size(16.0)),
+                )
+                .clicked()
+            {
+                let _ = console_tx.send(ConsoleCommand::DjPreviousTrack { deck: deck_number });
+            }
+            if ui
+                .add_sized(
+                    small_button_size,
+                    egui::Button::new(egui::RichText::new(">>").size(16.0)),
+                )
+                .clicked()
+            {
+                let _ = console_tx.send(ConsoleCommand::DjNextTrack { deck: deck_number });
+            }
+
+            ui.add_space(8.0);
 
             // Sync button
             let sync_color = if self.sync_enabled {

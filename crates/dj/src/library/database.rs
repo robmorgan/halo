@@ -192,6 +192,57 @@ impl LibraryDatabase {
         rows.collect()
     }
 
+    /// Get the adjacent track (next or previous) in the library.
+    ///
+    /// Tracks are ordered by title. If `next` is true, returns the track after
+    /// the given track_id. If `next` is false, returns the track before.
+    pub fn get_adjacent_track(&self, track_id: TrackId, next: bool) -> SqliteResult<Option<Track>> {
+        // First, get the title of the current track
+        let current_title: Option<String> = self.conn.query_row(
+            "SELECT title FROM tracks WHERE id = ?1",
+            params![track_id.0],
+            |row| row.get(0),
+        ).ok();
+
+        let Some(current_title) = current_title else {
+            return Ok(None);
+        };
+
+        // Query for adjacent track based on title ordering
+        let query = if next {
+            // Next track: title > current OR (title = current AND id > current)
+            r#"
+            SELECT id, file_path, title, artist, album, duration_seconds, bpm, musical_key,
+                   format, sample_rate, bit_depth, channels, file_size_bytes,
+                   date_added, last_played, play_count, rating, comment
+            FROM tracks
+            WHERE (title > ?1) OR (title = ?1 AND id > ?2)
+            ORDER BY title ASC, id ASC
+            LIMIT 1
+            "#
+        } else {
+            // Previous track: title < current OR (title = current AND id < current)
+            r#"
+            SELECT id, file_path, title, artist, album, duration_seconds, bpm, musical_key,
+                   format, sample_rate, bit_depth, channels, file_size_bytes,
+                   date_added, last_played, play_count, rating, comment
+            FROM tracks
+            WHERE (title < ?1) OR (title = ?1 AND id < ?2)
+            ORDER BY title DESC, id DESC
+            LIMIT 1
+            "#
+        };
+
+        let mut stmt = self.conn.prepare(query)?;
+        let mut rows = stmt.query(params![current_title, track_id.0])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::row_to_track(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Search tracks by title or artist.
     pub fn search_tracks(&self, query: &str) -> SqliteResult<Vec<Track>> {
         let search_pattern = format!("%{}%", query);

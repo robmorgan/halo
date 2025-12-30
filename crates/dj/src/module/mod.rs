@@ -43,6 +43,12 @@ pub enum DjCommand {
     /// Eject the track from a deck.
     EjectTrack { deck: DeckId },
 
+    // Track navigation commands
+    /// Go to previous track (or start of current track if not at start).
+    PreviousTrack { deck: DeckId },
+    /// Go to next track in the library.
+    NextTrack { deck: DeckId },
+
     // Playback commands
     /// Start playback.
     Play { deck: DeckId },
@@ -355,6 +361,14 @@ impl DjModule {
                     deck: deck_id,
                     position_seconds,
                 })
+            }
+            ConsoleCommand::DjPreviousTrack { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::PreviousTrack { deck: deck_id })
+            }
+            ConsoleCommand::DjNextTrack { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::NextTrack { deck: deck_id })
             }
             ConsoleCommand::DjQueryLibrary => Some(DjCommand::GetAllTracks),
             _ => None,
@@ -1135,6 +1149,206 @@ impl AsyncModule for DjModule {
                                                 position_seconds: position,
                                             }
                                         )).await;
+                                    }
+                                    DjCommand::PreviousTrack { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Stop playback first
+                                        self.handle_command(DjCommand::Pause { deck });
+                                        let pause_position = if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).read().position_seconds()
+                                        } else {
+                                            self.deck(deck).read().position_seconds
+                                        };
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing: false,
+                                                position_seconds: pause_position,
+                                            }
+                                        )).await;
+
+                                        // Get current position and loaded track ID
+                                        let (position, current_track_id) = {
+                                            let deck_state = self.deck(deck).read();
+                                            let pos = if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).read().position_seconds()
+                                            } else {
+                                                deck_state.position_seconds
+                                            };
+                                            let track_id = deck_state.loaded_track.as_ref().map(|t| t.id);
+                                            (pos, track_id)
+                                        };
+
+                                        // Threshold: if position > 0.5s, seek to start
+                                        if position > 0.5 {
+                                            self.handle_command(DjCommand::Seek { deck, position_seconds: 0.0 });
+                                            let is_playing = {
+                                                if let Some(engine) = &self.audio_engine {
+                                                    engine.deck_player(deck).read().state() == PlayerState::Playing
+                                                } else {
+                                                    self.deck(deck).read().state == DeckState::Playing
+                                                }
+                                            };
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjDeckStateChanged {
+                                                    deck: deck_num,
+                                                    is_playing,
+                                                    position_seconds: 0.0,
+                                                }
+                                            )).await;
+                                            eprintln!("DEBUG: PreviousTrack: Seeked to start of deck {}", deck_num);
+                                        } else if let Some(track_id) = current_track_id {
+                                            // Already at start, try to load previous track
+                                            let prev_track = if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    db_guard.get_adjacent_track(track_id, false).ok().flatten()
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            };
+
+                                            if let Some(track) = prev_track {
+                                                let new_track_id = track.id;
+                                                eprintln!("DEBUG: PreviousTrack: Loading previous track: {}", track.title);
+
+                                                // Load the track using handle_command
+                                                self.handle_command(DjCommand::LoadTrack { deck, track_id: new_track_id });
+
+                                                // Get track info and send loaded event
+                                                let track_info = {
+                                                    let deck_state = self.deck(deck).read();
+                                                    deck_state.loaded_track.as_ref().map(|t| {
+                                                        (t.title.clone(), t.artist.clone(), t.duration_seconds, t.bpm)
+                                                    })
+                                                };
+                                                if let Some((title, artist, duration_seconds, bpm)) = track_info {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjDeckLoaded {
+                                                            deck: deck_num,
+                                                            track_id: new_track_id.0,
+                                                            title,
+                                                            artist,
+                                                            duration_seconds,
+                                                            bpm,
+                                                        }
+                                                    )).await;
+                                                }
+
+                                                // Check for cached waveform
+                                                let existing_waveform = if let Some(db) = &self.database {
+                                                    if let Ok(db_guard) = db.lock() {
+                                                        db_guard.get_waveform(new_track_id).ok().flatten()
+                                                    } else {
+                                                        None
+                                                    }
+                                                } else {
+                                                    None
+                                                };
+
+                                                if let Some(waveform) = existing_waveform {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjWaveformLoaded {
+                                                            deck: deck_num,
+                                                            samples: waveform.samples,
+                                                            duration_seconds: waveform.duration_seconds,
+                                                        }
+                                                    )).await;
+                                                }
+                                            } else {
+                                                eprintln!("DEBUG: PreviousTrack: No previous track available");
+                                            }
+                                        }
+                                    }
+                                    DjCommand::NextTrack { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Stop playback first
+                                        self.handle_command(DjCommand::Pause { deck });
+                                        let pause_position = if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).read().position_seconds()
+                                        } else {
+                                            self.deck(deck).read().position_seconds
+                                        };
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing: false,
+                                                position_seconds: pause_position,
+                                            }
+                                        )).await;
+
+                                        // Get loaded track ID
+                                        let current_track_id = {
+                                            let deck_state = self.deck(deck).read();
+                                            deck_state.loaded_track.as_ref().map(|t| t.id)
+                                        };
+
+                                        if let Some(track_id) = current_track_id {
+                                            // Load next track
+                                            let next_track = if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    db_guard.get_adjacent_track(track_id, true).ok().flatten()
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            };
+
+                                            if let Some(track) = next_track {
+                                                let new_track_id = track.id;
+                                                eprintln!("DEBUG: NextTrack: Loading next track: {}", track.title);
+
+                                                // Load the track using handle_command
+                                                self.handle_command(DjCommand::LoadTrack { deck, track_id: new_track_id });
+
+                                                // Get track info and send loaded event
+                                                let track_info = {
+                                                    let deck_state = self.deck(deck).read();
+                                                    deck_state.loaded_track.as_ref().map(|t| {
+                                                        (t.title.clone(), t.artist.clone(), t.duration_seconds, t.bpm)
+                                                    })
+                                                };
+                                                if let Some((title, artist, duration_seconds, bpm)) = track_info {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjDeckLoaded {
+                                                            deck: deck_num,
+                                                            track_id: new_track_id.0,
+                                                            title,
+                                                            artist,
+                                                            duration_seconds,
+                                                            bpm,
+                                                        }
+                                                    )).await;
+                                                }
+
+                                                // Check for cached waveform
+                                                let existing_waveform = if let Some(db) = &self.database {
+                                                    if let Ok(db_guard) = db.lock() {
+                                                        db_guard.get_waveform(new_track_id).ok().flatten()
+                                                    } else {
+                                                        None
+                                                    }
+                                                } else {
+                                                    None
+                                                };
+
+                                                if let Some(waveform) = existing_waveform {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjWaveformLoaded {
+                                                            deck: deck_num,
+                                                            samples: waveform.samples,
+                                                            duration_seconds: waveform.duration_seconds,
+                                                        }
+                                                    )).await;
+                                                }
+                                            } else {
+                                                eprintln!("DEBUG: NextTrack: No next track available");
+                                            }
+                                        }
                                     }
                                     other => {
                                         eprintln!("DEBUG: Calling handle_command for {:?}", other);

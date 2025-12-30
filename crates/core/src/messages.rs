@@ -233,6 +233,12 @@ pub enum ConsoleCommand {
         deck: u8,
         delta: f64,
     },
+    DjPreviousTrack {
+        deck: u8,
+    },
+    DjNextTrack {
+        deck: u8,
+    },
     DjQueryLibrary,
 
     // Ableton Link toggle

@@ -1908,6 +1908,30 @@ impl LightingConsole {
                     )
                     .await;
             }
+            DjPreviousTrack { deck } => {
+                log::debug!("DJ: Previous track on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjPreviousTrack { deck },
+                        ),
+                    )
+                    .await;
+            }
+            DjNextTrack { deck } => {
+                log::debug!("DJ: Next track on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjNextTrack { deck },
+                        ),
+                    )
+                    .await;
+            }
             DjQueryLibrary => {
                 log::debug!("DJ: Querying library");
                 let _ = self
