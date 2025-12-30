@@ -468,8 +468,15 @@ impl DeckWidget {
                     .show_value(false)
                     .trailing_fill(true),
             );
-            // Send pitch change command when slider is dragged
-            if slider_response.changed() {
+            // Double-click to reset pitch to 0%
+            if slider_response.double_clicked() {
+                self.pitch = 0.0;
+                let _ = console_tx.send(ConsoleCommand::DjSetPitch {
+                    deck: deck_number,
+                    percent: 0.0,
+                });
+            } else if slider_response.changed() {
+                // Send pitch change command when slider is dragged
                 let _ = console_tx.send(ConsoleCommand::DjSetPitch {
                     deck: deck_number,
                     percent: self.pitch, // Decimal value: -0.5 = -50%
