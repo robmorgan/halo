@@ -2,9 +2,8 @@
 //!
 //! Usage: cargo run --package halo-dj --example play_audio <audio_file>
 
-use std::env;
-use std::thread;
 use std::time::Duration;
+use std::{env, thread};
 
 use halo_dj::deck::DeckId;
 use halo_dj::module::{AudioEngineConfig, DjAudioEngine};
@@ -42,7 +41,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start the audio engine
     println!("\nStarting audio engine...");
     engine.start()?;
-    println!("Audio engine started with {} output channels", engine.output_channels());
+    println!(
+        "Audio engine started with {} output channels",
+        engine.output_channels()
+    );
 
     // Load the audio file onto Deck A
     println!("\nLoading audio file onto Deck A...");
@@ -66,7 +68,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (position, duration, state) = {
             let player = engine.deck_player(DeckId::A).read();
-            (player.position_seconds(), player.duration_seconds(), player.state())
+            (
+                player.position_seconds(),
+                player.duration_seconds(),
+                player.state(),
+            )
         };
 
         print!(

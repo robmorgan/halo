@@ -124,6 +124,12 @@ impl LightingConsole {
         })
     }
 
+    /// Register an additional module with the console.
+    /// Must be called before `initialize()`.
+    pub fn register_module(&mut self, module: Box<dyn crate::modules::traits::AsyncModule>) {
+        self.module_manager.register_module(module);
+    }
+
     /// Initialize the async console and all modules
     pub async fn initialize(&mut self) -> Result<(), anyhow::Error> {
         log::info!("Initializing async lighting console...");
@@ -1694,7 +1700,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjImportFolder { path }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjImportFolder { path },
+                        ),
                     )
                     .await;
             }
@@ -1704,7 +1712,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjLoadTrack { deck, track_id }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjLoadTrack { deck, track_id },
+                        ),
                     )
                     .await;
             }
@@ -1714,7 +1724,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjPlay { deck }),
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjPlay {
+                            deck,
+                        }),
                     )
                     .await;
             }
@@ -1724,7 +1736,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjPause { deck }),
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjPause {
+                            deck,
+                        }),
                     )
                     .await;
             }
@@ -1734,7 +1748,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjStop { deck }),
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjStop {
+                            deck,
+                        }),
                     )
                     .await;
             }
@@ -1744,7 +1760,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetCue { deck }),
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetCue {
+                            deck,
+                        }),
                     )
                     .await;
             }
@@ -1754,7 +1772,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjJumpToCue { deck }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjJumpToCue { deck },
+                        ),
                     )
                     .await;
             }
@@ -1764,7 +1784,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetHotCue { deck, slot }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjSetHotCue { deck, slot },
+                        ),
                     )
                     .await;
             }
@@ -1774,7 +1796,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjJumpToHotCue { deck, slot }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjJumpToHotCue { deck, slot },
+                        ),
                     )
                     .await;
             }
@@ -1784,7 +1808,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetPitch { deck, percent }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjSetPitch { deck, percent },
+                        ),
                     )
                     .await;
             }
@@ -1794,7 +1820,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjToggleSync { deck }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjToggleSync { deck },
+                        ),
                     )
                     .await;
             }
@@ -1804,17 +1832,25 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetMaster { deck }),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjSetMaster { deck },
+                        ),
                     )
                     .await;
             }
-            DjSeek { deck, position_seconds } => {
+            DjSeek {
+                deck,
+                position_seconds,
+            } => {
                 log::info!("DJ: Seek to {}s on deck {}", position_seconds, deck);
                 let _ = self
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSeek { deck, position_seconds }),
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSeek {
+                            deck,
+                            position_seconds,
+                        }),
                     )
                     .await;
             }
@@ -1824,7 +1860,9 @@ impl LightingConsole {
                     .module_manager
                     .send_to_module(
                         crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjQueryLibrary),
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjQueryLibrary,
+                        ),
                     )
                     .await;
             }

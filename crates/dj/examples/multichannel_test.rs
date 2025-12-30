@@ -5,12 +5,11 @@
 //!
 //! Usage:
 //!   cargo run --package halo-dj --example multichannel_test -- --list-devices
-//!   cargo run --package halo-dj --example multichannel_test -- --device "MOTU M4" <file_a> [file_b]
-//!   cargo run --package halo-dj --example multichannel_test -- <file_a> [file_b]
+//!   cargo run --package halo-dj --example multichannel_test -- --device "MOTU M4" <file_a>
+//! [file_b]   cargo run --package halo-dj --example multichannel_test -- <file_a> [file_b]
 
-use std::env;
-use std::thread;
 use std::time::Duration;
+use std::{env, thread};
 
 use halo_dj::deck::DeckId;
 use halo_dj::module::{list_audio_devices, AudioEngineConfig, DjAudioEngine, PlayerState};
@@ -120,20 +119,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.device_name = device_name.clone();
 
     println!("\nConfiguration:");
-    println!("  Device: {}", if device_name.is_empty() { "default" } else { &device_name });
+    println!(
+        "  Device: {}",
+        if device_name.is_empty() {
+            "default"
+        } else {
+            &device_name
+        }
+    );
     println!("  Sample Rate: {} Hz", config.sample_rate);
-    println!("  Deck A: channels {}-{} (outputs 1-2)", config.deck_a_channels.0, config.deck_a_channels.1);
-    println!("  Deck B: channels {}-{} (outputs 3-4)", config.deck_b_channels.0, config.deck_b_channels.1);
+    println!(
+        "  Deck A: channels {}-{} (outputs 1-2)",
+        config.deck_a_channels.0, config.deck_a_channels.1
+    );
+    println!(
+        "  Deck B: channels {}-{} (outputs 3-4)",
+        config.deck_b_channels.0, config.deck_b_channels.1
+    );
 
     // Create and start the audio engine
     let mut engine = DjAudioEngine::new(config);
 
     println!("\nStarting audio engine...");
     engine.start()?;
-    println!("Audio engine started with {} output channels", engine.output_channels());
+    println!(
+        "Audio engine started with {} output channels",
+        engine.output_channels()
+    );
 
     if engine.output_channels() < 4 {
-        println!("\nWARNING: Device has only {} channels.", engine.output_channels());
+        println!(
+            "\nWARNING: Device has only {} channels.",
+            engine.output_channels()
+        );
         println!("         Deck B may not output correctly (needs channels 2-3).");
         println!("         Consider using a multi-channel audio interface like Motu M4.");
     }
@@ -182,20 +200,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (pos_a, dur_a, state_a) = {
             let player = engine.deck_player(DeckId::A).read();
-            (player.position_seconds(), player.duration_seconds(), player.state())
+            (
+                player.position_seconds(),
+                player.duration_seconds(),
+                player.state(),
+            )
         };
 
         let (pos_b, dur_b, state_b) = if has_deck_b {
             let player = engine.deck_player(DeckId::B).read();
-            (player.position_seconds(), player.duration_seconds(), player.state())
+            (
+                player.position_seconds(),
+                player.duration_seconds(),
+                player.state(),
+            )
         } else {
             (0.0, 0.0, PlayerState::Empty)
         };
 
         // Format time as MM:SS.ss
-        let fmt_time = |secs: f64| -> String {
-            format!("{:02}:{:05.2}", (secs / 60.0) as u32, secs % 60.0)
-        };
+        let fmt_time =
+            |secs: f64| -> String { format!("{:02}:{:05.2}", (secs / 60.0) as u32, secs % 60.0) };
 
         print!(
             "\r  A: {} / {} [{:?}]",

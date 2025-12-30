@@ -9,14 +9,13 @@
 mod deck;
 mod library;
 
+pub use deck::DeckWidget;
 use eframe::egui;
 use halo_core::ConsoleCommand;
+pub use library::LibraryBrowser;
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
-
-pub use deck::DeckWidget;
-pub use library::LibraryBrowser;
 
 /// State for the DJ panel.
 pub struct DjPanel {

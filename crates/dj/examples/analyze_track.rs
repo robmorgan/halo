@@ -11,8 +11,7 @@ use std::env;
 use std::path::Path;
 
 use halo_dj::library::{
-    import_and_analyze_directory, import_and_analyze_file, is_supported_audio_file,
-    LibraryDatabase,
+    import_and_analyze_directory, import_and_analyze_file, is_supported_audio_file, LibraryDatabase,
 };
 
 fn print_usage(program: &str) {
@@ -20,9 +19,18 @@ fn print_usage(program: &str) {
     eprintln!("======================");
     eprintln!();
     eprintln!("Usage:");
-    eprintln!("  {} <audio_file>              Analyze a single file", program);
-    eprintln!("  {} <directory> --dir         Analyze all files in directory", program);
-    eprintln!("  {} <directory> --dir -r      Analyze recursively", program);
+    eprintln!(
+        "  {} <audio_file>              Analyze a single file",
+        program
+    );
+    eprintln!(
+        "  {} <directory> --dir         Analyze all files in directory",
+        program
+    );
+    eprintln!(
+        "  {} <directory> --dir -r      Analyze recursively",
+        program
+    );
     eprintln!();
     eprintln!("The library database is stored at: ~/.halo/library.db");
 }
@@ -108,7 +116,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!();
-        println!("Summary: {} successful, {} failed", success_count, fail_count);
+        println!(
+            "Summary: {} successful, {} failed",
+            success_count, fail_count
+        );
     } else {
         // Analyze single file
         if !path.exists() {
@@ -149,12 +160,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!();
             println!("Analysis Results:");
             println!("  BPM:           {:.2}", analysis.beat_grid.bpm);
-            println!("  Confidence:    {:.2}%", analysis.beat_grid.confidence * 100.0);
+            println!(
+                "  Confidence:    {:.2}%",
+                analysis.beat_grid.confidence * 100.0
+            );
             println!(
                 "  First Beat:    {:.2}ms",
                 analysis.beat_grid.first_beat_offset_ms
             );
-            println!("  Beat Count:    {}", analysis.beat_grid.beat_positions.len());
+            println!(
+                "  Beat Count:    {}",
+                analysis.beat_grid.beat_positions.len()
+            );
             println!(
                 "  Waveform:      {} samples",
                 analysis.waveform.sample_count

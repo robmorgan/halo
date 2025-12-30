@@ -197,8 +197,11 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Create the async console with loaded settings
-    let console =
+    let mut console =
         LightingConsole::new_with_settings(80., network_config.clone(), settings.clone()).unwrap();
+
+    // Register the DJ module
+    console.register_module(Box::new(halo_dj::DjModule::new()));
 
     // // Blue Strobe Fast
     // console.add_midi_override(

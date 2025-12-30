@@ -17,10 +17,9 @@ use parking_lot::RwLock;
 use tokio::sync::mpsc;
 
 use crate::deck::{Deck, DeckId, DeckState};
+use crate::library::database::LibraryDatabase;
+use crate::library::{BeatGrid, HotCue, TempoRange, Track, TrackId, TrackWaveform};
 use crate::midi::z1_mapping::Z1Mapping;
-use crate::library::{
-    database::LibraryDatabase, BeatGrid, HotCue, TempoRange, Track, TrackId, TrackWaveform,
-};
 
 /// Commands for the DJ module.
 #[derive(Debug, Clone)]
@@ -283,7 +282,10 @@ impl DjModule {
             ConsoleCommand::DjImportFolder { path } => Some(DjCommand::ImportFolder { path }),
             ConsoleCommand::DjLoadTrack { deck, track_id } => {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
-                Some(DjCommand::LoadTrack { deck: deck_id, track_id: TrackId(track_id) })
+                Some(DjCommand::LoadTrack {
+                    deck: deck_id,
+                    track_id: TrackId(track_id),
+                })
             }
             ConsoleCommand::DjPlay { deck } => {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
@@ -307,15 +309,24 @@ impl DjModule {
             }
             ConsoleCommand::DjSetHotCue { deck, slot } => {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
-                Some(DjCommand::SetHotCue { deck: deck_id, slot })
+                Some(DjCommand::SetHotCue {
+                    deck: deck_id,
+                    slot,
+                })
             }
             ConsoleCommand::DjJumpToHotCue { deck, slot } => {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
-                Some(DjCommand::JumpToHotCue { deck: deck_id, slot })
+                Some(DjCommand::JumpToHotCue {
+                    deck: deck_id,
+                    slot,
+                })
             }
             ConsoleCommand::DjSetPitch { deck, percent } => {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
-                Some(DjCommand::SetPitch { deck: deck_id, percent })
+                Some(DjCommand::SetPitch {
+                    deck: deck_id,
+                    percent,
+                })
             }
             ConsoleCommand::DjToggleSync { deck } => {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
@@ -325,9 +336,15 @@ impl DjModule {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
                 Some(DjCommand::SetMaster { deck: deck_id })
             }
-            ConsoleCommand::DjSeek { deck, position_seconds } => {
+            ConsoleCommand::DjSeek {
+                deck,
+                position_seconds,
+            } => {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
-                Some(DjCommand::Seek { deck: deck_id, position_seconds })
+                Some(DjCommand::Seek {
+                    deck: deck_id,
+                    position_seconds,
+                })
             }
             ConsoleCommand::DjQueryLibrary => Some(DjCommand::GetAllTracks),
             _ => None,
@@ -665,7 +682,7 @@ impl DjModule {
                 let track_infos: Vec<halo_core::DjTrackInfo> = tracks
                     .into_iter()
                     .map(|t| halo_core::DjTrackInfo {
-                        id: t.id,
+                        id: t.id.0,
                         title: t.title,
                         artist: t.artist,
                         duration_seconds: t.duration_seconds,

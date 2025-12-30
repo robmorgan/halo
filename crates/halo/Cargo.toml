@@ -17,6 +17,7 @@ edition = "2021"
 
 [dependencies]
 halo-core = { path = "../core" }
+halo-dj = { path = "../dj" }
 halo-ui = { path = "../ui" }
 halo-fixtures = { path = "../fixtures" }
 rusty_link = "0.4.6"

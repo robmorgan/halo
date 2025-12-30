@@ -67,17 +67,9 @@ impl DeckWidget {
 
             // Track info
             if let Some(title) = &self.track_title {
-                ui.label(
-                    egui::RichText::new(title)
-                        .size(16.0)
-                        .color(Color32::WHITE),
-                );
+                ui.label(egui::RichText::new(title).size(16.0).color(Color32::WHITE));
                 if let Some(artist) = &self.track_artist {
-                    ui.label(
-                        egui::RichText::new(artist)
-                            .size(14.0)
-                            .color(Color32::GRAY),
-                    );
+                    ui.label(egui::RichText::new(artist).size(14.0).color(Color32::GRAY));
                 }
             } else {
                 ui.label(
@@ -153,7 +145,9 @@ impl DeckWidget {
                 if ui
                     .add_sized(
                         button_size,
-                        egui::Button::new(egui::RichText::new(play_text).size(20.0).color(play_color)),
+                        egui::Button::new(
+                            egui::RichText::new(play_text).size(20.0).color(play_color),
+                        ),
                     )
                     .clicked()
                 {
@@ -196,7 +190,9 @@ impl DeckWidget {
                 if ui
                     .add_sized(
                         button_size,
-                        egui::Button::new(egui::RichText::new("MST").size(12.0).color(master_color)),
+                        egui::Button::new(
+                            egui::RichText::new("MST").size(12.0).color(master_color),
+                        ),
                     )
                     .clicked()
                 {
@@ -220,9 +216,13 @@ impl DeckWidget {
                         .add_sized(
                             Vec2::new(40.0, 30.0),
                             egui::Button::new(
-                                egui::RichText::new(format!("{}", i + 1))
-                                    .size(16.0)
-                                    .color(if has_cue { Color32::BLACK } else { Color32::GRAY }),
+                                egui::RichText::new(format!("{}", i + 1)).size(16.0).color(
+                                    if has_cue {
+                                        Color32::BLACK
+                                    } else {
+                                        Color32::GRAY
+                                    },
+                                ),
                             )
                             .fill(color),
                         )
@@ -266,7 +266,8 @@ impl DeckWidget {
     fn render_waveform(&self, ui: &mut egui::Ui) {
         let available_width = ui.available_width();
         let height = 60.0;
-        let (rect, _response) = ui.allocate_exact_size(Vec2::new(available_width, height), egui::Sense::hover());
+        let (rect, _response) =
+            ui.allocate_exact_size(Vec2::new(available_width, height), egui::Sense::hover());
 
         let painter = ui.painter_at(rect);
 
@@ -320,7 +321,8 @@ impl DeckWidget {
         // Cue point marker
         if let Some(cue_pos) = self.cue_point {
             if self.duration_seconds > 0.0 {
-                let cue_x = rect.left() + ((cue_pos / self.duration_seconds) as f32 * available_width);
+                let cue_x =
+                    rect.left() + ((cue_pos / self.duration_seconds) as f32 * available_width);
                 painter.line_segment(
                     [
                         egui::pos2(cue_x, rect.top()),

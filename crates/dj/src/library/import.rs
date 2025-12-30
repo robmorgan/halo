@@ -68,9 +68,9 @@ pub fn import_and_analyze_file<P: AsRef<Path>>(
     log::info!("Inserted track with ID: {}", track_id);
 
     // Get the track back with the correct ID
-    let mut track = db.get_track(track_id)?.ok_or_else(|| {
-        anyhow::anyhow!("Failed to retrieve inserted track")
-    })?;
+    let mut track = db
+        .get_track(track_id)?
+        .ok_or_else(|| anyhow::anyhow!("Failed to retrieve inserted track"))?;
 
     // Run analysis if requested
     let analysis = if run_analysis {

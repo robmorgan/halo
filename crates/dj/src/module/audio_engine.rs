@@ -288,11 +288,7 @@ impl DjAudioEngine {
     /// Sync a deck to the master deck's tempo.
     ///
     /// Returns true if sync was successful.
-    pub fn sync_to_master(
-        &self,
-        deck: DeckId,
-        tempo_range: crate::library::TempoRange,
-    ) -> bool {
+    pub fn sync_to_master(&self, deck: DeckId, tempo_range: crate::library::TempoRange) -> bool {
         // Get master BPM
         let master = match self.master_deck() {
             Some(m) if m != deck => m,

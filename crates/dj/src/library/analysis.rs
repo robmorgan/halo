@@ -394,7 +394,9 @@ mod tests {
     #[test]
     fn test_autocorrelation() {
         // Simple signal with known periodicity
-        let signal: Vec<f32> = (0..200).map(|i| if i % 20 < 10 { 1.0 } else { -1.0 }).collect();
+        let signal: Vec<f32> = (0..200)
+            .map(|i| if i % 20 < 10 { 1.0 } else { -1.0 })
+            .collect();
 
         let autocorr = autocorrelation(&signal, 50);
 

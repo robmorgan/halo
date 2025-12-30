@@ -140,7 +140,8 @@ impl LibraryBrowser {
                     });
                 } else {
                     // Clone filtered tracks to avoid borrow issues
-                    let filtered_tracks: Vec<TrackEntry> = self.get_filtered_tracks()
+                    let filtered_tracks: Vec<TrackEntry> = self
+                        .get_filtered_tracks()
                         .iter()
                         .map(|t| (*t).clone())
                         .collect();
@@ -174,9 +175,7 @@ impl LibraryBrowser {
                                     );
                                     if let Some(artist) = &track.artist {
                                         ui.label(
-                                            RichText::new(artist)
-                                                .size(11.0)
-                                                .color(Color32::GRAY),
+                                            RichText::new(artist).size(11.0).color(Color32::GRAY),
                                         );
                                     }
                                 });
@@ -216,12 +215,20 @@ impl LibraryBrowser {
                         });
 
                         // Handle click on frame
-                        if frame_response.response.interact(egui::Sense::click()).clicked() {
+                        if frame_response
+                            .response
+                            .interact(egui::Sense::click())
+                            .clicked()
+                        {
                             new_selected = Some(idx);
                         }
 
                         // Handle double-click to load
-                        if frame_response.response.interact(egui::Sense::click()).double_clicked() {
+                        if frame_response
+                            .response
+                            .interact(egui::Sense::click())
+                            .double_clicked()
+                        {
                             // TODO: Send load command to deck
                         }
 
@@ -307,7 +314,9 @@ impl LibraryBrowser {
                 self.tracks.sort_by(|a, b| {
                     let a_bpm = a.bpm.unwrap_or(0.0);
                     let b_bpm = b.bpm.unwrap_or(0.0);
-                    let cmp = a_bpm.partial_cmp(&b_bpm).unwrap_or(std::cmp::Ordering::Equal);
+                    let cmp = a_bpm
+                        .partial_cmp(&b_bpm)
+                        .unwrap_or(std::cmp::Ordering::Equal);
                     if self.sort_ascending {
                         cmp
                     } else {

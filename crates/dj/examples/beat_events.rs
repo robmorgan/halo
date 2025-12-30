@@ -7,9 +7,8 @@
 //!
 //! Usage: cargo run --package halo-dj --example beat_events <audio_file>
 
-use std::env;
-use std::thread;
 use std::time::Duration;
+use std::{env, thread};
 
 use halo_dj::deck::DeckId;
 use halo_dj::library::{AnalysisConfig, AnalysisResult, TrackId};
@@ -23,9 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <audio_file>", args[0]);
-        eprintln!(
-            "\nExample: cargo run --package halo-dj --example beat_events path/to/song.mp3"
-        );
+        eprintln!("\nExample: cargo run --package halo-dj --example beat_events path/to/song.mp3");
         std::process::exit(1);
     }
     let audio_file = &args[1];

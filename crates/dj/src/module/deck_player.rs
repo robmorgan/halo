@@ -296,11 +296,7 @@ impl DeckPlayer {
     ///
     /// - `target_bpm`: The BPM to sync to
     /// - `tempo_range`: The current tempo range setting
-    pub fn calculate_sync_pitch(
-        &self,
-        target_bpm: f64,
-        tempo_range: TempoRange,
-    ) -> Option<f64> {
+    pub fn calculate_sync_pitch(&self, target_bpm: f64, tempo_range: TempoRange) -> Option<f64> {
         let original_bpm = self.original_bpm()?;
         if original_bpm <= 0.0 || target_bpm <= 0.0 {
             return None;
@@ -674,7 +670,9 @@ impl DeckPlayer {
 
     /// Get the BPM from the beat grid (adjusted for playback rate).
     pub fn bpm(&self) -> Option<f64> {
-        self.beat_grid.as_ref().map(|bg| bg.bpm * self.playback_rate)
+        self.beat_grid
+            .as_ref()
+            .map(|bg| bg.bpm * self.playback_rate)
     }
 
     /// Get the original BPM from the beat grid.
@@ -766,7 +764,8 @@ impl DeckPlayer {
 
         // Binary search for the appropriate beat index
         self.current_beat_index = match positions.binary_search_by(|pos| {
-            pos.partial_cmp(&current_pos).unwrap_or(std::cmp::Ordering::Equal)
+            pos.partial_cmp(&current_pos)
+                .unwrap_or(std::cmp::Ordering::Equal)
         }) {
             Ok(idx) => idx,
             Err(idx) => idx.saturating_sub(1),
@@ -894,11 +893,7 @@ impl DeckPlayer {
                 self.hot_cues[cue.slot as usize] = Some(cue.position_seconds);
             }
         }
-        log::debug!(
-            "Deck {}: Loaded {} hot cues",
-            self.deck_id,
-            hot_cues.len()
-        );
+        log::debug!("Deck {}: Loaded {} hot cues", self.deck_id, hot_cues.len());
     }
 }
 
@@ -999,8 +994,9 @@ mod tests {
 
     #[test]
     fn test_beat_sync() {
-        use crate::library::{BeatGrid, TempoRange, TrackId};
         use chrono::Utc;
+
+        use crate::library::{BeatGrid, TempoRange, TrackId};
 
         let mut player = DeckPlayer::new(DeckId::A);
 

@@ -285,7 +285,8 @@ impl HaloApp {
                     .render(ctx, &self.state, &self.console_tx);
             }
             ActiveTab::Dj => {
-                self.dj_panel_state.render(ctx, &self.state, &self.console_tx);
+                self.dj_panel_state
+                    .render(ctx, &self.state, &self.console_tx);
             }
         }
 
