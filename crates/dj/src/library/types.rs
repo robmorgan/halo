@@ -275,6 +275,19 @@ impl HotCue {
     }
 }
 
+/// Master Tempo (key lock) mode.
+///
+/// When enabled, tempo changes via pitch fader don't affect the audio pitch.
+/// Uses time-stretching (WSOLA algorithm) to decouple tempo from pitch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum MasterTempoMode {
+    /// Varispeed mode - pitch changes with tempo (default, lowest latency).
+    #[default]
+    Off,
+    /// Master Tempo - pitch locked, tempo changes via time-stretching.
+    On,
+}
+
 /// Tempo adjustment range preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TempoRange {

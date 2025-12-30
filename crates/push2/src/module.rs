@@ -446,7 +446,7 @@ impl AsyncModule for Push2Module {
                             break;
                         }
 
-                        ModuleEvent::DjDeckStateChanged { deck, is_playing, position_seconds } => {
+                        ModuleEvent::DjDeckStateChanged { deck, is_playing, position_seconds, bpm: _ } => {
                             self.update_deck_state(deck, is_playing, position_seconds);
                         }
 

@@ -109,6 +109,12 @@ impl DjPanel {
             self.deck_b.first_beat_offset = state.dj_deck_b.first_beat_offset;
         }
 
+        // Sync Master Tempo state
+        self.deck_a.master_tempo_enabled = state.dj_deck_a.master_tempo_enabled;
+        self.deck_a.tempo_range = state.dj_deck_a.tempo_range;
+        self.deck_b.master_tempo_enabled = state.dj_deck_b.master_tempo_enabled;
+        self.deck_b.tempo_range = state.dj_deck_b.tempo_range;
+
         // Left side panel for library browser
         egui::SidePanel::left("dj_library_panel")
             .resizable(true)

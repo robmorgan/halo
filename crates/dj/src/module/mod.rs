@@ -2,6 +2,7 @@
 
 mod audio_engine;
 mod deck_player;
+mod time_stretcher;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -19,8 +20,8 @@ use tokio::sync::mpsc;
 use crate::deck::{Deck, DeckId, DeckState};
 use crate::library::database::LibraryDatabase;
 use crate::library::{
-    analyze_file_streaming, AnalysisConfig, BeatGrid, HotCue, TempoRange, Track, TrackId,
-    TrackWaveform,
+    analyze_file_streaming, AnalysisConfig, BeatGrid, HotCue, MasterTempoMode, TempoRange, Track,
+    TrackId, TrackWaveform,
 };
 use crate::midi::z1_mapping::Z1Mapping;
 
@@ -99,6 +100,10 @@ pub enum DjCommand {
     Seek { deck: DeckId, position_seconds: f64 },
     /// Seek by a number of beats.
     SeekBeats { deck: DeckId, beats: i32 },
+
+    // Master Tempo commands
+    /// Toggle Master Tempo (key lock) mode.
+    ToggleMasterTempo { deck: DeckId },
 
     // Configuration commands
     /// Set the output channels for a deck.
@@ -371,6 +376,24 @@ impl DjModule {
                 Some(DjCommand::NextTrack { deck: deck_id })
             }
             ConsoleCommand::DjQueryLibrary => Some(DjCommand::GetAllTracks),
+            ConsoleCommand::DjToggleMasterTempo { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::ToggleMasterTempo { deck: deck_id })
+            }
+            ConsoleCommand::DjSetTempoRange { deck, range } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                let tempo_range = match range {
+                    0 => TempoRange::Range6,
+                    1 => TempoRange::Range10,
+                    2 => TempoRange::Range16,
+                    3 => TempoRange::Range25,
+                    _ => TempoRange::Wide,
+                };
+                Some(DjCommand::SetTempoRange {
+                    deck: deck_id,
+                    range: tempo_range,
+                })
+            }
             _ => None,
         }
     }
@@ -1130,11 +1153,13 @@ impl AsyncModule for DjModule {
                                                 self.deck(deck).read().position_seconds
                                             }
                                         };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjDeckStateChanged {
                                                 deck: deck_num,
                                                 is_playing: true,
                                                 position_seconds: position,
+                                                bpm: Some(adjusted_bpm),
                                             }
                                         )).await;
                                         eprintln!("DEBUG: Sent DjDeckStateChanged (playing) for deck {}", deck_num);
@@ -1150,11 +1175,13 @@ impl AsyncModule for DjModule {
                                                 self.deck(deck).read().position_seconds
                                             }
                                         };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjDeckStateChanged {
                                                 deck: deck_num,
                                                 is_playing: false,
                                                 position_seconds: position,
+                                                bpm: Some(adjusted_bpm),
                                             }
                                         )).await;
                                         eprintln!("DEBUG: Sent DjDeckStateChanged (paused) for deck {}", deck_num);
@@ -1162,11 +1189,13 @@ impl AsyncModule for DjModule {
                                     DjCommand::Stop { deck } => {
                                         let deck_num = if deck == DeckId::A { 0 } else { 1 };
                                         self.handle_command(DjCommand::Stop { deck });
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjDeckStateChanged {
                                                 deck: deck_num,
                                                 is_playing: false,
                                                 position_seconds: 0.0,
+                                                bpm: Some(adjusted_bpm),
                                             }
                                         )).await;
                                     }
@@ -1196,11 +1225,13 @@ impl AsyncModule for DjModule {
                                                 self.deck(deck).read().state == DeckState::Playing
                                             }
                                         };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjDeckStateChanged {
                                                 deck: deck_num,
                                                 is_playing,
                                                 position_seconds,
+                                                bpm: Some(adjusted_bpm),
                                             }
                                         )).await;
                                     }
@@ -1219,11 +1250,13 @@ impl AsyncModule for DjModule {
                                                 (false, d.cue_point.unwrap_or(d.position_seconds))
                                             }
                                         };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjDeckStateChanged {
                                                 deck: deck_num,
                                                 is_playing,
                                                 position_seconds: position,
+                                                bpm: Some(adjusted_bpm),
                                             }
                                         )).await;
                                     }
@@ -1232,16 +1265,20 @@ impl AsyncModule for DjModule {
 
                                         // Stop playback first
                                         self.handle_command(DjCommand::Pause { deck });
-                                        let pause_position = if let Some(engine) = &self.audio_engine {
-                                            engine.deck_player(deck).read().position_seconds()
+                                        let (pause_position, adjusted_bpm) = if let Some(engine) = &self.audio_engine {
+                                            let pos = engine.deck_player(deck).read().position_seconds();
+                                            let bpm = self.deck(deck).read().adjusted_bpm;
+                                            (pos, bpm)
                                         } else {
-                                            self.deck(deck).read().position_seconds
+                                            let deck_state = self.deck(deck).read();
+                                            (deck_state.position_seconds, deck_state.adjusted_bpm)
                                         };
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjDeckStateChanged {
                                                 deck: deck_num,
                                                 is_playing: false,
                                                 position_seconds: pause_position,
+                                                bpm: Some(adjusted_bpm),
                                             }
                                         )).await;
 
@@ -1260,11 +1297,14 @@ impl AsyncModule for DjModule {
                                         // Threshold: if position > 0.5s, seek to start
                                         if position > 0.5 {
                                             self.handle_command(DjCommand::Seek { deck, position_seconds: 0.0 });
-                                            let is_playing = {
+                                            let (is_playing, seek_bpm) = {
                                                 if let Some(engine) = &self.audio_engine {
-                                                    engine.deck_player(deck).read().state() == PlayerState::Playing
+                                                    let playing = engine.deck_player(deck).read().state() == PlayerState::Playing;
+                                                    let bpm = self.deck(deck).read().adjusted_bpm;
+                                                    (playing, bpm)
                                                 } else {
-                                                    self.deck(deck).read().state == DeckState::Playing
+                                                    let deck_state = self.deck(deck).read();
+                                                    (deck_state.state == DeckState::Playing, deck_state.adjusted_bpm)
                                                 }
                                             };
                                             let _ = tx.send(ModuleMessage::Event(
@@ -1272,6 +1312,7 @@ impl AsyncModule for DjModule {
                                                     deck: deck_num,
                                                     is_playing,
                                                     position_seconds: 0.0,
+                                                    bpm: Some(seek_bpm),
                                                 }
                                             )).await;
                                             eprintln!("DEBUG: PreviousTrack: Seeked to start of deck {}", deck_num);
@@ -1344,16 +1385,20 @@ impl AsyncModule for DjModule {
 
                                         // Stop playback first
                                         self.handle_command(DjCommand::Pause { deck });
-                                        let pause_position = if let Some(engine) = &self.audio_engine {
-                                            engine.deck_player(deck).read().position_seconds()
+                                        let (pause_position, next_track_bpm) = if let Some(engine) = &self.audio_engine {
+                                            let pos = engine.deck_player(deck).read().position_seconds();
+                                            let bpm = self.deck(deck).read().adjusted_bpm;
+                                            (pos, bpm)
                                         } else {
-                                            self.deck(deck).read().position_seconds
+                                            let deck_state = self.deck(deck).read();
+                                            (deck_state.position_seconds, deck_state.adjusted_bpm)
                                         };
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjDeckStateChanged {
                                                 deck: deck_num,
                                                 is_playing: false,
                                                 position_seconds: pause_position,
+                                                bpm: Some(next_track_bpm),
                                             }
                                         )).await;
 
@@ -1427,6 +1472,63 @@ impl AsyncModule for DjModule {
                                             }
                                         }
                                     }
+                                    DjCommand::ToggleMasterTempo { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Toggle master tempo on the deck state
+                                        let new_mode = {
+                                            let mut d = self.deck(deck).write();
+                                            d.master_tempo = match d.master_tempo {
+                                                MasterTempoMode::Off => MasterTempoMode::On,
+                                                MasterTempoMode::On => MasterTempoMode::Off,
+                                            };
+                                            d.master_tempo
+                                        };
+
+                                        // Toggle on the audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().toggle_master_tempo();
+                                        }
+
+                                        let enabled = new_mode == MasterTempoMode::On;
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjMasterTempoChanged {
+                                                deck: deck_num,
+                                                enabled,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {} Master Tempo {}", deck, if enabled { "ON" } else { "OFF" });
+                                    }
+                                    DjCommand::SetTempoRange { deck, range } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Update deck state
+                                        {
+                                            let mut d = self.deck(deck).write();
+                                            d.tempo_range = range;
+                                            d.update_adjusted_bpm();
+                                        }
+
+                                        // Update audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_tempo_range(range);
+                                        }
+
+                                        let range_value = match range {
+                                            TempoRange::Range6 => 0,
+                                            TempoRange::Range10 => 1,
+                                            TempoRange::Range16 => 2,
+                                            TempoRange::Range25 => 3,
+                                            TempoRange::Wide => 4,
+                                        };
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjTempoRangeChanged {
+                                                deck: deck_num,
+                                                range: range_value,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {} tempo range set to {:?}", deck, range);
+                                    }
                                     other => {
                                         eprintln!("DEBUG: Calling handle_command for {:?}", other);
                                         self.handle_command(other);
@@ -1468,6 +1570,7 @@ impl AsyncModule for DjModule {
                             let player = engine.deck_player(DeckId::A).read();
                             let is_playing = player.state() == PlayerState::Playing;
                             let position = player.position_seconds();
+                            let adjusted_bpm = self.deck(DeckId::A).read().adjusted_bpm;
 
                             // Always send position updates when playing
                             if is_playing {
@@ -1475,6 +1578,7 @@ impl AsyncModule for DjModule {
                                     deck: 0,
                                     is_playing: true,
                                     position_seconds: position,
+                                    bpm: Some(adjusted_bpm),
                                 });
                             }
 
@@ -1499,6 +1603,7 @@ impl AsyncModule for DjModule {
                             let player = engine.deck_player(DeckId::B).read();
                             let is_playing = player.state() == PlayerState::Playing;
                             let position = player.position_seconds();
+                            let adjusted_bpm = self.deck(DeckId::B).read().adjusted_bpm;
 
                             // Always send position updates when playing
                             if is_playing {
@@ -1506,6 +1611,7 @@ impl AsyncModule for DjModule {
                                     deck: 1,
                                     is_playing: true,
                                     position_seconds: position,
+                                    bpm: Some(adjusted_bpm),
                                 });
                             }
 

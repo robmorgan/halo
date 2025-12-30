@@ -22,6 +22,8 @@ pub struct DjDeckState {
     pub waveform: Vec<f32>,
     pub beat_positions: Vec<f64>,
     pub first_beat_offset: f64,
+    pub master_tempo_enabled: bool,
+    pub tempo_range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%
 }
 
 #[derive(Debug, Clone)]
@@ -294,6 +296,7 @@ impl ConsoleState {
                 deck,
                 is_playing,
                 position_seconds,
+                bpm,
             } => {
                 let deck_state = if deck == 0 {
                     &mut self.dj_deck_a
@@ -302,6 +305,9 @@ impl ConsoleState {
                 };
                 deck_state.is_playing = is_playing;
                 deck_state.position_seconds = position_seconds;
+                if let Some(new_bpm) = bpm {
+                    deck_state.bpm = Some(new_bpm);
+                }
             }
             halo_core::ConsoleEvent::DjCuePointSet {
                 deck,
@@ -353,6 +359,22 @@ impl ConsoleState {
                 };
                 deck_state.beat_positions = beat_positions;
                 deck_state.first_beat_offset = first_beat_offset;
+            }
+            halo_core::ConsoleEvent::DjMasterTempoChanged { deck, enabled } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.master_tempo_enabled = enabled;
+            }
+            halo_core::ConsoleEvent::DjTempoRangeChanged { deck, range } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.tempo_range = range;
             }
             _ => {
                 // Handle other events as needed

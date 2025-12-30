@@ -15,8 +15,9 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
 
+use super::time_stretcher::TimeStretcher;
 use crate::deck::DeckId;
-use crate::library::{BeatGrid, TempoRange};
+use crate::library::{BeatGrid, MasterTempoMode, TempoRange};
 
 /// State of the deck player.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +99,14 @@ pub struct DeckPlayer {
     // Hot cue fields
     /// 4 hot cue positions in seconds (None if not set).
     hot_cues: [Option<f64>; 4],
+
+    // Master Tempo fields
+    /// Master Tempo mode (key lock).
+    master_tempo: MasterTempoMode,
+    /// Time stretcher for Master Tempo mode.
+    time_stretcher: TimeStretcher,
+    /// Current tempo range setting.
+    tempo_range: TempoRange,
 }
 
 impl DeckPlayer {
@@ -127,6 +136,9 @@ impl DeckPlayer {
             last_beat_event: None,
             prev_position_seconds: 0.0,
             hot_cues: [None; 4],
+            master_tempo: MasterTempoMode::Off,
+            time_stretcher: TimeStretcher::new(44100, 2),
+            tempo_range: TempoRange::default(),
         }
     }
 
@@ -193,6 +205,8 @@ impl DeckPlayer {
         self.last_beat_event = None;
         self.prev_position_seconds = 0.0;
         self.hot_cues = [None; 4];
+        // Reset time stretcher with new sample rate
+        self.time_stretcher = TimeStretcher::new(self.sample_rate, self.channels as u32);
         self.state = PlayerState::Ready;
 
         log::info!(
@@ -252,6 +266,7 @@ impl DeckPlayer {
         self.last_beat_event = None;
         self.prev_position_seconds = 0.0;
         self.hot_cues = [None; 4];
+        self.time_stretcher.reset();
         self.state = PlayerState::Empty;
         log::debug!("Deck {}: Ejected", self.deck_id);
     }
@@ -259,6 +274,10 @@ impl DeckPlayer {
     /// Set the playback rate (1.0 = normal speed).
     pub fn set_playback_rate(&mut self, rate: f64) {
         self.playback_rate = rate.clamp(0.5, 2.0);
+        // Update time stretcher tempo when in Master Tempo mode
+        if self.master_tempo == MasterTempoMode::On {
+            self.time_stretcher.set_tempo(self.playback_rate);
+        }
     }
 
     /// Set the playback rate using a pitch fader value and tempo range.
@@ -271,6 +290,11 @@ impl DeckPlayer {
         let pitch = pitch.clamp(-1.0, 1.0);
         let rate = tempo_range.pitch_to_multiplier(pitch);
         self.playback_rate = rate;
+        self.tempo_range = tempo_range;
+        // Update time stretcher tempo when in Master Tempo mode
+        if self.master_tempo == MasterTempoMode::On {
+            self.time_stretcher.set_tempo(rate);
+        }
         rate
     }
 
@@ -400,6 +424,9 @@ impl DeckPlayer {
                     decoder.reset();
                 }
 
+                // Flush time stretcher buffer on seek
+                self.time_stretcher.reset();
+
                 log::debug!(
                     "Deck {}: Seeked to {:.2}s (sample {})",
                     self.deck_id,
@@ -447,10 +474,63 @@ impl DeckPlayer {
         self.playback_rate
     }
 
-    /// Get the next stereo sample pair with varispeed interpolation.
+    /// Get the Master Tempo mode.
+    pub fn master_tempo(&self) -> MasterTempoMode {
+        self.master_tempo
+    }
+
+    /// Set the Master Tempo mode.
     ///
-    /// When playback_rate != 1.0, uses linear interpolation between samples
-    /// to achieve variable speed playback (pitch changes with tempo).
+    /// - `Off`: Varispeed - pitch changes with tempo (lower latency)
+    /// - `On`: Time-stretch - pitch locked (key lock)
+    pub fn set_master_tempo(&mut self, mode: MasterTempoMode) {
+        if self.master_tempo != mode {
+            self.master_tempo = mode;
+
+            match mode {
+                MasterTempoMode::On => {
+                    // Initialize time stretcher with current tempo
+                    self.time_stretcher.set_tempo(self.playback_rate);
+                    log::info!(
+                        "Deck {}: Master Tempo enabled (tempo: {:.2}x)",
+                        self.deck_id,
+                        self.playback_rate
+                    );
+                }
+                MasterTempoMode::Off => {
+                    // Reset time stretcher when disabling
+                    self.time_stretcher.reset();
+                    log::info!("Deck {}: Master Tempo disabled", self.deck_id);
+                }
+            }
+        }
+    }
+
+    /// Toggle Master Tempo mode.
+    pub fn toggle_master_tempo(&mut self) {
+        let new_mode = match self.master_tempo {
+            MasterTempoMode::Off => MasterTempoMode::On,
+            MasterTempoMode::On => MasterTempoMode::Off,
+        };
+        self.set_master_tempo(new_mode);
+    }
+
+    /// Get the tempo range.
+    pub fn tempo_range(&self) -> TempoRange {
+        self.tempo_range
+    }
+
+    /// Set the tempo range.
+    pub fn set_tempo_range(&mut self, range: TempoRange) {
+        self.tempo_range = range;
+        log::debug!("Deck {}: Tempo range set to {:?}", self.deck_id, range);
+    }
+
+    /// Get the next stereo sample pair.
+    ///
+    /// Behavior depends on Master Tempo mode:
+    /// - **Off**: Varispeed interpolation (pitch changes with tempo)
+    /// - **On**: Time-stretching via SoundTouch (pitch locked, tempo changes independently)
     ///
     /// After calling this method, use `take_beat_event()` to check if a beat
     /// crossing occurred during this sample period.
@@ -471,11 +551,25 @@ impl DeckPlayer {
         // Store previous position for beat crossing detection
         self.prev_position_seconds = self.position_seconds();
 
-        // For varispeed, we use fractional positioning
-        // At rate 1.0, we advance by 1 sample per call
-        // At rate 2.0, we advance by 2 samples per call (double speed, octave up)
-        // At rate 0.5, we advance by 0.5 samples per call (half speed, octave down)
+        // Route to appropriate playback method based on Master Tempo mode
+        let sample = match self.master_tempo {
+            MasterTempoMode::Off => self.next_varispeed_sample(),
+            MasterTempoMode::On => self.next_timestretched_sample(),
+        };
 
+        // Check for beat crossing
+        self.check_beat_crossing();
+
+        sample
+    }
+
+    /// Get next sample using varispeed (pitch changes with tempo).
+    ///
+    /// Uses fractional positioning and linear interpolation:
+    /// - Rate 1.0: advance 1 sample per call (normal)
+    /// - Rate 2.0: advance 2 samples per call (double speed, octave up)
+    /// - Rate 0.5: advance 0.5 samples per call (half speed, octave down)
+    fn next_varispeed_sample(&mut self) -> (f32, f32) {
         // Get current interpolated sample
         let t = self.fractional_position.fract() as f32;
         let left = self.prev_sample.0 * (1.0 - t) + self.curr_sample.0 * t;
@@ -499,10 +593,40 @@ impl DeckPlayer {
             }
         }
 
-        // Check for beat crossing
-        self.check_beat_crossing();
-
         (left, right)
+    }
+
+    /// Get next sample using time-stretching (pitch locked, tempo changes).
+    ///
+    /// Reads samples at normal speed and processes through SoundTouch
+    /// for WSOLA-based time stretching. This allows tempo changes without
+    /// affecting pitch (Master Tempo / key lock).
+    fn next_timestretched_sample(&mut self) -> (f32, f32) {
+        // Feed samples to time stretcher to maintain buffer
+        // We need to feed slightly more when tempo > 1.0 (consuming faster)
+        // and slightly less when tempo < 1.0 (consuming slower)
+        let samples_to_feed = (self.playback_rate * 2.0).ceil() as usize;
+
+        for _ in 0..samples_to_feed {
+            // Check for end of file before reading
+            if self.sample_position >= self.total_samples {
+                break;
+            }
+
+            let sample = self.read_next_raw_sample();
+            self.sample_position += 1;
+            self.time_stretcher.push_sample(sample.0, sample.1);
+        }
+
+        // Check for end of file
+        if self.sample_position >= self.total_samples && !self.time_stretcher.has_output() {
+            self.state = PlayerState::Ready;
+            self.pending_seek = Some(0.0);
+            return (0.0, 0.0);
+        }
+
+        // Get processed sample from time stretcher
+        self.time_stretcher.pop_sample().unwrap_or((0.0, 0.0))
     }
 
     /// Read the next raw stereo sample from the decoder buffer.

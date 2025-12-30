@@ -12,4 +12,6 @@ pub use import::{
     import_and_analyze_directory, import_and_analyze_file, import_directory, import_file,
     is_supported_audio_file, supported_extensions, ImportResult,
 };
-pub use types::{AudioFormat, BeatGrid, HotCue, TempoRange, Track, TrackId, TrackWaveform};
+pub use types::{
+    AudioFormat, BeatGrid, HotCue, MasterTempoMode, TempoRange, Track, TrackId, TrackWaveform,
+};

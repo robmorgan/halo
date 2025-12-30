@@ -48,6 +48,10 @@ pub struct DeckWidget {
     /// Whether we've already handled the current cue button press.
     /// This prevents non-preview actions from firing repeatedly.
     cue_press_handled: bool,
+    /// Master Tempo (key lock) enabled.
+    pub master_tempo_enabled: bool,
+    /// Tempo range setting (0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%).
+    pub tempo_range: u8,
 }
 
 impl DeckWidget {
@@ -372,6 +376,47 @@ impl DeckWidget {
             {
                 self.is_master = !self.is_master;
             }
+
+            ui.add_space(12.0);
+
+            // Master Tempo button (key lock) - magenta when active like CDJ-3000
+            let mt_color = if self.master_tempo_enabled {
+                Color32::from_rgb(255, 0, 200) // Magenta
+            } else {
+                Color32::GRAY
+            };
+            if ui
+                .add_sized(
+                    Vec2::new(60.0, 30.0),
+                    egui::Button::new(egui::RichText::new("M.TEMPO").size(11.0).color(mt_color)),
+                )
+                .on_hover_text("Master Tempo - tempo changes without pitch change")
+                .clicked()
+            {
+                let _ = console_tx.send(ConsoleCommand::DjToggleMasterTempo { deck: deck_number });
+            }
+
+            // Tempo range selector
+            let range_labels = ["±6%", "±10%", "±16%", "±25%", "±50%"];
+            let current_label = range_labels
+                .get(self.tempo_range as usize)
+                .unwrap_or(&"±10%");
+            egui::ComboBox::from_id_salt(format!("tempo_range_{}", deck_number))
+                .width(50.0)
+                .selected_text(*current_label)
+                .show_ui(ui, |ui| {
+                    for (i, label) in range_labels.iter().enumerate() {
+                        if ui
+                            .selectable_value(&mut self.tempo_range, i as u8, *label)
+                            .clicked()
+                        {
+                            let _ = console_tx.send(ConsoleCommand::DjSetTempoRange {
+                                deck: deck_number,
+                                range: i as u8,
+                            });
+                        }
+                    }
+                });
         });
 
         ui.add_space(8.0);

@@ -1944,6 +1944,30 @@ impl LightingConsole {
                     )
                     .await;
             }
+            DjToggleMasterTempo { deck } => {
+                log::debug!("DJ: Toggle Master Tempo on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjToggleMasterTempo { deck },
+                        ),
+                    )
+                    .await;
+            }
+            DjSetTempoRange { deck, range } => {
+                log::debug!("DJ: Set tempo range {} on deck {}", range, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjSetTempoRange { deck, range },
+                        ),
+                    )
+                    .await;
+            }
 
             // Settings management
             UpdateSettings { settings } => {
@@ -2133,11 +2157,12 @@ impl LightingConsole {
                                         bpm,
                                     });
                                 }
-                                ModuleEvent::DjDeckStateChanged { deck, is_playing, position_seconds } => {
+                                ModuleEvent::DjDeckStateChanged { deck, is_playing, position_seconds, bpm } => {
                                     let _ = event_tx.send(ConsoleEvent::DjDeckStateChanged {
                                         deck,
                                         is_playing,
                                         position_seconds,
+                                        bpm,
                                     });
                                 }
                                 ModuleEvent::DjCuePointSet { deck, position_seconds } => {
@@ -2166,6 +2191,18 @@ impl LightingConsole {
                                         beat_positions,
                                         first_beat_offset,
                                         bpm,
+                                    });
+                                }
+                                ModuleEvent::DjMasterTempoChanged { deck, enabled } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjMasterTempoChanged {
+                                        deck,
+                                        enabled,
+                                    });
+                                }
+                                ModuleEvent::DjTempoRangeChanged { deck, range } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjTempoRangeChanged {
+                                        deck,
+                                        range,
                                     });
                                 }
                                 ModuleEvent::DjCommand(command) => {

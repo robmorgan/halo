@@ -240,6 +240,13 @@ pub enum ConsoleCommand {
         deck: u8,
     },
     DjQueryLibrary,
+    DjToggleMasterTempo {
+        deck: u8,
+    },
+    DjSetTempoRange {
+        deck: u8,
+        range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%
+    },
 
     // Ableton Link toggle
     ToggleAbletonLink,
@@ -545,6 +552,7 @@ pub enum ConsoleEvent {
         deck: u8,
         is_playing: bool,
         position_seconds: f64,
+        bpm: Option<f64>,
     },
     DjCuePointSet {
         deck: u8,
@@ -568,6 +576,14 @@ pub enum ConsoleEvent {
         beat_positions: Vec<f64>,
         first_beat_offset: f64,
         bpm: f64,
+    },
+    DjMasterTempoChanged {
+        deck: u8,
+        enabled: bool,
+    },
+    DjTempoRangeChanged {
+        deck: u8,
+        range: u8,
     },
 
     // Programmer events

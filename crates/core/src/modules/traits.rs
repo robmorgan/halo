@@ -67,6 +67,7 @@ pub enum ModuleEvent {
         deck: u8,
         is_playing: bool,
         position_seconds: f64,
+        bpm: Option<f64>,
     },
     /// DJ cue point set
     DjCuePointSet {
@@ -91,6 +92,16 @@ pub enum ModuleEvent {
         beat_positions: Vec<f64>,
         first_beat_offset: f64,
         bpm: f64,
+    },
+    /// DJ master tempo changed
+    DjMasterTempoChanged {
+        deck: u8,
+        enabled: bool,
+    },
+    /// DJ tempo range changed
+    DjTempoRangeChanged {
+        deck: u8,
+        range: u8,
     },
     /// System events
     Shutdown,

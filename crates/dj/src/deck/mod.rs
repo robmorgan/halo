@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::library::{BeatGrid, HotCue, TempoRange, Track};
+use crate::library::{BeatGrid, HotCue, MasterTempoMode, TempoRange, Track};
 
 /// Deck identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -124,6 +124,10 @@ pub struct Deck {
     /// Is sync mode enabled?
     pub sync_enabled: bool,
 
+    // Master Tempo (key lock)
+    /// Master Tempo mode (off = varispeed, on = time-stretch).
+    pub master_tempo: MasterTempoMode,
+
     // Metering
     /// Current volume level (0.0-1.0) for VU meter.
     pub volume_level: f32,
@@ -150,6 +154,7 @@ impl Deck {
             hot_cues: [None, None, None, None],
             is_master: false,
             sync_enabled: false,
+            master_tempo: MasterTempoMode::Off,
             volume_level: 0.0,
             peak_level: 0.0,
         }
@@ -210,6 +215,7 @@ impl Deck {
         self.cue_point = None;
         self.cue_preview_start = None;
         self.hot_cues = [None, None, None, None];
+        self.master_tempo = MasterTempoMode::Off;
         self.volume_level = 0.0;
         self.peak_level = 0.0;
     }
