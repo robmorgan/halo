@@ -89,6 +89,10 @@ impl DjPanel {
         if self.deck_a.waveform.len() != state.dj_deck_a.waveform.len() {
             self.deck_a.waveform = state.dj_deck_a.waveform.clone();
         }
+        if self.deck_a.beat_positions.len() != state.dj_deck_a.beat_positions.len() {
+            self.deck_a.beat_positions = state.dj_deck_a.beat_positions.clone();
+            self.deck_a.first_beat_offset = state.dj_deck_a.first_beat_offset;
+        }
 
         self.deck_b.track_title = state.dj_deck_b.track_title.clone();
         self.deck_b.track_artist = state.dj_deck_b.track_artist.clone();
@@ -99,6 +103,10 @@ impl DjPanel {
         self.deck_b.cue_point = state.dj_deck_b.cue_point;
         if self.deck_b.waveform.len() != state.dj_deck_b.waveform.len() {
             self.deck_b.waveform = state.dj_deck_b.waveform.clone();
+        }
+        if self.deck_b.beat_positions.len() != state.dj_deck_b.beat_positions.len() {
+            self.deck_b.beat_positions = state.dj_deck_b.beat_positions.clone();
+            self.deck_b.first_beat_offset = state.dj_deck_b.first_beat_offset;
         }
 
         // Left side panel for library browser

@@ -2160,6 +2160,14 @@ impl LightingConsole {
                                         duration_seconds,
                                     });
                                 }
+                                ModuleEvent::DjBeatGridLoaded { deck, beat_positions, first_beat_offset, bpm } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjBeatGridLoaded {
+                                        deck,
+                                        beat_positions,
+                                        first_beat_offset,
+                                        bpm,
+                                    });
+                                }
                                 ModuleEvent::DjCommand(command) => {
                                     // Handle commands from Push 2 or other modules
                                     log::debug!("Processing DjCommand from module: {:?}", command);

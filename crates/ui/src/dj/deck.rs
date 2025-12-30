@@ -37,6 +37,10 @@ pub struct DeckWidget {
     pub beat_phase: f64,
     /// Waveform data for display.
     pub waveform: Vec<f32>,
+    /// Beat positions in seconds (from beat grid analysis).
+    pub beat_positions: Vec<f64>,
+    /// First beat offset in seconds.
+    pub first_beat_offset: f64,
     /// Whether we are currently in cue preview mode (holding the cue button).
     /// This is tracked explicitly rather than relying on egui's button state
     /// because is_pointer_button_down_on() can lose track of the press.
@@ -472,6 +476,43 @@ impl DeckWidget {
                 egui::FontId::proportional(12.0),
                 Color32::DARK_GRAY,
             );
+        }
+
+        // Draw beat grid markers
+        if self.duration_seconds > 0.0 && !self.beat_positions.is_empty() {
+            let beat_interval = if self.adjusted_bpm > 0.0 {
+                60.0 / self.adjusted_bpm
+            } else {
+                0.5 // Default if BPM unknown
+            };
+
+            for (idx, beat_pos) in self.beat_positions.iter().enumerate() {
+                if *beat_pos >= 0.0 && *beat_pos <= self.duration_seconds {
+                    let x = rect.left()
+                        + ((*beat_pos / self.duration_seconds) as f32 * available_width);
+
+                    // Check if downbeat (every 4 beats) for stronger visual
+                    let beats_from_first = if beat_interval > 0.0 {
+                        ((beat_pos - self.first_beat_offset) / beat_interval).round() as usize
+                    } else {
+                        idx
+                    };
+                    let is_downbeat = beats_from_first % 4 == 0;
+
+                    let color = if is_downbeat {
+                        // Brighter for downbeats
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 100)
+                    } else {
+                        // Subtle for regular beats
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 40)
+                    };
+
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        Stroke::new(1.0, color),
+                    );
+                }
+            }
         }
 
         // Playhead position

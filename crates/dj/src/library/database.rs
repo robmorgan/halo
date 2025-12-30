@@ -198,11 +198,14 @@ impl LibraryDatabase {
     /// the given track_id. If `next` is false, returns the track before.
     pub fn get_adjacent_track(&self, track_id: TrackId, next: bool) -> SqliteResult<Option<Track>> {
         // First, get the title of the current track
-        let current_title: Option<String> = self.conn.query_row(
-            "SELECT title FROM tracks WHERE id = ?1",
-            params![track_id.0],
-            |row| row.get(0),
-        ).ok();
+        let current_title: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT title FROM tracks WHERE id = ?1",
+                params![track_id.0],
+                |row| row.get(0),
+            )
+            .ok();
 
         let Some(current_title) = current_title else {
             return Ok(None);

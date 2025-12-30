@@ -563,6 +563,12 @@ pub enum ConsoleEvent {
     DjLibraryTracks {
         tracks: Vec<DjTrackInfo>,
     },
+    DjBeatGridLoaded {
+        deck: u8,
+        beat_positions: Vec<f64>,
+        first_beat_offset: f64,
+        bpm: f64,
+    },
 
     // Programmer events
     ProgrammerStateUpdated {

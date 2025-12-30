@@ -85,6 +85,13 @@ pub enum ModuleEvent {
         samples: Vec<f32>,
         duration_seconds: f64,
     },
+    /// DJ beat grid loaded
+    DjBeatGridLoaded {
+        deck: u8,
+        beat_positions: Vec<f64>,
+        first_beat_offset: f64,
+        bpm: f64,
+    },
     /// System events
     Shutdown,
 }

@@ -952,6 +952,57 @@ impl AsyncModule for DjModule {
                                                 }
                                             )).await;
                                             eprintln!("DEBUG: Sent cached DjWaveformLoaded event for deck {} ({} samples)", deck_num, sample_count);
+
+                                            // Load beat grid from database and auto-cue to first beat
+                                            let beat_grid = if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    db_guard.get_beat_grid(track_id).ok().flatten()
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            };
+
+                                            if let Some(beat_grid) = beat_grid {
+                                                // Store beat grid in deck state
+                                                {
+                                                    let mut deck_state = self.deck(deck).write();
+                                                    deck_state.beat_grid = Some(beat_grid.clone());
+                                                }
+
+                                                // Auto-cue to first beat
+                                                let first_beat_seconds = beat_grid.first_beat_offset_ms / 1000.0;
+                                                {
+                                                    let mut deck_state = self.deck(deck).write();
+                                                    deck_state.cue_point = Some(first_beat_seconds);
+                                                    deck_state.position_seconds = first_beat_seconds;
+                                                }
+
+                                                // Seek audio engine to first beat
+                                                if let Some(engine) = &self.audio_engine {
+                                                    engine.deck_player(deck).write().seek(first_beat_seconds);
+                                                }
+
+                                                // Send cue point event
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjCuePointSet {
+                                                        deck: deck_num,
+                                                        position_seconds: first_beat_seconds,
+                                                    }
+                                                )).await;
+
+                                                // Send beat grid loaded event
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjBeatGridLoaded {
+                                                        deck: deck_num,
+                                                        beat_positions: beat_grid.beat_positions.clone(),
+                                                        first_beat_offset: first_beat_seconds,
+                                                        bpm: beat_grid.bpm,
+                                                    }
+                                                )).await;
+                                                eprintln!("DEBUG: Sent DjBeatGridLoaded event for deck {} ({} beats)", deck_num, beat_grid.beat_positions.len());
+                                            }
                                         } else {
                                             // No waveform - spawn background analysis task
                                             let file_path = {
@@ -1013,11 +1064,37 @@ impl AsyncModule for DjModule {
                                                                 }
                                                             }
 
-                                                            // Update deck with beat grid
+                                                            // Calculate first beat position
+                                                            let first_beat_seconds = result.beat_grid.first_beat_offset_ms / 1000.0;
+                                                            let beat_positions = result.beat_grid.beat_positions.clone();
+                                                            let bpm = result.beat_grid.bpm;
+
+                                                            // Update deck with beat grid and auto-cue to first beat
                                                             {
                                                                 let mut deck_state = deck_arc.write();
                                                                 deck_state.beat_grid = Some(result.beat_grid);
+                                                                deck_state.cue_point = Some(first_beat_seconds);
+                                                                deck_state.position_seconds = first_beat_seconds;
                                                             }
+
+                                                            // Send cue point event
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::DjCuePointSet {
+                                                                    deck: deck_num,
+                                                                    position_seconds: first_beat_seconds,
+                                                                }
+                                                            )).await;
+
+                                                            // Send beat grid loaded event
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::DjBeatGridLoaded {
+                                                                    deck: deck_num,
+                                                                    beat_positions,
+                                                                    first_beat_offset: first_beat_seconds,
+                                                                    bpm,
+                                                                }
+                                                            )).await;
+                                                            eprintln!("DEBUG: Sent DjBeatGridLoaded event for deck {} after analysis", deck_num);
 
                                                             // Send final waveform
                                                             let _ = tx_clone.send(ModuleMessage::Event(

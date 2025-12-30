@@ -20,6 +20,8 @@ pub struct DjDeckState {
     pub is_playing: bool,
     pub cue_point: Option<f64>,
     pub waveform: Vec<f32>,
+    pub beat_positions: Vec<f64>,
+    pub first_beat_offset: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -337,6 +339,20 @@ impl ConsoleState {
                     &mut self.dj_deck_b
                 };
                 deck_state.waveform = samples;
+            }
+            halo_core::ConsoleEvent::DjBeatGridLoaded {
+                deck,
+                beat_positions,
+                first_beat_offset,
+                bpm: _,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.beat_positions = beat_positions;
+                deck_state.first_beat_offset = first_beat_offset;
             }
             _ => {
                 // Handle other events as needed
