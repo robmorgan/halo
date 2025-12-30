@@ -50,7 +50,7 @@ pub fn render(
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(12.0);
-            ui.label(RichText::new("Halo v0.4").size(12.0).color(theme.text_dim));
+            ui.label(RichText::new("Halo v0.5").size(12.0).color(theme.text_dim));
         });
     });
 }

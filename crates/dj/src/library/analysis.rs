@@ -105,6 +105,74 @@ pub fn analyze_file<P: AsRef<Path>>(
     })
 }
 
+/// Analyze an audio file with streaming waveform progress.
+///
+/// Calls `on_waveform_progress` with partial waveform samples as they're generated.
+/// This allows the UI to progressively display the waveform during analysis.
+pub fn analyze_file_streaming<P, F>(
+    path: P,
+    track_id: TrackId,
+    config: &AnalysisConfig,
+    chunk_size: usize,
+    mut on_waveform_progress: F,
+) -> Result<AnalysisResult, anyhow::Error>
+where
+    P: AsRef<Path>,
+    F: FnMut(Vec<f32>, f32),
+{
+    let path = path.as_ref();
+    log::info!("Analyzing file (streaming): {:?}", path);
+
+    // Load audio samples
+    let (samples, sample_rate) = load_audio_samples(path)?;
+    log::debug!("Loaded {} samples at {} Hz", samples.len(), sample_rate);
+
+    // Generate waveform with streaming progress
+    let waveform = generate_waveform_streaming(
+        &samples,
+        sample_rate,
+        track_id,
+        config.waveform_samples,
+        chunk_size,
+        &mut on_waveform_progress,
+    );
+
+    // Detect BPM using autocorrelation
+    let (bpm, confidence) = detect_bpm(&samples, sample_rate, config);
+    log::info!("Detected BPM: {:.2} (confidence: {:.2})", bpm, confidence);
+
+    // Find first beat offset
+    let first_beat_offset_ms = find_first_beat(&samples, sample_rate, bpm);
+    log::debug!("First beat offset: {:.2} ms", first_beat_offset_ms);
+
+    // Generate beat positions
+    let duration_seconds = samples.len() as f64 / sample_rate as f64;
+    let beat_interval = 60.0 / bpm;
+    let first_beat_seconds = first_beat_offset_ms / 1000.0;
+
+    let mut beat_positions = Vec::new();
+    let mut pos = first_beat_seconds;
+    while pos < duration_seconds {
+        beat_positions.push(pos);
+        pos += beat_interval;
+    }
+
+    let beat_grid = BeatGrid {
+        track_id,
+        bpm,
+        first_beat_offset_ms,
+        beat_positions,
+        confidence,
+        analyzed_at: Utc::now(),
+        algorithm_version: "1.0".to_string(),
+    };
+
+    Ok(AnalysisResult {
+        beat_grid,
+        waveform,
+    })
+}
+
 /// Load audio samples from a file (mono, normalized to -1.0 to 1.0).
 fn load_audio_samples<P: AsRef<Path>>(path: P) -> Result<(Vec<f32>, u32), anyhow::Error> {
     let path = path.as_ref();
@@ -378,6 +446,65 @@ fn generate_waveform(
                 .fold(0.0f32, f32::max)
         })
         .collect();
+
+    TrackWaveform {
+        track_id,
+        samples: waveform_samples,
+        sample_count: target_samples,
+        duration_seconds,
+    }
+}
+
+/// Generate waveform with streaming progress updates.
+///
+/// Calls `on_progress` after each chunk with the accumulated waveform samples
+/// and a progress value from 0.0 to 1.0.
+pub fn generate_waveform_streaming<F>(
+    audio_samples: &[f32],
+    sample_rate: u32,
+    track_id: TrackId,
+    target_samples: usize,
+    chunk_size: usize,
+    mut on_progress: F,
+) -> TrackWaveform
+where
+    F: FnMut(Vec<f32>, f32),
+{
+    if audio_samples.is_empty() {
+        return TrackWaveform {
+            track_id,
+            samples: vec![0.0; target_samples],
+            sample_count: target_samples,
+            duration_seconds: 0.0,
+        };
+    }
+
+    let duration_seconds = audio_samples.len() as f64 / sample_rate as f64;
+    let samples_per_bucket = audio_samples.len() / target_samples.max(1);
+
+    let mut waveform_samples = Vec::with_capacity(target_samples);
+
+    for i in 0..target_samples {
+        let start = i * samples_per_bucket;
+        let end = ((i + 1) * samples_per_bucket).min(audio_samples.len());
+
+        let peak = if start >= audio_samples.len() {
+            0.0
+        } else {
+            audio_samples[start..end]
+                .iter()
+                .map(|s| s.abs())
+                .fold(0.0f32, f32::max)
+        };
+
+        waveform_samples.push(peak);
+
+        // Send progress after each chunk
+        if (i + 1) % chunk_size == 0 || i == target_samples - 1 {
+            let progress = (i + 1) as f32 / target_samples as f32;
+            on_progress(waveform_samples.clone(), progress);
+        }
+    }
 
     TrackWaveform {
         track_id,

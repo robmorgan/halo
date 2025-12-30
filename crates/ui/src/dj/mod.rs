@@ -12,7 +12,7 @@ mod library;
 pub use deck::DeckWidget;
 use eframe::egui;
 use halo_core::ConsoleCommand;
-pub use library::LibraryBrowser;
+pub use library::{LibraryBrowser, TrackDragPayload};
 use tokio::sync::mpsc;
 
 use crate::state::ConsoleState;
@@ -55,14 +55,14 @@ impl DjPanel {
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     ) {
         // Request library on first render or after import
-        if !self.library_requested || state.dj_tracks.len() != self.last_track_count {
+        let track_count_changed = state.dj_tracks.len() != self.last_track_count;
+        if !self.library_requested || track_count_changed {
             let _ = console_tx.send(ConsoleCommand::DjQueryLibrary);
             self.library_requested = true;
-            self.last_track_count = state.dj_tracks.len();
         }
 
-        // Update library browser with tracks from state
-        if !state.dj_tracks.is_empty() {
+        // Update library browser with tracks from state ONLY when tracks change
+        if track_count_changed && !state.dj_tracks.is_empty() {
             let tracks: Vec<library::TrackEntry> = state
                 .dj_tracks
                 .iter()
@@ -75,6 +75,30 @@ impl DjPanel {
                 })
                 .collect();
             self.library.set_tracks(tracks);
+            self.last_track_count = state.dj_tracks.len();
+        }
+
+        // Sync deck state from console state
+        self.deck_a.track_title = state.dj_deck_a.track_title.clone();
+        self.deck_a.track_artist = state.dj_deck_a.track_artist.clone();
+        self.deck_a.duration_seconds = state.dj_deck_a.duration_seconds;
+        self.deck_a.position_seconds = state.dj_deck_a.position_seconds;
+        self.deck_a.adjusted_bpm = state.dj_deck_a.bpm.unwrap_or(120.0);
+        self.deck_a.is_playing = state.dj_deck_a.is_playing;
+        self.deck_a.cue_point = state.dj_deck_a.cue_point;
+        if self.deck_a.waveform.len() != state.dj_deck_a.waveform.len() {
+            self.deck_a.waveform = state.dj_deck_a.waveform.clone();
+        }
+
+        self.deck_b.track_title = state.dj_deck_b.track_title.clone();
+        self.deck_b.track_artist = state.dj_deck_b.track_artist.clone();
+        self.deck_b.duration_seconds = state.dj_deck_b.duration_seconds;
+        self.deck_b.position_seconds = state.dj_deck_b.position_seconds;
+        self.deck_b.adjusted_bpm = state.dj_deck_b.bpm.unwrap_or(120.0);
+        self.deck_b.is_playing = state.dj_deck_b.is_playing;
+        self.deck_b.cue_point = state.dj_deck_b.cue_point;
+        if self.deck_b.waveform.len() != state.dj_deck_b.waveform.len() {
+            self.deck_b.waveform = state.dj_deck_b.waveform.clone();
         }
 
         // Left side panel for library browser
@@ -85,7 +109,7 @@ impl DjPanel {
             .show(ctx, |ui| {
                 ui.heading("Library");
                 ui.separator();
-                self.library.render(ui);
+                self.library.render(ui, console_tx);
             });
 
         // Main content area with two decks
@@ -98,7 +122,7 @@ impl DjPanel {
                 // Deck A
                 ui.vertical(|ui| {
                     ui.set_width(deck_width);
-                    self.deck_a.render(ui, "A");
+                    self.deck_a.render(ui, "A", 0, console_tx);
                 });
 
                 ui.add_space(20.0);
@@ -106,9 +130,15 @@ impl DjPanel {
                 // Deck B
                 ui.vertical(|ui| {
                     ui.set_width(deck_width);
-                    self.deck_b.render(ui, "B");
+                    self.deck_b.render(ui, "B", 1, console_tx);
                 });
             });
         });
+
+        // Request continuous repaints while cue button is held on either deck
+        // This ensures hold detection works properly in egui's repaint model
+        if self.deck_a.is_cue_held() || self.deck_b.is_cue_held() {
+            ctx.request_repaint();
+        }
     }
 }

@@ -9,6 +9,19 @@ use halo_core::{
 use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::mpsc;
 
+/// State for a DJ deck.
+#[derive(Debug, Clone, Default)]
+pub struct DjDeckState {
+    pub track_title: Option<String>,
+    pub track_artist: Option<String>,
+    pub duration_seconds: f64,
+    pub position_seconds: f64,
+    pub bpm: Option<f64>,
+    pub is_playing: bool,
+    pub cue_point: Option<f64>,
+    pub waveform: Vec<f32>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConsoleState {
     pub fixtures: HashMap<String, Fixture>,
@@ -41,6 +54,8 @@ pub struct ConsoleState {
     pub audio_bpm: Option<f64>,
     pub pixel_data: HashMap<usize, Vec<(u8, u8, u8)>>,
     pub dj_tracks: Vec<DjTrackInfo>,
+    pub dj_deck_a: DjDeckState,
+    pub dj_deck_b: DjDeckState,
 }
 
 impl Default for ConsoleState {
@@ -86,6 +101,8 @@ impl Default for ConsoleState {
             audio_bpm: None,
             pixel_data: HashMap::new(),
             dj_tracks: Vec::new(),
+            dj_deck_a: DjDeckState::default(),
+            dj_deck_b: DjDeckState::default(),
         }
     }
 }
@@ -250,6 +267,76 @@ impl ConsoleState {
             }
             halo_core::ConsoleEvent::DjLibraryTracks { tracks } => {
                 self.dj_tracks = tracks;
+            }
+            halo_core::ConsoleEvent::DjTrackLoaded {
+                deck,
+                track_id: _,
+                title,
+                artist,
+                duration_seconds,
+                bpm,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.track_title = Some(title);
+                deck_state.track_artist = artist;
+                deck_state.duration_seconds = duration_seconds;
+                deck_state.bpm = bpm;
+                deck_state.position_seconds = 0.0;
+                deck_state.waveform.clear(); // Clear previous waveform immediately
+            }
+            halo_core::ConsoleEvent::DjDeckStateChanged {
+                deck,
+                is_playing,
+                position_seconds,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.is_playing = is_playing;
+                deck_state.position_seconds = position_seconds;
+            }
+            halo_core::ConsoleEvent::DjCuePointSet {
+                deck,
+                position_seconds,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.cue_point = Some(position_seconds);
+            }
+            halo_core::ConsoleEvent::DjWaveformProgress {
+                deck,
+                samples,
+                progress: _,
+            } => {
+                // Progressive waveform update - replace with partial samples
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.waveform = samples;
+            }
+            halo_core::ConsoleEvent::DjWaveformLoaded {
+                deck,
+                samples,
+                duration_seconds: _,
+            } => {
+                // Final waveform - replace with complete samples
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.waveform = samples;
             }
             _ => {
                 // Handle other events as needed

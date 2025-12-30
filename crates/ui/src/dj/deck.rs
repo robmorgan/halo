@@ -1,6 +1,10 @@
 //! Deck widget for DJ playback display and control.
 
 use eframe::egui::{self, Color32, Rect, Rounding, Stroke, Vec2};
+use halo_core::ConsoleCommand;
+use tokio::sync::mpsc;
+
+use super::TrackDragPayload;
 
 /// Visual state for a single deck.
 #[derive(Default)]
@@ -33,232 +37,372 @@ pub struct DeckWidget {
     pub beat_phase: f64,
     /// Waveform data for display.
     pub waveform: Vec<f32>,
+    /// Whether we are currently in cue preview mode (holding the cue button).
+    /// This is tracked explicitly rather than relying on egui's button state
+    /// because is_pointer_button_down_on() can lose track of the press.
+    pub cue_preview_active: bool,
+    /// Whether we've already handled the current cue button press.
+    /// This prevents non-preview actions from firing repeatedly.
+    cue_press_handled: bool,
 }
 
 impl DeckWidget {
+    /// Returns whether the cue button is currently being held (for repaint requests).
+    pub fn is_cue_held(&self) -> bool {
+        self.cue_preview_active
+    }
+
     /// Render the deck widget.
-    pub fn render(&mut self, ui: &mut egui::Ui, deck_label: &str) {
-        let frame = egui::Frame::default()
-            .fill(Color32::from_gray(25))
-            .corner_radius(Rounding::same(8))
-            .inner_margin(egui::Margin::same(12));
+    pub fn render(
+        &mut self,
+        ui: &mut egui::Ui,
+        deck_label: &str,
+        deck_number: u8,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
+        let mut dropped_track_id: Option<i64> = None;
 
-        frame.show(ui, |ui| {
-            // Deck header with label and master indicator
-            ui.horizontal(|ui| {
-                ui.heading(format!("Deck {}", deck_label));
-                if self.is_master {
-                    ui.label(
-                        egui::RichText::new("MASTER")
-                            .color(Color32::from_rgb(255, 200, 0))
-                            .strong(),
-                    );
-                }
-                if self.sync_enabled {
-                    ui.label(
-                        egui::RichText::new("SYNC")
-                            .color(Color32::from_rgb(0, 200, 255))
-                            .strong(),
-                    );
-                }
+        // Get the rect we'll use for the deck
+        let available_rect = ui.available_rect_before_wrap();
+        let deck_rect = Rect::from_min_size(
+            available_rect.min,
+            egui::vec2(available_rect.width(), 400.0),
+        );
+
+        // Check if something is being dragged
+        let is_dragging = ui.ctx().dragged_id().is_some();
+
+        // Check if pointer is over our deck rect
+        let pointer_over_deck = ui
+            .ctx()
+            .pointer_hover_pos()
+            .is_some_and(|pos| deck_rect.contains(pos));
+
+        // Draw the deck frame background
+        let fill_color = Color32::from_gray(25);
+        ui.painter()
+            .rect_filled(deck_rect, Rounding::same(8), fill_color);
+
+        // Draw highlight border if dragging over this deck
+        if is_dragging && pointer_over_deck {
+            ui.painter().rect_stroke(
+                deck_rect,
+                8.0,
+                Stroke::new(3.0, Color32::from_rgb(100, 200, 255)),
+                egui::StrokeKind::Outside,
+            );
+        }
+
+        // Check for drop: pointer was over deck and primary button just released
+        if pointer_over_deck && ui.input(|i| i.pointer.primary_released()) {
+            // Try to get the drag payload using the static DragAndDrop API
+            if let Some(payload) = egui::DragAndDrop::take_payload::<TrackDragPayload>(ui.ctx()) {
+                dropped_track_id = Some(payload.track_id);
+            }
+        }
+
+        // Render deck contents inside the deck area
+        let content_rect = deck_rect.shrink(12.0);
+        let mut content_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(content_rect)
+                .layout(egui::Layout::top_down(egui::Align::LEFT)),
+        );
+        self.render_deck_contents(&mut content_ui, deck_label, deck_number, console_tx);
+
+        // Consume the deck space
+        ui.allocate_rect(deck_rect, egui::Sense::hover());
+
+        // Send command if a track was dropped
+        if let Some(track_id) = dropped_track_id {
+            let _ = console_tx.send(ConsoleCommand::DjLoadTrack {
+                deck: deck_number,
+                track_id,
             });
+        }
+    }
 
-            ui.separator();
-
-            // Track info
-            if let Some(title) = &self.track_title {
-                ui.label(egui::RichText::new(title).size(16.0).color(Color32::WHITE));
-                if let Some(artist) = &self.track_artist {
-                    ui.label(egui::RichText::new(artist).size(14.0).color(Color32::GRAY));
-                }
-            } else {
+    /// Render the internal deck contents.
+    fn render_deck_contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        deck_label: &str,
+        deck_number: u8,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
+        // Deck header with label and master indicator
+        ui.horizontal(|ui| {
+            ui.heading(format!("Deck {}", deck_label));
+            if self.is_master {
                 ui.label(
-                    egui::RichText::new("No track loaded")
-                        .size(16.0)
-                        .color(Color32::DARK_GRAY)
-                        .italics(),
+                    egui::RichText::new("MASTER")
+                        .color(Color32::from_rgb(255, 200, 0))
+                        .strong(),
                 );
             }
-
-            ui.add_space(8.0);
-
-            // Waveform display
-            self.render_waveform(ui);
-
-            ui.add_space(8.0);
-
-            // Time and BPM display
-            ui.horizontal(|ui| {
-                // Time display
-                let position_str = format_time(self.position_seconds);
-                let duration_str = format_time(self.duration_seconds);
-                let remaining = self.duration_seconds - self.position_seconds;
-                let remaining_str = format!("-{}", format_time(remaining.max(0.0)));
-
+            if self.sync_enabled {
                 ui.label(
-                    egui::RichText::new(&position_str)
-                        .size(24.0)
-                        .monospace()
-                        .color(Color32::WHITE),
+                    egui::RichText::new("SYNC")
+                        .color(Color32::from_rgb(0, 200, 255))
+                        .strong(),
                 );
-                ui.label(
-                    egui::RichText::new(format!(" / {} ", duration_str))
-                        .size(14.0)
-                        .monospace()
-                        .color(Color32::GRAY),
-                );
-                ui.label(
-                    egui::RichText::new(&remaining_str)
-                        .size(18.0)
-                        .monospace()
-                        .color(if remaining < 30.0 {
-                            Color32::from_rgb(255, 100, 100)
-                        } else {
-                            Color32::GRAY
-                        }),
-                );
+            }
+        });
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // BPM display
-                    ui.label(
-                        egui::RichText::new(format!("{:.1} BPM", self.adjusted_bpm))
-                            .size(20.0)
-                            .monospace()
-                            .color(Color32::from_rgb(0, 255, 128)),
-                    );
-                });
-            });
+        ui.separator();
 
-            ui.add_space(8.0);
+        // Track info
+        if let Some(title) = &self.track_title {
+            ui.label(egui::RichText::new(title).size(16.0).color(Color32::WHITE));
+            if let Some(artist) = &self.track_artist {
+                ui.label(egui::RichText::new(artist).size(14.0).color(Color32::GRAY));
+            }
+        } else {
+            ui.label(
+                egui::RichText::new("No track loaded")
+                    .size(16.0)
+                    .color(Color32::DARK_GRAY)
+                    .italics(),
+            );
+        }
 
-            // Transport controls
-            ui.horizontal(|ui| {
-                let button_size = Vec2::new(50.0, 40.0);
+        ui.add_space(8.0);
 
-                // Play/Pause button
-                let play_text = if self.is_playing { "||" } else { ">" };
-                let play_color = if self.is_playing {
-                    Color32::from_rgb(0, 200, 100)
-                } else {
-                    Color32::WHITE
-                };
-                if ui
-                    .add_sized(
-                        button_size,
-                        egui::Button::new(
-                            egui::RichText::new(play_text).size(20.0).color(play_color),
-                        ),
-                    )
-                    .clicked()
-                {
-                    self.is_playing = !self.is_playing;
-                }
+        // Waveform display
+        self.render_waveform(ui);
 
-                // Cue button
-                if ui
-                    .add_sized(
-                        button_size,
-                        egui::Button::new(egui::RichText::new("CUE").size(14.0)),
-                    )
-                    .clicked()
-                {
-                    // Set cue point
-                }
+        ui.add_space(8.0);
 
-                // Sync button
-                let sync_color = if self.sync_enabled {
-                    Color32::from_rgb(0, 200, 255)
-                } else {
-                    Color32::GRAY
-                };
-                if ui
-                    .add_sized(
-                        button_size,
-                        egui::Button::new(egui::RichText::new("SYNC").size(12.0).color(sync_color)),
-                    )
-                    .clicked()
-                {
-                    self.sync_enabled = !self.sync_enabled;
-                }
+        // Time and BPM display
+        ui.horizontal(|ui| {
+            // Time display
+            let position_str = format_time(self.position_seconds);
+            let duration_str = format_time(self.duration_seconds);
+            let remaining = self.duration_seconds - self.position_seconds;
+            let remaining_str = format!("-{}", format_time(remaining.max(0.0)));
 
-                // Master button
-                let master_color = if self.is_master {
-                    Color32::from_rgb(255, 200, 0)
-                } else {
-                    Color32::GRAY
-                };
-                if ui
-                    .add_sized(
-                        button_size,
-                        egui::Button::new(
-                            egui::RichText::new("MST").size(12.0).color(master_color),
-                        ),
-                    )
-                    .clicked()
-                {
-                    self.is_master = !self.is_master;
-                }
-            });
-
-            ui.add_space(8.0);
-
-            // Hot cue buttons
-            ui.horizontal(|ui| {
-                ui.label("Hot Cues:");
-                for i in 0..4 {
-                    let has_cue = self.hot_cues[i].is_some();
-                    let color = if has_cue {
-                        hot_cue_color(i)
+            ui.label(
+                egui::RichText::new(&position_str)
+                    .size(24.0)
+                    .monospace()
+                    .color(Color32::WHITE),
+            );
+            ui.label(
+                egui::RichText::new(format!(" / {} ", duration_str))
+                    .size(14.0)
+                    .monospace()
+                    .color(Color32::GRAY),
+            );
+            ui.label(
+                egui::RichText::new(&remaining_str)
+                    .size(18.0)
+                    .monospace()
+                    .color(if remaining < 30.0 {
+                        Color32::from_rgb(255, 100, 100)
                     } else {
-                        Color32::DARK_GRAY
-                    };
-                    if ui
-                        .add_sized(
-                            Vec2::new(40.0, 30.0),
-                            egui::Button::new(
-                                egui::RichText::new(format!("{}", i + 1)).size(16.0).color(
-                                    if has_cue {
-                                        Color32::BLACK
-                                    } else {
-                                        Color32::GRAY
-                                    },
-                                ),
-                            )
-                            .fill(color),
+                        Color32::GRAY
+                    }),
+            );
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // BPM display
+                ui.label(
+                    egui::RichText::new(format!("{:.1} BPM", self.adjusted_bpm))
+                        .size(20.0)
+                        .monospace()
+                        .color(Color32::from_rgb(0, 255, 128)),
+                );
+            });
+        });
+
+        ui.add_space(8.0);
+
+        // Transport controls
+        ui.horizontal(|ui| {
+            let button_size = Vec2::new(50.0, 40.0);
+
+            // Play/Pause button
+            let play_text = if self.is_playing { "||" } else { ">" };
+            let play_color = if self.is_playing {
+                Color32::from_rgb(0, 200, 100)
+            } else {
+                Color32::WHITE
+            };
+            if ui
+                .add_sized(
+                    button_size,
+                    egui::Button::new(egui::RichText::new(play_text).size(20.0).color(play_color)),
+                )
+                .clicked()
+            {
+                if self.is_playing {
+                    // Currently playing, send pause
+                    let _ = console_tx.send(ConsoleCommand::DjPause { deck: deck_number });
+                } else {
+                    // Currently paused, send play
+                    let _ = console_tx.send(ConsoleCommand::DjPlay { deck: deck_number });
+                }
+                // State will be updated by DjDeckStateChanged event from the module
+            }
+
+            // Cue button - Pioneer CDJ-style behavior:
+            // - When playing: click to jump to cue point and pause
+            // - When paused AT cue point: HOLD to preview from cue, release to return
+            // - When paused NOT at cue point: click to set new cue point
+            let cue_color = if self.cue_preview_active {
+                Color32::from_rgb(255, 100, 0) // Bright orange when previewing
+            } else if self.cue_point.is_some() {
+                Color32::from_rgb(255, 200, 0)
+            } else {
+                Color32::WHITE
+            };
+            let cue_response = ui.add_sized(
+                button_size,
+                egui::Button::new(egui::RichText::new("CUE").size(14.0).color(cue_color)),
+            );
+
+            // Check global pointer state - this is more reliable than is_pointer_button_down_on()
+            // which can lose track of the press if the pointer moves slightly
+            let primary_down = ui.input(|i| i.pointer.primary_down());
+            let at_cue = is_at_cue_point(self.position_seconds, self.cue_point);
+
+            // Reset press handled flag when mouse is released
+            if !primary_down {
+                self.cue_press_handled = false;
+            }
+
+            // Handle cue preview release - check FIRST before handling new presses
+            // Release when: we're in preview mode AND mouse button is released
+            if self.cue_preview_active && !primary_down {
+                self.cue_preview_active = false;
+                let _ = console_tx.send(ConsoleCommand::DjCuePreview {
+                    deck: deck_number,
+                    pressed: false,
+                });
+            }
+
+            // Handle new button press - detect press on this button
+            // but only when we haven't already handled this press
+            let button_pressed = cue_response.is_pointer_button_down_on();
+            let should_handle = button_pressed && !self.cue_press_handled;
+
+            if should_handle {
+                self.cue_press_handled = true;
+
+                if self.is_playing {
+                    // Playing: jump to cue point and pause
+                    if let Some(cue_pos) = self.cue_point {
+                        let _ = console_tx.send(ConsoleCommand::DjPause { deck: deck_number });
+                        let _ = console_tx.send(ConsoleCommand::DjSeek {
+                            deck: deck_number,
+                            position_seconds: cue_pos,
+                        });
+                    }
+                } else if at_cue {
+                    // Paused AT cue point: start preview (will be held)
+                    // We track this ourselves and use global pointer state for release
+                    self.cue_preview_active = true;
+                    let _ = console_tx.send(ConsoleCommand::DjCuePreview {
+                        deck: deck_number,
+                        pressed: true,
+                    });
+                } else {
+                    // Paused NOT at cue point (or no cue): set new cue point
+                    let _ = console_tx.send(ConsoleCommand::DjSetCue { deck: deck_number });
+                }
+            }
+
+            // Sync button
+            let sync_color = if self.sync_enabled {
+                Color32::from_rgb(0, 200, 255)
+            } else {
+                Color32::GRAY
+            };
+            if ui
+                .add_sized(
+                    button_size,
+                    egui::Button::new(egui::RichText::new("SYNC").size(12.0).color(sync_color)),
+                )
+                .clicked()
+            {
+                self.sync_enabled = !self.sync_enabled;
+            }
+
+            // Master button
+            let master_color = if self.is_master {
+                Color32::from_rgb(255, 200, 0)
+            } else {
+                Color32::GRAY
+            };
+            if ui
+                .add_sized(
+                    button_size,
+                    egui::Button::new(egui::RichText::new("MST").size(12.0).color(master_color)),
+                )
+                .clicked()
+            {
+                self.is_master = !self.is_master;
+            }
+        });
+
+        ui.add_space(8.0);
+
+        // Hot cue buttons
+        ui.horizontal(|ui| {
+            ui.label("Hot Cues:");
+            for i in 0..4 {
+                let has_cue = self.hot_cues[i].is_some();
+                let color = if has_cue {
+                    hot_cue_color(i)
+                } else {
+                    Color32::DARK_GRAY
+                };
+                if ui
+                    .add_sized(
+                        Vec2::new(40.0, 30.0),
+                        egui::Button::new(
+                            egui::RichText::new(format!("{}", i + 1)).size(16.0).color(
+                                if has_cue {
+                                    Color32::BLACK
+                                } else {
+                                    Color32::GRAY
+                                },
+                            ),
                         )
-                        .clicked()
-                    {
-                        if has_cue {
-                            // Jump to hot cue
-                        } else {
-                            // Set hot cue
-                            self.hot_cues[i] = Some(self.position_seconds);
-                        }
+                        .fill(color),
+                    )
+                    .clicked()
+                {
+                    if has_cue {
+                        // Jump to hot cue
+                    } else {
+                        // Set hot cue
+                        self.hot_cues[i] = Some(self.position_seconds);
                     }
                 }
-            });
+            }
+        });
 
-            ui.add_space(8.0);
+        ui.add_space(8.0);
 
-            // Pitch fader
-            ui.horizontal(|ui| {
-                ui.label("Pitch:");
-                let pitch_percent = self.pitch * 100.0;
-                ui.add(
-                    egui::Slider::new(&mut self.pitch, -0.5..=0.5)
-                        .show_value(false)
-                        .trailing_fill(true),
-                );
-                ui.label(
-                    egui::RichText::new(format!("{:+.1}%", pitch_percent))
-                        .monospace()
-                        .color(if self.pitch.abs() > 0.01 {
-                            Color32::from_rgb(255, 200, 0)
-                        } else {
-                            Color32::GRAY
-                        }),
-                );
-            });
+        // Pitch fader
+        ui.horizontal(|ui| {
+            ui.label("Pitch:");
+            let pitch_percent = self.pitch * 100.0;
+            ui.add(
+                egui::Slider::new(&mut self.pitch, -0.5..=0.5)
+                    .show_value(false)
+                    .trailing_fill(true),
+            );
+            ui.label(
+                egui::RichText::new(format!("{:+.1}%", pitch_percent))
+                    .monospace()
+                    .color(if self.pitch.abs() > 0.01 {
+                        Color32::from_rgb(255, 200, 0)
+                    } else {
+                        Color32::GRAY
+                    }),
+            );
         });
     }
 
@@ -385,4 +529,12 @@ fn waveform_color(progress: f64) -> Color32 {
     let g = (200.0 - progress * 100.0) as u8;
     let b = 255;
     Color32::from_rgb(r, g, b)
+}
+
+/// Check if playhead position is approximately at the cue point.
+fn is_at_cue_point(position: f64, cue_point: Option<f64>) -> bool {
+    match cue_point {
+        Some(cue) => (position - cue).abs() < 0.1, // 100ms tolerance
+        None => false,
+    }
 }
