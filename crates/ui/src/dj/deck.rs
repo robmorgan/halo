@@ -418,11 +418,18 @@ impl DeckWidget {
         ui.horizontal(|ui| {
             ui.label("Pitch:");
             let pitch_percent = self.pitch * 100.0;
-            ui.add(
+            let slider_response = ui.add(
                 egui::Slider::new(&mut self.pitch, -0.5..=0.5)
                     .show_value(false)
                     .trailing_fill(true),
             );
+            // Send pitch change command when slider is dragged
+            if slider_response.changed() {
+                let _ = console_tx.send(ConsoleCommand::DjSetPitch {
+                    deck: deck_number,
+                    percent: self.pitch, // Decimal value: -0.5 = -50%
+                });
+            }
             ui.label(
                 egui::RichText::new(format!("{:+.1}%", pitch_percent))
                     .monospace()
