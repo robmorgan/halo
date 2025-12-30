@@ -14,6 +14,7 @@ mod utils;
 // Enable all UI modules
 mod cue;
 mod cue_editor;
+mod dj;
 mod fader;
 mod fixture;
 mod master;
@@ -30,6 +31,7 @@ pub enum ActiveTab {
     CueEditor,
     PatchPanel,
     ShowManager,
+    Dj,
 }
 
 pub struct HaloApp {
@@ -61,6 +63,7 @@ pub struct HaloApp {
     cue_panel_state: cue::CuePanel,
     settings_panel: settings::SettingsPanel,
     timeline_state: timeline::TimelineState,
+    dj_panel_state: dj::DjPanel,
 }
 
 impl HaloApp {
@@ -101,6 +104,7 @@ impl HaloApp {
             cue_panel_state: cue::CuePanel::default(),
             settings_panel: settings::SettingsPanel::new(),
             timeline_state: timeline::TimelineState::default(),
+            dj_panel_state: dj::DjPanel::default(),
         }
     }
 
@@ -137,6 +141,59 @@ impl HaloApp {
                     });
                 });
         }
+    }
+
+    /// Handle global keyboard shortcuts for transport control.
+    ///
+    /// Shortcuts:
+    /// - Space: Play/Pause toggle for current cue list
+    /// - Escape: Stop playback
+    /// - Right Arrow: Next cue
+    /// - Left Arrow: Previous cue
+    /// - T: Tap tempo
+    fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
+        // Only handle shortcuts when no text input is focused
+        if ctx.memory(|mem| mem.focused().is_some()) {
+            return;
+        }
+
+        ctx.input(|input| {
+            // Space: Play/Pause toggle
+            if input.key_pressed(egui::Key::Space) {
+                match self.state.playback_state {
+                    halo_core::PlaybackState::Playing => {
+                        let _ = self.console_tx.send(ConsoleCommand::Pause);
+                    }
+                    halo_core::PlaybackState::Stopped | halo_core::PlaybackState::Holding => {
+                        let _ = self.console_tx.send(ConsoleCommand::Play);
+                    }
+                }
+            }
+
+            // Escape: Stop playback
+            if input.key_pressed(egui::Key::Escape) {
+                let _ = self.console_tx.send(ConsoleCommand::Stop);
+            }
+
+            // Right Arrow: Next cue
+            if input.key_pressed(egui::Key::ArrowRight) {
+                let _ = self.console_tx.send(ConsoleCommand::NextCue {
+                    list_index: self.state.current_cue_list_index,
+                });
+            }
+
+            // Left Arrow: Previous cue
+            if input.key_pressed(egui::Key::ArrowLeft) {
+                let _ = self.console_tx.send(ConsoleCommand::PrevCue {
+                    list_index: self.state.current_cue_list_index,
+                });
+            }
+
+            // T: Tap tempo
+            if input.key_pressed(egui::Key::T) {
+                let _ = self.console_tx.send(ConsoleCommand::TapTempo);
+            }
+        });
     }
 
     fn render_ui(&mut self, ctx: &egui::Context) {
@@ -227,6 +284,9 @@ impl HaloApp {
                 self.show_panel_state
                     .render(ctx, &self.state, &self.console_tx);
             }
+            ActiveTab::Dj => {
+                self.dj_panel_state.render(ctx, &self.state, &self.console_tx);
+            }
         }
 
         // Render settings panel (modal window)
@@ -251,6 +311,9 @@ impl eframe::App for HaloApp {
             }
             self.initial_show_loaded = true;
         }
+
+        // Handle keyboard shortcuts for transport control
+        self.handle_keyboard_shortcuts(ctx);
 
         // Process all updates first
         self.process_engine_updates();

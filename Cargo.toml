@@ -1,4 +1,4 @@
 [workspace]
-members = ["crates/core", "crates/fixtures", "crates/halo", "crates/ui"]
+members = ["crates/core", "crates/dj", "crates/fixtures", "crates/halo", "crates/ui"]
 default-members = ["crates/halo"]
 resolver = "2"

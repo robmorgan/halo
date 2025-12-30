@@ -111,6 +111,8 @@ impl LightingConsole {
                 bars_per_phrase: 4,
                 last_tap_time: None,
                 tap_count: 0,
+                bpm: 120.0,
+                tempo_source: crate::rhythm::rhythm::TempoSource::Internal,
             })),
             link_manager: Arc::new(Mutex::new(AbletonLinkManager::new())),
             settings: Arc::new(RwLock::new(settings)),
@@ -1625,6 +1627,8 @@ impl LightingConsole {
                     bars_per_phrase: rhythm_guard.bars_per_phrase,
                     last_tap_time: rhythm_guard.last_tap_time,
                     tap_count: rhythm_guard.tap_count,
+                    bpm: rhythm_guard.bpm,
+                    tempo_source: rhythm_guard.tempo_source,
                 };
                 let _ = event_tx.send(ConsoleEvent::CurrentRhythmState { state });
             }
@@ -1662,6 +1666,167 @@ impl LightingConsole {
                 let enabled = self.is_ableton_link_enabled().await;
                 let num_peers = self.get_ableton_link_peers().await;
                 let _ = event_tx.send(ConsoleEvent::LinkStateChanged { enabled, num_peers });
+            }
+
+            SetTempoSource { source } => {
+                log::info!("Setting tempo source to: {:?}", source);
+                let mut rhythm_state = self.rhythm_state.write().await;
+                rhythm_state.tempo_source = source;
+                // Notify UI of the rhythm state change
+                let state = crate::RhythmState {
+                    beat_phase: rhythm_state.beat_phase,
+                    bar_phase: rhythm_state.bar_phase,
+                    phrase_phase: rhythm_state.phrase_phase,
+                    beats_per_bar: rhythm_state.beats_per_bar,
+                    bars_per_phrase: rhythm_state.bars_per_phrase,
+                    last_tap_time: rhythm_state.last_tap_time,
+                    tap_count: rhythm_state.tap_count,
+                    bpm: rhythm_state.bpm,
+                    tempo_source: rhythm_state.tempo_source,
+                };
+                let _ = event_tx.send(ConsoleEvent::RhythmStateUpdated { state });
+            }
+
+            // DJ commands - forward to DJ module
+            DjImportFolder { path } => {
+                log::info!("DJ: Importing folder: {:?}", path);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjImportFolder { path }),
+                    )
+                    .await;
+            }
+            DjLoadTrack { deck, track_id } => {
+                log::info!("DJ: Loading track {} to deck {}", track_id, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjLoadTrack { deck, track_id }),
+                    )
+                    .await;
+            }
+            DjPlay { deck } => {
+                log::info!("DJ: Play deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjPlay { deck }),
+                    )
+                    .await;
+            }
+            DjPause { deck } => {
+                log::info!("DJ: Pause deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjPause { deck }),
+                    )
+                    .await;
+            }
+            DjStop { deck } => {
+                log::info!("DJ: Stop deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjStop { deck }),
+                    )
+                    .await;
+            }
+            DjSetCue { deck } => {
+                log::info!("DJ: Set cue on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetCue { deck }),
+                    )
+                    .await;
+            }
+            DjJumpToCue { deck } => {
+                log::info!("DJ: Jump to cue on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjJumpToCue { deck }),
+                    )
+                    .await;
+            }
+            DjSetHotCue { deck, slot } => {
+                log::info!("DJ: Set hot cue {} on deck {}", slot, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetHotCue { deck, slot }),
+                    )
+                    .await;
+            }
+            DjJumpToHotCue { deck, slot } => {
+                log::info!("DJ: Jump to hot cue {} on deck {}", slot, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjJumpToHotCue { deck, slot }),
+                    )
+                    .await;
+            }
+            DjSetPitch { deck, percent } => {
+                log::info!("DJ: Set pitch to {}% on deck {}", percent, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetPitch { deck, percent }),
+                    )
+                    .await;
+            }
+            DjToggleSync { deck } => {
+                log::info!("DJ: Toggle sync on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjToggleSync { deck }),
+                    )
+                    .await;
+            }
+            DjSetMaster { deck } => {
+                log::info!("DJ: Set deck {} as master", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSetMaster { deck }),
+                    )
+                    .await;
+            }
+            DjSeek { deck, position_seconds } => {
+                log::info!("DJ: Seek to {}s on deck {}", position_seconds, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjSeek { deck, position_seconds }),
+                    )
+                    .await;
+            }
+            DjQueryLibrary => {
+                log::debug!("DJ: Querying library");
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(ConsoleCommand::DjQueryLibrary),
+                    )
+                    .await;
             }
 
             // Settings management
@@ -1791,6 +1956,8 @@ impl LightingConsole {
                         bars_per_phrase: rhythm_guard.bars_per_phrase,
                         last_tap_time: rhythm_guard.last_tap_time,
                         tap_count: rhythm_guard.tap_count,
+                        bpm: rhythm_guard.bpm,
+                        tempo_source: rhythm_guard.tempo_source,
                     };
                     let _ = event_tx.send(ConsoleEvent::RhythmStateUpdated { state: rhythm_state });
 
@@ -1814,6 +1981,27 @@ impl LightingConsole {
                             match event {
                                 ModuleEvent::MidiInput(midi_msg) => {
                                     Self::handle_midi_input(midi_msg, &self.rhythm_state, &self.cue_manager).await;
+                                }
+                                ModuleEvent::DjRhythmSync { bpm, beat_phase, bar_phase, phrase_phase } => {
+                                    // Update rhythm state from DJ master deck when using DJ tempo source
+                                    let mut rhythm_state = self.rhythm_state.write().await;
+                                    if rhythm_state.tempo_source == crate::rhythm::rhythm::TempoSource::DjMaster {
+                                        rhythm_state.bpm = bpm;
+                                        rhythm_state.beat_phase = beat_phase;
+                                        rhythm_state.bar_phase = bar_phase;
+                                        rhythm_state.phrase_phase = phrase_phase;
+                                    }
+                                }
+                                ModuleEvent::DjBeat { deck, beat_number, is_downbeat } => {
+                                    // Log DJ beat events for debugging
+                                    log::trace!(
+                                        "DJ Beat: deck={}, beat={}, downbeat={}",
+                                        deck, beat_number, is_downbeat
+                                    );
+                                }
+                                ModuleEvent::DjLibraryTracks(tracks) => {
+                                    log::debug!("Received {} tracks from DJ module", tracks.len());
+                                    let _ = event_tx.send(ConsoleEvent::DjLibraryTracks { tracks });
                                 }
                                 _ => {
                                     // Handle other inter-module events as needed

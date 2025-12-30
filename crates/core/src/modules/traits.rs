@@ -10,6 +10,7 @@ pub enum ModuleId {
     Dmx,
     Smpte,
     Midi,
+    Dj,
 }
 
 /// Events that can be sent between modules
@@ -34,6 +35,23 @@ pub enum ModuleEvent {
     },
     /// MIDI input events
     MidiInput(crate::midi::midi::MidiMessage),
+    /// DJ rhythm sync for lighting integration
+    DjRhythmSync {
+        bpm: f64,
+        beat_phase: f64,
+        bar_phase: f64,
+        phrase_phase: f64,
+    },
+    /// DJ beat trigger (fired on each beat)
+    DjBeat {
+        deck: u8,
+        beat_number: u64,
+        is_downbeat: bool,
+    },
+    /// DJ command from console
+    DjCommand(crate::ConsoleCommand),
+    /// DJ library tracks response
+    DjLibraryTracks(Vec<crate::DjTrackInfo>),
     /// System events
     Shutdown,
 }

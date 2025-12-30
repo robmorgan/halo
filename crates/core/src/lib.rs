@@ -13,7 +13,7 @@ pub use effect::effect::{
     sawtooth_effect, sine_effect, square_effect, Effect, EffectParams, EffectType,
 };
 pub use effect::EffectRelease;
-pub use messages::{ConsoleCommand, ConsoleEvent, Settings};
+pub use messages::{ConsoleCommand, ConsoleEvent, DjTrackInfo, Settings};
 pub use midi::midi::{MidiAction, MidiMessage, MidiOverride};
 // Async module system exports
 pub use modules::{
@@ -21,7 +21,7 @@ pub use modules::{
     ModuleMessage, SmpteModule,
 };
 pub use pixel::{PixelEffect, PixelEffectParams, PixelEffectScope, PixelEffectType, PixelEngine};
-pub use rhythm::rhythm::{Interval, RhythmState};
+pub use rhythm::rhythm::{Interval, RhythmState, TempoSource};
 pub use show::show::Show;
 pub use show::show_manager::ShowManager;
 pub use timecode::timecode::TimeCode;

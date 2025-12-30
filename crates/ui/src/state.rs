@@ -3,7 +3,8 @@ use std::time::SystemTime;
 
 use halo_core::audio::waveform::WaveformData;
 use halo_core::{
-    AudioDeviceInfo, ConsoleCommand, CueList, PlaybackState, RhythmState, Settings, Show, TimeCode,
+    AudioDeviceInfo, ConsoleCommand, CueList, DjTrackInfo, PlaybackState, RhythmState, Settings,
+    Show, TimeCode,
 };
 use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::mpsc;
@@ -39,6 +40,7 @@ pub struct ConsoleState {
     pub audio_duration: Option<f64>,
     pub audio_bpm: Option<f64>,
     pub pixel_data: HashMap<usize, Vec<(u8, u8, u8)>>,
+    pub dj_tracks: Vec<DjTrackInfo>,
 }
 
 impl Default for ConsoleState {
@@ -65,6 +67,8 @@ impl Default for ConsoleState {
                 bars_per_phrase: 4,
                 last_tap_time: None,
                 tap_count: 0,
+                bpm: 120.0,
+                tempo_source: halo_core::TempoSource::Internal,
             },
             show: None,
             timecode: None,
@@ -81,6 +85,7 @@ impl Default for ConsoleState {
             audio_duration: None,
             audio_bpm: None,
             pixel_data: HashMap::new(),
+            dj_tracks: Vec::new(),
         }
     }
 }
@@ -242,6 +247,9 @@ impl ConsoleState {
                 for (fixture_id, pixels) in pixel_data {
                     self.pixel_data.insert(fixture_id, pixels);
                 }
+            }
+            halo_core::ConsoleEvent::DjLibraryTracks { tracks } => {
+                self.dj_tracks = tracks;
             }
             _ => {
                 // Handle other events as needed

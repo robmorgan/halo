@@ -6,6 +6,16 @@ use serde::{Deserialize, Serialize};
 use crate::audio::device_enumerator::AudioDeviceInfo;
 use crate::{CueList, EffectType, MidiOverride, PlaybackState, RhythmState, Show, TimeCode};
 
+/// Track information for UI display.
+#[derive(Debug, Clone)]
+pub struct DjTrackInfo {
+    pub id: i64,
+    pub title: String,
+    pub artist: Option<String>,
+    pub duration_seconds: f64,
+    pub bpm: Option<f64>,
+}
+
 /// Commands sent from UI to Console
 #[derive(Debug, Clone)]
 pub enum ConsoleCommand {
@@ -160,6 +170,58 @@ pub enum ConsoleCommand {
     // Ableton Link
     EnableAbletonLink,
     DisableAbletonLink,
+
+    // Tempo source
+    SetTempoSource {
+        source: crate::rhythm::rhythm::TempoSource,
+    },
+
+    // DJ commands
+    DjImportFolder {
+        path: PathBuf,
+    },
+    DjLoadTrack {
+        deck: u8,
+        track_id: i64,
+    },
+    DjPlay {
+        deck: u8,
+    },
+    DjPause {
+        deck: u8,
+    },
+    DjStop {
+        deck: u8,
+    },
+    DjSetCue {
+        deck: u8,
+    },
+    DjJumpToCue {
+        deck: u8,
+    },
+    DjSetHotCue {
+        deck: u8,
+        slot: u8,
+    },
+    DjJumpToHotCue {
+        deck: u8,
+        slot: u8,
+    },
+    DjSetPitch {
+        deck: u8,
+        percent: f64,
+    },
+    DjToggleSync {
+        deck: u8,
+    },
+    DjSetMaster {
+        deck: u8,
+    },
+    DjSeek {
+        deck: u8,
+        position_seconds: f64,
+    },
+    DjQueryLibrary,
 
     // Effects
     ApplyEffect {
@@ -429,6 +491,36 @@ pub enum ConsoleEvent {
     LinkStateChanged {
         enabled: bool,
         num_peers: u64,
+    },
+
+    // DJ events
+    DjLibraryUpdated {
+        track_count: usize,
+    },
+    DjImportProgress {
+        current: usize,
+        total: usize,
+        current_file: String,
+    },
+    DjImportComplete {
+        imported_count: usize,
+        skipped_count: usize,
+    },
+    DjTrackLoaded {
+        deck: u8,
+        track_id: i64,
+        title: String,
+        artist: Option<String>,
+        duration_seconds: f64,
+        bpm: Option<f64>,
+    },
+    DjDeckStateChanged {
+        deck: u8,
+        is_playing: bool,
+        position_seconds: f64,
+    },
+    DjLibraryTracks {
+        tracks: Vec<DjTrackInfo>,
     },
 
     // Programmer events
