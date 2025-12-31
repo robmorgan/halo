@@ -1128,9 +1128,12 @@ impl AsyncModule for DjModule {
                                             }
                                         } else {
                                             // No waveform or outdated version - spawn background analysis task
-                                            let file_path = {
+                                            let (file_path, track_title) = {
                                                 let deck_state = self.deck(deck).read();
-                                                deck_state.loaded_track.as_ref().map(|t| t.file_path.clone())
+                                                (
+                                                    deck_state.loaded_track.as_ref().map(|t| t.file_path.clone()),
+                                                    deck_state.loaded_track.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| "Unknown".to_string()),
+                                                )
                                             };
 
                                             if let Some(path) = file_path {
@@ -1138,6 +1141,16 @@ impl AsyncModule for DjModule {
                                                 let tx_clone = tx.clone();
                                                 let db_clone = self.database.clone();
                                                 let deck_arc = self.deck(deck).clone();
+
+                                                // Send analysis progress event to show in footer
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjAnalysisProgress {
+                                                        track_id: track_id.0,
+                                                        track_name: track_title.clone(),
+                                                        current: 1,
+                                                        total: 1,
+                                                    }
+                                                )).await;
 
                                                 tokio::spawn(async move {
                                                     // Create channel for progress updates from blocking analysis
@@ -1231,13 +1244,26 @@ impl AsyncModule for DjModule {
                                                                     duration_seconds: result.waveform.duration_seconds,
                                                                 }
                                                             )).await;
+
+                                                            // Clear status message
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::StatusClear
+                                                            )).await;
                                                             eprintln!("DEBUG: Background analysis complete for deck {}", deck_num);
                                                         }
                                                         Ok(Err(e)) => {
+                                                            // Clear status message on error too
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::StatusClear
+                                                            )).await;
                                                             eprintln!("DEBUG: Background analysis failed: {}", e);
                                                             log::error!("Background analysis failed: {}", e);
                                                         }
                                                         Err(e) => {
+                                                            // Clear status message on panic too
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::StatusClear
+                                                            )).await;
                                                             eprintln!("DEBUG: Analysis task panicked: {}", e);
                                                             log::error!("Analysis task panicked: {}", e);
                                                         }
