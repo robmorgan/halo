@@ -6,7 +6,7 @@ pub mod analysis;
 pub mod database;
 pub mod import;
 
-pub use analysis::{analyze_file_streaming, AnalysisConfig, AnalysisResult};
+pub use analysis::{analyze_file, analyze_file_streaming, AnalysisConfig, AnalysisResult};
 pub use database::LibraryDatabase;
 pub use import::{
     import_and_analyze_directory, import_and_analyze_file, import_directory, import_file,

@@ -589,6 +589,19 @@ pub enum ConsoleEvent {
         deck: u8,
         range: u8,
     },
+    DjAnalysisProgress {
+        track_id: i64,
+        track_name: String,
+        current: usize,
+        total: usize,
+    },
+    DjAnalysisComplete {
+        track_id: i64,
+        bpm: Option<f64>,
+    },
+
+    // Status events
+    StatusClear,
 
     // Programmer events
     ProgrammerStateUpdated {

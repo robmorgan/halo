@@ -63,6 +63,8 @@ pub struct ConsoleState {
     pub dj_tracks: Vec<DjTrackInfo>,
     pub dj_deck_a: DjDeckState,
     pub dj_deck_b: DjDeckState,
+    pub status_message: Option<String>,
+    pub status_progress: Option<(usize, usize)>, // (current, total)
 }
 
 impl Default for ConsoleState {
@@ -110,6 +112,8 @@ impl Default for ConsoleState {
             dj_tracks: Vec::new(),
             dj_deck_a: DjDeckState::default(),
             dj_deck_b: DjDeckState::default(),
+            status_message: None,
+            status_progress: None,
         }
     }
 }
@@ -383,6 +387,38 @@ impl ConsoleState {
                     &mut self.dj_deck_b
                 };
                 deck_state.tempo_range = range;
+            }
+            halo_core::ConsoleEvent::DjAnalysisProgress {
+                track_name,
+                current,
+                total,
+                ..
+            } => {
+                self.status_message = Some(format!("Analyzing {}", track_name));
+                self.status_progress = Some((current, total));
+            }
+            halo_core::ConsoleEvent::DjAnalysisComplete { track_id, bpm } => {
+                // Update the track's BPM in our local list
+                if let Some(track) = self.dj_tracks.iter_mut().find(|t| t.id == track_id) {
+                    track.bpm = bpm;
+                }
+            }
+            halo_core::ConsoleEvent::StatusClear => {
+                self.status_message = None;
+                self.status_progress = None;
+            }
+            halo_core::ConsoleEvent::DjImportProgress {
+                current,
+                total,
+                current_file,
+            } => {
+                // Extract just the filename from the path for display
+                let filename = std::path::Path::new(&current_file)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&current_file);
+                self.status_message = Some(format!("Importing {}", filename));
+                self.status_progress = Some((current, total));
             }
             _ => {
                 // Handle other events as needed

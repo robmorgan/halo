@@ -107,6 +107,20 @@ pub enum ModuleEvent {
         deck: u8,
         range: u8,
     },
+    /// DJ track analysis progress (background import)
+    DjAnalysisProgress {
+        track_id: i64,
+        track_name: String,
+        current: usize,
+        total: usize,
+    },
+    /// DJ track analysis complete
+    DjAnalysisComplete {
+        track_id: i64,
+        bpm: Option<f64>,
+    },
+    /// Clear status message
+    StatusClear,
     /// System events
     Shutdown,
 }

@@ -184,7 +184,11 @@ impl DeckWidget {
         // Waveform display with zoom toggle
         ui.horizontal(|ui| {
             // Zoom toggle button
-            let zoom_icon = if self.waveform_zoomed { "🔍−" } else { "🔍+" };
+            let zoom_icon = if self.waveform_zoomed {
+                "🔍−"
+            } else {
+                "🔍+"
+            };
             let zoom_tooltip = if self.waveform_zoomed {
                 "Switch to overview"
             } else {
@@ -199,9 +203,13 @@ impl DeckWidget {
             }
 
             ui.label(if self.waveform_zoomed {
-                egui::RichText::new("ZOOM").size(10.0).color(Color32::from_rgb(0, 200, 255))
+                egui::RichText::new("ZOOM")
+                    .size(10.0)
+                    .color(Color32::from_rgb(0, 200, 255))
             } else {
-                egui::RichText::new("OVERVIEW").size(10.0).color(Color32::GRAY)
+                egui::RichText::new("OVERVIEW")
+                    .size(10.0)
+                    .color(Color32::GRAY)
             });
         });
 

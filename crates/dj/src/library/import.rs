@@ -22,6 +22,65 @@ pub struct ImportResult {
     pub analysis: Option<AnalysisResult>,
 }
 
+/// Import a file and add it to the database without analysis.
+///
+/// This function only extracts metadata and inserts the track into the database.
+/// Analysis should be run separately via analyze_file() for background processing.
+/// Returns the track with its database ID.
+pub fn import_file_metadata_only<P: AsRef<Path>>(
+    path: P,
+    db: &LibraryDatabase,
+) -> Result<Track, anyhow::Error> {
+    let path = path.as_ref();
+
+    // Check if track already exists in database
+    let path_str = path.to_string_lossy().to_string();
+    if let Some(existing) = db.get_track_by_path(&path_str)? {
+        log::info!("Track already in library: {:?}", path);
+        return Ok(existing);
+    }
+
+    // Import file metadata
+    let track = import_file(path)?;
+
+    // Insert into database (without BPM - will be set after analysis)
+    let track_id = db.insert_track(&track)?;
+    log::info!("Inserted track with ID: {} (pending analysis)", track_id);
+
+    // Get the track back with the correct ID
+    let track = db
+        .get_track(track_id)?
+        .ok_or_else(|| anyhow::anyhow!("Failed to retrieve inserted track"))?;
+
+    Ok(track)
+}
+
+/// Scan a directory for audio files without importing them.
+/// Returns a list of paths to supported audio files.
+pub fn scan_directory_for_audio<P: AsRef<Path>>(
+    path: P,
+    recursive: bool,
+) -> Vec<std::path::PathBuf> {
+    let path = path.as_ref();
+    let mut files = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+
+            if entry_path.is_dir() {
+                if recursive {
+                    files.extend(scan_directory_for_audio(&entry_path, true));
+                }
+            } else if is_supported_audio_file(&entry_path) {
+                files.push(entry_path);
+            }
+        }
+    }
+
+    files
+}
+
 /// Import a file, add it to the database, and optionally analyze it.
 ///
 /// This is the primary function for adding new tracks to the library.

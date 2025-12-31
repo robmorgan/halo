@@ -231,7 +231,7 @@ impl HaloApp {
             ui.separator();
 
             // Show footer status
-            footer::render(ui, &self.console_tx, &self.state, self.fps);
+            footer::render(ui, &self.console_tx, &self.state);
         });
 
         match self.active_tab {

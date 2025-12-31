@@ -4,7 +4,7 @@ mod audio_engine;
 mod deck_player;
 mod time_stretcher;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -19,9 +19,10 @@ use tokio::sync::mpsc;
 
 use crate::deck::{Deck, DeckId, DeckState};
 use crate::library::database::LibraryDatabase;
+use crate::library::import::{import_file_metadata_only, scan_directory_for_audio};
 use crate::library::{
-    analyze_file_streaming, AnalysisConfig, BeatGrid, HotCue, MasterTempoMode, TempoRange, Track,
-    TrackId, TrackWaveform,
+    analyze_file, analyze_file_streaming, AnalysisConfig, BeatGrid, HotCue, MasterTempoMode,
+    TempoRange, Track, TrackId, TrackWaveform, WAVEFORM_VERSION_COLORED,
 };
 use crate::midi::z1_mapping::Z1Mapping;
 
@@ -183,6 +184,14 @@ pub enum DjEvent {
     Error { message: String },
 }
 
+/// Track pending analysis.
+#[derive(Debug, Clone)]
+struct PendingAnalysis {
+    track_id: TrackId,
+    file_path: PathBuf,
+    track_name: String,
+}
+
 /// DJ module state and audio engine.
 pub struct DjModule {
     /// Deck A state.
@@ -199,6 +208,12 @@ pub struct DjModule {
     audio_engine: Option<DjAudioEngine>,
     /// Library database (created during initialization, wrapped for thread safety).
     database: Option<Arc<Mutex<LibraryDatabase>>>,
+    /// Queue of tracks pending background analysis.
+    analysis_queue: VecDeque<PendingAnalysis>,
+    /// Total number of tracks in current analysis batch (for progress display).
+    analysis_batch_total: usize,
+    /// Number of tracks completed in current analysis batch.
+    analysis_batch_completed: usize,
 }
 
 impl DjModule {
@@ -218,6 +233,9 @@ impl DjModule {
             audio_config: AudioEngineConfig::default(),
             audio_engine: None,
             database: None,
+            analysis_queue: VecDeque::new(),
+            analysis_batch_total: 0,
+            analysis_batch_completed: 0,
         }
     }
 
@@ -231,6 +249,9 @@ impl DjModule {
             audio_config: AudioEngineConfig::default(),
             audio_engine: None,
             database: None,
+            analysis_queue: VecDeque::new(),
+            analysis_batch_total: 0,
+            analysis_batch_completed: 0,
         }
     }
 
@@ -757,53 +778,137 @@ impl DjModule {
         }
     }
 
-    /// Import all audio files from a folder into the library with BPM analysis.
+    /// Import all audio files from a folder into the library.
+    /// Metadata is extracted immediately; BPM analysis is queued for background processing.
     fn import_folder(&mut self, path: PathBuf) {
-        use crate::library::import::import_and_analyze_directory;
-
         let Some(db) = &self.database else {
             log::error!("Database not initialized, cannot import folder");
             return;
         };
 
-        log::info!("Importing and analyzing folder: {:?}", path);
+        log::info!("Importing folder (metadata only): {:?}", path);
+
+        // Scan directory for audio files
+        let audio_files = scan_directory_for_audio(&path, true);
+        let total_files = audio_files.len();
+        log::info!("Found {} audio files to import", total_files);
+
+        if total_files == 0 {
+            return;
+        }
 
         let db_guard = db.lock().unwrap();
 
-        // Import all tracks from the directory (recursively) with analysis enabled
-        let results = import_and_analyze_directory(&path, &db_guard, true, true);
-
         let mut imported_count = 0;
-        let mut error_count = 0;
+        let mut skipped_count = 0;
+        let mut tracks_to_analyze = Vec::new();
 
-        for result in results {
-            match result {
-                Ok(import_result) => {
-                    let bpm_info = import_result
-                        .track
-                        .bpm
-                        .map(|b| format!(" (BPM: {:.1})", b))
-                        .unwrap_or_default();
-                    log::debug!(
-                        "Imported: {} - {}{}",
-                        import_result.track.artist.as_deref().unwrap_or("Unknown"),
-                        import_result.track.title,
-                        bpm_info
-                    );
+        // Phase 1: Fast metadata import (no analysis)
+        for file_path in audio_files {
+            match import_file_metadata_only(&file_path, &db_guard) {
+                Ok(track) => {
+                    // Check if track needs analysis (no BPM yet)
+                    if track.bpm.is_none() {
+                        tracks_to_analyze.push(PendingAnalysis {
+                            track_id: track.id,
+                            file_path: PathBuf::from(&track.file_path),
+                            track_name: track.title.clone(),
+                        });
+                    } else {
+                        skipped_count += 1; // Already analyzed
+                    }
                     imported_count += 1;
                 }
                 Err(e) => {
-                    log::warn!("Failed to import/analyze file: {}", e);
-                    error_count += 1;
+                    log::warn!("Failed to import file {:?}: {}", file_path, e);
                 }
             }
         }
 
+        drop(db_guard); // Release lock before modifying self
+
+        // Phase 2: Queue tracks for background analysis
+        let tracks_to_analyze_count = tracks_to_analyze.len();
+        if !tracks_to_analyze.is_empty() {
+            self.analysis_batch_total = tracks_to_analyze_count;
+            self.analysis_batch_completed = 0;
+            self.analysis_queue.extend(tracks_to_analyze);
+            log::info!(
+                "Queued {} tracks for background analysis",
+                tracks_to_analyze_count
+            );
+        }
+
         log::info!(
-            "Import complete: {} imported with analysis, {} errors",
+            "Import complete: {} imported, {} already analyzed, {} queued for analysis",
             imported_count,
-            error_count
+            skipped_count,
+            tracks_to_analyze_count
         );
+    }
+
+    /// Process one track from the analysis queue.
+    /// Returns Some((track_id, track_name, bpm)) if analysis completed, None if queue is empty.
+    fn process_analysis_queue_item(&mut self) -> Option<(TrackId, String, Option<f64>)> {
+        let pending = self.analysis_queue.pop_front()?;
+
+        log::info!(
+            "Analyzing track: {} ({}/{})",
+            pending.track_name,
+            self.analysis_batch_completed + 1,
+            self.analysis_batch_total
+        );
+
+        let config = AnalysisConfig::default();
+        let result = analyze_file(&pending.file_path, pending.track_id, &config);
+
+        match result {
+            Ok(analysis_result) => {
+                // Save results to database
+                if let Some(db) = &self.database {
+                    if let Ok(db_guard) = db.lock() {
+                        let _ = db_guard.save_waveform(&analysis_result.waveform);
+                        let _ = db_guard.save_beat_grid(&analysis_result.beat_grid);
+                        let _ = db_guard
+                            .update_track_bpm(pending.track_id, analysis_result.beat_grid.bpm);
+                    }
+                }
+
+                self.analysis_batch_completed += 1;
+                log::info!(
+                    "Analysis complete for {}: BPM={:.1}",
+                    pending.track_name,
+                    analysis_result.beat_grid.bpm
+                );
+
+                Some((
+                    pending.track_id,
+                    pending.track_name,
+                    Some(analysis_result.beat_grid.bpm),
+                ))
+            }
+            Err(e) => {
+                log::error!("Analysis failed for {}: {}", pending.track_name, e);
+                self.analysis_batch_completed += 1;
+                Some((pending.track_id, pending.track_name, None))
+            }
+        }
+    }
+
+    /// Check if there are tracks in the analysis queue.
+    fn has_pending_analysis(&self) -> bool {
+        !self.analysis_queue.is_empty()
+    }
+
+    /// Get the current analysis progress info for status display.
+    fn analysis_progress(&self) -> Option<(String, usize, usize)> {
+        self.analysis_queue.front().map(|pending| {
+            (
+                pending.track_name.clone(),
+                self.analysis_batch_completed + 1,
+                self.analysis_batch_total,
+            )
+        })
     }
 }
 
@@ -950,8 +1055,14 @@ impl AsyncModule for DjModule {
                                             None
                                         };
 
-                                        if let Some(waveform) = existing_waveform {
-                                            // Waveform exists - send immediately
+                                        // Check if waveform exists AND is the current version with frequency bands
+                                        let use_cached_waveform = existing_waveform
+                                            .as_ref()
+                                            .map(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some())
+                                            .unwrap_or(false);
+
+                                        if let Some(waveform) = existing_waveform.filter(|_| use_cached_waveform) {
+                                            // Waveform exists with colored data - send immediately
                                             let sample_count = waveform.sample_count;
                                             let _ = tx.send(ModuleMessage::Event(
                                                 ModuleEvent::DjWaveformLoaded {
@@ -963,7 +1074,7 @@ impl AsyncModule for DjModule {
                                                     duration_seconds: waveform.duration_seconds,
                                                 }
                                             )).await;
-                                            eprintln!("DEBUG: Sent cached DjWaveformLoaded event for deck {} ({} samples)", deck_num, sample_count);
+                                            eprintln!("DEBUG: Sent cached DjWaveformLoaded event for deck {} ({} samples, version {})", deck_num, sample_count, waveform.version);
 
                                             // Load beat grid from database and auto-cue to first beat
                                             let beat_grid = if let Some(db) = &self.database {
@@ -1016,14 +1127,14 @@ impl AsyncModule for DjModule {
                                                 eprintln!("DEBUG: Sent DjBeatGridLoaded event for deck {} ({} beats)", deck_num, beat_grid.beat_positions.len());
                                             }
                                         } else {
-                                            // No waveform - spawn background analysis task
+                                            // No waveform or outdated version - spawn background analysis task
                                             let file_path = {
                                                 let deck_state = self.deck(deck).read();
                                                 deck_state.loaded_track.as_ref().map(|t| t.file_path.clone())
                                             };
 
                                             if let Some(path) = file_path {
-                                                eprintln!("DEBUG: Spawning background analysis for: {}", path);
+                                                eprintln!("DEBUG: Spawning background analysis for colored waveform: {}", path);
                                                 let tx_clone = tx.clone();
                                                 let db_clone = self.database.clone();
                                                 let deck_arc = self.deck(deck).clone();
@@ -1359,7 +1470,8 @@ impl AsyncModule for DjModule {
                                                     None
                                                 };
 
-                                                if let Some(waveform) = existing_waveform {
+                                                // Only use waveform if it has colored data
+                                                if let Some(waveform) = existing_waveform.filter(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some()) {
                                                     let _ = tx.send(ModuleMessage::Event(
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
@@ -1371,6 +1483,7 @@ impl AsyncModule for DjModule {
                                                         }
                                                     )).await;
                                                 }
+                                                // Note: If waveform is old/missing, it will be analyzed when LoadTrack is called
                                             } else {
                                                 eprintln!("DEBUG: PreviousTrack: No previous track available");
                                             }
@@ -1454,7 +1567,8 @@ impl AsyncModule for DjModule {
                                                     None
                                                 };
 
-                                                if let Some(waveform) = existing_waveform {
+                                                // Only use waveform if it has colored data
+                                                if let Some(waveform) = existing_waveform.filter(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some()) {
                                                     let _ = tx.send(ModuleMessage::Event(
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
@@ -1466,6 +1580,7 @@ impl AsyncModule for DjModule {
                                                         }
                                                     )).await;
                                                 }
+                                                // Note: If waveform is old/missing, it will be analyzed when LoadTrack is called
                                             } else {
                                                 eprintln!("DEBUG: NextTrack: No next track available");
                                             }
@@ -1528,6 +1643,29 @@ impl AsyncModule for DjModule {
                                         )).await;
                                         log::info!("Deck {} tempo range set to {:?}", deck, range);
                                     }
+                                    DjCommand::ImportFolder { path } => {
+                                        // Import metadata immediately
+                                        self.import_folder(path);
+
+                                        // Send library update to UI immediately
+                                        if let Some(tracks) = self.get_all_tracks_for_ui() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjLibraryTracks(tracks)
+                                            )).await;
+                                        }
+
+                                        // Send initial analysis progress if there are tracks to analyze
+                                        if let Some((track_name, current, total)) = self.analysis_progress() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjAnalysisProgress {
+                                                    track_id: 0, // Will be updated during actual analysis
+                                                    track_name,
+                                                    current,
+                                                    total,
+                                                }
+                                            )).await;
+                                        }
+                                    }
                                     other => {
                                         eprintln!("DEBUG: Calling handle_command for {:?}", other);
                                         self.handle_command(other);
@@ -1539,7 +1677,50 @@ impl AsyncModule for DjModule {
                     }
                 }
 
+                // Process analysis queue during idle time
                 _ = rhythm_interval.tick() => {
+                    // Process one analysis item if queue is not empty
+                    if self.has_pending_analysis() {
+                        // Send progress event before starting analysis
+                        if let Some((track_name, current, total)) = self.analysis_progress() {
+                            let pending_track_id = self.analysis_queue.front()
+                                .map(|p| p.track_id.0)
+                                .unwrap_or(0);
+                            let _ = tx.send(ModuleMessage::Event(
+                                ModuleEvent::DjAnalysisProgress {
+                                    track_id: pending_track_id,
+                                    track_name,
+                                    current,
+                                    total,
+                                }
+                            )).await;
+                        }
+
+                        // Process one track (blocking but okay for background work)
+                        if let Some((track_id, _track_name, bpm)) = self.process_analysis_queue_item() {
+                            // Send analysis complete event
+                            let _ = tx.send(ModuleMessage::Event(
+                                ModuleEvent::DjAnalysisComplete {
+                                    track_id: track_id.0,
+                                    bpm,
+                                }
+                            )).await;
+
+                            // If queue is now empty, send clear status and update library
+                            if !self.has_pending_analysis() {
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::StatusClear
+                                )).await;
+
+                                // Send updated library with BPM values
+                                if let Some(tracks) = self.get_all_tracks_for_ui() {
+                                    let _ = tx.send(ModuleMessage::Event(
+                                        ModuleEvent::DjLibraryTracks(tracks)
+                                    )).await;
+                                }
+                            }
+                        }
+                    }
                     // Collect events to send (without holding locks across await)
                     let mut events_to_send = Vec::new();
 

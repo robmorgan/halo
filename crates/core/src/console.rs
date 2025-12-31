@@ -2207,6 +2207,23 @@ impl LightingConsole {
                                         range,
                                     });
                                 }
+                                ModuleEvent::DjAnalysisProgress { track_id, track_name, current, total } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjAnalysisProgress {
+                                        track_id,
+                                        track_name,
+                                        current,
+                                        total,
+                                    });
+                                }
+                                ModuleEvent::DjAnalysisComplete { track_id, bpm } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjAnalysisComplete {
+                                        track_id,
+                                        bpm,
+                                    });
+                                }
+                                ModuleEvent::StatusClear => {
+                                    let _ = event_tx.send(ConsoleEvent::StatusClear);
+                                }
                                 ModuleEvent::DjCommand(command) => {
                                     // Handle commands from Push 2 or other modules
                                     log::debug!("Processing DjCommand from module: {:?}", command);
