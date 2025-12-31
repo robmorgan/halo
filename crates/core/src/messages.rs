@@ -561,11 +561,15 @@ pub enum ConsoleEvent {
     DjWaveformProgress {
         deck: u8,
         samples: Vec<f32>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        frequency_bands: Option<Vec<(f32, f32, f32)>>,
         progress: f32,
     },
     DjWaveformLoaded {
         deck: u8,
         samples: Vec<f32>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        frequency_bands: Option<Vec<(f32, f32, f32)>>,
         duration_seconds: f64,
     },
     DjLibraryTracks {

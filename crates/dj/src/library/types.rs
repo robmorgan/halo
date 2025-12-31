@@ -202,6 +202,56 @@ impl BeatGrid {
     }
 }
 
+/// 3-band frequency data for colored waveform visualization.
+///
+/// Each band represents the energy in a frequency range:
+/// - Low: 20-250 Hz (bass, kick drums)
+/// - Mid: 250-4000 Hz (vocals, instruments)
+/// - High: 4000-20000 Hz (hi-hats, cymbals)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+pub struct FrequencyBands {
+    /// Low frequency energy (0.0-1.0) - bass, kick drums.
+    pub low: f32,
+    /// Mid frequency energy (0.0-1.0) - vocals, instruments.
+    pub mid: f32,
+    /// High frequency energy (0.0-1.0) - hi-hats, cymbals.
+    pub high: f32,
+}
+
+impl FrequencyBands {
+    /// Create new frequency bands.
+    pub fn new(low: f32, mid: f32, high: f32) -> Self {
+        Self { low, mid, high }
+    }
+
+    /// Convert to RGB color (Red=low, Green=mid, Blue=high).
+    pub fn to_rgb(&self) -> (u8, u8, u8) {
+        // Scale and clamp values for better visibility
+        let r = (self.low.clamp(0.0, 1.0) * 255.0) as u8;
+        let g = (self.mid.clamp(0.0, 1.0) * 255.0) as u8;
+        let b = (self.high.clamp(0.0, 1.0) * 255.0) as u8;
+        (r, g, b)
+    }
+
+    /// Convert to tuple for serialization.
+    pub fn as_tuple(&self) -> (f32, f32, f32) {
+        (self.low, self.mid, self.high)
+    }
+
+    /// Create from tuple.
+    pub fn from_tuple(t: (f32, f32, f32)) -> Self {
+        Self {
+            low: t.0,
+            mid: t.1,
+            high: t.2,
+        }
+    }
+}
+
+/// Waveform data version.
+pub const WAVEFORM_VERSION_LEGACY: u8 = 1;
+pub const WAVEFORM_VERSION_COLORED: u8 = 2;
+
 /// Waveform data for UI visualization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackWaveform {
@@ -209,10 +259,15 @@ pub struct TrackWaveform {
     pub track_id: TrackId,
     /// Downsampled waveform peaks (absolute values, 0.0-1.0).
     pub samples: Vec<f32>,
+    /// 3-band frequency data for coloring (parallel to samples).
+    /// None for legacy waveforms (pre-colored analysis).
+    pub frequency_bands: Option<Vec<FrequencyBands>>,
     /// Number of samples in the waveform.
     pub sample_count: usize,
     /// Duration of the track in seconds.
     pub duration_seconds: f64,
+    /// Waveform format version (1=legacy amplitude only, 2=colored with frequency bands).
+    pub version: u8,
 }
 
 impl TrackWaveform {

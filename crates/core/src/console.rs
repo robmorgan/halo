@@ -2171,18 +2171,20 @@ impl LightingConsole {
                                         position_seconds,
                                     });
                                 }
-                                ModuleEvent::DjWaveformProgress { deck, samples, progress } => {
+                                ModuleEvent::DjWaveformProgress { deck, samples, progress, frequency_bands } => {
                                     let _ = event_tx.send(ConsoleEvent::DjWaveformProgress {
                                         deck,
                                         samples,
                                         progress,
+                                        frequency_bands,
                                     });
                                 }
-                                ModuleEvent::DjWaveformLoaded { deck, samples, duration_seconds } => {
+                                ModuleEvent::DjWaveformLoaded { deck, samples, duration_seconds, frequency_bands } => {
                                     let _ = event_tx.send(ConsoleEvent::DjWaveformLoaded {
                                         deck,
                                         samples,
                                         duration_seconds,
+                                        frequency_bands,
                                     });
                                 }
                                 ModuleEvent::DjBeatGridLoaded { deck, beat_positions, first_beat_offset, bpm } => {

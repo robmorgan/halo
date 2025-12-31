@@ -757,65 +757,51 @@ impl DjModule {
         }
     }
 
-    /// Import all audio files from a folder into the library.
+    /// Import all audio files from a folder into the library with BPM analysis.
     fn import_folder(&mut self, path: PathBuf) {
-        use crate::library::import::import_directory;
+        use crate::library::import::import_and_analyze_directory;
 
         let Some(db) = &self.database else {
             log::error!("Database not initialized, cannot import folder");
             return;
         };
 
-        log::info!("Importing folder: {:?}", path);
-
-        // Import all tracks from the directory (recursively)
-        let results = import_directory(&path, true);
-
-        let mut imported_count = 0;
-        let mut skipped_count = 0;
-        let mut error_count = 0;
+        log::info!("Importing and analyzing folder: {:?}", path);
 
         let db_guard = db.lock().unwrap();
 
+        // Import all tracks from the directory (recursively) with analysis enabled
+        let results = import_and_analyze_directory(&path, &db_guard, true, true);
+
+        let mut imported_count = 0;
+        let mut error_count = 0;
+
         for result in results {
             match result {
-                Ok(track) => {
-                    // Check if track already exists by file path
-                    match db_guard.get_track_by_path(&track.file_path) {
-                        Ok(Some(_)) => {
-                            log::debug!("Skipping duplicate: {}", track.file_path);
-                            skipped_count += 1;
-                        }
-                        Ok(None) => {
-                            // Insert the new track
-                            match db_guard.insert_track(&track) {
-                                Ok(track_id) => {
-                                    log::debug!("Imported: {} (id: {})", track.title, track_id);
-                                    imported_count += 1;
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to insert track '{}': {}", track.title, e);
-                                    error_count += 1;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to check for duplicate: {}", e);
-                            error_count += 1;
-                        }
-                    }
+                Ok(import_result) => {
+                    let bpm_info = import_result
+                        .track
+                        .bpm
+                        .map(|b| format!(" (BPM: {:.1})", b))
+                        .unwrap_or_default();
+                    log::debug!(
+                        "Imported: {} - {}{}",
+                        import_result.track.artist.as_deref().unwrap_or("Unknown"),
+                        import_result.track.title,
+                        bpm_info
+                    );
+                    imported_count += 1;
                 }
                 Err(e) => {
-                    log::warn!("Failed to import file: {}", e);
+                    log::warn!("Failed to import/analyze file: {}", e);
                     error_count += 1;
                 }
             }
         }
 
         log::info!(
-            "Import complete: {} imported, {} skipped (duplicates), {} errors",
+            "Import complete: {} imported with analysis, {} errors",
             imported_count,
-            skipped_count,
             error_count
         );
     }
@@ -971,6 +957,9 @@ impl AsyncModule for DjModule {
                                                 ModuleEvent::DjWaveformLoaded {
                                                     deck: deck_num,
                                                     samples: waveform.samples,
+                                                    frequency_bands: waveform.frequency_bands.map(|bands| {
+                                                        bands.iter().map(|b| b.as_tuple()).collect()
+                                                    }),
                                                     duration_seconds: waveform.duration_seconds,
                                                 }
                                             )).await;
@@ -1070,6 +1059,7 @@ impl AsyncModule for DjModule {
                                                             ModuleEvent::DjWaveformProgress {
                                                                 deck: deck_num,
                                                                 samples,
+                                                                frequency_bands: None, // Legacy analysis without color data
                                                                 progress,
                                                             }
                                                         )).await;
@@ -1124,6 +1114,9 @@ impl AsyncModule for DjModule {
                                                                 ModuleEvent::DjWaveformLoaded {
                                                                     deck: deck_num,
                                                                     samples: result.waveform.samples,
+                                                                    frequency_bands: result.waveform.frequency_bands.map(|bands| {
+                                                                        bands.iter().map(|b| b.as_tuple()).collect()
+                                                                    }),
                                                                     duration_seconds: result.waveform.duration_seconds,
                                                                 }
                                                             )).await;
@@ -1371,6 +1364,9 @@ impl AsyncModule for DjModule {
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
                                                             samples: waveform.samples,
+                                                            frequency_bands: waveform.frequency_bands.map(|bands| {
+                                                                bands.iter().map(|b| b.as_tuple()).collect()
+                                                            }),
                                                             duration_seconds: waveform.duration_seconds,
                                                         }
                                                     )).await;
@@ -1463,6 +1459,9 @@ impl AsyncModule for DjModule {
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
                                                             samples: waveform.samples,
+                                                            frequency_bands: waveform.frequency_bands.map(|bands| {
+                                                                bands.iter().map(|b| b.as_tuple()).collect()
+                                                            }),
                                                             duration_seconds: waveform.duration_seconds,
                                                         }
                                                     )).await;

@@ -483,8 +483,10 @@ impl LibraryDatabase {
             Ok(Some(TrackWaveform {
                 track_id: TrackId(row.get(0)?),
                 samples,
+                frequency_bands: None, // TODO: load from DB when available
                 sample_count: row.get(2)?,
                 duration_seconds: row.get(3)?,
+                version: 1,
             }))
         } else {
             Ok(None)

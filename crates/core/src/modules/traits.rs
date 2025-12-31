@@ -78,12 +78,16 @@ pub enum ModuleEvent {
     DjWaveformProgress {
         deck: u8,
         samples: Vec<f32>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        frequency_bands: Option<Vec<(f32, f32, f32)>>,
         progress: f32,
     },
     /// DJ waveform loaded (complete)
     DjWaveformLoaded {
         deck: u8,
         samples: Vec<f32>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        frequency_bands: Option<Vec<(f32, f32, f32)>>,
         duration_seconds: f64,
     },
     /// DJ beat grid loaded

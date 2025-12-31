@@ -50,8 +50,10 @@ pub fn import_and_analyze_file<P: AsRef<Path>>(
             waveform: waveform.unwrap_or_else(|| super::types::TrackWaveform {
                 track_id: existing.id,
                 samples: vec![],
+                frequency_bands: None,
                 sample_count: 0,
                 duration_seconds: existing.duration_seconds,
+                version: 1,
             }),
         });
         return Ok(ImportResult {

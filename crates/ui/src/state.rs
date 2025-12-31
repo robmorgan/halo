@@ -20,6 +20,9 @@ pub struct DjDeckState {
     pub is_playing: bool,
     pub cue_point: Option<f64>,
     pub waveform: Vec<f32>,
+    /// 3-band frequency data for colored waveform (low, mid, high).
+    /// None for legacy tracks without frequency analysis.
+    pub waveform_colors: Option<Vec<(f32, f32, f32)>>,
     pub beat_positions: Vec<f64>,
     pub first_beat_offset: f64,
     pub master_tempo_enabled: bool,
@@ -291,6 +294,7 @@ impl ConsoleState {
                 deck_state.bpm = bpm;
                 deck_state.position_seconds = 0.0;
                 deck_state.waveform.clear(); // Clear previous waveform immediately
+                deck_state.waveform_colors = None; // Clear previous color data
             }
             halo_core::ConsoleEvent::DjDeckStateChanged {
                 deck,
@@ -323,6 +327,7 @@ impl ConsoleState {
             halo_core::ConsoleEvent::DjWaveformProgress {
                 deck,
                 samples,
+                frequency_bands,
                 progress: _,
             } => {
                 // Progressive waveform update - replace with partial samples
@@ -332,10 +337,12 @@ impl ConsoleState {
                     &mut self.dj_deck_b
                 };
                 deck_state.waveform = samples;
+                deck_state.waveform_colors = frequency_bands;
             }
             halo_core::ConsoleEvent::DjWaveformLoaded {
                 deck,
                 samples,
+                frequency_bands,
                 duration_seconds: _,
             } => {
                 // Final waveform - replace with complete samples
@@ -345,6 +352,7 @@ impl ConsoleState {
                     &mut self.dj_deck_b
                 };
                 deck_state.waveform = samples;
+                deck_state.waveform_colors = frequency_bands;
             }
             halo_core::ConsoleEvent::DjBeatGridLoaded {
                 deck,

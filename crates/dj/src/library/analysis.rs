@@ -422,8 +422,10 @@ fn generate_waveform(
         return TrackWaveform {
             track_id,
             samples: vec![0.0; target_samples],
+            frequency_bands: None,
             sample_count: target_samples,
             duration_seconds: 0.0,
+            version: 1,
         };
     }
 
@@ -450,8 +452,10 @@ fn generate_waveform(
     TrackWaveform {
         track_id,
         samples: waveform_samples,
+        frequency_bands: None,
         sample_count: target_samples,
         duration_seconds,
+        version: 1,
     }
 }
 
@@ -474,8 +478,10 @@ where
         return TrackWaveform {
             track_id,
             samples: vec![0.0; target_samples],
+            frequency_bands: None,
             sample_count: target_samples,
             duration_seconds: 0.0,
+            version: 1,
         };
     }
 
@@ -509,8 +515,10 @@ where
     TrackWaveform {
         track_id,
         samples: waveform_samples,
+        frequency_bands: None,
         sample_count: target_samples,
         duration_seconds,
+        version: 1,
     }
 }
 

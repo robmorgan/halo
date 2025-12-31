@@ -13,5 +13,6 @@ pub use import::{
     is_supported_audio_file, supported_extensions, ImportResult,
 };
 pub use types::{
-    AudioFormat, BeatGrid, HotCue, MasterTempoMode, TempoRange, Track, TrackId, TrackWaveform,
+    AudioFormat, BeatGrid, FrequencyBands, HotCue, MasterTempoMode, TempoRange, Track, TrackId,
+    TrackWaveform, WAVEFORM_VERSION_COLORED, WAVEFORM_VERSION_LEGACY,
 };
