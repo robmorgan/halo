@@ -492,30 +492,33 @@ impl DeckPlayer {
                     // Reset and initialize time stretcher with current tempo
                     self.time_stretcher.reset();
                     self.time_stretcher.set_tempo(self.playback_rate);
+                    // Reset fractional position for clean start
+                    self.fractional_position = 0.0;
 
-                    // Pre-fill the time stretcher buffer to avoid initial underruns.
-                    // With 4096-sample blocks, we need at least 2 blocks worth (~185ms at 44.1kHz).
-                    // Use 200ms to ensure smooth startup.
-                    let prefill_samples = (self.sample_rate as usize * 200) / 1000; // 200ms
+                    // Pre-fill the time stretcher to reduce initial latency
+                    // SoundTouch needs ~100-200ms of audio to start producing output
+                    let prefill_samples = (self.sample_rate as usize / 10).min(4410); // ~100ms
                     for _ in 0..prefill_samples {
-                        if self.sample_position >= self.total_samples {
-                            break;
+                        if self.sample_position < self.total_samples {
+                            let sample = self.read_next_raw_sample();
+                            self.sample_position += 1;
+                            self.time_stretcher.push_sample(sample.0, sample.1);
                         }
-                        let sample = self.read_next_raw_sample();
-                        self.sample_position += 1;
-                        self.time_stretcher.push_sample(sample.0, sample.1);
                     }
 
                     log::info!(
-                        "Deck {}: Master Tempo enabled (tempo: {:.2}x, prefilled {} samples)",
+                        "Deck {}: Master Tempo enabled (tempo: {:.4}x, sample_rate: {} Hz, prefilled: {} samples)",
                         self.deck_id,
                         self.playback_rate,
+                        self.sample_rate,
                         prefill_samples
                     );
                 }
                 MasterTempoMode::Off => {
                     // Reset time stretcher when disabling
                     self.time_stretcher.reset();
+                    // Reset fractional position for varispeed
+                    self.fractional_position = 0.0;
                     log::info!("Deck {}: Master Tempo disabled", self.deck_id);
                 }
             }
@@ -614,27 +617,24 @@ impl DeckPlayer {
 
     /// Get next sample using time-stretching (pitch locked, tempo changes).
     ///
-    /// Reads samples at normal speed and processes through Signalsmith Stretch
-    /// for phase vocoder time stretching. This allows tempo changes without
+    /// Reads samples based on the tempo ratio and processes through SoundTouch
+    /// for WSOLA-based time stretching. This allows tempo changes without
     /// affecting pitch (Master Tempo / key lock).
     fn next_timestretched_sample(&mut self) -> (f32, f32) {
-        // Feed samples to time stretcher to maintain output buffer.
-        // The time stretcher processes in 4096-sample blocks, so we need to feed enough
-        // samples to keep the output buffer healthy.
-        //
-        // Strategy: Feed samples until we have enough output buffered.
-        // Keep at least 4096 samples (one block worth) to avoid underruns.
-        let min_output_samples = 4096;
+        // Feed samples based on tempo ratio.
+        // At tempo 2.0, we need to feed ~2 input samples per output sample.
+        // At tempo 0.5, we need to feed ~0.5 input samples per output sample.
+        // We use fractional accumulation to handle this smoothly.
 
-        while self.time_stretcher.output_len() < min_output_samples {
-            // Check for end of file
-            if self.sample_position >= self.total_samples {
-                break;
-            }
+        // Accumulate input samples needed based on tempo
+        self.fractional_position += self.playback_rate;
 
+        // Feed whole samples to time stretcher
+        while self.fractional_position >= 1.0 && self.sample_position < self.total_samples {
             let sample = self.read_next_raw_sample();
             self.sample_position += 1;
             self.time_stretcher.push_sample(sample.0, sample.1);
+            self.fractional_position -= 1.0;
         }
 
         // Check for end of file
@@ -645,6 +645,7 @@ impl DeckPlayer {
         }
 
         // Get processed sample from time stretcher
+        // If no output available yet (latency), return silence
         self.time_stretcher.pop_sample().unwrap_or((0.0, 0.0))
     }
 
