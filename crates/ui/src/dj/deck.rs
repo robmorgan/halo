@@ -400,6 +400,7 @@ impl DeckWidget {
                 .clicked()
             {
                 self.sync_enabled = !self.sync_enabled;
+                let _ = console_tx.send(ConsoleCommand::DjToggleSync { deck: deck_number });
             }
 
             // Master button
@@ -416,6 +417,7 @@ impl DeckWidget {
                 .clicked()
             {
                 self.is_master = !self.is_master;
+                let _ = console_tx.send(ConsoleCommand::DjSetMaster { deck: deck_number });
             }
 
             ui.add_space(12.0);

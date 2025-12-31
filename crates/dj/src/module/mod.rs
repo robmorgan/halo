@@ -562,17 +562,41 @@ impl DjModule {
                 log::info!("Deck {} set as master", deck);
             }
             DjCommand::ToggleSync { deck } => {
-                let mut d = self.deck(deck).write();
-                d.sync_enabled = !d.sync_enabled;
-                log::info!(
-                    "Deck {} sync {}",
-                    deck,
-                    if d.sync_enabled {
-                        "enabled"
+                let (sync_enabled, tempo_range) = {
+                    let mut d = self.deck(deck).write();
+                    d.sync_enabled = !d.sync_enabled;
+                    log::info!(
+                        "Deck {} sync {}",
+                        deck,
+                        if d.sync_enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    );
+                    (d.sync_enabled, d.tempo_range)
+                };
+
+                if let Some(engine) = &self.audio_engine {
+                    if sync_enabled {
+                        // When sync is enabled, immediately sync to master deck's BPM
+                        if engine.sync_to_master(deck, tempo_range) {
+                            // Update UI state with new pitch/BPM
+                            let player = engine.deck_player(deck).read();
+                            let mut d = self.deck(deck).write();
+                            d.pitch_percent = player.playback_rate() - 1.0;
+                            if let Some(bpm) = player.effective_bpm() {
+                                d.adjusted_bpm = bpm;
+                            }
+                            log::info!("Deck {} synced to master BPM", deck);
+                        } else {
+                            log::warn!("Deck {} failed to sync (no master or out of range)", deck);
+                        }
                     } else {
-                        "disabled"
+                        // When sync is disabled, stop continuous sync
+                        engine.disable_sync(deck);
                     }
-                );
+                }
             }
             DjCommand::SetHotCue { deck, slot } => {
                 if slot < 4 {
@@ -721,7 +745,12 @@ impl DjModule {
             d.state = DeckState::Stopped;
             d.position_seconds = 0.0;
             d.position_beats = 0.0;
-            d.original_bpm = track.bpm.unwrap_or(120.0);
+            // Use beat grid BPM if available, otherwise fall back to track.bpm or 120
+            d.original_bpm = beat_grid
+                .as_ref()
+                .map(|bg| bg.bpm)
+                .or(track.bpm)
+                .unwrap_or(120.0);
             d.adjusted_bpm = d.original_bpm;
 
             // Load hot cues
@@ -732,15 +761,20 @@ impl DjModule {
                 }
             }
 
-            // Load beat grid
-            d.beat_grid = beat_grid;
+            // Load beat grid into deck state
+            d.beat_grid = beat_grid.clone();
         }
 
         // Load audio file into player
         if let Some(engine) = &self.audio_engine {
-            if let Err(e) = engine.deck_player(deck).write().load(&track.file_path) {
+            let mut player = engine.deck_player(deck).write();
+            if let Err(e) = player.load(&track.file_path) {
                 log::error!("Failed to load audio file: {}", e);
                 return;
+            }
+            // Also load beat grid into player for sync/BPM calculations
+            if let Some(bg) = beat_grid {
+                player.set_beat_grid(bg);
             }
         }
 
@@ -1093,6 +1127,8 @@ impl AsyncModule for DjModule {
                                                 {
                                                     let mut deck_state = self.deck(deck).write();
                                                     deck_state.beat_grid = Some(beat_grid.clone());
+                                                    deck_state.original_bpm = beat_grid.bpm;
+                                                    deck_state.adjusted_bpm = beat_grid.bpm;
                                                 }
 
                                                 // Auto-cue to first beat
@@ -1103,9 +1139,11 @@ impl AsyncModule for DjModule {
                                                     deck_state.position_seconds = first_beat_seconds;
                                                 }
 
-                                                // Seek audio engine to first beat
+                                                // Set beat grid and seek audio engine to first beat
                                                 if let Some(engine) = &self.audio_engine {
-                                                    engine.deck_player(deck).write().seek(first_beat_seconds);
+                                                    let mut player = engine.deck_player(deck).write();
+                                                    player.set_beat_grid(beat_grid.clone());
+                                                    player.seek(first_beat_seconds);
                                                 }
 
                                                 // Send cue point event
@@ -1142,6 +1180,7 @@ impl AsyncModule for DjModule {
                                                 let tx_clone = tx.clone();
                                                 let db_clone = self.database.clone();
                                                 let deck_arc = self.deck(deck).clone();
+                                                let player_arc = self.audio_engine.as_ref().map(|e| e.deck_player(deck).clone());
 
                                                 // Send analysis progress event to show in footer
                                                 let _ = tx.send(ModuleMessage::Event(
@@ -1210,9 +1249,18 @@ impl AsyncModule for DjModule {
                                                             // Update deck with beat grid and auto-cue to first beat
                                                             {
                                                                 let mut deck_state = deck_arc.write();
-                                                                deck_state.beat_grid = Some(result.beat_grid);
+                                                                deck_state.beat_grid = Some(result.beat_grid.clone());
                                                                 deck_state.cue_point = Some(first_beat_seconds);
                                                                 deck_state.position_seconds = first_beat_seconds;
+                                                                deck_state.original_bpm = bpm;
+                                                                deck_state.adjusted_bpm = bpm;
+                                                            }
+
+                                                            // Also set beat grid on DeckPlayer for sync/BPM calculations
+                                                            if let Some(player) = &player_arc {
+                                                                let mut player = player.write();
+                                                                player.set_beat_grid(result.beat_grid);
+                                                                player.seek(first_beat_seconds);
                                                             }
 
                                                             // Send cue point event
@@ -1753,6 +1801,9 @@ impl AsyncModule for DjModule {
                     let mut events_to_send = Vec::new();
 
                     if let Some(engine) = &self.audio_engine {
+                        // Update sync corrections for continuous beat lock
+                        engine.update_sync_corrections();
+
                         // Get master deck rhythm sync info
                         if let Some(master) = engine.master_deck() {
                             let player = engine.deck_player(master).read();

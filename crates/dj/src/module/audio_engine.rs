@@ -285,27 +285,131 @@ impl DjAudioEngine {
         player.phrase_phase()
     }
 
-    /// Sync a deck to the master deck's tempo.
+    /// Update sync corrections for all decks with sync enabled.
+    ///
+    /// This should be called periodically (e.g., 20-50 times per second) to maintain
+    /// continuous beat lock between synced decks and the master.
+    pub fn update_sync_corrections(&self) {
+        let master = match self.master_deck() {
+            Some(m) => m,
+            None => return, // No master, nothing to sync
+        };
+
+        // Get master's bar phase
+        let master_phase = {
+            let player = self.deck_player(master).read();
+            if player.state() != super::PlayerState::Playing {
+                return; // Master not playing, skip sync
+            }
+            match player.bar_phase() {
+                Some(p) => p,
+                None => return,
+            }
+        };
+
+        // Update sync correction for each non-master deck
+        for deck in [DeckId::A, DeckId::B] {
+            if deck == master {
+                continue;
+            }
+
+            let mut player = self.deck_player(deck).write();
+
+            // Only sync if deck has sync enabled and is playing
+            if !player.is_sync_enabled() || player.state() != super::PlayerState::Playing {
+                continue;
+            }
+
+            // Get this deck's bar phase
+            let sync_phase = match player.bar_phase() {
+                Some(p) => p,
+                None => continue,
+            };
+
+            // Calculate phase difference (-0.5 to 0.5, wrapped)
+            let mut phase_diff = master_phase - sync_phase;
+            if phase_diff > 0.5 {
+                phase_diff -= 1.0;
+            } else if phase_diff < -0.5 {
+                phase_diff += 1.0;
+            }
+
+            // Calculate correction factor (proportional control)
+            // phase_diff of 0.25 (quarter bar behind) should speed up by ~1%
+            // This creates a soft lock that gradually catches up
+            let correction = phase_diff * 0.04; // 4% max correction for full quarter-bar offset
+
+            player.set_sync_correction(correction);
+        }
+    }
+
+    /// Sync a deck to the master deck's tempo and align beat phase.
     ///
     /// Returns true if sync was successful.
     pub fn sync_to_master(&self, deck: DeckId, tempo_range: crate::library::TempoRange) -> bool {
-        // Get master BPM
+        // Get master deck
         let master = match self.master_deck() {
             Some(m) if m != deck => m,
             _ => return false, // Can't sync to self or no master
         };
 
-        let target_bpm = {
+        // Get master BPM and bar phase
+        let (target_bpm, master_bar_phase) = {
             let player = self.deck_player(master).read();
             match player.effective_bpm() {
-                Some(bpm) => bpm,
+                Some(bpm) => (bpm, player.bar_phase()),
                 None => return false,
             }
         };
 
-        // Sync the deck
+        // Sync BPM first
         let mut player = self.deck_player(deck).write();
-        player.sync_to_bpm(target_bpm, tempo_range)
+        if !player.sync_to_bpm(target_bpm, tempo_range) {
+            return false;
+        }
+
+        // Enable continuous sync on this deck
+        player.set_sync_enabled(true);
+
+        // Now align beat phase if both decks have beat grids
+        if let (Some(master_phase), Some(sync_phase)) = (master_bar_phase, player.bar_phase()) {
+            // Calculate how far off we are (in bars, -0.5 to 0.5 wrapped)
+            let mut phase_diff = master_phase - sync_phase;
+            if phase_diff > 0.5 {
+                phase_diff -= 1.0;
+            } else if phase_diff < -0.5 {
+                phase_diff += 1.0;
+            }
+
+            // Calculate the duration of one bar at current BPM
+            let effective_bpm = player.effective_bpm().unwrap_or(target_bpm);
+            let beat_duration = 60.0 / effective_bpm; // seconds per beat
+            let bar_duration = beat_duration * 4.0; // seconds per bar
+
+            // Calculate time offset needed to align
+            let time_offset = phase_diff * bar_duration;
+
+            // Only adjust if the offset is significant (> 10ms)
+            if time_offset.abs() > 0.01 {
+                let current_pos = player.position_seconds();
+                let new_pos = (current_pos + time_offset).max(0.0);
+                player.seek(new_pos);
+                log::info!(
+                    "Beat aligned: phase diff {:.3}, time offset {:.3}s, seeking to {:.3}s",
+                    phase_diff,
+                    time_offset,
+                    new_pos
+                );
+            }
+        }
+
+        true
+    }
+
+    /// Disable sync on a deck.
+    pub fn disable_sync(&self, deck: DeckId) {
+        let mut player = self.deck_player(deck).write();
+        player.set_sync_enabled(false);
     }
 }
 

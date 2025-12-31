@@ -107,6 +107,15 @@ pub struct DeckPlayer {
     time_stretcher: TimeStretcher,
     /// Current tempo range setting.
     tempo_range: TempoRange,
+
+    // Sync fields
+    /// Whether sync is enabled for this deck.
+    sync_enabled: bool,
+    /// Sync phase correction factor (-1.0 to 1.0, applied to playback rate).
+    /// Positive = speed up slightly, negative = slow down slightly.
+    sync_correction: f64,
+    /// Base playback rate (before sync correction is applied).
+    base_playback_rate: f64,
 }
 
 impl DeckPlayer {
@@ -139,6 +148,9 @@ impl DeckPlayer {
             master_tempo: MasterTempoMode::Off,
             time_stretcher: TimeStretcher::new(44100, 2),
             tempo_range: TempoRange::default(),
+            sync_enabled: false,
+            sync_correction: 0.0,
+            base_playback_rate: 1.0,
         }
     }
 
@@ -289,13 +301,52 @@ impl DeckPlayer {
     pub fn set_pitch(&mut self, pitch: f64, tempo_range: TempoRange) -> f64 {
         let pitch = pitch.clamp(-1.0, 1.0);
         let rate = tempo_range.pitch_to_multiplier(pitch);
-        self.playback_rate = rate;
+        self.base_playback_rate = rate;
+        self.playback_rate = self.effective_rate();
         self.tempo_range = tempo_range;
         // Update time stretcher tempo when in Master Tempo mode
         if self.master_tempo == MasterTempoMode::On {
-            self.time_stretcher.set_tempo(rate);
+            self.time_stretcher.set_tempo(self.playback_rate);
         }
         rate
+    }
+
+    /// Get the effective playback rate including sync correction.
+    fn effective_rate(&self) -> f64 {
+        if self.sync_enabled {
+            // Apply sync correction (typically very small, ±0.5%)
+            (self.base_playback_rate * (1.0 + self.sync_correction)).clamp(0.5, 2.0)
+        } else {
+            self.base_playback_rate
+        }
+    }
+
+    /// Enable or disable sync mode.
+    pub fn set_sync_enabled(&mut self, enabled: bool) {
+        self.sync_enabled = enabled;
+        if !enabled {
+            // Reset correction when sync is disabled
+            self.sync_correction = 0.0;
+            self.playback_rate = self.base_playback_rate;
+        }
+    }
+
+    /// Check if sync is enabled.
+    pub fn is_sync_enabled(&self) -> bool {
+        self.sync_enabled
+    }
+
+    /// Set the sync phase correction.
+    ///
+    /// - `correction`: Small adjustment factor (e.g., 0.005 = speed up 0.5%)
+    pub fn set_sync_correction(&mut self, correction: f64) {
+        // Limit correction to ±2% to avoid audible pitch change
+        self.sync_correction = correction.clamp(-0.02, 0.02);
+        self.playback_rate = self.effective_rate();
+        // Update time stretcher if in Master Tempo mode
+        if self.master_tempo == MasterTempoMode::On {
+            self.time_stretcher.set_tempo(self.playback_rate);
+        }
     }
 
     /// Nudge the playback rate temporarily (for beatmatching).
