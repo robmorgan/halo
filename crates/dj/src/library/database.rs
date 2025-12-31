@@ -5,7 +5,10 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result as SqliteResult};
 
-use super::types::{AudioFormat, BeatGrid, HotCue, Track, TrackId, TrackWaveform};
+use super::types::{
+    AudioFormat, BeatGrid, FrequencyBands, HotCue, Track, TrackId, TrackWaveform,
+    WAVEFORM_VERSION_COLORED, WAVEFORM_VERSION_LEGACY,
+};
 
 /// Database connection wrapper for the DJ library.
 pub struct LibraryDatabase {
@@ -77,6 +80,8 @@ impl LibraryDatabase {
                 samples BLOB NOT NULL,
                 sample_count INTEGER NOT NULL,
                 duration_seconds REAL NOT NULL,
+                frequency_bands BLOB,
+                version INTEGER DEFAULT 1,
                 FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
             );
 
@@ -99,6 +104,41 @@ impl LibraryDatabase {
             CREATE INDEX IF NOT EXISTS idx_tracks_date_added ON tracks(date_added);
             "#,
         )?;
+
+        // Run migrations for existing databases
+        self.run_migrations()?;
+
+        Ok(())
+    }
+
+    /// Run database migrations for schema updates.
+    fn run_migrations(&self) -> SqliteResult<()> {
+        // Add frequency_bands column if it doesn't exist
+        let has_frequency_bands = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('waveforms') WHERE name='frequency_bands'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )? > 0;
+
+        if !has_frequency_bands {
+            self.conn
+                .execute("ALTER TABLE waveforms ADD COLUMN frequency_bands BLOB", [])?;
+        }
+
+        // Add version column if it doesn't exist
+        let has_version = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('waveforms') WHERE name='version'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )? > 0;
+
+        if !has_version {
+            self.conn.execute(
+                "ALTER TABLE waveforms ADD COLUMN version INTEGER DEFAULT 1",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 
@@ -446,17 +486,34 @@ impl LibraryDatabase {
             .flat_map(|s| s.to_le_bytes())
             .collect();
 
+        // Convert frequency bands to bytes (12 bytes per sample: 3 x f32)
+        let frequency_bands_bytes: Option<Vec<u8>> =
+            waveform.frequency_bands.as_ref().map(|bands| {
+                bands
+                    .iter()
+                    .flat_map(|fb| {
+                        let mut bytes = Vec::with_capacity(12);
+                        bytes.extend_from_slice(&fb.low.to_le_bytes());
+                        bytes.extend_from_slice(&fb.mid.to_le_bytes());
+                        bytes.extend_from_slice(&fb.high.to_le_bytes());
+                        bytes
+                    })
+                    .collect()
+            });
+
         self.conn.execute(
             r#"
             INSERT OR REPLACE INTO waveforms (
-                track_id, samples, sample_count, duration_seconds
-            ) VALUES (?1, ?2, ?3, ?4)
+                track_id, samples, sample_count, duration_seconds, frequency_bands, version
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             "#,
             params![
                 waveform.track_id.0,
                 samples_bytes,
                 waveform.sample_count,
                 waveform.duration_seconds,
+                frequency_bands_bytes,
+                waveform.version as i32,
             ],
         )?;
         Ok(())
@@ -466,7 +523,7 @@ impl LibraryDatabase {
     pub fn get_waveform(&self, track_id: TrackId) -> SqliteResult<Option<TrackWaveform>> {
         let mut stmt = self.conn.prepare(
             r#"
-            SELECT track_id, samples, sample_count, duration_seconds
+            SELECT track_id, samples, sample_count, duration_seconds, frequency_bands, version
             FROM waveforms WHERE track_id = ?1
             "#,
         )?;
@@ -480,13 +537,31 @@ impl LibraryDatabase {
                 .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                 .collect();
 
+            // Deserialize frequency bands (12 bytes per sample: 3 x f32)
+            let frequency_bands_bytes: Option<Vec<u8>> = row.get(4)?;
+            let frequency_bands = frequency_bands_bytes.map(|bytes| {
+                bytes
+                    .chunks_exact(12)
+                    .map(|chunk| {
+                        let low = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        let mid = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+                        let high = f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
+                        FrequencyBands::new(low, mid, high)
+                    })
+                    .collect()
+            });
+
+            let version: i32 = row
+                .get::<_, Option<i32>>(5)?
+                .unwrap_or(WAVEFORM_VERSION_LEGACY as i32);
+
             Ok(Some(TrackWaveform {
                 track_id: TrackId(row.get(0)?),
                 samples,
-                frequency_bands: None, // TODO: load from DB when available
+                frequency_bands,
                 sample_count: row.get(2)?,
                 duration_seconds: row.get(3)?,
-                version: 1,
+                version: version as u8,
             }))
         } else {
             Ok(None)

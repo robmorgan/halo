@@ -88,6 +88,7 @@ impl DjPanel {
         self.deck_a.cue_point = state.dj_deck_a.cue_point;
         if self.deck_a.waveform.len() != state.dj_deck_a.waveform.len() {
             self.deck_a.waveform = state.dj_deck_a.waveform.clone();
+            self.deck_a.waveform_colors = state.dj_deck_a.waveform_colors.clone();
         }
         if self.deck_a.beat_positions.len() != state.dj_deck_a.beat_positions.len() {
             self.deck_a.beat_positions = state.dj_deck_a.beat_positions.clone();
@@ -103,6 +104,7 @@ impl DjPanel {
         self.deck_b.cue_point = state.dj_deck_b.cue_point;
         if self.deck_b.waveform.len() != state.dj_deck_b.waveform.len() {
             self.deck_b.waveform = state.dj_deck_b.waveform.clone();
+            self.deck_b.waveform_colors = state.dj_deck_b.waveform_colors.clone();
         }
         if self.deck_b.beat_positions.len() != state.dj_deck_b.beat_positions.len() {
             self.deck_b.beat_positions = state.dj_deck_b.beat_positions.clone();

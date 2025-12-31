@@ -15,7 +15,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-use super::types::{BeatGrid, TrackId, TrackWaveform};
+use super::types::{BeatGrid, FrequencyBands, TrackId, TrackWaveform, WAVEFORM_VERSION_COLORED};
 
 /// Analysis configuration.
 #[derive(Debug, Clone)]
@@ -30,6 +30,10 @@ pub struct AnalysisConfig {
     pub max_bpm: f64,
     /// Number of waveform samples to generate.
     pub waveform_samples: usize,
+    /// Low frequency band upper limit in Hz (bass, kick drums).
+    pub low_freq_cutoff: f32,
+    /// Mid frequency band upper limit in Hz (vocals, instruments).
+    pub mid_freq_cutoff: f32,
 }
 
 impl Default for AnalysisConfig {
@@ -40,6 +44,8 @@ impl Default for AnalysisConfig {
             min_bpm: 60.0,
             max_bpm: 200.0,
             waveform_samples: 1000,
+            low_freq_cutoff: 250.0,  // 20-250 Hz for bass
+            mid_freq_cutoff: 4000.0, // 250-4000 Hz for mids
         }
     }
 }
@@ -66,8 +72,8 @@ pub fn analyze_file<P: AsRef<Path>>(
     let (samples, sample_rate) = load_audio_samples(path)?;
     log::debug!("Loaded {} samples at {} Hz", samples.len(), sample_rate);
 
-    // Generate waveform for visualization
-    let waveform = generate_waveform(&samples, sample_rate, track_id, config.waveform_samples);
+    // Generate colored waveform with 3-band frequency analysis
+    let waveform = generate_colored_waveform(&samples, sample_rate, track_id, config);
 
     // Detect BPM using autocorrelation
     let (bpm, confidence) = detect_bpm(&samples, sample_rate, config);
@@ -127,15 +133,17 @@ where
     let (samples, sample_rate) = load_audio_samples(path)?;
     log::debug!("Loaded {} samples at {} Hz", samples.len(), sample_rate);
 
-    // Generate waveform with streaming progress
-    let waveform = generate_waveform_streaming(
+    // Stream amplitude-only progress updates for UI responsiveness
+    stream_waveform_progress(
         &samples,
         sample_rate,
-        track_id,
         config.waveform_samples,
         chunk_size,
         &mut on_waveform_progress,
     );
+
+    // Generate full colored waveform with 3-band FFT analysis
+    let waveform = generate_colored_waveform(&samples, sample_rate, track_id, config);
 
     // Detect BPM using autocorrelation
     let (bpm, confidence) = detect_bpm(&samples, sample_rate, config);
@@ -411,81 +419,166 @@ fn find_first_beat(samples: &[f32], sample_rate: u32, bpm: f64) -> f64 {
     0.0
 }
 
-/// Generate waveform for visualization.
-fn generate_waveform(
-    samples: &[f32],
-    sample_rate: u32,
-    track_id: TrackId,
-    target_samples: usize,
-) -> TrackWaveform {
-    if samples.is_empty() {
-        return TrackWaveform {
-            track_id,
-            samples: vec![0.0; target_samples],
-            frequency_bands: None,
-            sample_count: target_samples,
-            duration_seconds: 0.0,
-            version: 1,
-        };
-    }
-
-    let duration_seconds = samples.len() as f64 / sample_rate as f64;
-    let samples_per_bucket = samples.len() / target_samples.max(1);
-
-    let waveform_samples: Vec<f32> = (0..target_samples)
-        .map(|i| {
-            let start = i * samples_per_bucket;
-            let end = ((i + 1) * samples_per_bucket).min(samples.len());
-
-            if start >= samples.len() {
-                return 0.0;
-            }
-
-            // Find peak in this bucket
-            samples[start..end]
-                .iter()
-                .map(|s| s.abs())
-                .fold(0.0f32, f32::max)
-        })
-        .collect();
-
-    TrackWaveform {
-        track_id,
-        samples: waveform_samples,
-        frequency_bands: None,
-        sample_count: target_samples,
-        duration_seconds,
-        version: 1,
-    }
-}
-
-/// Generate waveform with streaming progress updates.
+/// Generate colored waveform with 3-band frequency analysis for visualization.
 ///
-/// Calls `on_progress` after each chunk with the accumulated waveform samples
-/// and a progress value from 0.0 to 1.0.
-pub fn generate_waveform_streaming<F>(
+/// Uses FFT to extract low, mid, and high frequency energy for each waveform sample.
+/// - Low: 20-250 Hz (bass, kick drums) -> Red
+/// - Mid: 250-4000 Hz (vocals, instruments) -> Green
+/// - High: 4000+ Hz (hi-hats, cymbals) -> Blue
+fn generate_colored_waveform(
     audio_samples: &[f32],
     sample_rate: u32,
     track_id: TrackId,
-    target_samples: usize,
-    chunk_size: usize,
-    mut on_progress: F,
-) -> TrackWaveform
-where
-    F: FnMut(Vec<f32>, f32),
-{
+    config: &AnalysisConfig,
+) -> TrackWaveform {
+    let target_samples = config.waveform_samples;
+
     if audio_samples.is_empty() {
         return TrackWaveform {
             track_id,
             samples: vec![0.0; target_samples],
-            frequency_bands: None,
+            frequency_bands: Some(vec![FrequencyBands::default(); target_samples]),
             sample_count: target_samples,
             duration_seconds: 0.0,
-            version: 1,
+            version: WAVEFORM_VERSION_COLORED,
         };
     }
 
     let duration_seconds = audio_samples.len() as f64 / sample_rate as f64;
+    let samples_per_bucket = audio_samples.len() / target_samples.max(1);
+
+    // FFT setup
+    let fft_size = config.fft_size;
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(fft_size);
+
+    // Hanning window for smoother FFT
+    let window: Vec<f32> = (0..fft_size)
+        .map(|i| {
+            0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (fft_size - 1) as f32).cos())
+        })
+        .collect();
+
+    // Frequency bin calculations
+    let freq_resolution = sample_rate as f32 / fft_size as f32;
+    let low_bin_end = (config.low_freq_cutoff / freq_resolution).round() as usize;
+    let mid_bin_end = (config.mid_freq_cutoff / freq_resolution).round() as usize;
+    let nyquist_bin = fft_size / 2;
+
+    let mut waveform_samples = Vec::with_capacity(target_samples);
+    let mut frequency_bands = Vec::with_capacity(target_samples);
+
+    for i in 0..target_samples {
+        let bucket_start = i * samples_per_bucket;
+        let bucket_end = ((i + 1) * samples_per_bucket).min(audio_samples.len());
+
+        if bucket_start >= audio_samples.len() {
+            waveform_samples.push(0.0);
+            frequency_bands.push(FrequencyBands::default());
+            continue;
+        }
+
+        // Calculate peak amplitude for this bucket
+        let peak = audio_samples[bucket_start..bucket_end]
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0f32, f32::max);
+        waveform_samples.push(peak);
+
+        // Find center of bucket for FFT analysis
+        let center = (bucket_start + bucket_end) / 2;
+        let fft_start = center.saturating_sub(fft_size / 2);
+        let fft_end = (fft_start + fft_size).min(audio_samples.len());
+        let available = fft_end - fft_start;
+
+        // Prepare FFT buffer with zero-padding if needed
+        let mut buffer: Vec<Complex<f32>> = (0..fft_size)
+            .map(|j| {
+                if j < available {
+                    let sample = audio_samples[fft_start + j];
+                    Complex::new(sample * window[j], 0.0)
+                } else {
+                    Complex::new(0.0, 0.0)
+                }
+            })
+            .collect();
+
+        // Compute FFT
+        fft.process(&mut buffer);
+
+        // Calculate energy in each frequency band (magnitude squared)
+        let mut low_energy = 0.0f32;
+        let mut mid_energy = 0.0f32;
+        let mut high_energy = 0.0f32;
+
+        for (bin, c) in buffer.iter().enumerate().take(nyquist_bin) {
+            let mag_sq = c.norm_sqr();
+            if bin < low_bin_end {
+                low_energy += mag_sq;
+            } else if bin < mid_bin_end {
+                mid_energy += mag_sq;
+            } else {
+                high_energy += mag_sq;
+            }
+        }
+
+        // Normalize by band size to get average energy per bin
+        let low_bins = low_bin_end.max(1) as f32;
+        let mid_bins = (mid_bin_end - low_bin_end).max(1) as f32;
+        let high_bins = (nyquist_bin - mid_bin_end).max(1) as f32;
+
+        low_energy = (low_energy / low_bins).sqrt();
+        mid_energy = (mid_energy / mid_bins).sqrt();
+        high_energy = (high_energy / high_bins).sqrt();
+
+        // Normalize to relative energy (CDJ/rekordbox style)
+        // This shows which frequency band dominates, not absolute energy
+        let total_energy = low_energy + mid_energy + high_energy;
+        if total_energy > 0.001 {
+            low_energy /= total_energy;
+            mid_energy /= total_energy;
+            high_energy /= total_energy;
+        } else {
+            // Silent section - show as dark gray
+            low_energy = 0.33;
+            mid_energy = 0.33;
+            high_energy = 0.33;
+        }
+
+        frequency_bands.push(FrequencyBands::new(low_energy, mid_energy, high_energy));
+    }
+
+    TrackWaveform {
+        track_id,
+        samples: waveform_samples,
+        frequency_bands: Some(frequency_bands),
+        sample_count: target_samples,
+        duration_seconds,
+        version: WAVEFORM_VERSION_COLORED,
+    }
+}
+
+/// Stream waveform progress updates for UI responsiveness.
+///
+/// Generates amplitude-only samples progressively and calls `on_progress`
+/// after each chunk with the accumulated samples and progress (0.0 to 1.0).
+/// This is used for UI updates during analysis; the final colored waveform
+/// is generated separately by `generate_colored_waveform`.
+fn stream_waveform_progress<F>(
+    audio_samples: &[f32],
+    sample_rate: u32,
+    target_samples: usize,
+    chunk_size: usize,
+    mut on_progress: F,
+) where
+    F: FnMut(Vec<f32>, f32),
+{
+    if audio_samples.is_empty() {
+        on_progress(vec![0.0; target_samples], 1.0);
+        return;
+    }
+
+    let _duration_seconds = audio_samples.len() as f64 / sample_rate as f64;
     let samples_per_bucket = audio_samples.len() / target_samples.max(1);
 
     let mut waveform_samples = Vec::with_capacity(target_samples);
@@ -511,15 +604,6 @@ where
             on_progress(waveform_samples.clone(), progress);
         }
     }
-
-    TrackWaveform {
-        track_id,
-        samples: waveform_samples,
-        frequency_bands: None,
-        sample_count: target_samples,
-        duration_seconds,
-        version: 1,
-    }
 }
 
 #[cfg(test)]
@@ -543,13 +627,21 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_waveform() {
+    fn test_generate_colored_waveform() {
         let samples: Vec<f32> = (0..44100).map(|i| (i as f32 * 0.01).sin()).collect();
 
-        let waveform = generate_waveform(&samples, 44100, TrackId(1), 100);
+        let config = AnalysisConfig::default();
+        let waveform = generate_colored_waveform(&samples, 44100, TrackId(1), &config);
 
-        assert_eq!(waveform.sample_count, 100);
-        assert_eq!(waveform.samples.len(), 100);
+        assert_eq!(waveform.sample_count, config.waveform_samples);
+        assert_eq!(waveform.samples.len(), config.waveform_samples);
         assert!((waveform.duration_seconds - 1.0).abs() < 0.01);
+        // Verify frequency bands are generated
+        assert!(waveform.frequency_bands.is_some());
+        assert_eq!(
+            waveform.frequency_bands.as_ref().unwrap().len(),
+            config.waveform_samples
+        );
+        assert_eq!(waveform.version, WAVEFORM_VERSION_COLORED);
     }
 }

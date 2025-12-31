@@ -37,6 +37,9 @@ pub struct DeckWidget {
     pub beat_phase: f64,
     /// Waveform data for display.
     pub waveform: Vec<f32>,
+    /// 3-band frequency data for colored waveform (low, mid, high).
+    /// None for legacy waveforms without frequency analysis.
+    pub waveform_colors: Option<Vec<(f32, f32, f32)>>,
     /// Beat positions in seconds (from beat grid analysis).
     pub beat_positions: Vec<f64>,
     /// First beat offset in seconds.
@@ -52,6 +55,8 @@ pub struct DeckWidget {
     pub master_tempo_enabled: bool,
     /// Tempo range setting (0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%).
     pub tempo_range: u8,
+    /// Whether to show zoomed waveform (CDJ-style scrolling view).
+    pub waveform_zoomed: bool,
 }
 
 impl DeckWidget {
@@ -176,8 +181,36 @@ impl DeckWidget {
 
         ui.add_space(8.0);
 
-        // Waveform display
-        self.render_waveform(ui, deck_number, console_tx);
+        // Waveform display with zoom toggle
+        ui.horizontal(|ui| {
+            // Zoom toggle button
+            let zoom_icon = if self.waveform_zoomed { "🔍−" } else { "🔍+" };
+            let zoom_tooltip = if self.waveform_zoomed {
+                "Switch to overview"
+            } else {
+                "Switch to zoomed view"
+            };
+            if ui
+                .add(egui::Button::new(zoom_icon).min_size(Vec2::new(30.0, 20.0)))
+                .on_hover_text(zoom_tooltip)
+                .clicked()
+            {
+                self.waveform_zoomed = !self.waveform_zoomed;
+            }
+
+            ui.label(if self.waveform_zoomed {
+                egui::RichText::new("ZOOM").size(10.0).color(Color32::from_rgb(0, 200, 255))
+            } else {
+                egui::RichText::new("OVERVIEW").size(10.0).color(Color32::GRAY)
+            });
+        });
+
+        // Render the appropriate waveform view
+        if self.waveform_zoomed {
+            self.render_zoomed_waveform(ui, deck_number, console_tx);
+        } else {
+            self.render_waveform(ui, deck_number, console_tx);
+        }
 
         ui.add_space(8.0);
 
@@ -534,7 +567,19 @@ impl DeckWidget {
                 let sample_idx = (x as f32 * samples_per_pixel) as usize;
                 if sample_idx < num_samples {
                     let amplitude = self.waveform[sample_idx].abs() * (height / 2.0);
-                    let color = waveform_color(sample_idx as f64 / num_samples as f64);
+                    // Use frequency-based RGB coloring if available, otherwise fall back to
+                    // gradient
+                    let color = if let Some(ref colors) = self.waveform_colors {
+                        if sample_idx < colors.len() {
+                            let (low, mid, high) = colors[sample_idx];
+                            // Convert frequency bands to RGB (Red=bass, Green=mids, Blue=highs)
+                            frequency_bands_to_color(low, mid, high)
+                        } else {
+                            waveform_color(sample_idx as f64 / num_samples as f64)
+                        }
+                    } else {
+                        waveform_color(sample_idx as f64 / num_samples as f64)
+                    };
                     painter.line_segment(
                         [
                             egui::pos2(rect.left() + x as f32, mid_y - amplitude),
@@ -659,6 +704,242 @@ impl DeckWidget {
             painter.rect_filled(beat_rect, Rounding::same(1), Color32::from_rgb(0, 255, 128));
         }
     }
+
+    /// Render the zoomed waveform display (CDJ-style scrolling view).
+    ///
+    /// Shows approximately 8 seconds of audio with the playhead fixed at 1/3 from left.
+    /// The waveform scrolls as the track plays, giving a "driving" feel like a CDJ-3000.
+    fn render_zoomed_waveform(
+        &self,
+        ui: &mut egui::Ui,
+        deck_number: u8,
+        console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
+    ) {
+        let available_width = ui.available_width();
+        let height = 80.0; // Taller for zoomed view
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(available_width, height), egui::Sense::click());
+
+        let painter = ui.painter_at(rect);
+
+        // Background
+        painter.rect_filled(rect, Rounding::same(4), Color32::from_gray(10));
+
+        // Zoomed view parameters
+        let zoom_window_seconds = 8.0; // Show 8 seconds of audio
+        let playhead_position = 0.33; // Playhead at 1/3 from left (like CDJ-3000)
+
+        // Calculate the time window to display
+        let window_start = self.position_seconds - (zoom_window_seconds * playhead_position);
+        let window_end = window_start + zoom_window_seconds;
+
+        // Handle click to seek within visible window
+        if response.clicked() {
+            if let Some(pointer_pos) = response.interact_pointer_pos() {
+                let x_offset = pointer_pos.x - rect.left();
+                let click_progress = x_offset / available_width;
+                let click_time = window_start + (click_progress as f64 * zoom_window_seconds);
+                let position_seconds = click_time.clamp(0.0, self.duration_seconds);
+                let _ = console_tx.send(ConsoleCommand::DjSeek {
+                    deck: deck_number,
+                    position_seconds,
+                });
+            }
+        }
+
+        // Draw waveform
+        if !self.waveform.is_empty() && self.duration_seconds > 0.0 {
+            let num_samples = self.waveform.len();
+            let samples_per_second = num_samples as f64 / self.duration_seconds;
+            let mid_y = rect.center().y;
+
+            for x in 0..available_width as usize {
+                // Calculate the time position for this pixel
+                let pixel_progress = x as f64 / available_width as f64;
+                let time_at_pixel = window_start + (pixel_progress * zoom_window_seconds);
+
+                // Skip if outside track bounds
+                if time_at_pixel < 0.0 || time_at_pixel >= self.duration_seconds {
+                    continue;
+                }
+
+                // Get the sample index for this time
+                let sample_idx = (time_at_pixel * samples_per_second) as usize;
+                if sample_idx < num_samples {
+                    let amplitude = self.waveform[sample_idx].abs() * (height / 2.0) * 0.9;
+
+                    // Use frequency-based RGB coloring if available
+                    let color = if let Some(ref colors) = self.waveform_colors {
+                        if sample_idx < colors.len() {
+                            let (low, mid, high) = colors[sample_idx];
+                            frequency_bands_to_color(low, mid, high)
+                        } else {
+                            waveform_color(time_at_pixel / self.duration_seconds)
+                        }
+                    } else {
+                        waveform_color(time_at_pixel / self.duration_seconds)
+                    };
+
+                    painter.line_segment(
+                        [
+                            egui::pos2(rect.left() + x as f32, mid_y - amplitude),
+                            egui::pos2(rect.left() + x as f32, mid_y + amplitude),
+                        ],
+                        Stroke::new(1.0, color),
+                    );
+                }
+            }
+        } else {
+            // Empty waveform placeholder
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "No waveform",
+                egui::FontId::proportional(12.0),
+                Color32::DARK_GRAY,
+            );
+        }
+
+        // Draw beat grid markers (only those in visible window)
+        if self.duration_seconds > 0.0 && !self.beat_positions.is_empty() {
+            let beat_interval = if self.adjusted_bpm > 0.0 {
+                60.0 / self.adjusted_bpm
+            } else {
+                0.5
+            };
+
+            for (idx, beat_pos) in self.beat_positions.iter().enumerate() {
+                // Only draw beats within visible window
+                if *beat_pos >= window_start && *beat_pos <= window_end {
+                    let x_progress = (beat_pos - window_start) / zoom_window_seconds;
+                    let x = rect.left() + (x_progress as f32 * available_width);
+
+                    // Check if downbeat (every 4 beats)
+                    let beats_from_first = if beat_interval > 0.0 {
+                        ((beat_pos - self.first_beat_offset) / beat_interval).round() as usize
+                    } else {
+                        idx
+                    };
+                    let is_downbeat = beats_from_first % 4 == 0;
+
+                    let color = if is_downbeat {
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 120)
+                    } else {
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 50)
+                    };
+
+                    painter.line_segment(
+                        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                        Stroke::new(if is_downbeat { 2.0 } else { 1.0 }, color),
+                    );
+                }
+            }
+        }
+
+        // Fixed playhead position (the track scrolls, playhead stays fixed)
+        let playhead_x = rect.left() + (playhead_position as f32 * available_width);
+
+        // Draw playhead glow
+        painter.line_segment(
+            [
+                egui::pos2(playhead_x, rect.top()),
+                egui::pos2(playhead_x, rect.bottom()),
+            ],
+            Stroke::new(4.0, Color32::from_rgba_unmultiplied(255, 255, 255, 40)),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(playhead_x, rect.top()),
+                egui::pos2(playhead_x, rect.bottom()),
+            ],
+            Stroke::new(2.0, Color32::WHITE),
+        );
+
+        // Draw cue point marker if in visible window
+        if let Some(cue_pos) = self.cue_point {
+            if cue_pos >= window_start && cue_pos <= window_end {
+                let x_progress = (cue_pos - window_start) / zoom_window_seconds;
+                let cue_x = rect.left() + (x_progress as f32 * available_width);
+                painter.line_segment(
+                    [
+                        egui::pos2(cue_x, rect.top()),
+                        egui::pos2(cue_x, rect.bottom()),
+                    ],
+                    Stroke::new(2.0, Color32::from_rgb(255, 200, 0)),
+                );
+            }
+        }
+
+        // Draw hot cue markers if in visible window
+        for (i, hot_cue) in self.hot_cues.iter().enumerate() {
+            if let Some(pos) = hot_cue {
+                if *pos >= window_start && *pos <= window_end {
+                    let x_progress = (pos - window_start) / zoom_window_seconds;
+                    let x = rect.left() + (x_progress as f32 * available_width);
+                    let marker_rect = Rect::from_center_size(
+                        egui::pos2(x, rect.top() + 8.0),
+                        Vec2::new(12.0, 14.0),
+                    );
+                    painter.rect_filled(marker_rect, Rounding::same(2), hot_cue_color(i));
+                    // Draw hot cue number
+                    painter.text(
+                        marker_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{}", i + 1),
+                        egui::FontId::proportional(9.0),
+                        Color32::WHITE,
+                    );
+                }
+            }
+        }
+
+        // Draw time markers at the edges
+        let start_time = window_start.max(0.0);
+        let end_time = window_end.min(self.duration_seconds);
+
+        painter.text(
+            egui::pos2(rect.left() + 4.0, rect.bottom() - 12.0),
+            egui::Align2::LEFT_CENTER,
+            format_time(start_time),
+            egui::FontId::monospace(10.0),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 150),
+        );
+
+        painter.text(
+            egui::pos2(rect.right() - 4.0, rect.bottom() - 12.0),
+            egui::Align2::RIGHT_CENTER,
+            format_time(end_time),
+            egui::FontId::monospace(10.0),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 150),
+        );
+
+        // Shadow playhead (hover preview) - shows where you'll seek on click
+        if response.hovered() {
+            if let Some(hover_pos) = response.hover_pos() {
+                let hover_x = hover_pos.x.clamp(rect.left(), rect.right());
+                painter.line_segment(
+                    [
+                        egui::pos2(hover_x, rect.top()),
+                        egui::pos2(hover_x, rect.bottom()),
+                    ],
+                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 80)),
+                );
+
+                // Show time at hover position
+                let hover_progress = (hover_x - rect.left()) / available_width;
+                let hover_time = window_start + (hover_progress as f64 * zoom_window_seconds);
+                if hover_time >= 0.0 && hover_time <= self.duration_seconds {
+                    painter.text(
+                        egui::pos2(hover_x, rect.top() + 10.0),
+                        egui::Align2::CENTER_CENTER,
+                        format_time(hover_time),
+                        egui::FontId::monospace(9.0),
+                        Color32::from_rgba_unmultiplied(255, 255, 255, 200),
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// Format seconds as MM:SS.ss
@@ -679,12 +960,31 @@ fn hot_cue_color(slot: usize) -> Color32 {
     }
 }
 
-/// Get color for waveform based on position.
+/// Get color for waveform based on position (legacy fallback).
 fn waveform_color(progress: f64) -> Color32 {
     // Gradient from cyan to purple
     let r = (100.0 + progress * 155.0) as u8;
     let g = (200.0 - progress * 100.0) as u8;
     let b = 255;
+    Color32::from_rgb(r, g, b)
+}
+
+/// Convert 3-band frequency data to RGB color (CDJ/rekordbox style).
+///
+/// The input values are normalized (sum to ~1.0), representing which
+/// frequency band dominates:
+/// - Low frequencies (bass): Red
+/// - Mid frequencies (vocals/instruments): Green
+/// - High frequencies (hi-hats/cymbals): Blue
+fn frequency_bands_to_color(low: f32, mid: f32, high: f32) -> Color32 {
+    // Scale up the values to get vibrant colors
+    // Since values are normalized (sum to 1), multiply by 3 to get full range
+    let scale = 2.5;
+
+    let r = (low * scale * 255.0).clamp(0.0, 255.0) as u8;
+    let g = (mid * scale * 255.0).clamp(0.0, 255.0) as u8;
+    let b = (high * scale * 255.0).clamp(0.0, 255.0) as u8;
+
     Color32::from_rgb(r, g, b)
 }
 
