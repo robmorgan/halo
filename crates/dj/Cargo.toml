@@ -25,8 +25,8 @@ symphonia = { version = "0.5", features = [
 # BPM and beat detection
 rustfft = "6.2"
 
-# Time-stretching for Master Tempo
-soundtouch = { version = "0.5", features = ["bundled"] }
+# Time-stretching for Master Tempo (Signalsmith Stretch)
+ssstretch = "0.1"
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }

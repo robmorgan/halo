@@ -70,7 +70,7 @@ pub fn render(
 
         ui.separator();
 
-        if ui.button("Import Folder...").clicked() {
+        if ui.button("Import Music Folder...").clicked() {
             if let Some(path) = rfd::FileDialog::new()
                 .set_title("Import Music Folder")
                 .pick_folder()

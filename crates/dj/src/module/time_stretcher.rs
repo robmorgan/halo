@@ -1,63 +1,32 @@
 //! Real-time time stretching for Master Tempo (key lock) functionality.
 //!
-//! Uses the SoundTouch library (WSOLA algorithm) to change tempo without
-//! affecting pitch. This enables DJ-style Master Tempo functionality.
+//! Uses the Signalsmith Stretch library for high-quality time-stretching
+//! without affecting pitch. This enables DJ-style Master Tempo functionality.
 
 use std::collections::VecDeque;
 
-use soundtouch::SoundTouch;
-
-/// Wrapper around SoundTouch that implements Send + Sync.
-///
-/// # Safety
-/// SoundTouch internally uses raw pointers but the library is thread-safe
-/// when accessed from a single thread at a time. We ensure this by wrapping
-/// TimeStretcher in a RwLock in DeckPlayer.
-struct SoundTouchWrapper(SoundTouch);
-
-// SAFETY: SoundTouch is thread-safe when accessed via RwLock (single-threaded access).
-// The raw pointers in SoundTouch point to internal state that is protected by
-// the RwLock in DeckPlayer, ensuring no concurrent mutable access.
-unsafe impl Send for SoundTouchWrapper {}
-unsafe impl Sync for SoundTouchWrapper {}
-
-impl SoundTouchWrapper {
-    fn new() -> Self {
-        Self(SoundTouch::new())
-    }
-}
-
-impl std::ops::Deref for SoundTouchWrapper {
-    type Target = SoundTouch;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for SoundTouchWrapper {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+use ssstretch::Stretch;
 
 /// Real-time time stretcher for audio playback.
 ///
-/// Wraps SoundTouch to provide tempo adjustment without pitch change.
-/// Designed for real-time audio processing with sample-by-sample output.
+/// Wraps Signalsmith Stretch to provide tempo adjustment without pitch change.
+/// Designed for real-time audio processing with sample-by-sample I/O,
+/// internally batching for efficient processing.
 pub struct TimeStretcher {
-    /// SoundTouch processor instance.
-    processor: SoundTouchWrapper,
+    /// Signalsmith Stretch processor instance.
+    processor: Stretch,
     /// Sample rate in Hz.
     sample_rate: u32,
     /// Current tempo ratio (1.0 = normal).
     tempo: f64,
-    /// Input buffer for feeding samples to SoundTouch.
-    input_buffer: Vec<f32>,
-    /// Output ring buffer for processed samples.
+    /// Input buffers for left and right channels.
+    input_left: Vec<f32>,
+    input_right: Vec<f32>,
+    /// Output ring buffer for processed stereo samples.
     output_buffer: VecDeque<(f32, f32)>,
     /// Minimum samples to keep in output buffer for smooth playback.
     min_buffer_samples: usize,
-    /// Number of input samples buffered before processing.
+    /// Number of input samples to collect before processing.
     input_batch_size: usize,
 }
 
@@ -65,44 +34,48 @@ impl TimeStretcher {
     /// Create a new time stretcher.
     ///
     /// - `sample_rate`: Audio sample rate in Hz (e.g., 44100)
-    /// - `channels`: Number of audio channels (1 or 2)
-    pub fn new(sample_rate: u32, channels: u32) -> Self {
-        let mut processor = SoundTouchWrapper::new();
+    /// - `_channels`: Number of audio channels (ignored, always stereo)
+    pub fn new(sample_rate: u32, _channels: u32) -> Self {
+        let mut processor = Stretch::new();
 
-        // Configure SoundTouch for DJ-quality time stretching
-        processor.set_sample_rate(sample_rate);
-        processor.set_channels(channels);
+        // Configure with larger block size for better quality on complex harmonic content.
+        // Phase vocoders need larger blocks for better frequency resolution.
+        // - block_samples: 4096 (good balance of quality vs latency, ~93ms at 44.1kHz)
+        // - interval_samples: 512 (block/8 for smooth output with good overlap)
+        let block_samples = 4096;
+        let interval_samples = 512;
+        processor.configure(2, block_samples, interval_samples);
 
-        // Optimize for real-time DJ use
-        // These settings balance quality vs latency
-        processor.set_setting(soundtouch::Setting::SequenceMs, 40); // Sequence length (ms)
-        processor.set_setting(soundtouch::Setting::SeekwindowMs, 15); // Seek window (ms)
-        processor.set_setting(soundtouch::Setting::OverlapMs, 8); // Overlap (ms)
-
-        // Enable anti-alias filter for better quality
-        processor.set_setting(soundtouch::Setting::UseAaFilter, 1);
+        // Calculate input batch size based on block size
+        // Process when we have at least one block worth of input
+        let input_batch_size = block_samples as usize;
 
         Self {
             processor,
             sample_rate,
             tempo: 1.0,
-            input_buffer: Vec::with_capacity(4096),
-            output_buffer: VecDeque::with_capacity(8192),
-            // Keep ~100ms of buffer for smooth playback at varying tempos
-            min_buffer_samples: (sample_rate as usize * 100) / 1000,
-            // Process in batches of ~10ms for efficiency
-            input_batch_size: (sample_rate as usize * 10) / 1000,
+            input_left: Vec::with_capacity(input_batch_size * 2),
+            input_right: Vec::with_capacity(input_batch_size * 2),
+            output_buffer: VecDeque::with_capacity(input_batch_size * 4),
+            // Keep ~150ms of buffer for smooth playback at varying tempos
+            min_buffer_samples: (sample_rate as usize * 150) / 1000,
+            input_batch_size,
         }
     }
 
     /// Set the tempo ratio.
     ///
-    /// - `ratio`: 1.0 = normal speed, 1.1 = 10% faster, 0.9 = 10% slower
+    /// - `ratio`: 1.0 = normal speed, 1.1 = 10% faster, 0.9 = 10% slower Supports down to 0.01
+    ///   (near-stopped) and up to 2.0 (double speed).
     pub fn set_tempo(&mut self, ratio: f64) {
-        let ratio = ratio.clamp(0.5, 2.0);
+        // Clamp to valid range: 0.01 (near-stopped) to 2.0 (double speed)
+        // This supports ±100% pitch fader range
+        let ratio = ratio.clamp(0.01, 2.0);
         if (ratio - self.tempo).abs() > 0.001 {
             self.tempo = ratio;
-            self.processor.set_tempo(ratio);
+            // Note: Signalsmith Stretch doesn't have a set_tempo() method.
+            // Tempo is controlled by the ratio of output_samples to input_samples
+            // in the process_vec() call. We store the ratio and apply it during processing.
         }
     }
 
@@ -115,12 +88,11 @@ impl TimeStretcher {
     ///
     /// Samples are buffered and processed in batches for efficiency.
     pub fn push_sample(&mut self, left: f32, right: f32) {
-        // Add interleaved samples to input buffer
-        self.input_buffer.push(left);
-        self.input_buffer.push(right);
+        self.input_left.push(left);
+        self.input_right.push(right);
 
         // Process when we have enough samples
-        if self.input_buffer.len() >= self.input_batch_size * 2 {
+        if self.input_left.len() >= self.input_batch_size {
             self.process_batch();
         }
     }
@@ -128,11 +100,9 @@ impl TimeStretcher {
     /// Pop a processed stereo sample pair.
     ///
     /// Returns `None` if the output buffer is empty.
-    /// During initial buffering phase, may return silence until
-    /// enough samples have been processed.
     pub fn pop_sample(&mut self) -> Option<(f32, f32)> {
         // If output buffer is low, try to process more input
-        if self.output_buffer.len() < self.min_buffer_samples && !self.input_buffer.is_empty() {
+        if self.output_buffer.len() < self.min_buffer_samples && !self.input_left.is_empty() {
             self.process_batch();
         }
 
@@ -150,11 +120,10 @@ impl TimeStretcher {
     }
 
     /// Get the approximate latency in samples.
-    ///
-    /// This is the delay between input and output due to buffering
-    /// and time-stretch processing.
     pub fn latency_samples(&self) -> usize {
-        self.min_buffer_samples + self.processor.num_unprocessed_samples() as usize
+        self.min_buffer_samples
+            + self.processor.input_latency() as usize
+            + self.processor.output_latency() as usize
     }
 
     /// Get the approximate latency in seconds.
@@ -166,51 +135,69 @@ impl TimeStretcher {
     ///
     /// Call this when seeking or stopping playback.
     pub fn flush(&mut self) {
-        self.processor.flush();
-        self.receive_processed_samples();
-        self.input_buffer.clear();
+        // Process any remaining input
+        if !self.input_left.is_empty() {
+            self.process_batch();
+        }
+
+        // Flush the processor
+        let flush_samples = 1024;
+        let mut output_left = vec![0.0f32; flush_samples];
+        let mut output_right = vec![0.0f32; flush_samples];
+        let mut output = vec![output_left, output_right];
+
+        self.processor.flush_vec(&mut output, flush_samples as i32);
+
+        // Add flushed samples to output buffer
+        for i in 0..flush_samples {
+            if output[0][i].abs() > 1e-10 || output[1][i].abs() > 1e-10 {
+                self.output_buffer.push_back((output[0][i], output[1][i]));
+            }
+        }
+
+        self.input_left.clear();
+        self.input_right.clear();
     }
 
     /// Clear all buffers and reset to initial state.
     ///
     /// Call this when loading a new track.
     pub fn reset(&mut self) {
-        self.processor.clear();
-        self.input_buffer.clear();
+        self.processor.reset();
+        self.input_left.clear();
+        self.input_right.clear();
         self.output_buffer.clear();
     }
 
-    /// Process buffered input samples through SoundTouch.
+    /// Process buffered input samples through Signalsmith Stretch.
     fn process_batch(&mut self) {
-        if self.input_buffer.is_empty() {
+        if self.input_left.is_empty() {
             return;
         }
 
-        // Feed samples to SoundTouch (stereo interleaved)
-        let sample_count = self.input_buffer.len() / 2;
-        self.processor.put_samples(&self.input_buffer, sample_count);
-        self.input_buffer.clear();
+        let input_len = self.input_left.len();
 
-        // Receive processed samples
-        self.receive_processed_samples();
-    }
+        // Calculate output length based on tempo
+        // tempo > 1.0 means faster playback, so fewer output samples
+        // tempo < 1.0 means slower playback, so more output samples
+        let output_len = ((input_len as f64) / self.tempo).ceil() as usize;
 
-    /// Receive any available processed samples from SoundTouch.
-    fn receive_processed_samples(&mut self) {
-        let mut output = vec![0.0f32; 4096];
+        // Prepare input as Vec of Vecs (ssstretch API requirement)
+        let input = vec![
+            std::mem::take(&mut self.input_left),
+            std::mem::take(&mut self.input_right),
+        ];
 
-        loop {
-            let received = self.processor.receive_samples(&mut output, 2048);
-            if received == 0 {
-                break;
-            }
+        // Prepare output buffers
+        let mut output = vec![vec![0.0f32; output_len], vec![0.0f32; output_len]];
 
-            // Convert interleaved samples to stereo pairs
-            for i in 0..received {
-                let left = output[i * 2];
-                let right = output[i * 2 + 1];
-                self.output_buffer.push_back((left, right));
-            }
+        // Process through Signalsmith Stretch
+        self.processor
+            .process_vec(&input, input_len as i32, &mut output, output_len as i32);
+
+        // Add processed samples to output buffer
+        for i in 0..output_len {
+            self.output_buffer.push_back((output[0][i], output[1][i]));
         }
     }
 }
@@ -220,6 +207,12 @@ impl Default for TimeStretcher {
         Self::new(44100, 2)
     }
 }
+
+// SAFETY: TimeStretcher is only accessed from a single thread at a time.
+// The underlying Stretch object contains raw pointers but doesn't share
+// state across threads. All operations use &mut self, ensuring exclusive access.
+unsafe impl Send for TimeStretcher {}
+unsafe impl Sync for TimeStretcher {}
 
 #[cfg(test)]
 mod tests {
@@ -246,8 +239,13 @@ mod tests {
         stretcher.set_tempo(3.0);
         assert!((stretcher.tempo() - 2.0).abs() < 0.001);
 
+        // Lower bound is now 0.01 to support ±100% range
+        stretcher.set_tempo(0.005);
+        assert!((stretcher.tempo() - 0.01).abs() < 0.001);
+
+        // 0.1 should now be allowed (within range)
         stretcher.set_tempo(0.1);
-        assert!((stretcher.tempo() - 0.5).abs() < 0.001);
+        assert!((stretcher.tempo() - 0.1).abs() < 0.001);
     }
 
     #[test]
@@ -255,21 +253,63 @@ mod tests {
         let mut stretcher = TimeStretcher::new(44100, 2);
 
         // Push enough samples to trigger processing
-        for i in 0..1000 {
+        for i in 0..2000 {
             let sample = (i as f32 / 1000.0).sin();
             stretcher.push_sample(sample, sample);
         }
 
         // Should have some output after processing
-        // Note: SoundTouch has internal buffering, so output may be delayed
         let mut output_count = 0;
-        while let Some(_) = stretcher.pop_sample() {
+        while stretcher.pop_sample().is_some() {
             output_count += 1;
         }
 
         // With tempo 1.0, output should be close to input
-        // (may be slightly less due to buffering)
-        assert!(output_count > 0 || stretcher.processor.num_unprocessed_samples() > 0);
+        assert!(output_count > 0);
+    }
+
+    #[test]
+    fn test_tempo_affects_output_length() {
+        // Test faster tempo (should produce fewer samples)
+        let mut stretcher_fast = TimeStretcher::new(44100, 2);
+        stretcher_fast.set_tempo(1.5);
+
+        // Test slower tempo (should produce more samples)
+        let mut stretcher_slow = TimeStretcher::new(44100, 2);
+        stretcher_slow.set_tempo(0.75);
+
+        let input_samples = 2000;
+
+        // Push same input to both
+        for i in 0..input_samples {
+            let sample = (i as f32 / 1000.0).sin();
+            stretcher_fast.push_sample(sample, sample);
+            stretcher_slow.push_sample(sample, sample);
+        }
+
+        // Force processing of remaining samples
+        stretcher_fast.flush();
+        stretcher_slow.flush();
+
+        // Count outputs
+        let mut fast_count = 0;
+        while stretcher_fast.pop_sample().is_some() {
+            fast_count += 1;
+        }
+
+        let mut slow_count = 0;
+        while stretcher_slow.pop_sample().is_some() {
+            slow_count += 1;
+        }
+
+        // Faster tempo should produce fewer samples
+        // Slower tempo should produce more samples
+        assert!(
+            fast_count < slow_count,
+            "Fast ({}) should be less than slow ({})",
+            fast_count,
+            slow_count
+        );
     }
 
     #[test]

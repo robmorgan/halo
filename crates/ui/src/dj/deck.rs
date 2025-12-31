@@ -438,7 +438,7 @@ impl DeckWidget {
             }
 
             // Tempo range selector
-            let range_labels = ["±6%", "±10%", "±16%", "±25%", "±50%"];
+            let range_labels = ["±6%", "±10%", "±16%", "±25%", "±50%", "±100%"];
             let current_label = range_labels
                 .get(self.tempo_range as usize)
                 .unwrap_or(&"±10%");

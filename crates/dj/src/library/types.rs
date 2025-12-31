@@ -357,6 +357,8 @@ pub enum TempoRange {
     Range25,
     /// +/- 50% (wide)
     Wide,
+    /// +/- 100% (full range, allows near-stop to double speed)
+    Range100,
 }
 
 impl TempoRange {
@@ -368,6 +370,7 @@ impl TempoRange {
             Self::Range16 => 0.16,
             Self::Range25 => 0.25,
             Self::Wide => 0.50,
+            Self::Range100 => 1.00,
         }
     }
 

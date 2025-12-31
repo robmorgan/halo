@@ -489,12 +489,28 @@ impl DeckPlayer {
 
             match mode {
                 MasterTempoMode::On => {
-                    // Initialize time stretcher with current tempo
+                    // Reset and initialize time stretcher with current tempo
+                    self.time_stretcher.reset();
                     self.time_stretcher.set_tempo(self.playback_rate);
+
+                    // Pre-fill the time stretcher buffer to avoid initial underruns.
+                    // With 4096-sample blocks, we need at least 2 blocks worth (~185ms at 44.1kHz).
+                    // Use 200ms to ensure smooth startup.
+                    let prefill_samples = (self.sample_rate as usize * 200) / 1000; // 200ms
+                    for _ in 0..prefill_samples {
+                        if self.sample_position >= self.total_samples {
+                            break;
+                        }
+                        let sample = self.read_next_raw_sample();
+                        self.sample_position += 1;
+                        self.time_stretcher.push_sample(sample.0, sample.1);
+                    }
+
                     log::info!(
-                        "Deck {}: Master Tempo enabled (tempo: {:.2}x)",
+                        "Deck {}: Master Tempo enabled (tempo: {:.2}x, prefilled {} samples)",
                         self.deck_id,
-                        self.playback_rate
+                        self.playback_rate,
+                        prefill_samples
                     );
                 }
                 MasterTempoMode::Off => {
@@ -598,17 +614,20 @@ impl DeckPlayer {
 
     /// Get next sample using time-stretching (pitch locked, tempo changes).
     ///
-    /// Reads samples at normal speed and processes through SoundTouch
-    /// for WSOLA-based time stretching. This allows tempo changes without
+    /// Reads samples at normal speed and processes through Signalsmith Stretch
+    /// for phase vocoder time stretching. This allows tempo changes without
     /// affecting pitch (Master Tempo / key lock).
     fn next_timestretched_sample(&mut self) -> (f32, f32) {
-        // Feed samples to time stretcher to maintain buffer
-        // We need to feed slightly more when tempo > 1.0 (consuming faster)
-        // and slightly less when tempo < 1.0 (consuming slower)
-        let samples_to_feed = (self.playback_rate * 2.0).ceil() as usize;
+        // Feed samples to time stretcher to maintain output buffer.
+        // The time stretcher processes in 4096-sample blocks, so we need to feed enough
+        // samples to keep the output buffer healthy.
+        //
+        // Strategy: Feed samples until we have enough output buffered.
+        // Keep at least 4096 samples (one block worth) to avoid underruns.
+        let min_output_samples = 4096;
 
-        for _ in 0..samples_to_feed {
-            // Check for end of file before reading
+        while self.time_stretcher.output_len() < min_output_samples {
+            // Check for end of file
             if self.sample_position >= self.total_samples {
                 break;
             }

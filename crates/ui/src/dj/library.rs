@@ -156,7 +156,7 @@ impl LibraryBrowser {
                         );
                         ui.add_space(8.0);
                         ui.label(
-                            RichText::new("Import tracks using File > Import Folder")
+                            RichText::new("Import tracks using File > Import Music Folder")
                                 .size(12.0)
                                 .color(Color32::DARK_GRAY),
                         );
