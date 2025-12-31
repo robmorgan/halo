@@ -26,7 +26,12 @@ pub fn render(
         // Show status message if available, otherwise empty
         if let Some(ref message) = state.status_message {
             let status_text = if let Some((current, total)) = state.status_progress {
-                format!("{} ({}/{})", message, current, total)
+                let percentage = if total > 0 {
+                    (current as f32 / total as f32 * 100.0) as u32
+                } else {
+                    0
+                };
+                format!("{} ({}/{} - {}%)", message, current, total, percentage)
             } else {
                 message.clone()
             };
