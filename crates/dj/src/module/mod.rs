@@ -21,7 +21,7 @@ use crate::deck::{Deck, DeckId, DeckState};
 use crate::library::database::LibraryDatabase;
 use crate::library::import::{import_file_metadata_only, scan_directory_for_audio};
 use crate::library::{
-    analyze_file, analyze_file_streaming, AnalysisConfig, BeatGrid, HotCue, MasterTempoMode,
+    analyze_file_streaming, AnalysisConfig, AnalysisResult, BeatGrid, HotCue, MasterTempoMode,
     TempoRange, Track, TrackId, TrackWaveform, WAVEFORM_VERSION_COLORED,
 };
 use crate::midi::z1_mapping::Z1Mapping;
@@ -235,6 +235,12 @@ pub struct DjModule {
     analysis_batch_total: usize,
     /// Number of tracks completed in current analysis batch.
     analysis_batch_completed: usize,
+    /// Handle to the currently running background analysis task.
+    analysis_handle: Option<tokio::task::JoinHandle<Option<AnalysisResult>>>,
+    /// Receiver for streaming waveform progress from background analysis.
+    analysis_progress_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<f32>, f32)>>,
+    /// Currently analyzing track info (track_id, track_name).
+    current_analysis_track: Option<(TrackId, String)>,
 }
 
 impl DjModule {
@@ -257,6 +263,9 @@ impl DjModule {
             analysis_queue: VecDeque::new(),
             analysis_batch_total: 0,
             analysis_batch_completed: 0,
+            analysis_handle: None,
+            analysis_progress_rx: None,
+            current_analysis_track: None,
         }
     }
 
@@ -273,6 +282,9 @@ impl DjModule {
             analysis_queue: VecDeque::new(),
             analysis_batch_total: 0,
             analysis_batch_completed: 0,
+            analysis_handle: None,
+            analysis_progress_rx: None,
+            current_analysis_track: None,
         }
     }
 
@@ -902,12 +914,21 @@ impl DjModule {
             track_id,
             track_name
         );
+
+        // If no analysis is in progress, start a fresh batch
+        // Otherwise, add to existing batch
+        if self.analysis_queue.is_empty() && !self.is_analysis_running() {
+            self.analysis_batch_completed = 0;
+            self.analysis_batch_total = 1;
+        } else {
+            self.analysis_batch_total += 1;
+        }
+
         self.analysis_queue.push_back(PendingAnalysis {
             track_id,
             file_path: PathBuf::from(file_path),
             track_name,
         });
-        self.analysis_batch_total += 1;
     }
 
     /// Update a track's BPM manually.
@@ -998,12 +1019,19 @@ impl DjModule {
         // Phase 2: Queue tracks for background analysis
         let tracks_to_analyze_count = tracks_to_analyze.len();
         if !tracks_to_analyze.is_empty() {
-            self.analysis_batch_total = tracks_to_analyze_count;
-            self.analysis_batch_completed = 0;
+            // If no analysis is in progress, start a fresh batch
+            // Otherwise, add to existing batch
+            if self.analysis_queue.is_empty() && !self.is_analysis_running() {
+                self.analysis_batch_total = tracks_to_analyze_count;
+                self.analysis_batch_completed = 0;
+            } else {
+                self.analysis_batch_total += tracks_to_analyze_count;
+            }
             self.analysis_queue.extend(tracks_to_analyze);
             log::info!(
-                "Queued {} tracks for background analysis",
-                tracks_to_analyze_count
+                "Queued {} tracks for background analysis (total: {})",
+                tracks_to_analyze_count,
+                self.analysis_batch_total
             );
         }
 
@@ -1015,54 +1043,6 @@ impl DjModule {
         );
     }
 
-    /// Process one track from the analysis queue.
-    /// Returns Some((track_id, track_name, bpm)) if analysis completed, None if queue is empty.
-    fn process_analysis_queue_item(&mut self) -> Option<(TrackId, String, Option<f64>)> {
-        let pending = self.analysis_queue.pop_front()?;
-
-        log::info!(
-            "Analyzing track: {} ({}/{})",
-            pending.track_name,
-            self.analysis_batch_completed + 1,
-            self.analysis_batch_total
-        );
-
-        let config = AnalysisConfig::default();
-        let result = analyze_file(&pending.file_path, pending.track_id, &config);
-
-        match result {
-            Ok(analysis_result) => {
-                // Save results to database
-                if let Some(db) = &self.database {
-                    if let Ok(db_guard) = db.lock() {
-                        let _ = db_guard.save_waveform(&analysis_result.waveform);
-                        let _ = db_guard.save_beat_grid(&analysis_result.beat_grid);
-                        let _ = db_guard
-                            .update_track_bpm(pending.track_id, analysis_result.beat_grid.bpm);
-                    }
-                }
-
-                self.analysis_batch_completed += 1;
-                log::info!(
-                    "Analysis complete for {}: BPM={:.1}",
-                    pending.track_name,
-                    analysis_result.beat_grid.bpm
-                );
-
-                Some((
-                    pending.track_id,
-                    pending.track_name,
-                    Some(analysis_result.beat_grid.bpm),
-                ))
-            }
-            Err(e) => {
-                log::error!("Analysis failed for {}: {}", pending.track_name, e);
-                self.analysis_batch_completed += 1;
-                Some((pending.track_id, pending.track_name, None))
-            }
-        }
-    }
-
     /// Check if there are tracks in the analysis queue.
     fn has_pending_analysis(&self) -> bool {
         !self.analysis_queue.is_empty()
@@ -1070,6 +1050,15 @@ impl DjModule {
 
     /// Get the current analysis progress info for status display.
     fn analysis_progress(&self) -> Option<(String, usize, usize)> {
+        // If currently analyzing, show that track
+        if let Some((_, track_name)) = &self.current_analysis_track {
+            return Some((
+                track_name.clone(),
+                self.analysis_batch_completed + 1,
+                self.analysis_batch_total,
+            ));
+        }
+        // Otherwise show next track in queue
         self.analysis_queue.front().map(|pending| {
             (
                 pending.track_name.clone(),
@@ -1077,6 +1066,56 @@ impl DjModule {
                 self.analysis_batch_total,
             )
         })
+    }
+
+    /// Check if an analysis task is currently running.
+    fn is_analysis_running(&self) -> bool {
+        self.analysis_handle.is_some()
+    }
+
+    /// Start analyzing the next track in the queue (non-blocking).
+    /// Returns Some((track_id, track_name)) if analysis was started.
+    fn start_next_analysis(&mut self) -> Option<(TrackId, String)> {
+        // Don't start if already analyzing
+        if self.analysis_handle.is_some() {
+            return None;
+        }
+
+        let pending = self.analysis_queue.pop_front()?;
+        let track_id = pending.track_id;
+        let track_name = pending.track_name.clone();
+        let file_path = pending.file_path.clone();
+
+        log::info!(
+            "Starting background analysis for: {} ({}/{})",
+            track_name,
+            self.analysis_batch_completed + 1,
+            self.analysis_batch_total
+        );
+
+        // Create channel for streaming waveform progress
+        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.analysis_progress_rx = Some(progress_rx);
+
+        // Store current track info
+        self.current_analysis_track = Some((track_id, track_name.clone()));
+
+        // Spawn analysis on blocking thread pool
+        self.analysis_handle = Some(tokio::task::spawn_blocking(move || {
+            let config = AnalysisConfig::default();
+            analyze_file_streaming(
+                &file_path,
+                track_id,
+                &config,
+                100, // Send progress every 100 waveform samples
+                |samples, progress| {
+                    let _ = progress_tx.send((samples, progress));
+                },
+            )
+            .ok()
+        }));
+
+        Some((track_id, track_name))
     }
 }
 
@@ -2038,6 +2077,22 @@ impl AsyncModule for DjModule {
                                             )).await;
                                         }
                                     }
+                                    DjCommand::ReanalyzeTrack { track_id } => {
+                                        // Queue track for re-analysis
+                                        self.reanalyze_track(track_id);
+
+                                        // Send immediate progress event
+                                        if let Some((track_name, current, total)) = self.analysis_progress() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjAnalysisProgress {
+                                                    track_id: track_id.0,
+                                                    track_name,
+                                                    current,
+                                                    total,
+                                                }
+                                            )).await;
+                                        }
+                                    }
                                     other => {
                                         eprintln!("DEBUG: Calling handle_command for {:?}", other);
                                         self.handle_command(other);
@@ -2049,48 +2104,100 @@ impl AsyncModule for DjModule {
                     }
                 }
 
-                // Process analysis queue during idle time
+                // Process analysis queue during idle time (non-blocking)
                 _ = rhythm_interval.tick() => {
-                    // Process one analysis item if queue is not empty
-                    if self.has_pending_analysis() {
-                        // Send progress event before starting analysis
-                        if let Some((track_name, current, total)) = self.analysis_progress() {
-                            let pending_track_id = self.analysis_queue.front()
-                                .map(|p| p.track_id.0)
-                                .unwrap_or(0);
-                            let _ = tx.send(ModuleMessage::Event(
-                                ModuleEvent::DjAnalysisProgress {
-                                    track_id: pending_track_id,
-                                    track_name,
-                                    current,
-                                    total,
+                    // Poll for streaming waveform progress (non-blocking)
+                    if let Some(rx) = &mut self.analysis_progress_rx {
+                        while let Ok((samples, progress)) = rx.try_recv() {
+                            if let Some((track_id, _)) = &self.current_analysis_track {
+                                // Send streaming waveform progress with special deck value (255 = library analysis)
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjWaveformProgress {
+                                        deck: 255,
+                                        samples,
+                                        frequency_bands: None,
+                                        progress,
+                                    }
+                                )).await;
+                            }
+                        }
+                    }
+
+                    // Check if background analysis task completed (non-blocking)
+                    let analysis_finished = self.analysis_handle.as_ref().map_or(false, |h| h.is_finished());
+                    if analysis_finished {
+                        // Take ownership of the handle and await it
+                        let handle = self.analysis_handle.take().unwrap();
+                        let (track_id, track_name) = self.current_analysis_track.take().unwrap_or((TrackId(0), String::new()));
+                        self.analysis_progress_rx = None;
+
+                        match handle.await {
+                            Ok(Some(analysis_result)) => {
+                                // Save results to database
+                                if let Some(db) = &self.database {
+                                    if let Ok(db_guard) = db.lock() {
+                                        let _ = db_guard.save_waveform(&analysis_result.waveform);
+                                        let _ = db_guard.save_beat_grid(&analysis_result.beat_grid);
+                                        let _ = db_guard.update_track_bpm(track_id, analysis_result.beat_grid.bpm);
+                                    }
                                 }
-                            )).await;
+
+                                self.analysis_batch_completed += 1;
+                                log::info!(
+                                    "Analysis complete for {}: BPM={:.1}",
+                                    track_name,
+                                    analysis_result.beat_grid.bpm
+                                );
+
+                                // Send analysis complete event
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjAnalysisComplete {
+                                        track_id: track_id.0,
+                                        bpm: Some(analysis_result.beat_grid.bpm),
+                                    }
+                                )).await;
+                            }
+                            Ok(None) | Err(_) => {
+                                log::error!("Analysis failed for {}", track_name);
+                                self.analysis_batch_completed += 1;
+
+                                // Send analysis complete event with no BPM
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjAnalysisComplete {
+                                        track_id: track_id.0,
+                                        bpm: None,
+                                    }
+                                )).await;
+                            }
                         }
 
-                        // Process one track (blocking but okay for background work)
-                        if let Some((track_id, _track_name, bpm)) = self.process_analysis_queue_item() {
-                            // Send analysis complete event
+                        // Check if all analysis is complete
+                        if !self.has_pending_analysis() && !self.is_analysis_running() {
                             let _ = tx.send(ModuleMessage::Event(
-                                ModuleEvent::DjAnalysisComplete {
-                                    track_id: track_id.0,
-                                    bpm,
-                                }
+                                ModuleEvent::StatusClear
                             )).await;
 
-                            // If queue is now empty, send clear status and update library
-                            if !self.has_pending_analysis() {
+                            // Send updated library with BPM values
+                            if let Some(tracks) = self.get_all_tracks_for_ui() {
                                 let _ = tx.send(ModuleMessage::Event(
-                                    ModuleEvent::StatusClear
+                                    ModuleEvent::DjLibraryTracks(tracks)
                                 )).await;
-
-                                // Send updated library with BPM values
-                                if let Some(tracks) = self.get_all_tracks_for_ui() {
-                                    let _ = tx.send(ModuleMessage::Event(
-                                        ModuleEvent::DjLibraryTracks(tracks)
-                                    )).await;
-                                }
                             }
+                        }
+                    }
+
+                    // Start next analysis if none is running and queue is not empty (non-blocking)
+                    if !self.is_analysis_running() && self.has_pending_analysis() {
+                        if let Some((track_id, track_name)) = self.start_next_analysis() {
+                            // Send progress event
+                            let _ = tx.send(ModuleMessage::Event(
+                                ModuleEvent::DjAnalysisProgress {
+                                    track_id: track_id.0,
+                                    track_name,
+                                    current: self.analysis_batch_completed + 1,
+                                    total: self.analysis_batch_total,
+                                }
+                            )).await;
                         }
                     }
                     // Collect events to send (without holding locks across await)

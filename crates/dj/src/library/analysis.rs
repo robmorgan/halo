@@ -1,6 +1,6 @@
 //! Audio analysis for BPM detection and beat grid generation.
 //!
-//! Uses SoundTouch's BPMDetect for BPM detection and FFT for waveform coloring.
+//! Uses FFT-based autocorrelation for BPM detection and FFT for waveform coloring.
 
 use std::fs::File;
 use std::path::Path;
@@ -8,7 +8,6 @@ use std::path::Path;
 use chrono::Utc;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
-use soundtouch::BPMDetect;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::formats::FormatOptions;
@@ -290,26 +289,162 @@ fn append_mono_samples(samples: &mut Vec<f32>, decoded: &AudioBufferRef) {
     }
 }
 
-/// Detect BPM using SoundTouch's BPMDetect algorithm.
+/// Detect BPM using FFT-based autocorrelation on the onset envelope.
 ///
-/// Uses envelope detection and autocorrelation on bass frequencies (<250Hz)
-/// for robust beat detection.
-fn detect_bpm(samples: &[f32], sample_rate: u32, _config: &AnalysisConfig) -> (f64, f32) {
-    if samples.len() < 4096 {
-        return (120.0, 0.0); // Default to 120 BPM if not enough samples
-    }
-
-    // Use SoundTouch's BPMDetect (mono input)
-    let mut detector = BPMDetect::new(1, sample_rate);
-    detector.input_samples(samples);
-    let bpm = detector.get_bpm() as f64;
-
-    if bpm <= 0.0 {
+/// This algorithm is more accurate than SoundTouch for precise BPM detection:
+/// 1. Calculates onset envelope using spectral flux in bass frequencies
+/// 2. Computes autocorrelation using FFT (Wiener-Khinchin theorem)
+/// 3. Finds peaks in the autocorrelation corresponding to beat intervals
+/// 4. Selects the highest peak within the configured BPM range
+fn detect_bpm(samples: &[f32], sample_rate: u32, config: &AnalysisConfig) -> (f64, f32) {
+    if samples.len() < sample_rate as usize * 4 {
+        // Need at least 4 seconds for reliable detection
         return (120.0, 0.0);
     }
 
-    // SoundTouch doesn't provide confidence, use fixed value for successful detection
-    (bpm, 0.9)
+    // Calculate onset envelope from bass frequencies (better for kick detection)
+    let onset_env = calculate_bass_onset_envelope(samples, sample_rate, config);
+
+    if onset_env.len() < 256 {
+        return (120.0, 0.0);
+    }
+
+    // Time resolution of onset envelope
+    let hop_time = config.hop_size as f64 / sample_rate as f64;
+
+    // Compute autocorrelation using FFT (Wiener-Khinchin theorem)
+    // This is O(n log n) vs O(n^2) for direct computation
+    let autocorr = compute_fft_autocorrelation(&onset_env);
+
+    // Convert BPM range to lag range (in onset envelope samples)
+    let min_lag = (60.0 / config.max_bpm / hop_time) as usize;
+    let max_lag = (60.0 / config.min_bpm / hop_time) as usize;
+
+    // Ensure we have enough autocorrelation data
+    let max_lag = max_lag.min(autocorr.len() / 2);
+    if max_lag <= min_lag {
+        return (120.0, 0.0);
+    }
+
+    // Find peaks in autocorrelation within the BPM range
+    let mut peaks: Vec<(usize, f32)> = Vec::new();
+    for lag in min_lag..max_lag {
+        let val = autocorr[lag];
+        let prev = if lag > 0 { autocorr[lag - 1] } else { 0.0 };
+        let next = if lag + 1 < autocorr.len() {
+            autocorr[lag + 1]
+        } else {
+            0.0
+        };
+
+        // Local maximum detection
+        if val > prev && val > next && val > 0.0 {
+            peaks.push((lag, val));
+        }
+    }
+
+    if peaks.is_empty() {
+        return (120.0, 0.0);
+    }
+
+    // Sort peaks by strength (descending)
+    peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Find the best peak, preferring stronger peaks but also considering
+    // if a peak at half the lag has similar strength (octave detection)
+    let best_lag = peaks[0].0;
+    let best_strength = peaks[0].1;
+
+    // Check for octave ambiguity: if there's a peak at 2x the frequency (half lag)
+    // with similar strength, prefer the higher frequency (shorter lag)
+    let mut final_lag = best_lag;
+    let half_lag = best_lag / 2;
+    if half_lag >= min_lag {
+        // Look for a peak near half the lag
+        for &(lag, strength) in &peaks {
+            if lag >= half_lag.saturating_sub(2) && lag <= half_lag + 2 && strength > best_strength * 0.7
+            {
+                // Found a strong peak at half the lag, prefer it
+                final_lag = lag;
+                break;
+            }
+        }
+    }
+
+    // Convert lag to BPM with parabolic interpolation for sub-sample accuracy
+    let refined_lag = if final_lag > 0 && final_lag + 1 < autocorr.len() {
+        let y0 = autocorr[final_lag - 1];
+        let y1 = autocorr[final_lag];
+        let y2 = autocorr[final_lag + 1];
+        let offset = (y0 - y2) / (2.0 * (y0 - 2.0 * y1 + y2));
+        if offset.is_finite() && offset.abs() < 1.0 {
+            final_lag as f64 + offset as f64
+        } else {
+            final_lag as f64
+        }
+    } else {
+        final_lag as f64
+    };
+
+    let beat_interval = refined_lag * hop_time;
+    let bpm = 60.0 / beat_interval;
+
+    // Calculate confidence based on peak prominence
+    let max_autocorr = autocorr[1..].iter().cloned().fold(0.0f32, f32::max);
+    let peak_val = autocorr[final_lag];
+    let confidence = if max_autocorr > 0.0 {
+        (peak_val / max_autocorr).min(1.0)
+    } else {
+        0.0
+    };
+
+    // Clamp to valid range
+    let bpm = bpm.clamp(config.min_bpm, config.max_bpm);
+
+    log::debug!(
+        "FFT autocorr BPM: {:.2}, lag: {:.2}, confidence: {:.2}",
+        bpm,
+        refined_lag,
+        confidence
+    );
+
+    (bpm, confidence)
+}
+
+/// Compute autocorrelation using FFT (Wiener-Khinchin theorem).
+///
+/// The autocorrelation of a signal equals the inverse FFT of its power spectrum.
+/// This is O(n log n) compared to O(n^2) for direct computation.
+fn compute_fft_autocorrelation(signal: &[f32]) -> Vec<f32> {
+    // Pad to power of 2 for efficient FFT
+    let n = signal.len().next_power_of_two() * 2;
+
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(n);
+    let ifft = planner.plan_fft_inverse(n);
+
+    // Zero-pad signal
+    let mut buffer: Vec<Complex<f32>> = signal
+        .iter()
+        .map(|&x| Complex::new(x, 0.0))
+        .chain(std::iter::repeat(Complex::new(0.0, 0.0)))
+        .take(n)
+        .collect();
+
+    // Forward FFT
+    fft.process(&mut buffer);
+
+    // Compute power spectrum (|X(f)|^2)
+    for c in &mut buffer {
+        *c = Complex::new(c.norm_sqr(), 0.0);
+    }
+
+    // Inverse FFT to get autocorrelation
+    ifft.process(&mut buffer);
+
+    // Normalize and return real part
+    let norm = 1.0 / n as f32;
+    buffer.iter().map(|c| c.re * norm).collect()
 }
 
 /// Calculate onset envelope using spectral flux.
@@ -357,32 +492,145 @@ fn calculate_onset_envelope(samples: &[f32], config: &AnalysisConfig) -> Vec<f32
     onset_env
 }
 
-/// Find the offset to the first beat.
-fn find_first_beat(samples: &[f32], sample_rate: u32, _bpm: f64) -> f64 {
-    // Simple approach: find first significant onset
+/// Find the offset to the first downbeat using low-frequency onset detection.
+///
+/// This function detects kick drum hits by analyzing low-frequency energy,
+/// then finds the phase offset that best aligns with the detected BPM.
+fn find_first_beat(samples: &[f32], sample_rate: u32, bpm: f64) -> f64 {
     let config = AnalysisConfig::default();
-    let onset_env = calculate_onset_envelope(samples, &config);
 
-    if onset_env.is_empty() {
+    // Calculate low-frequency onset envelope (kick drums are typically 40-120 Hz)
+    let bass_onset_env = calculate_bass_onset_envelope(samples, sample_rate, &config);
+
+    if bass_onset_env.is_empty() {
         return 0.0;
     }
 
-    // Find threshold (mean + 1.5 * std deviation)
-    let mean: f32 = onset_env.iter().sum::<f32>() / onset_env.len() as f32;
-    let variance: f32 =
-        onset_env.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / onset_env.len() as f32;
-    let std_dev = variance.sqrt();
-    let threshold = mean + 1.5 * std_dev;
+    let beat_interval_seconds = 60.0 / bpm;
+    let hop_time = config.hop_size as f64 / sample_rate as f64;
 
-    // Find first onset above threshold
-    for (i, &value) in onset_env.iter().enumerate() {
+    // Find onset threshold (mean + 2 * std deviation for strong kicks)
+    let mean: f32 = bass_onset_env.iter().sum::<f32>() / bass_onset_env.len() as f32;
+    let variance: f32 = bass_onset_env
+        .iter()
+        .map(|x| (x - mean).powi(2))
+        .sum::<f32>()
+        / bass_onset_env.len() as f32;
+    let std_dev = variance.sqrt();
+    let threshold = mean + 2.0 * std_dev;
+
+    // Collect strong onset times (potential kick drums) in the first 30 seconds
+    let max_search_frames = (30.0 / hop_time) as usize;
+    let search_frames = bass_onset_env.len().min(max_search_frames);
+
+    let mut onset_times: Vec<f64> = Vec::new();
+    for (i, &value) in bass_onset_env[..search_frames].iter().enumerate() {
         if value > threshold {
-            let time_seconds = (i * config.hop_size) as f64 / sample_rate as f64;
-            return time_seconds * 1000.0; // Convert to ms
+            let time = i as f64 * hop_time;
+            // Avoid onsets too close together (minimum 100ms apart)
+            if onset_times.last().map_or(true, |&last| time - last > 0.1) {
+                onset_times.push(time);
+            }
         }
     }
 
-    0.0
+    if onset_times.is_empty() {
+        // Fallback: find the single strongest onset in first 10 seconds
+        let search_limit = (10.0 / hop_time) as usize;
+        let limit = bass_onset_env.len().min(search_limit);
+        if let Some((idx, _)) = bass_onset_env[..limit]
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        {
+            return idx as f64 * hop_time * 1000.0;
+        }
+        return 0.0;
+    }
+
+    // Find the phase offset that maximizes alignment with detected onsets
+    // Test 100 different phase offsets within one beat interval
+    let num_phases = 100;
+    let mut best_phase = 0.0;
+    let mut best_score = 0.0;
+
+    for phase_idx in 0..num_phases {
+        let phase_offset = (phase_idx as f64 / num_phases as f64) * beat_interval_seconds;
+        let mut score = 0.0;
+
+        for &onset_time in &onset_times {
+            // Calculate distance to nearest beat at this phase
+            let beats_from_start = (onset_time - phase_offset) / beat_interval_seconds;
+            let nearest_beat_offset =
+                beats_from_start.round() * beat_interval_seconds + phase_offset;
+            let distance = (onset_time - nearest_beat_offset).abs();
+
+            // Score based on proximity (closer = higher score)
+            // Use Gaussian weighting: exp(-(distance/sigma)^2)
+            let sigma = beat_interval_seconds * 0.1; // 10% of beat interval tolerance
+            score += (-((distance / sigma).powi(2))).exp();
+        }
+
+        if score > best_score {
+            best_score = score;
+            best_phase = phase_offset;
+        }
+    }
+
+    // Return phase offset in milliseconds
+    best_phase * 1000.0
+}
+
+/// Calculate low-frequency (bass) onset envelope for kick drum detection.
+///
+/// Focuses on 40-200 Hz range where kick drums have most energy.
+fn calculate_bass_onset_envelope(
+    samples: &[f32],
+    sample_rate: u32,
+    config: &AnalysisConfig,
+) -> Vec<f32> {
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(config.fft_size);
+
+    let mut onset_env = Vec::new();
+    let mut prev_bass_energy = 0.0f32;
+
+    // Frequency bins for bass range (40-200 Hz)
+    let bin_width = sample_rate as f32 / config.fft_size as f32;
+    let bass_low_bin = (40.0 / bin_width) as usize;
+    let bass_high_bin = (200.0 / bin_width) as usize;
+
+    let window: Vec<f32> = (0..config.fft_size)
+        .map(|i| {
+            0.5 * (1.0
+                - (2.0 * std::f32::consts::PI * i as f32 / (config.fft_size - 1) as f32).cos())
+        })
+        .collect();
+
+    for start in (0..samples.len().saturating_sub(config.fft_size)).step_by(config.hop_size) {
+        // Apply window and compute FFT
+        let mut buffer: Vec<Complex<f32>> = samples[start..start + config.fft_size]
+            .iter()
+            .zip(window.iter())
+            .map(|(s, w)| Complex::new(s * w, 0.0))
+            .collect();
+
+        fft.process(&mut buffer);
+
+        // Calculate bass energy (sum of magnitudes in bass range)
+        let bass_energy: f32 = buffer[bass_low_bin..=bass_high_bin.min(buffer.len() - 1)]
+            .iter()
+            .map(|c| c.norm())
+            .sum();
+
+        // Half-wave rectified difference (onset = increase in bass energy)
+        let onset = (bass_energy - prev_bass_energy).max(0.0);
+        onset_env.push(onset);
+
+        prev_bass_energy = bass_energy;
+    }
+
+    onset_env
 }
 
 /// Generate colored waveform with 3-band frequency analysis for visualization.
