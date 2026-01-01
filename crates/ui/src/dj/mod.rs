@@ -117,6 +117,16 @@ impl DjPanel {
         self.deck_b.master_tempo_enabled = state.dj_deck_b.master_tempo_enabled;
         self.deck_b.tempo_range = state.dj_deck_b.tempo_range;
 
+        // Sync Loop state
+        self.deck_a.loop_in = state.dj_deck_a.loop_in;
+        self.deck_a.loop_out = state.dj_deck_a.loop_out;
+        self.deck_a.loop_active = state.dj_deck_a.loop_active;
+        self.deck_a.loop_beat_count = state.dj_deck_a.loop_beat_count;
+        self.deck_b.loop_in = state.dj_deck_b.loop_in;
+        self.deck_b.loop_out = state.dj_deck_b.loop_out;
+        self.deck_b.loop_active = state.dj_deck_b.loop_active;
+        self.deck_b.loop_beat_count = state.dj_deck_b.loop_beat_count;
+
         // Left side panel for library browser
         egui::SidePanel::left("dj_library_panel")
             .resizable(true)

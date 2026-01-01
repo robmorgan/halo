@@ -57,6 +57,15 @@ pub struct DeckWidget {
     pub tempo_range: u8,
     /// Whether to show zoomed waveform (CDJ-style scrolling view).
     pub waveform_zoomed: bool,
+    // Loop state
+    /// Loop IN point in seconds.
+    pub loop_in: Option<f64>,
+    /// Loop OUT point in seconds.
+    pub loop_out: Option<f64>,
+    /// Whether loop is currently active.
+    pub loop_active: bool,
+    /// Number of beats in the current loop (4 or 8).
+    pub loop_beat_count: u8,
 }
 
 impl DeckWidget {
@@ -502,6 +511,105 @@ impl DeckWidget {
 
         ui.add_space(8.0);
 
+        // Loop controls (CDJ-3000 style)
+        ui.horizontal(|ui| {
+            ui.label("Loop:");
+
+            let loop_button_size = Vec2::new(35.0, 30.0);
+
+            // 4-beat loop button - green when active with 4 beats
+            let loop_4_active = self.loop_active && self.loop_beat_count == 4;
+            let loop_4_color = if loop_4_active {
+                Color32::from_rgb(0, 200, 100) // Green
+            } else {
+                Color32::DARK_GRAY
+            };
+            if ui
+                .add_sized(
+                    loop_button_size,
+                    egui::Button::new(
+                        egui::RichText::new("4")
+                            .size(14.0)
+                            .color(if loop_4_active { Color32::BLACK } else { Color32::WHITE }),
+                    )
+                    .fill(loop_4_color),
+                )
+                .on_hover_text("Set 4-beat loop")
+                .clicked()
+            {
+                let _ = console_tx.send(ConsoleCommand::DjSetLoop {
+                    deck: deck_number,
+                    beat_count: 4,
+                });
+            }
+
+            // 8-beat loop button - green when active with 8 beats
+            let loop_8_active = self.loop_active && self.loop_beat_count == 8;
+            let loop_8_color = if loop_8_active {
+                Color32::from_rgb(0, 200, 100) // Green
+            } else {
+                Color32::DARK_GRAY
+            };
+            if ui
+                .add_sized(
+                    loop_button_size,
+                    egui::Button::new(
+                        egui::RichText::new("8")
+                            .size(14.0)
+                            .color(if loop_8_active { Color32::BLACK } else { Color32::WHITE }),
+                    )
+                    .fill(loop_8_color),
+                )
+                .on_hover_text("Set 8-beat loop")
+                .clicked()
+            {
+                let _ = console_tx.send(ConsoleCommand::DjSetLoop {
+                    deck: deck_number,
+                    beat_count: 8,
+                });
+            }
+
+            ui.add_space(4.0);
+
+            // Reloop/Exit button
+            let has_loop = self.loop_in.is_some();
+            let (exit_text, exit_color) = if self.loop_active {
+                ("EXIT", Color32::from_rgb(255, 140, 0)) // Orange when active
+            } else if has_loop {
+                ("RELOOP", Color32::from_rgb(0, 150, 255)) // Blue when loop defined but inactive
+            } else {
+                ("RELOOP", Color32::DARK_GRAY) // Gray when no loop defined
+            };
+
+            if ui
+                .add_sized(
+                    Vec2::new(55.0, 30.0),
+                    egui::Button::new(
+                        egui::RichText::new(exit_text)
+                            .size(11.0)
+                            .color(if self.loop_active || has_loop {
+                                Color32::BLACK
+                            } else {
+                                Color32::GRAY
+                            }),
+                    )
+                    .fill(exit_color),
+                )
+                .on_hover_text(if self.loop_active {
+                    "Exit loop"
+                } else {
+                    "Re-enable loop"
+                })
+                .clicked()
+            {
+                if has_loop {
+                    let _ = console_tx.send(ConsoleCommand::DjToggleLoop { deck: deck_number });
+                }
+            }
+        });
+
+        ui.add_space(8.0);
+
         // Pitch fader
         ui.horizontal(|ui| {
             ui.label("Pitch:");
@@ -703,6 +811,40 @@ impl DeckWidget {
             }
         }
 
+        // Loop region overlay
+        if let (Some(loop_in), Some(loop_out)) = (self.loop_in, self.loop_out) {
+            if self.duration_seconds > 0.0 {
+                let start_x =
+                    rect.left() + ((loop_in / self.duration_seconds) as f32 * available_width);
+                let end_x =
+                    rect.left() + ((loop_out / self.duration_seconds) as f32 * available_width);
+
+                // Semi-transparent fill
+                let fill_color = if self.loop_active {
+                    Color32::from_rgba_unmultiplied(0, 200, 100, 40) // Green tint when active
+                } else {
+                    Color32::from_rgba_unmultiplied(100, 100, 100, 30) // Gray tint when inactive
+                };
+                let loop_rect = Rect::from_x_y_ranges(start_x..=end_x, rect.top()..=rect.bottom());
+                painter.rect_filled(loop_rect, 0.0, fill_color);
+
+                // IN/OUT boundary lines
+                let line_color = if self.loop_active {
+                    Color32::from_rgb(0, 255, 128) // Green
+                } else {
+                    Color32::from_rgb(100, 150, 255) // Blue
+                };
+                painter.line_segment(
+                    [egui::pos2(start_x, rect.top()), egui::pos2(start_x, rect.bottom())],
+                    Stroke::new(2.0, line_color),
+                );
+                painter.line_segment(
+                    [egui::pos2(end_x, rect.top()), egui::pos2(end_x, rect.bottom())],
+                    Stroke::new(2.0, line_color),
+                );
+            }
+        }
+
         // Beat phase indicator
         if self.is_playing {
             let beat_indicator_width = 4.0;
@@ -841,6 +983,73 @@ impl DeckWidget {
                     painter.line_segment(
                         [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                         Stroke::new(if is_downbeat { 2.0 } else { 1.0 }, color),
+                    );
+                }
+            }
+        }
+
+        // Loop region overlay (only if visible in window)
+        if let (Some(loop_in), Some(loop_out)) = (self.loop_in, self.loop_out) {
+            // Check if loop region overlaps with visible window
+            if loop_out >= window_start && loop_in <= window_end {
+                // Clamp loop bounds to visible window
+                let visible_start = loop_in.max(window_start);
+                let visible_end = loop_out.min(window_end);
+
+                let start_x_progress = (visible_start - window_start) / zoom_window_seconds;
+                let end_x_progress = (visible_end - window_start) / zoom_window_seconds;
+
+                let start_x = rect.left() + (start_x_progress as f32 * available_width);
+                let end_x = rect.left() + (end_x_progress as f32 * available_width);
+
+                // Semi-transparent fill
+                let fill_color = if self.loop_active {
+                    Color32::from_rgba_unmultiplied(0, 200, 100, 50) // Green tint when active
+                } else {
+                    Color32::from_rgba_unmultiplied(100, 100, 100, 35) // Gray tint when inactive
+                };
+                let loop_rect = Rect::from_x_y_ranges(start_x..=end_x, rect.top()..=rect.bottom());
+                painter.rect_filled(loop_rect, 0.0, fill_color);
+
+                // Draw IN boundary line if visible
+                let line_color = if self.loop_active {
+                    Color32::from_rgb(0, 255, 128) // Green
+                } else {
+                    Color32::from_rgb(100, 150, 255) // Blue
+                };
+
+                if loop_in >= window_start && loop_in <= window_end {
+                    let in_x_progress = (loop_in - window_start) / zoom_window_seconds;
+                    let in_x = rect.left() + (in_x_progress as f32 * available_width);
+                    painter.line_segment(
+                        [egui::pos2(in_x, rect.top()), egui::pos2(in_x, rect.bottom())],
+                        Stroke::new(2.0, line_color),
+                    );
+                    // "IN" label
+                    painter.text(
+                        egui::pos2(in_x + 3.0, rect.top() + 10.0),
+                        egui::Align2::LEFT_CENTER,
+                        "IN",
+                        egui::FontId::proportional(9.0),
+                        line_color,
+                    );
+                }
+
+                // Draw OUT boundary line if visible
+                if loop_out >= window_start && loop_out <= window_end {
+                    let out_x_progress = (loop_out - window_start) / zoom_window_seconds;
+                    let out_x = rect.left() + (out_x_progress as f32 * available_width);
+                    painter.line_segment(
+                        [egui::pos2(out_x, rect.top()), egui::pos2(out_x, rect.bottom())],
+                        Stroke::new(2.0, line_color),
+                    );
+                    // "OUT" label
+                    painter.text(
+                        egui::pos2(out_x - 3.0, rect.top() + 10.0),
+                        egui::Align2::RIGHT_CENTER,
+                        "OUT",
+                        egui::FontId::proportional(9.0),
+                        line_color,
                     );
                 }
             }

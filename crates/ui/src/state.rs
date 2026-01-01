@@ -27,6 +27,11 @@ pub struct DjDeckState {
     pub first_beat_offset: f64,
     pub master_tempo_enabled: bool,
     pub tempo_range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%
+    // Loop state
+    pub loop_in: Option<f64>,
+    pub loop_out: Option<f64>,
+    pub loop_active: bool,
+    pub loop_beat_count: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -387,6 +392,23 @@ impl ConsoleState {
                     &mut self.dj_deck_b
                 };
                 deck_state.tempo_range = range;
+            }
+            halo_core::ConsoleEvent::DjLoopStateChanged {
+                deck,
+                loop_in,
+                loop_out,
+                active,
+                beat_count,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.loop_in = loop_in;
+                deck_state.loop_out = loop_out;
+                deck_state.loop_active = active;
+                deck_state.loop_beat_count = beat_count;
             }
             halo_core::ConsoleEvent::DjAnalysisProgress {
                 track_name,

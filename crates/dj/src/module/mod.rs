@@ -106,6 +106,12 @@ pub enum DjCommand {
     /// Toggle Master Tempo (key lock) mode.
     ToggleMasterTempo { deck: DeckId },
 
+    // Loop commands
+    /// Set a quantized loop (4 or 8 beats).
+    SetLoop { deck: DeckId, beat_count: u8 },
+    /// Toggle loop on/off (reloop/exit).
+    ToggleLoop { deck: DeckId },
+
     // Configuration commands
     /// Set the output channels for a deck.
     SetOutputChannels { deck: DeckId, channels: (u16, u16) },
@@ -415,6 +421,17 @@ impl DjModule {
                     deck: deck_id,
                     range: tempo_range,
                 })
+            }
+            ConsoleCommand::DjSetLoop { deck, beat_count } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::SetLoop {
+                    deck: deck_id,
+                    beat_count,
+                })
+            }
+            ConsoleCommand::DjToggleLoop { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::ToggleLoop { deck: deck_id })
             }
             _ => None,
         }
@@ -1718,6 +1735,88 @@ impl AsyncModule for DjModule {
                                             }
                                         )).await;
                                         log::info!("Deck {} tempo range set to {:?}", deck, range);
+                                    }
+                                    DjCommand::SetLoop { deck, beat_count } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Get current position and beat grid
+                                        let (loop_in, loop_out) = {
+                                            let d = self.deck(deck).read();
+
+                                            // Get current position from audio engine
+                                            let current_pos = if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).read().position_seconds()
+                                            } else {
+                                                d.position_seconds
+                                            };
+
+                                            // Quantize to nearest beat
+                                            if let Some(beat_grid) = &d.beat_grid {
+                                                let loop_in = beat_grid.nearest_beat(current_pos);
+                                                let loop_out = beat_grid.beat_position_after(loop_in, beat_count);
+                                                (loop_in, loop_out)
+                                            } else {
+                                                // No beat grid - use current position without quantization
+                                                let beat_duration = 60.0 / d.original_bpm.max(1.0);
+                                                let loop_out = current_pos + (beat_count as f64 * beat_duration);
+                                                (current_pos, loop_out)
+                                            }
+                                        };
+
+                                        // Update deck state
+                                        {
+                                            let mut d = self.deck(deck).write();
+                                            d.loop_state.loop_in = Some(loop_in);
+                                            d.loop_state.loop_out = Some(loop_out);
+                                            d.loop_state.active = true;
+                                            d.loop_state.beat_count = beat_count;
+                                        }
+
+                                        // Update audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_loop(loop_in, loop_out);
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in: Some(loop_in),
+                                                loop_out: Some(loop_out),
+                                                active: true,
+                                                beat_count,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Set {}-beat loop from {:.2}s to {:.2}s", deck, beat_count, loop_in, loop_out);
+                                    }
+                                    DjCommand::ToggleLoop { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Get current loop state
+                                        let (loop_in, loop_out, new_active, beat_count) = {
+                                            let mut d = self.deck(deck).write();
+                                            if d.loop_state.is_defined() {
+                                                d.loop_state.active = !d.loop_state.active;
+                                                (d.loop_state.loop_in, d.loop_state.loop_out, d.loop_state.active, d.loop_state.beat_count)
+                                            } else {
+                                                (None, None, false, 0)
+                                            }
+                                        };
+
+                                        // Update audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_loop_active(new_active);
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in,
+                                                loop_out,
+                                                active: new_active,
+                                                beat_count,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Loop {}", deck, if new_active { "enabled" } else { "disabled" });
                                     }
                                     DjCommand::ImportFolder { path } => {
                                         // Import metadata immediately

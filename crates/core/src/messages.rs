@@ -247,6 +247,13 @@ pub enum ConsoleCommand {
         deck: u8,
         range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%
     },
+    DjSetLoop {
+        deck: u8,
+        beat_count: u8, // 4 or 8 beats
+    },
+    DjToggleLoop {
+        deck: u8,
+    },
 
     // Ableton Link toggle
     ToggleAbletonLink,
@@ -588,6 +595,13 @@ pub enum ConsoleEvent {
     DjTempoRangeChanged {
         deck: u8,
         range: u8,
+    },
+    DjLoopStateChanged {
+        deck: u8,
+        loop_in: Option<f64>,
+        loop_out: Option<f64>,
+        active: bool,
+        beat_count: u8,
     },
     DjAnalysisProgress {
         track_id: i64,

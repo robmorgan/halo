@@ -82,6 +82,34 @@ impl DeckState {
     }
 }
 
+/// Loop state for quantized looping.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoopState {
+    /// Loop IN point in seconds (quantized to nearest beat).
+    pub loop_in: Option<f64>,
+    /// Loop OUT point in seconds (loop_in + beat_count * beat_interval).
+    pub loop_out: Option<f64>,
+    /// Whether the loop is currently active.
+    pub active: bool,
+    /// Number of beats in the current loop (4 or 8).
+    pub beat_count: u8,
+}
+
+impl LoopState {
+    /// Returns true if a loop is defined (has IN and OUT points).
+    pub fn is_defined(&self) -> bool {
+        self.loop_in.is_some() && self.loop_out.is_some()
+    }
+
+    /// Clear the loop points.
+    pub fn clear(&mut self) {
+        self.loop_in = None;
+        self.loop_out = None;
+        self.active = false;
+        self.beat_count = 0;
+    }
+}
+
 /// Complete deck state.
 #[derive(Debug, Clone)]
 pub struct Deck {
@@ -133,6 +161,10 @@ pub struct Deck {
     pub volume_level: f32,
     /// Peak level for VU meter.
     pub peak_level: f32,
+
+    // Looping
+    /// Current loop state for quantized looping.
+    pub loop_state: LoopState,
 }
 
 impl Deck {
@@ -157,6 +189,7 @@ impl Deck {
             master_tempo: MasterTempoMode::Off,
             volume_level: 0.0,
             peak_level: 0.0,
+            loop_state: LoopState::default(),
         }
     }
 
@@ -218,6 +251,7 @@ impl Deck {
         self.master_tempo = MasterTempoMode::Off;
         self.volume_level = 0.0;
         self.peak_level = 0.0;
+        self.loop_state.clear();
     }
 
     /// Update beat position from current time position.

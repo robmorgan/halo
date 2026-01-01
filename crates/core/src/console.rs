@@ -1968,6 +1968,30 @@ impl LightingConsole {
                     )
                     .await;
             }
+            DjSetLoop { deck, beat_count } => {
+                log::debug!("DJ: Set {}-beat loop on deck {}", beat_count, deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjSetLoop { deck, beat_count },
+                        ),
+                    )
+                    .await;
+            }
+            DjToggleLoop { deck } => {
+                log::debug!("DJ: Toggle loop on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjToggleLoop { deck },
+                        ),
+                    )
+                    .await;
+            }
 
             // Settings management
             UpdateSettings { settings } => {
@@ -2205,6 +2229,15 @@ impl LightingConsole {
                                     let _ = event_tx.send(ConsoleEvent::DjTempoRangeChanged {
                                         deck,
                                         range,
+                                    });
+                                }
+                                ModuleEvent::DjLoopStateChanged { deck, loop_in, loop_out, active, beat_count } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjLoopStateChanged {
+                                        deck,
+                                        loop_in,
+                                        loop_out,
+                                        active,
+                                        beat_count,
                                     });
                                 }
                                 ModuleEvent::DjAnalysisProgress { track_id, track_name, current, total } => {

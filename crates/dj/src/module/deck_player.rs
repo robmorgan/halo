@@ -100,6 +100,14 @@ pub struct DeckPlayer {
     /// 4 hot cue positions in seconds (None if not set).
     hot_cues: [Option<f64>; 4],
 
+    // Loop fields
+    /// Loop IN point in samples (None if not set).
+    loop_in_sample: Option<u64>,
+    /// Loop OUT point in samples (None if not set).
+    loop_out_sample: Option<u64>,
+    /// Whether the loop is currently active.
+    loop_active: bool,
+
     // Master Tempo fields
     /// Master Tempo mode (key lock).
     master_tempo: MasterTempoMode,
@@ -145,6 +153,9 @@ impl DeckPlayer {
             last_beat_event: None,
             prev_position_seconds: 0.0,
             hot_cues: [None; 4],
+            loop_in_sample: None,
+            loop_out_sample: None,
+            loop_active: false,
             master_tempo: MasterTempoMode::Off,
             time_stretcher: TimeStretcher::new(44100, 2),
             tempo_range: TempoRange::default(),
@@ -217,6 +228,9 @@ impl DeckPlayer {
         self.last_beat_event = None;
         self.prev_position_seconds = 0.0;
         self.hot_cues = [None; 4];
+        self.loop_in_sample = None;
+        self.loop_out_sample = None;
+        self.loop_active = false;
         // Reset time stretcher with new sample rate
         self.time_stretcher = TimeStretcher::new(self.sample_rate, self.channels as u32);
         self.state = PlayerState::Ready;
@@ -278,6 +292,9 @@ impl DeckPlayer {
         self.last_beat_event = None;
         self.prev_position_seconds = 0.0;
         self.hot_cues = [None; 4];
+        self.loop_in_sample = None;
+        self.loop_out_sample = None;
+        self.loop_active = false;
         self.time_stretcher.reset();
         self.state = PlayerState::Empty;
         log::debug!("Deck {}: Ejected", self.deck_id);
@@ -655,6 +672,26 @@ impl DeckPlayer {
             self.curr_sample = self.read_next_raw_sample();
             self.sample_position += 1;
 
+            // Check for loop wrap
+            if self.loop_active {
+                if let (Some(loop_out), Some(loop_in)) =
+                    (self.loop_out_sample, self.loop_in_sample)
+                {
+                    if self.sample_position >= loop_out {
+                        // Wrap back to loop IN point
+                        let loop_in_seconds = loop_in as f64 / self.sample_rate as f64;
+                        self.perform_seek(loop_in_seconds);
+                        self.sample_position = loop_in;
+                        log::trace!(
+                            "Deck {}: Loop wrap at sample {} -> {}",
+                            self.deck_id,
+                            loop_out,
+                            loop_in
+                        );
+                    }
+                }
+            }
+
             // Check for end of file
             if self.sample_position >= self.total_samples {
                 self.state = PlayerState::Ready;
@@ -686,6 +723,28 @@ impl DeckPlayer {
             self.sample_position += 1;
             self.time_stretcher.push_sample(sample.0, sample.1);
             self.fractional_position -= 1.0;
+
+            // Check for loop wrap
+            if self.loop_active {
+                if let (Some(loop_out), Some(loop_in)) =
+                    (self.loop_out_sample, self.loop_in_sample)
+                {
+                    if self.sample_position >= loop_out {
+                        // Wrap back to loop IN point
+                        let loop_in_seconds = loop_in as f64 / self.sample_rate as f64;
+                        self.perform_seek(loop_in_seconds);
+                        self.sample_position = loop_in;
+                        // Reset time stretcher for clean loop transition
+                        self.time_stretcher.reset();
+                        log::trace!(
+                            "Deck {}: Loop wrap (timestretched) at sample {} -> {}",
+                            self.deck_id,
+                            loop_out,
+                            loop_in
+                        );
+                    }
+                }
+            }
         }
 
         // Check for end of file
@@ -1089,6 +1148,64 @@ impl DeckPlayer {
             }
         }
         log::debug!("Deck {}: Loaded {} hot cues", self.deck_id, hot_cues.len());
+    }
+
+    // Loop methods
+
+    /// Set the loop points in seconds.
+    ///
+    /// Converts the time positions to sample positions for accurate looping.
+    pub fn set_loop(&mut self, loop_in: f64, loop_out: f64) {
+        // Convert seconds to samples
+        self.loop_in_sample = Some((loop_in * self.sample_rate as f64) as u64);
+        self.loop_out_sample = Some((loop_out * self.sample_rate as f64) as u64);
+        self.loop_active = true;
+        log::debug!(
+            "Deck {}: Loop set from {:.2}s to {:.2}s (samples {} to {})",
+            self.deck_id,
+            loop_in,
+            loop_out,
+            self.loop_in_sample.unwrap(),
+            self.loop_out_sample.unwrap()
+        );
+    }
+
+    /// Enable or disable the loop.
+    pub fn set_loop_active(&mut self, active: bool) {
+        if self.loop_in_sample.is_some() && self.loop_out_sample.is_some() {
+            self.loop_active = active;
+            log::debug!("Deck {}: Loop active = {}", self.deck_id, active);
+        }
+    }
+
+    /// Clear the loop points.
+    pub fn clear_loop(&mut self) {
+        self.loop_in_sample = None;
+        self.loop_out_sample = None;
+        self.loop_active = false;
+        log::debug!("Deck {}: Loop cleared", self.deck_id);
+    }
+
+    /// Check if a loop is defined (has IN and OUT points).
+    pub fn is_loop_defined(&self) -> bool {
+        self.loop_in_sample.is_some() && self.loop_out_sample.is_some()
+    }
+
+    /// Check if the loop is active.
+    pub fn is_loop_active(&self) -> bool {
+        self.loop_active
+    }
+
+    /// Get loop IN point in seconds.
+    pub fn loop_in_seconds(&self) -> Option<f64> {
+        self.loop_in_sample
+            .map(|s| s as f64 / self.sample_rate as f64)
+    }
+
+    /// Get loop OUT point in seconds.
+    pub fn loop_out_seconds(&self) -> Option<f64> {
+        self.loop_out_sample
+            .map(|s| s as f64 / self.sample_rate as f64)
     }
 }
 

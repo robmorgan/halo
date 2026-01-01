@@ -200,6 +200,24 @@ impl BeatGrid {
         let phrase = beat / 32.0; // 8 bars * 4 beats
         phrase - phrase.floor()
     }
+
+    /// Find the nearest beat position to the given time (seconds).
+    ///
+    /// Returns the time in seconds of the beat closest to the given position.
+    /// Used for quantizing loop IN points to beat boundaries.
+    pub fn nearest_beat(&self, position_seconds: f64) -> f64 {
+        let beat_number = self.beat_at_position(position_seconds);
+        let quantized_beat = beat_number.round();
+        let offset_seconds = self.first_beat_offset_ms / 1000.0;
+        offset_seconds + (quantized_beat * self.beat_interval_seconds())
+    }
+
+    /// Get the position N beats after a given position (seconds).
+    ///
+    /// Used for calculating loop OUT points from loop IN.
+    pub fn beat_position_after(&self, position_seconds: f64, beat_count: u8) -> f64 {
+        position_seconds + (beat_count as f64 * self.beat_interval_seconds())
+    }
 }
 
 /// 3-band frequency data for colored waveform visualization.
@@ -414,6 +432,52 @@ mod tests {
 
         // At position 0.75 seconds (0.25s into first beat), phase should be 0.5
         assert!((grid.beat_phase_at_position(0.75) - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_nearest_beat() {
+        let grid = BeatGrid {
+            track_id: TrackId(1),
+            bpm: 120.0,
+            first_beat_offset_ms: 0.0,
+            beat_positions: vec![],
+            confidence: 0.95,
+            analyzed_at: Utc::now(),
+            algorithm_version: "1.0".to_string(),
+        };
+
+        // At 120 BPM, beats are at 0.0, 0.5, 1.0, 1.5, etc.
+        // Position 0.2 should snap to 0.0
+        assert!((grid.nearest_beat(0.2) - 0.0).abs() < 0.001);
+        // Position 0.3 should snap to 0.5
+        assert!((grid.nearest_beat(0.3) - 0.5).abs() < 0.001);
+        // Position 0.75 should snap to 1.0
+        assert!((grid.nearest_beat(0.75) - 1.0).abs() < 0.001);
+        // Position 1.24 should snap to 1.0
+        assert!((grid.nearest_beat(1.24) - 1.0).abs() < 0.001);
+        // Position 1.26 should snap to 1.5
+        assert!((grid.nearest_beat(1.26) - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_beat_position_after() {
+        let grid = BeatGrid {
+            track_id: TrackId(1),
+            bpm: 120.0,
+            first_beat_offset_ms: 0.0,
+            beat_positions: vec![],
+            confidence: 0.95,
+            analyzed_at: Utc::now(),
+            algorithm_version: "1.0".to_string(),
+        };
+
+        // At 120 BPM, beat interval is 0.5 seconds
+        // 4 beats after 0.0 should be 2.0 seconds
+        assert!((grid.beat_position_after(0.0, 4) - 2.0).abs() < 0.001);
+        // 8 beats after 0.0 should be 4.0 seconds
+        assert!((grid.beat_position_after(0.0, 8) - 4.0).abs() < 0.001);
+        // 4 beats after 1.0 should be 3.0 seconds
+        assert!((grid.beat_position_after(1.0, 4) - 3.0).abs() < 0.001);
     }
 
     #[test]

@@ -107,6 +107,14 @@ pub enum ModuleEvent {
         deck: u8,
         range: u8,
     },
+    /// DJ loop state changed
+    DjLoopStateChanged {
+        deck: u8,
+        loop_in: Option<f64>,
+        loop_out: Option<f64>,
+        active: bool,
+        beat_count: u8,
+    },
     /// DJ track analysis progress (background import)
     DjAnalysisProgress {
         track_id: i64,
