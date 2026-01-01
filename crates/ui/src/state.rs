@@ -27,6 +27,7 @@ pub struct DjDeckState {
     pub first_beat_offset: f64,
     pub master_tempo_enabled: bool,
     pub tempo_range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=Wide (±100%)
+    pub pitch_percent: f64, // Pitch fader position (-1.0 to 1.0)
     // Loop state
     pub loop_in: Option<f64>,
     pub loop_out: Option<f64>,
@@ -446,6 +447,21 @@ impl ConsoleState {
                     .unwrap_or(&current_file);
                 self.status_message = Some(format!("Importing {}", filename));
                 self.status_progress = Some((current, total));
+            }
+            halo_core::ConsoleEvent::DjPitchChanged {
+                deck,
+                pitch_percent,
+                tempo_range,
+                adjusted_bpm,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.pitch_percent = pitch_percent;
+                deck_state.tempo_range = tempo_range;
+                deck_state.bpm = Some(adjusted_bpm);
             }
             _ => {
                 // Handle other events as needed

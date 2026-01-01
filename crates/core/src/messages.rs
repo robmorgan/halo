@@ -613,6 +613,13 @@ pub enum ConsoleEvent {
         deck: u8,
         range: u8,
     },
+    /// Pitch fader position changed (for sync following).
+    DjPitchChanged {
+        deck: u8,
+        pitch_percent: f64,
+        tempo_range: u8,
+        adjusted_bpm: f64,
+    },
     DjLoopStateChanged {
         deck: u8,
         loop_in: Option<f64>,

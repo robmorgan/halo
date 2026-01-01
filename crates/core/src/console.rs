@@ -2291,6 +2291,14 @@ impl LightingConsole {
                                         range,
                                     });
                                 }
+                                ModuleEvent::DjPitchChanged { deck, pitch_percent, tempo_range, adjusted_bpm } => {
+                                    let _ = event_tx.send(ConsoleEvent::DjPitchChanged {
+                                        deck,
+                                        pitch_percent,
+                                        tempo_range,
+                                        adjusted_bpm,
+                                    });
+                                }
                                 ModuleEvent::DjLoopStateChanged { deck, loop_in, loop_out, active, beat_count } => {
                                     let _ = event_tx.send(ConsoleEvent::DjLoopStateChanged {
                                         deck,

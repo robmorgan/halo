@@ -2089,6 +2089,148 @@ impl AsyncModule for DjModule {
                                             )).await;
                                         }
                                     }
+                                    DjCommand::ToggleSync { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Toggle sync state
+                                        let sync_enabled = {
+                                            let mut d = self.deck(deck).write();
+                                            d.sync_enabled = !d.sync_enabled;
+                                            log::info!(
+                                                "Deck {} sync {}",
+                                                deck,
+                                                if d.sync_enabled { "enabled" } else { "disabled" }
+                                            );
+                                            d.sync_enabled
+                                        };
+
+                                        if sync_enabled {
+                                            // Match master's tempo range
+                                            if let Some(master) = self.master_deck {
+                                                let master_tempo_range = self.deck(master).read().tempo_range;
+                                                self.deck(deck).write().tempo_range = master_tempo_range;
+
+                                                // Send tempo range change event
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjTempoRangeChanged {
+                                                        deck: deck_num,
+                                                        range: master_tempo_range.to_u8(),
+                                                    }
+                                                )).await;
+                                            }
+
+                                            // Sync to master's BPM
+                                            let tempo_range = self.deck(deck).read().tempo_range;
+                                            if let Some(engine) = &self.audio_engine {
+                                                if engine.sync_to_master(deck, tempo_range) {
+                                                    // Get new pitch position
+                                                    let (pitch_percent, adjusted_bpm) = {
+                                                        let player = engine.deck_player(deck).read();
+                                                        let pitch = (player.playback_rate() - 1.0) / tempo_range.as_fraction();
+                                                        let bpm = player.effective_bpm().unwrap_or(120.0);
+                                                        (pitch.clamp(-1.0, 1.0), bpm)
+                                                    };
+
+                                                    // Update deck state
+                                                    {
+                                                        let mut d = self.deck(deck).write();
+                                                        d.pitch_percent = pitch_percent;
+                                                        d.adjusted_bpm = adjusted_bpm;
+                                                    }
+
+                                                    // Send pitch changed event
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjPitchChanged {
+                                                            deck: deck_num,
+                                                            pitch_percent,
+                                                            tempo_range: tempo_range.to_u8(),
+                                                            adjusted_bpm,
+                                                        }
+                                                    )).await;
+
+                                                    log::info!("Deck {} synced to master BPM: {:.1}", deck, adjusted_bpm);
+                                                } else {
+                                                    log::warn!("Deck {} failed to sync (no master or out of range)", deck);
+                                                }
+                                            }
+                                        } else {
+                                            // Disable sync
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.disable_sync(deck);
+                                            }
+                                        }
+                                    }
+                                    DjCommand::SetPitch { deck, percent } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        let tempo_range = self.deck(deck).read().tempo_range;
+
+                                        // Apply pitch to this deck
+                                        let adjusted_bpm = {
+                                            let mut d = self.deck(deck).write();
+                                            d.pitch_percent = percent;
+                                            d.update_adjusted_bpm();
+                                            d.adjusted_bpm
+                                        };
+
+                                        // Update audio engine
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_pitch(percent, tempo_range);
+                                        }
+
+                                        // Send pitch changed event for this deck
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjPitchChanged {
+                                                deck: deck_num,
+                                                pitch_percent: percent,
+                                                tempo_range: tempo_range.to_u8(),
+                                                adjusted_bpm,
+                                            }
+                                        )).await;
+
+                                        // If this deck is master, update all synced decks
+                                        if self.master_deck == Some(deck) {
+                                            let other_deck = if deck == DeckId::A { DeckId::B } else { DeckId::A };
+                                            let other_deck_num = if deck == DeckId::A { 1 } else { 0 };
+                                            let sync_enabled = self.deck(other_deck).read().sync_enabled;
+
+                                            if sync_enabled {
+                                                let (original_bpm, other_tempo_range) = {
+                                                    let d = self.deck(other_deck).read();
+                                                    (d.original_bpm, d.tempo_range)
+                                                };
+
+                                                // Calculate required pitch for synced deck to match master BPM
+                                                let required_rate = adjusted_bpm / original_bpm;
+                                                let range_fraction = other_tempo_range.as_fraction();
+                                                let new_pitch = ((required_rate - 1.0) / range_fraction).clamp(-1.0, 1.0);
+
+                                                // Apply to synced deck
+                                                let other_adjusted_bpm = {
+                                                    let mut d = self.deck(other_deck).write();
+                                                    d.pitch_percent = new_pitch;
+                                                    d.update_adjusted_bpm();
+                                                    d.adjusted_bpm
+                                                };
+
+                                                // Update audio engine
+                                                if let Some(engine) = &self.audio_engine {
+                                                    engine.deck_player(other_deck).write().set_pitch(new_pitch, other_tempo_range);
+                                                }
+
+                                                // Send pitch changed event for synced deck
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjPitchChanged {
+                                                        deck: other_deck_num,
+                                                        pitch_percent: new_pitch,
+                                                        tempo_range: other_tempo_range.to_u8(),
+                                                        adjusted_bpm: other_adjusted_bpm,
+                                                    }
+                                                )).await;
+
+                                                log::debug!("Synced deck {} pitch to {:.2} (BPM: {:.1})", other_deck, new_pitch, other_adjusted_bpm);
+                                            }
+                                        }
+                                    }
                                     other => {
                                         eprintln!("DEBUG: Calling handle_command for {:?}", other);
                                         self.handle_command(other);

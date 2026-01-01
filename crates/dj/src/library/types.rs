@@ -390,6 +390,16 @@ impl TempoRange {
     pub fn pitch_to_multiplier(&self, pitch: f64) -> f64 {
         1.0 + (pitch * self.as_fraction())
     }
+
+    /// Convert to u8 for UI/event serialization.
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            Self::Range6 => 0,
+            Self::Range10 => 1,
+            Self::Range16 => 2,
+            Self::Wide => 3,
+        }
+    }
 }
 
 #[cfg(test)]

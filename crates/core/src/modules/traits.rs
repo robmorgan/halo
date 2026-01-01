@@ -107,6 +107,13 @@ pub enum ModuleEvent {
         deck: u8,
         range: u8,
     },
+    /// DJ pitch fader position changed (for sync following)
+    DjPitchChanged {
+        deck: u8,
+        pitch_percent: f64,
+        tempo_range: u8,
+        adjusted_bpm: f64,
+    },
     /// DJ loop state changed
     DjLoopStateChanged {
         deck: u8,

@@ -122,6 +122,10 @@ impl DjPanel {
         self.deck_b.master_tempo_enabled = state.dj_deck_b.master_tempo_enabled;
         self.deck_b.tempo_range = state.dj_deck_b.tempo_range;
 
+        // Sync pitch fader position from backend (for sync following)
+        self.deck_a.pitch = state.dj_deck_a.pitch_percent;
+        self.deck_b.pitch = state.dj_deck_b.pitch_percent;
+
         // Sync Loop state
         self.deck_a.loop_in = state.dj_deck_a.loop_in;
         self.deck_a.loop_out = state.dj_deck_a.loop_out;
