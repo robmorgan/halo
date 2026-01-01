@@ -31,7 +31,7 @@ pub struct DjDeckState {
     pub loop_in: Option<f64>,
     pub loop_out: Option<f64>,
     pub loop_active: bool,
-    pub loop_beat_count: u8,
+    pub loop_beat_count: f64,
 }
 
 #[derive(Debug, Clone)]

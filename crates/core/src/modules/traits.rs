@@ -113,7 +113,7 @@ pub enum ModuleEvent {
         loop_in: Option<f64>,
         loop_out: Option<f64>,
         active: bool,
-        beat_count: u8,
+        beat_count: f64,
     },
     /// DJ track analysis progress (background import)
     DjAnalysisProgress {

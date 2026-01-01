@@ -215,8 +215,8 @@ impl BeatGrid {
     /// Get the position N beats after a given position (seconds).
     ///
     /// Used for calculating loop OUT points from loop IN.
-    pub fn beat_position_after(&self, position_seconds: f64, beat_count: u8) -> f64 {
-        position_seconds + (beat_count as f64 * self.beat_interval_seconds())
+    pub fn beat_position_after(&self, position_seconds: f64, beat_count: f64) -> f64 {
+        position_seconds + (beat_count * self.beat_interval_seconds())
     }
 }
 
@@ -473,11 +473,11 @@ mod tests {
 
         // At 120 BPM, beat interval is 0.5 seconds
         // 4 beats after 0.0 should be 2.0 seconds
-        assert!((grid.beat_position_after(0.0, 4) - 2.0).abs() < 0.001);
+        assert!((grid.beat_position_after(0.0, 4.0) - 2.0).abs() < 0.001);
         // 8 beats after 0.0 should be 4.0 seconds
-        assert!((grid.beat_position_after(0.0, 8) - 4.0).abs() < 0.001);
+        assert!((grid.beat_position_after(0.0, 8.0) - 4.0).abs() < 0.001);
         // 4 beats after 1.0 should be 3.0 seconds
-        assert!((grid.beat_position_after(1.0, 4) - 3.0).abs() < 0.001);
+        assert!((grid.beat_position_after(1.0, 4.0) - 3.0).abs() < 0.001);
     }
 
     #[test]

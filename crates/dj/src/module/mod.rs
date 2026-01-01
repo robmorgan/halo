@@ -26,6 +26,11 @@ use crate::library::{
 };
 use crate::midi::z1_mapping::Z1Mapping;
 
+/// Minimum loop size in beats (1/32 beat).
+const MIN_LOOP_BEATS: f64 = 0.03125;
+/// Maximum loop size in beats (512 beats).
+const MAX_LOOP_BEATS: f64 = 512.0;
+
 /// Commands for the DJ module.
 #[derive(Debug, Clone)]
 pub enum DjCommand {
@@ -38,6 +43,12 @@ pub enum DjCommand {
     SearchLibrary { query: String },
     /// Get all tracks in the library.
     GetAllTracks,
+    /// Re-analyze a track's BPM.
+    ReanalyzeTrack { track_id: TrackId },
+    /// Update a track's BPM manually.
+    UpdateTrackBpm { track_id: TrackId, bpm: f64 },
+    /// Delete a track from the library.
+    DeleteTrack { track_id: TrackId },
 
     // Deck loading commands
     /// Load a track onto a deck.
@@ -111,6 +122,10 @@ pub enum DjCommand {
     SetLoop { deck: DeckId, beat_count: u8 },
     /// Toggle loop on/off (reloop/exit).
     ToggleLoop { deck: DeckId },
+    /// Halve the current loop length.
+    HalveLoop { deck: DeckId },
+    /// Double the current loop length.
+    DoubleLoop { deck: DeckId },
 
     // Configuration commands
     /// Set the output channels for a deck.
@@ -433,6 +448,24 @@ impl DjModule {
                 let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
                 Some(DjCommand::ToggleLoop { deck: deck_id })
             }
+            ConsoleCommand::DjHalveLoop { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::HalveLoop { deck: deck_id })
+            }
+            ConsoleCommand::DjDoubleLoop { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::DoubleLoop { deck: deck_id })
+            }
+            ConsoleCommand::DjReanalyzeTrack { track_id } => Some(DjCommand::ReanalyzeTrack {
+                track_id: TrackId(track_id),
+            }),
+            ConsoleCommand::DjUpdateTrackBpm { track_id, bpm } => Some(DjCommand::UpdateTrackBpm {
+                track_id: TrackId(track_id),
+                bpm,
+            }),
+            ConsoleCommand::DjDeleteTrack { track_id } => Some(DjCommand::DeleteTrack {
+                track_id: TrackId(track_id),
+            }),
             _ => None,
         }
     }
@@ -713,6 +746,15 @@ impl DjModule {
             DjCommand::AnalyzeTrack { track_id } => {
                 log::info!("Track analysis not yet implemented for track {}", track_id);
             }
+            DjCommand::ReanalyzeTrack { track_id } => {
+                self.reanalyze_track(track_id);
+            }
+            DjCommand::UpdateTrackBpm { track_id, bpm } => {
+                self.update_track_bpm(track_id, bpm);
+            }
+            DjCommand::DeleteTrack { track_id } => {
+                self.delete_track(track_id);
+            }
             // Handle remaining commands
             _ => {
                 log::warn!("Unhandled DJ command: {:?}", command);
@@ -818,6 +860,7 @@ impl DjModule {
                         artist: t.artist,
                         duration_seconds: t.duration_seconds,
                         bpm: t.bpm,
+                        file_path: t.file_path,
                     })
                     .collect();
                 log::info!("Returning {} tracks to UI", track_infos.len());
@@ -826,6 +869,79 @@ impl DjModule {
             Err(e) => {
                 log::error!("Failed to get tracks: {}", e);
                 None
+            }
+        }
+    }
+
+    /// Re-analyze a track's BPM.
+    fn reanalyze_track(&mut self, track_id: TrackId) {
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized");
+            return;
+        };
+
+        // Get track info from database
+        let (file_path, track_name) = {
+            let db = db.lock().unwrap();
+            match db.get_track(track_id) {
+                Ok(Some(track)) => (track.file_path.clone(), track.title.clone()),
+                Ok(None) => {
+                    log::error!("Track {} not found", track_id);
+                    return;
+                }
+                Err(e) => {
+                    log::error!("Failed to get track {}: {}", track_id, e);
+                    return;
+                }
+            }
+        };
+
+        // Queue for background analysis
+        log::info!(
+            "Queueing track {} ({}) for re-analysis",
+            track_id,
+            track_name
+        );
+        self.analysis_queue.push_back(PendingAnalysis {
+            track_id,
+            file_path: PathBuf::from(file_path),
+            track_name,
+        });
+        self.analysis_batch_total += 1;
+    }
+
+    /// Update a track's BPM manually.
+    fn update_track_bpm(&mut self, track_id: TrackId, bpm: f64) {
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized");
+            return;
+        };
+
+        let db = db.lock().unwrap();
+        match db.update_track_bpm(track_id, bpm) {
+            Ok(_) => {
+                log::info!("Updated track {} BPM to {:.1}", track_id, bpm);
+            }
+            Err(e) => {
+                log::error!("Failed to update track {} BPM: {}", track_id, e);
+            }
+        }
+    }
+
+    /// Delete a track from the library.
+    fn delete_track(&mut self, track_id: TrackId) {
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized");
+            return;
+        };
+
+        let db = db.lock().unwrap();
+        match db.delete_track(track_id) {
+            Ok(_) => {
+                log::info!("Deleted track {} from library", track_id);
+            }
+            Err(e) => {
+                log::error!("Failed to delete track {}: {}", track_id, e);
             }
         }
     }
@@ -1738,6 +1854,7 @@ impl AsyncModule for DjModule {
                                     }
                                     DjCommand::SetLoop { deck, beat_count } => {
                                         let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        let beat_count_f64 = beat_count as f64;
 
                                         // Get current position and beat grid
                                         let (loop_in, loop_out) = {
@@ -1753,12 +1870,12 @@ impl AsyncModule for DjModule {
                                             // Quantize to nearest beat
                                             if let Some(beat_grid) = &d.beat_grid {
                                                 let loop_in = beat_grid.nearest_beat(current_pos);
-                                                let loop_out = beat_grid.beat_position_after(loop_in, beat_count);
+                                                let loop_out = beat_grid.beat_position_after(loop_in, beat_count_f64);
                                                 (loop_in, loop_out)
                                             } else {
                                                 // No beat grid - use current position without quantization
                                                 let beat_duration = 60.0 / d.original_bpm.max(1.0);
-                                                let loop_out = current_pos + (beat_count as f64 * beat_duration);
+                                                let loop_out = current_pos + (beat_count_f64 * beat_duration);
                                                 (current_pos, loop_out)
                                             }
                                         };
@@ -1769,7 +1886,7 @@ impl AsyncModule for DjModule {
                                             d.loop_state.loop_in = Some(loop_in);
                                             d.loop_state.loop_out = Some(loop_out);
                                             d.loop_state.active = true;
-                                            d.loop_state.beat_count = beat_count;
+                                            d.loop_state.beat_count = beat_count_f64;
                                         }
 
                                         // Update audio player
@@ -1783,10 +1900,10 @@ impl AsyncModule for DjModule {
                                                 loop_in: Some(loop_in),
                                                 loop_out: Some(loop_out),
                                                 active: true,
-                                                beat_count,
+                                                beat_count: beat_count_f64,
                                             }
                                         )).await;
-                                        log::info!("Deck {}: Set {}-beat loop from {:.2}s to {:.2}s", deck, beat_count, loop_in, loop_out);
+                                        log::info!("Deck {}: Set {}-beat loop from {:.2}s to {:.2}s", deck, beat_count_f64, loop_in, loop_out);
                                     }
                                     DjCommand::ToggleLoop { deck } => {
                                         let deck_num = if deck == DeckId::A { 0 } else { 1 };
@@ -1798,7 +1915,7 @@ impl AsyncModule for DjModule {
                                                 d.loop_state.active = !d.loop_state.active;
                                                 (d.loop_state.loop_in, d.loop_state.loop_out, d.loop_state.active, d.loop_state.beat_count)
                                             } else {
-                                                (None, None, false, 0)
+                                                (None, None, false, 0.0)
                                             }
                                         };
 
@@ -1817,6 +1934,86 @@ impl AsyncModule for DjModule {
                                             }
                                         )).await;
                                         log::info!("Deck {}: Loop {}", deck, if new_active { "enabled" } else { "disabled" });
+                                    }
+                                    DjCommand::HalveLoop { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Calculate halved loop (min 1/32 beat)
+                                        let (loop_in, new_loop_out, new_beat_count, is_active) = {
+                                            let mut d = self.deck(deck).write();
+                                            if let (Some(in_pt), Some(out_pt)) = (d.loop_state.loop_in, d.loop_state.loop_out) {
+                                                let length = out_pt - in_pt;
+                                                let new_length = length / 2.0;
+                                                let new_beat_count = (d.loop_state.beat_count / 2.0).max(MIN_LOOP_BEATS);
+                                                let new_out = in_pt + new_length;
+
+                                                // Update state
+                                                d.loop_state.loop_out = Some(new_out);
+                                                d.loop_state.beat_count = new_beat_count;
+
+                                                (Some(in_pt), Some(new_out), new_beat_count, d.loop_state.active)
+                                            } else {
+                                                (None, None, 0.0, false)
+                                            }
+                                        };
+
+                                        // Update audio player if loop is defined
+                                        if let (Some(loop_in_val), Some(loop_out_val)) = (loop_in, new_loop_out) {
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).write().set_loop(loop_in_val, loop_out_val);
+                                            }
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in,
+                                                loop_out: new_loop_out,
+                                                active: is_active,
+                                                beat_count: new_beat_count,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Halved loop to {} beats", deck, new_beat_count);
+                                    }
+                                    DjCommand::DoubleLoop { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Calculate doubled loop (max 512 beats)
+                                        let (loop_in, new_loop_out, new_beat_count, is_active) = {
+                                            let mut d = self.deck(deck).write();
+                                            if let (Some(in_pt), Some(out_pt)) = (d.loop_state.loop_in, d.loop_state.loop_out) {
+                                                let length = out_pt - in_pt;
+                                                let new_length = length * 2.0;
+                                                let new_beat_count = (d.loop_state.beat_count * 2.0).min(MAX_LOOP_BEATS);
+                                                let new_out = in_pt + new_length;
+
+                                                // Update state
+                                                d.loop_state.loop_out = Some(new_out);
+                                                d.loop_state.beat_count = new_beat_count;
+
+                                                (Some(in_pt), Some(new_out), new_beat_count, d.loop_state.active)
+                                            } else {
+                                                (None, None, 0.0, false)
+                                            }
+                                        };
+
+                                        // Update audio player if loop is defined
+                                        if let (Some(loop_in_val), Some(loop_out_val)) = (loop_in, new_loop_out) {
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).write().set_loop(loop_in_val, loop_out_val);
+                                            }
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in,
+                                                loop_out: new_loop_out,
+                                                active: is_active,
+                                                beat_count: new_beat_count,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Doubled loop to {} beats", deck, new_beat_count);
                                     }
                                     DjCommand::ImportFolder { path } => {
                                         // Import metadata immediately

@@ -27,6 +27,8 @@ pub struct TrackEntry {
     pub duration_seconds: f64,
     /// BPM (if analyzed).
     pub bpm: Option<f64>,
+    /// File path on disk.
+    pub file_path: String,
 }
 
 /// Library browser state.
@@ -42,6 +44,10 @@ pub struct LibraryBrowser {
     sort_column: SortColumn,
     /// Sort ascending.
     sort_ascending: bool,
+    /// Track ID being edited for BPM (when dialog is open).
+    editing_bpm_track_id: Option<i64>,
+    /// BPM value being edited.
+    bpm_edit_value: String,
 }
 
 /// Column to sort by.
@@ -136,6 +142,10 @@ impl LibraryBrowser {
 
         // Track list
         let mut double_clicked_track_id: Option<i64> = None;
+        let mut context_reanalyze_track_id: Option<i64> = None;
+        let mut context_edit_bpm_track: Option<(i64, f64)> = None;
+        let mut context_delete_track_id: Option<i64> = None;
+        let mut context_show_in_finder_path: Option<String> = None;
 
         // Reserve space for bottom controls (buttons + spacing)
         let bottom_height = 40.0;
@@ -293,6 +303,40 @@ impl LibraryBrowser {
                             double_clicked_track_id = Some(track_id);
                         }
 
+                        // Right-click context menu
+                        let track_bpm = track.bpm.unwrap_or(120.0);
+                        let track_file_path = track.file_path.clone();
+                        base_response.context_menu(|ui| {
+                            if ui.button("Re-analyze BPM").clicked() {
+                                context_reanalyze_track_id = Some(track_id);
+                                ui.close_menu();
+                            }
+                            if ui.button("Edit BPM...").clicked() {
+                                context_edit_bpm_track = Some((track_id, track_bpm));
+                                ui.close_menu();
+                            }
+                            if ui.button("Delete from library").clicked() {
+                                context_delete_track_id = Some(track_id);
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            #[cfg(target_os = "macos")]
+                            if ui.button("Show in Finder").clicked() {
+                                context_show_in_finder_path = Some(track_file_path.clone());
+                                ui.close_menu();
+                            }
+                            #[cfg(target_os = "linux")]
+                            if ui.button("Show in File Manager").clicked() {
+                                context_show_in_finder_path = Some(track_file_path.clone());
+                                ui.close_menu();
+                            }
+                            #[cfg(target_os = "windows")]
+                            if ui.button("Show in Explorer").clicked() {
+                                context_show_in_finder_path = Some(track_file_path.clone());
+                                ui.close_menu();
+                            }
+                        });
+
                         ui.add_space(2.0);
                     }
 
@@ -304,6 +348,21 @@ impl LibraryBrowser {
         // Handle double-click load (send command after ScrollArea to avoid borrow issues)
         if let Some(track_id) = double_clicked_track_id {
             let _ = console_tx.send(ConsoleCommand::DjLoadTrack { deck: 0, track_id });
+        }
+
+        // Handle context menu actions
+        if let Some(track_id) = context_reanalyze_track_id {
+            let _ = console_tx.send(ConsoleCommand::DjReanalyzeTrack { track_id });
+        }
+        if let Some((track_id, bpm)) = context_edit_bpm_track {
+            self.editing_bpm_track_id = Some(track_id);
+            self.bpm_edit_value = format!("{:.1}", bpm);
+        }
+        if let Some(track_id) = context_delete_track_id {
+            let _ = console_tx.send(ConsoleCommand::DjDeleteTrack { track_id });
+        }
+        if let Some(path) = context_show_in_finder_path {
+            open_in_file_browser(&path);
         }
 
         ui.add_space(8.0);
@@ -365,6 +424,41 @@ impl LibraryBrowser {
                 );
             });
         });
+
+        // BPM edit dialog
+        if let Some(track_id) = self.editing_bpm_track_id {
+            let mut open = true;
+            egui::Window::new("Edit BPM")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .open(&mut open)
+                .show(ui.ctx(), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("BPM:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.bpm_edit_value)
+                                .desired_width(80.0),
+                        );
+                    });
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Save").clicked() {
+                            if let Ok(bpm) = self.bpm_edit_value.parse::<f64>() {
+                                let _ = console_tx
+                                    .send(ConsoleCommand::DjUpdateTrackBpm { track_id, bpm });
+                            }
+                            self.editing_bpm_track_id = None;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.editing_bpm_track_id = None;
+                        }
+                    });
+                });
+            if !open {
+                self.editing_bpm_track_id = None;
+            }
+        }
     }
 
     /// Toggle sort on a column.
@@ -473,6 +567,18 @@ impl LibraryBrowser {
         self.sort_tracks();
         self.selected_index = None;
     }
+
+    /// Update BPM values for tracks that have been analyzed.
+    /// This is called each frame to sync BPM values without replacing the entire list.
+    pub fn update_track_bpms(&mut self, source_tracks: &[halo_core::DjTrackInfo]) {
+        for source in source_tracks {
+            if let Some(track) = self.tracks.iter_mut().find(|t| t.id == source.id) {
+                if track.bpm != source.bpm {
+                    track.bpm = source.bpm;
+                }
+            }
+        }
+    }
 }
 
 /// Format duration as MM:SS.
@@ -480,4 +586,27 @@ fn format_duration(seconds: f64) -> String {
     let mins = (seconds / 60.0).floor() as u32;
     let secs = (seconds % 60.0).floor() as u32;
     format!("{}:{:02}", mins, secs)
+}
+
+/// Open the file's location in the system file browser.
+fn open_in_file_browser(path: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .args(["-R", path])
+            .spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Open parent directory
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer")
+            .args(["/select,", path])
+            .spawn();
+    }
 }

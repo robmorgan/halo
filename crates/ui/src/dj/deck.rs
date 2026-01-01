@@ -64,8 +64,8 @@ pub struct DeckWidget {
     pub loop_out: Option<f64>,
     /// Whether loop is currently active.
     pub loop_active: bool,
-    /// Number of beats in the current loop (4 or 8).
-    pub loop_beat_count: u8,
+    /// Number of beats in the current loop (supports 1/32 to 512 beats).
+    pub loop_beat_count: f64,
 }
 
 impl DeckWidget {
@@ -518,7 +518,7 @@ impl DeckWidget {
             let loop_button_size = Vec2::new(35.0, 30.0);
 
             // 4-beat loop button - green when active with 4 beats
-            let loop_4_active = self.loop_active && self.loop_beat_count == 4;
+            let loop_4_active = self.loop_active && (self.loop_beat_count - 4.0).abs() < 0.001;
             let loop_4_color = if loop_4_active {
                 Color32::from_rgb(0, 200, 100) // Green
             } else {
@@ -527,11 +527,13 @@ impl DeckWidget {
             if ui
                 .add_sized(
                     loop_button_size,
-                    egui::Button::new(
-                        egui::RichText::new("4")
-                            .size(14.0)
-                            .color(if loop_4_active { Color32::BLACK } else { Color32::WHITE }),
-                    )
+                    egui::Button::new(egui::RichText::new("4").size(14.0).color(
+                        if loop_4_active {
+                            Color32::BLACK
+                        } else {
+                            Color32::WHITE
+                        },
+                    ))
                     .fill(loop_4_color),
                 )
                 .on_hover_text("Set 4-beat loop")
@@ -544,7 +546,7 @@ impl DeckWidget {
             }
 
             // 8-beat loop button - green when active with 8 beats
-            let loop_8_active = self.loop_active && self.loop_beat_count == 8;
+            let loop_8_active = self.loop_active && (self.loop_beat_count - 8.0).abs() < 0.001;
             let loop_8_color = if loop_8_active {
                 Color32::from_rgb(0, 200, 100) // Green
             } else {
@@ -553,11 +555,13 @@ impl DeckWidget {
             if ui
                 .add_sized(
                     loop_button_size,
-                    egui::Button::new(
-                        egui::RichText::new("8")
-                            .size(14.0)
-                            .color(if loop_8_active { Color32::BLACK } else { Color32::WHITE }),
-                    )
+                    egui::Button::new(egui::RichText::new("8").size(14.0).color(
+                        if loop_8_active {
+                            Color32::BLACK
+                        } else {
+                            Color32::WHITE
+                        },
+                    ))
                     .fill(loop_8_color),
                 )
                 .on_hover_text("Set 8-beat loop")
@@ -584,15 +588,13 @@ impl DeckWidget {
             if ui
                 .add_sized(
                     Vec2::new(55.0, 30.0),
-                    egui::Button::new(
-                        egui::RichText::new(exit_text)
-                            .size(11.0)
-                            .color(if self.loop_active || has_loop {
-                                Color32::BLACK
-                            } else {
-                                Color32::GRAY
-                            }),
-                    )
+                    egui::Button::new(egui::RichText::new(exit_text).size(11.0).color(
+                        if self.loop_active || has_loop {
+                            Color32::BLACK
+                        } else {
+                            Color32::GRAY
+                        },
+                    ))
                     .fill(exit_color),
                 )
                 .on_hover_text(if self.loop_active {
@@ -604,6 +606,61 @@ impl DeckWidget {
             {
                 if has_loop {
                     let _ = console_tx.send(ConsoleCommand::DjToggleLoop { deck: deck_number });
+                }
+            }
+
+            ui.add_space(8.0);
+
+            // Beat jump / Loop halve-double buttons
+            let jump_button_size = Vec2::new(35.0, 30.0);
+
+            // Left button: Beat jump back OR halve loop
+            let left_text = if self.loop_active { "/2" } else { "<<" };
+            let left_tooltip = if self.loop_active {
+                "Halve loop"
+            } else {
+                "Jump back 4 beats"
+            };
+            if ui
+                .add_sized(
+                    jump_button_size,
+                    egui::Button::new(egui::RichText::new(left_text).size(14.0)),
+                )
+                .on_hover_text(left_tooltip)
+                .clicked()
+            {
+                if self.loop_active {
+                    let _ = console_tx.send(ConsoleCommand::DjHalveLoop { deck: deck_number });
+                } else {
+                    let _ = console_tx.send(ConsoleCommand::DjSeekBeats {
+                        deck: deck_number,
+                        beats: -4,
+                    });
+                }
+            }
+
+            // Right button: Beat jump forward OR double loop
+            let right_text = if self.loop_active { "x2" } else { ">>" };
+            let right_tooltip = if self.loop_active {
+                "Double loop"
+            } else {
+                "Jump forward 4 beats"
+            };
+            if ui
+                .add_sized(
+                    jump_button_size,
+                    egui::Button::new(egui::RichText::new(right_text).size(14.0)),
+                )
+                .on_hover_text(right_tooltip)
+                .clicked()
+            {
+                if self.loop_active {
+                    let _ = console_tx.send(ConsoleCommand::DjDoubleLoop { deck: deck_number });
+                } else {
+                    let _ = console_tx.send(ConsoleCommand::DjSeekBeats {
+                        deck: deck_number,
+                        beats: 4,
+                    });
                 }
             }
         });
@@ -835,11 +892,17 @@ impl DeckWidget {
                     Color32::from_rgb(100, 150, 255) // Blue
                 };
                 painter.line_segment(
-                    [egui::pos2(start_x, rect.top()), egui::pos2(start_x, rect.bottom())],
+                    [
+                        egui::pos2(start_x, rect.top()),
+                        egui::pos2(start_x, rect.bottom()),
+                    ],
                     Stroke::new(2.0, line_color),
                 );
                 painter.line_segment(
-                    [egui::pos2(end_x, rect.top()), egui::pos2(end_x, rect.bottom())],
+                    [
+                        egui::pos2(end_x, rect.top()),
+                        egui::pos2(end_x, rect.bottom()),
+                    ],
                     Stroke::new(2.0, line_color),
                 );
             }
@@ -1022,7 +1085,10 @@ impl DeckWidget {
                     let in_x_progress = (loop_in - window_start) / zoom_window_seconds;
                     let in_x = rect.left() + (in_x_progress as f32 * available_width);
                     painter.line_segment(
-                        [egui::pos2(in_x, rect.top()), egui::pos2(in_x, rect.bottom())],
+                        [
+                            egui::pos2(in_x, rect.top()),
+                            egui::pos2(in_x, rect.bottom()),
+                        ],
                         Stroke::new(2.0, line_color),
                     );
                     // "IN" label
@@ -1040,7 +1106,10 @@ impl DeckWidget {
                     let out_x_progress = (loop_out - window_start) / zoom_window_seconds;
                     let out_x = rect.left() + (out_x_progress as f32 * available_width);
                     painter.line_segment(
-                        [egui::pos2(out_x, rect.top()), egui::pos2(out_x, rect.bottom())],
+                        [
+                            egui::pos2(out_x, rect.top()),
+                            egui::pos2(out_x, rect.bottom()),
+                        ],
                         Stroke::new(2.0, line_color),
                     );
                     // "OUT" label

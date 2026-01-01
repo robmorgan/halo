@@ -1,6 +1,6 @@
 //! Audio analysis for BPM detection and beat grid generation.
 //!
-//! Uses FFT-based onset detection to identify beats and calculate BPM.
+//! Uses SoundTouch's BPMDetect for BPM detection and FFT for waveform coloring.
 
 use std::fs::File;
 use std::path::Path;
@@ -8,6 +8,7 @@ use std::path::Path;
 use chrono::Utc;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use soundtouch::BPMDetect;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::formats::FormatOptions;
@@ -28,8 +29,10 @@ pub struct AnalysisConfig {
     pub min_bpm: f64,
     /// Maximum BPM to detect.
     pub max_bpm: f64,
-    /// Number of waveform samples to generate.
-    pub waveform_samples: usize,
+    /// Waveform samples per second (resolution).
+    /// Higher values = smoother zoomed waveforms, more storage.
+    /// CDJ-3000 style requires ~150-400 samples/second.
+    pub waveform_samples_per_second: f32,
     /// Low frequency band upper limit in Hz (bass, kick drums).
     pub low_freq_cutoff: f32,
     /// Mid frequency band upper limit in Hz (vocals, instruments).
@@ -43,7 +46,9 @@ impl Default for AnalysisConfig {
             hop_size: 512,
             min_bpm: 60.0,
             max_bpm: 200.0,
-            waveform_samples: 1000,
+            // 150 samples/second gives smooth CDJ-style waveforms when zoomed.
+            // For a 5-minute track: 300s * 150 = 45,000 samples (~540KB with frequency data).
+            waveform_samples_per_second: 150.0,
             low_freq_cutoff: 250.0,  // 20-250 Hz for bass
             mid_freq_cutoff: 4000.0, // 250-4000 Hz for mids
         }
@@ -137,7 +142,7 @@ where
     stream_waveform_progress(
         &samples,
         sample_rate,
-        config.waveform_samples,
+        config,
         chunk_size,
         &mut on_waveform_progress,
     );
@@ -285,49 +290,26 @@ fn append_mono_samples(samples: &mut Vec<f32>, decoded: &AudioBufferRef) {
     }
 }
 
-/// Detect BPM using autocorrelation.
-fn detect_bpm(samples: &[f32], sample_rate: u32, config: &AnalysisConfig) -> (f64, f32) {
-    if samples.len() < config.fft_size * 2 {
+/// Detect BPM using SoundTouch's BPMDetect algorithm.
+///
+/// Uses envelope detection and autocorrelation on bass frequencies (<250Hz)
+/// for robust beat detection.
+fn detect_bpm(samples: &[f32], sample_rate: u32, _config: &AnalysisConfig) -> (f64, f32) {
+    if samples.len() < 4096 {
         return (120.0, 0.0); // Default to 120 BPM if not enough samples
     }
 
-    // Calculate onset strength function using spectral flux
-    let onset_env = calculate_onset_envelope(samples, config);
+    // Use SoundTouch's BPMDetect (mono input)
+    let mut detector = BPMDetect::new(1, sample_rate);
+    detector.input_samples(samples);
+    let bpm = detector.get_bpm() as f64;
 
-    if onset_env.is_empty() {
+    if bpm <= 0.0 {
         return (120.0, 0.0);
     }
 
-    // Calculate autocorrelation of onset envelope
-    let onset_rate = sample_rate as f64 / config.hop_size as f64;
-    let min_lag = (60.0 * onset_rate / config.max_bpm) as usize;
-    let max_lag = (60.0 * onset_rate / config.min_bpm) as usize;
-
-    let autocorr = autocorrelation(&onset_env, max_lag);
-
-    // Find peak in autocorrelation within BPM range
-    let mut best_lag = min_lag;
-    let mut best_value = 0.0;
-
-    for lag in min_lag..max_lag.min(autocorr.len()) {
-        if autocorr[lag] > best_value {
-            best_value = autocorr[lag];
-            best_lag = lag;
-        }
-    }
-
-    // Convert lag to BPM
-    let bpm = 60.0 * onset_rate / best_lag as f64;
-
-    // Calculate confidence based on autocorrelation strength
-    let max_autocorr = autocorr.iter().cloned().fold(0.0_f32, f32::max);
-    let confidence = if max_autocorr > 0.0 {
-        (best_value / max_autocorr).min(1.0)
-    } else {
-        0.0
-    };
-
-    (bpm, confidence)
+    // SoundTouch doesn't provide confidence, use fixed value for successful detection
+    (bpm, 0.9)
 }
 
 /// Calculate onset envelope using spectral flux.
@@ -375,24 +357,8 @@ fn calculate_onset_envelope(samples: &[f32], config: &AnalysisConfig) -> Vec<f32
     onset_env
 }
 
-/// Calculate autocorrelation of a signal.
-fn autocorrelation(signal: &[f32], max_lag: usize) -> Vec<f32> {
-    let n = signal.len();
-    let mut result = vec![0.0; max_lag];
-
-    for lag in 0..max_lag {
-        let mut sum = 0.0;
-        for i in 0..n - lag {
-            sum += signal[i] * signal[i + lag];
-        }
-        result[lag] = sum / (n - lag) as f32;
-    }
-
-    result
-}
-
 /// Find the offset to the first beat.
-fn find_first_beat(samples: &[f32], sample_rate: u32, bpm: f64) -> f64 {
+fn find_first_beat(samples: &[f32], sample_rate: u32, _bpm: f64) -> f64 {
     // Simple approach: find first significant onset
     let config = AnalysisConfig::default();
     let onset_env = calculate_onset_envelope(samples, &config);
@@ -431,7 +397,12 @@ fn generate_colored_waveform(
     track_id: TrackId,
     config: &AnalysisConfig,
 ) -> TrackWaveform {
-    let target_samples = config.waveform_samples;
+    let duration_seconds = audio_samples.len() as f64 / sample_rate as f64;
+
+    // Calculate target samples based on duration and samples-per-second config
+    // This gives consistent resolution regardless of track length
+    let target_samples =
+        ((duration_seconds as f32 * config.waveform_samples_per_second).ceil() as usize).max(100);
 
     if audio_samples.is_empty() {
         return TrackWaveform {
@@ -444,7 +415,6 @@ fn generate_colored_waveform(
         };
     }
 
-    let duration_seconds = audio_samples.len() as f64 / sample_rate as f64;
     let samples_per_bucket = audio_samples.len() / target_samples.max(1);
 
     // FFT setup
@@ -567,18 +537,23 @@ fn generate_colored_waveform(
 fn stream_waveform_progress<F>(
     audio_samples: &[f32],
     sample_rate: u32,
-    target_samples: usize,
+    config: &AnalysisConfig,
     chunk_size: usize,
     mut on_progress: F,
 ) where
     F: FnMut(Vec<f32>, f32),
 {
+    let duration_seconds = audio_samples.len() as f64 / sample_rate as f64;
+
+    // Calculate target samples using same formula as generate_colored_waveform
+    let target_samples =
+        ((duration_seconds as f32 * config.waveform_samples_per_second).ceil() as usize).max(100);
+
     if audio_samples.is_empty() {
         on_progress(vec![0.0; target_samples], 1.0);
         return;
     }
 
-    let _duration_seconds = audio_samples.len() as f64 / sample_rate as f64;
     let samples_per_bucket = audio_samples.len() / target_samples.max(1);
 
     let mut waveform_samples = Vec::with_capacity(target_samples);
@@ -611,36 +586,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_autocorrelation() {
-        // Simple signal with known periodicity
-        let signal: Vec<f32> = (0..200)
-            .map(|i| if i % 20 < 10 { 1.0 } else { -1.0 })
-            .collect();
-
-        let autocorr = autocorrelation(&signal, 50);
-
-        // Autocorrelation should be computed without panic
-        assert!(!autocorr.is_empty());
-        // At lag 0, we should have maximum correlation
-        let max_corr = autocorr.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-        assert!((autocorr[0] - max_corr).abs() < 0.01);
-    }
-
-    #[test]
     fn test_generate_colored_waveform() {
         let samples: Vec<f32> = (0..44100).map(|i| (i as f32 * 0.01).sin()).collect();
 
         let config = AnalysisConfig::default();
         let waveform = generate_colored_waveform(&samples, 44100, TrackId(1), &config);
 
-        assert_eq!(waveform.sample_count, config.waveform_samples);
-        assert_eq!(waveform.samples.len(), config.waveform_samples);
+        // 1 second of audio at 150 samples/second = 150 samples
+        let expected_samples = 150;
+        assert_eq!(waveform.sample_count, expected_samples);
+        assert_eq!(waveform.samples.len(), expected_samples);
         assert!((waveform.duration_seconds - 1.0).abs() < 0.01);
         // Verify frequency bands are generated
         assert!(waveform.frequency_bands.is_some());
         assert_eq!(
             waveform.frequency_bands.as_ref().unwrap().len(),
-            config.waveform_samples
+            expected_samples
         );
         assert_eq!(waveform.version, WAVEFORM_VERSION_COLORED);
     }

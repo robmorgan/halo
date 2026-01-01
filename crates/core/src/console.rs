@@ -1970,15 +1970,15 @@ impl LightingConsole {
             }
             DjSetLoop { deck, beat_count } => {
                 log::debug!("DJ: Set {}-beat loop on deck {}", beat_count, deck);
-                let _ = self
-                    .module_manager
-                    .send_to_module(
-                        crate::modules::traits::ModuleId::Dj,
-                        crate::modules::traits::ModuleEvent::DjCommand(
-                            ConsoleCommand::DjSetLoop { deck, beat_count },
-                        ),
-                    )
-                    .await;
+                let _ =
+                    self.module_manager
+                        .send_to_module(
+                            crate::modules::traits::ModuleId::Dj,
+                            crate::modules::traits::ModuleEvent::DjCommand(
+                                ConsoleCommand::DjSetLoop { deck, beat_count },
+                            ),
+                        )
+                        .await;
             }
             DjToggleLoop { deck } => {
                 log::debug!("DJ: Toggle loop on deck {}", deck);
@@ -1988,6 +1988,66 @@ impl LightingConsole {
                         crate::modules::traits::ModuleId::Dj,
                         crate::modules::traits::ModuleEvent::DjCommand(
                             ConsoleCommand::DjToggleLoop { deck },
+                        ),
+                    )
+                    .await;
+            }
+            DjHalveLoop { deck } => {
+                log::debug!("DJ: Halve loop on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjHalveLoop { deck },
+                        ),
+                    )
+                    .await;
+            }
+            DjDoubleLoop { deck } => {
+                log::debug!("DJ: Double loop on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjDoubleLoop { deck },
+                        ),
+                    )
+                    .await;
+            }
+            DjReanalyzeTrack { track_id } => {
+                log::info!("DJ: Re-analyzing track {}", track_id);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjReanalyzeTrack { track_id },
+                        ),
+                    )
+                    .await;
+            }
+            DjUpdateTrackBpm { track_id, bpm } => {
+                log::info!("DJ: Updating track {} BPM to {}", track_id, bpm);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjUpdateTrackBpm { track_id, bpm },
+                        ),
+                    )
+                    .await;
+            }
+            DjDeleteTrack { track_id } => {
+                log::info!("DJ: Deleting track {}", track_id);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjDeleteTrack { track_id },
                         ),
                     )
                     .await;

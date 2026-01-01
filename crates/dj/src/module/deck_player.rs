@@ -674,8 +674,7 @@ impl DeckPlayer {
 
             // Check for loop wrap
             if self.loop_active {
-                if let (Some(loop_out), Some(loop_in)) =
-                    (self.loop_out_sample, self.loop_in_sample)
+                if let (Some(loop_out), Some(loop_in)) = (self.loop_out_sample, self.loop_in_sample)
                 {
                     if self.sample_position >= loop_out {
                         // Wrap back to loop IN point
@@ -726,8 +725,7 @@ impl DeckPlayer {
 
             // Check for loop wrap
             if self.loop_active {
-                if let (Some(loop_out), Some(loop_in)) =
-                    (self.loop_out_sample, self.loop_in_sample)
+                if let (Some(loop_out), Some(loop_in)) = (self.loop_out_sample, self.loop_in_sample)
                 {
                     if self.sample_position >= loop_out {
                         // Wrap back to loop IN point

@@ -103,7 +103,9 @@ impl TimeStretcher {
     /// Receive available samples from SoundTouch.
     fn receive_samples(&mut self) {
         loop {
-            let received = self.processor.receive_samples(&mut self.receive_buffer, 1024);
+            let received = self
+                .processor
+                .receive_samples(&mut self.receive_buffer, 1024);
             if received == 0 {
                 break;
             }

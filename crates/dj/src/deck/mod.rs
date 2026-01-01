@@ -91,8 +91,8 @@ pub struct LoopState {
     pub loop_out: Option<f64>,
     /// Whether the loop is currently active.
     pub active: bool,
-    /// Number of beats in the current loop (4 or 8).
-    pub beat_count: u8,
+    /// Number of beats in the current loop (supports 1/32 to 512 beats).
+    pub beat_count: f64,
 }
 
 impl LoopState {
@@ -106,7 +106,7 @@ impl LoopState {
         self.loop_in = None;
         self.loop_out = None;
         self.active = false;
-        self.beat_count = 0;
+        self.beat_count = 0.0;
     }
 }
 

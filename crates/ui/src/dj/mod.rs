@@ -61,7 +61,7 @@ impl DjPanel {
             self.library_requested = true;
         }
 
-        // Update library browser with tracks from state ONLY when tracks change
+        // Update library browser with tracks from state when tracks change
         if track_count_changed && !state.dj_tracks.is_empty() {
             let tracks: Vec<library::TrackEntry> = state
                 .dj_tracks
@@ -72,10 +72,15 @@ impl DjPanel {
                     artist: t.artist.clone(),
                     duration_seconds: t.duration_seconds,
                     bpm: t.bpm,
+                    file_path: t.file_path.clone(),
                 })
                 .collect();
             self.library.set_tracks(tracks);
             self.last_track_count = state.dj_tracks.len();
+        } else {
+            // Sync BPM values for tracks that have been analyzed
+            // (when track count is the same but BPM values may have changed)
+            self.library.update_track_bpms(&state.dj_tracks);
         }
 
         // Sync deck state from console state

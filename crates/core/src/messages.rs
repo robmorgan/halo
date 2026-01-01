@@ -14,6 +14,7 @@ pub struct DjTrackInfo {
     pub artist: Option<String>,
     pub duration_seconds: f64,
     pub bpm: Option<f64>,
+    pub file_path: String,
 }
 
 /// Commands sent from UI to Console
@@ -253,6 +254,22 @@ pub enum ConsoleCommand {
     },
     DjToggleLoop {
         deck: u8,
+    },
+    DjHalveLoop {
+        deck: u8,
+    },
+    DjDoubleLoop {
+        deck: u8,
+    },
+    DjReanalyzeTrack {
+        track_id: i64,
+    },
+    DjUpdateTrackBpm {
+        track_id: i64,
+        bpm: f64,
+    },
+    DjDeleteTrack {
+        track_id: i64,
     },
 
     // Ableton Link toggle
@@ -601,7 +618,7 @@ pub enum ConsoleEvent {
         loop_in: Option<f64>,
         loop_out: Option<f64>,
         active: bool,
-        beat_count: u8,
+        beat_count: f64,
     },
     DjAnalysisProgress {
         track_id: i64,
