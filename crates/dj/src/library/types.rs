@@ -371,12 +371,8 @@ pub enum TempoRange {
     Range10,
     /// +/- 16%
     Range16,
-    /// +/- 25%
-    Range25,
-    /// +/- 50% (wide)
+    /// +/- 100% (wide - full range, allows near-stop to double speed)
     Wide,
-    /// +/- 100% (full range, allows near-stop to double speed)
-    Range100,
 }
 
 impl TempoRange {
@@ -386,9 +382,7 @@ impl TempoRange {
             Self::Range6 => 0.06,
             Self::Range10 => 0.10,
             Self::Range16 => 0.16,
-            Self::Range25 => 0.25,
-            Self::Wide => 0.50,
-            Self::Range100 => 1.00,
+            Self::Wide => 1.00,
         }
     }
 
@@ -492,5 +486,22 @@ mod tests {
 
         // At pitch -1.0, multiplier should be 0.90
         assert!((range.pitch_to_multiplier(-1.0) - 0.90).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_tempo_range_wide() {
+        let range = TempoRange::Wide;
+
+        // Wide is ±100%
+        assert!((range.as_fraction() - 1.0).abs() < 0.001);
+
+        // At pitch 0.0, multiplier should be 1.0
+        assert!((range.pitch_to_multiplier(0.0) - 1.0).abs() < 0.001);
+
+        // At pitch 1.0, multiplier should be 2.0 (double speed)
+        assert!((range.pitch_to_multiplier(1.0) - 2.0).abs() < 0.001);
+
+        // At pitch -1.0, multiplier should be 0.0 (stopped)
+        assert!((range.pitch_to_multiplier(-1.0) - 0.0).abs() < 0.001);
     }
 }

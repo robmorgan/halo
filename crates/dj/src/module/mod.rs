@@ -440,9 +440,7 @@ impl DjModule {
                     0 => TempoRange::Range6,
                     1 => TempoRange::Range10,
                     2 => TempoRange::Range16,
-                    3 => TempoRange::Range25,
-                    4 => TempoRange::Wide,
-                    _ => TempoRange::Range100,
+                    _ => TempoRange::Wide,
                 };
                 Some(DjCommand::SetTempoRange {
                     deck: deck_id,
@@ -1879,9 +1877,7 @@ impl AsyncModule for DjModule {
                                             TempoRange::Range6 => 0,
                                             TempoRange::Range10 => 1,
                                             TempoRange::Range16 => 2,
-                                            TempoRange::Range25 => 3,
-                                            TempoRange::Wide => 4,
-                                            TempoRange::Range100 => 5,
+                                            TempoRange::Wide => 3,
                                         };
                                         let _ = tx.send(ModuleMessage::Event(
                                             ModuleEvent::DjTempoRangeChanged {

@@ -26,7 +26,7 @@ pub struct DjDeckState {
     pub beat_positions: Vec<f64>,
     pub first_beat_offset: f64,
     pub master_tempo_enabled: bool,
-    pub tempo_range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%
+    pub tempo_range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=Wide (±100%)
     // Loop state
     pub loop_in: Option<f64>,
     pub loop_out: Option<f64>,
@@ -340,13 +340,15 @@ impl ConsoleState {
                 progress: _,
             } => {
                 // Progressive waveform update - replace with partial samples
-                let deck_state = if deck == 0 {
-                    &mut self.dj_deck_a
-                } else {
-                    &mut self.dj_deck_b
-                };
-                deck_state.waveform = samples;
-                deck_state.waveform_colors = frequency_bands;
+                // Only update actual decks (0 or 1), ignore library analysis (255)
+                if deck == 0 {
+                    self.dj_deck_a.waveform = samples;
+                    self.dj_deck_a.waveform_colors = frequency_bands;
+                } else if deck == 1 {
+                    self.dj_deck_b.waveform = samples;
+                    self.dj_deck_b.waveform_colors = frequency_bands;
+                }
+                // deck == 255 is library analysis, ignore for deck display
             }
             halo_core::ConsoleEvent::DjWaveformLoaded {
                 deck,
@@ -355,13 +357,15 @@ impl ConsoleState {
                 duration_seconds: _,
             } => {
                 // Final waveform - replace with complete samples
-                let deck_state = if deck == 0 {
-                    &mut self.dj_deck_a
-                } else {
-                    &mut self.dj_deck_b
-                };
-                deck_state.waveform = samples;
-                deck_state.waveform_colors = frequency_bands;
+                // Only update actual decks (0 or 1), ignore library analysis (255)
+                if deck == 0 {
+                    self.dj_deck_a.waveform = samples;
+                    self.dj_deck_a.waveform_colors = frequency_bands;
+                } else if deck == 1 {
+                    self.dj_deck_b.waveform = samples;
+                    self.dj_deck_b.waveform_colors = frequency_bands;
+                }
+                // deck == 255 is library analysis, ignore for deck display
             }
             halo_core::ConsoleEvent::DjBeatGridLoaded {
                 deck,
@@ -369,13 +373,14 @@ impl ConsoleState {
                 first_beat_offset,
                 bpm: _,
             } => {
-                let deck_state = if deck == 0 {
-                    &mut self.dj_deck_a
-                } else {
-                    &mut self.dj_deck_b
-                };
-                deck_state.beat_positions = beat_positions;
-                deck_state.first_beat_offset = first_beat_offset;
+                // Only update actual decks (0 or 1)
+                if deck == 0 {
+                    self.dj_deck_a.beat_positions = beat_positions;
+                    self.dj_deck_a.first_beat_offset = first_beat_offset;
+                } else if deck == 1 {
+                    self.dj_deck_b.beat_positions = beat_positions;
+                    self.dj_deck_b.first_beat_offset = first_beat_offset;
+                }
             }
             halo_core::ConsoleEvent::DjMasterTempoChanged { deck, enabled } => {
                 let deck_state = if deck == 0 {

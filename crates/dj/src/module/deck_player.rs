@@ -1343,8 +1343,8 @@ mod tests {
         let result = player.sync_to_bpm(140.0, TempoRange::Range10);
         assert!(!result);
 
-        // But Range25 should work (120 * 1.25 = 150, so 140 is within range)
-        let result = player.sync_to_bpm(140.0, TempoRange::Range25);
+        // But Wide should work (120 * 2.0 = 240, so 140 is within range)
+        let result = player.sync_to_bpm(140.0, TempoRange::Wide);
         assert!(result);
 
         // Verify effective BPM is now 140
