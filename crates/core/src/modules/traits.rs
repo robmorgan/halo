@@ -10,6 +10,8 @@ pub enum ModuleId {
     Dmx,
     Smpte,
     Midi,
+    Dj,
+    Push2,
 }
 
 /// Events that can be sent between modules
@@ -34,6 +36,106 @@ pub enum ModuleEvent {
     },
     /// MIDI input events
     MidiInput(crate::midi::midi::MidiMessage),
+    /// DJ rhythm sync for lighting integration
+    DjRhythmSync {
+        bpm: f64,
+        beat_phase: f64,
+        bar_phase: f64,
+        phrase_phase: f64,
+    },
+    /// DJ beat trigger (fired on each beat)
+    DjBeat {
+        deck: u8,
+        beat_number: u64,
+        is_downbeat: bool,
+    },
+    /// DJ command from console
+    DjCommand(crate::ConsoleCommand),
+    /// DJ library tracks response
+    DjLibraryTracks(Vec<crate::DjTrackInfo>),
+    /// DJ deck loaded event
+    DjDeckLoaded {
+        deck: u8,
+        track_id: i64,
+        title: String,
+        artist: Option<String>,
+        duration_seconds: f64,
+        bpm: Option<f64>,
+    },
+    /// DJ deck state changed
+    DjDeckStateChanged {
+        deck: u8,
+        is_playing: bool,
+        position_seconds: f64,
+        bpm: Option<f64>,
+    },
+    /// DJ cue point set
+    DjCuePointSet {
+        deck: u8,
+        position_seconds: f64,
+    },
+    /// DJ waveform progress (streaming analysis)
+    DjWaveformProgress {
+        deck: u8,
+        samples: Vec<f32>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        frequency_bands: Option<Vec<(f32, f32, f32)>>,
+        progress: f32,
+    },
+    /// DJ waveform loaded (complete)
+    DjWaveformLoaded {
+        deck: u8,
+        samples: Vec<f32>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        frequency_bands: Option<Vec<(f32, f32, f32)>>,
+        duration_seconds: f64,
+    },
+    /// DJ beat grid loaded
+    DjBeatGridLoaded {
+        deck: u8,
+        beat_positions: Vec<f64>,
+        first_beat_offset: f64,
+        bpm: f64,
+    },
+    /// DJ master tempo changed
+    DjMasterTempoChanged {
+        deck: u8,
+        enabled: bool,
+    },
+    /// DJ tempo range changed
+    DjTempoRangeChanged {
+        deck: u8,
+        range: u8,
+    },
+    /// DJ pitch fader position changed (for sync following)
+    DjPitchChanged {
+        deck: u8,
+        pitch_percent: f64,
+        tempo_range: u8,
+        adjusted_bpm: f64,
+    },
+    /// DJ loop state changed
+    DjLoopStateChanged {
+        deck: u8,
+        loop_in: Option<f64>,
+        loop_out: Option<f64>,
+        active: bool,
+        beat_count: f64,
+    },
+    /// DJ track analysis progress (background import)
+    DjAnalysisProgress {
+        track_id: i64,
+        track_name: String,
+        current: usize,
+        total: usize,
+    },
+    /// DJ track analysis complete
+    DjAnalysisComplete {
+        track_id: i64,
+        bpm: Option<f64>,
+    },
+    /// Clear status message
+    StatusClear,
     /// System events
     Shutdown,
 }

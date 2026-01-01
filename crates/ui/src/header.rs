@@ -70,6 +70,18 @@ pub fn render(
 
         ui.separator();
 
+        if ui.button("Import Music Folder...").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Import Music Folder")
+                .pick_folder()
+            {
+                let _ = console_tx.send(ConsoleCommand::DjImportFolder { path });
+            }
+            ui.close();
+        }
+
+        ui.separator();
+
         if ui.button("Settings").clicked() {
             settings_panel.open();
             ui.close();
@@ -111,6 +123,12 @@ pub fn render(
     });
     // Tab selector
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if ui
+            .selectable_label(matches!(active_tab, ActiveTab::Dj), "DJ")
+            .clicked()
+        {
+            *active_tab = ActiveTab::Dj;
+        }
         if ui
             .selectable_label(matches!(active_tab, ActiveTab::ShowManager), "Shows")
             .clicked()

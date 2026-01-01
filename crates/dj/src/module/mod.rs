@@ -1,0 +1,2494 @@
+//! DJ module implementation.
+
+mod audio_engine;
+mod deck_player;
+mod time_stretcher;
+
+use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+pub use audio_engine::{
+    default_device_name, list_audio_devices, AudioDeviceInfo, AudioEngineConfig, DjAudioEngine,
+};
+pub use deck_player::{BeatEvent, DeckPlayer, PlayerState};
+use halo_core::{AsyncModule, MidiMessage, ModuleEvent, ModuleId, ModuleMessage};
+use parking_lot::RwLock;
+use tokio::sync::mpsc;
+
+use crate::deck::{Deck, DeckId, DeckState};
+use crate::library::database::LibraryDatabase;
+use crate::library::import::{import_file_metadata_only, scan_directory_for_audio};
+use crate::library::{
+    analyze_file_streaming, AnalysisConfig, AnalysisResult, BeatGrid, HotCue, MasterTempoMode,
+    TempoRange, Track, TrackId, TrackWaveform, WAVEFORM_VERSION_COLORED,
+};
+use crate::midi::z1_mapping::Z1Mapping;
+
+/// Minimum loop size in beats (1/32 beat).
+const MIN_LOOP_BEATS: f64 = 0.03125;
+/// Maximum loop size in beats (512 beats).
+const MAX_LOOP_BEATS: f64 = 512.0;
+
+/// Commands for the DJ module.
+#[derive(Debug, Clone)]
+pub enum DjCommand {
+    // Library commands
+    /// Import all audio files from a folder.
+    ImportFolder { path: PathBuf },
+    /// Analyze a track for BPM/beat grid.
+    AnalyzeTrack { track_id: TrackId },
+    /// Search the library.
+    SearchLibrary { query: String },
+    /// Get all tracks in the library.
+    GetAllTracks,
+    /// Re-analyze a track's BPM.
+    ReanalyzeTrack { track_id: TrackId },
+    /// Update a track's BPM manually.
+    UpdateTrackBpm { track_id: TrackId, bpm: f64 },
+    /// Delete a track from the library.
+    DeleteTrack { track_id: TrackId },
+
+    // Deck loading commands
+    /// Load a track onto a deck.
+    LoadTrack { deck: DeckId, track_id: TrackId },
+    /// Eject the track from a deck.
+    EjectTrack { deck: DeckId },
+
+    // Track navigation commands
+    /// Go to previous track (or start of current track if not at start).
+    PreviousTrack { deck: DeckId },
+    /// Go to next track in the library.
+    NextTrack { deck: DeckId },
+
+    // Playback commands
+    /// Start playback.
+    Play { deck: DeckId },
+    /// Pause playback.
+    Pause { deck: DeckId },
+    /// Toggle play/pause.
+    PlayPause { deck: DeckId },
+    /// Stop playback (return to start).
+    Stop { deck: DeckId },
+
+    // Cueing commands
+    /// Set the cue point at current position.
+    SetCue { deck: DeckId },
+    /// Jump to cue point and start playing.
+    CuePlay { deck: DeckId },
+    /// Preview from cue point while button is held.
+    CuePreview { deck: DeckId, pressed: bool },
+
+    // Hot cue commands
+    /// Set a hot cue at current position.
+    SetHotCue { deck: DeckId, slot: u8 },
+    /// Jump to a hot cue.
+    JumpToHotCue { deck: DeckId, slot: u8 },
+    /// Clear a hot cue.
+    ClearHotCue { deck: DeckId, slot: u8 },
+
+    // Tempo commands
+    /// Set the pitch fader position (-1.0 to 1.0).
+    SetPitch { deck: DeckId, percent: f64 },
+    /// Set the tempo range.
+    SetTempoRange { deck: DeckId, range: TempoRange },
+    /// Nudge tempo temporarily.
+    NudgeTempo {
+        deck: DeckId,
+        direction: NudgeDirection,
+    },
+
+    // Sync commands
+    /// Set this deck as the tempo master.
+    SetMaster { deck: DeckId },
+    /// Toggle sync mode for this deck.
+    ToggleSync { deck: DeckId },
+    /// Sync this deck to the other deck.
+    SyncToDeck { deck: DeckId },
+
+    // Seek commands
+    /// Seek to a position in seconds.
+    Seek { deck: DeckId, position_seconds: f64 },
+    /// Seek by a number of beats.
+    SeekBeats { deck: DeckId, beats: i32 },
+
+    // Master Tempo commands
+    /// Toggle Master Tempo (key lock) mode.
+    ToggleMasterTempo { deck: DeckId },
+
+    // Loop commands
+    /// Set a quantized loop (4 or 8 beats).
+    SetLoop { deck: DeckId, beat_count: u8 },
+    /// Toggle loop on/off (reloop/exit).
+    ToggleLoop { deck: DeckId },
+    /// Halve the current loop length.
+    HalveLoop { deck: DeckId },
+    /// Double the current loop length.
+    DoubleLoop { deck: DeckId },
+
+    // Configuration commands
+    /// Set the output channels for a deck.
+    SetOutputChannels { deck: DeckId, channels: (u16, u16) },
+    /// Set the audio device.
+    SetAudioDevice { device_name: String },
+}
+
+/// Direction for tempo nudge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NudgeDirection {
+    Forward,
+    Backward,
+}
+
+/// Events emitted by the DJ module.
+#[derive(Debug, Clone)]
+pub enum DjEvent {
+    // State updates
+    /// Deck state has changed.
+    DeckStateChanged { deck: DeckId, state: Deck },
+    /// A track was loaded onto a deck.
+    TrackLoaded { deck: DeckId, track: Track },
+    /// A track was ejected from a deck.
+    TrackEjected { deck: DeckId },
+
+    // Playback updates
+    /// Playback position updated.
+    PositionUpdated {
+        deck: DeckId,
+        position_seconds: f64,
+        position_beats: f64,
+    },
+    /// A beat was triggered.
+    BeatTriggered {
+        deck: DeckId,
+        beat_number: u64,
+        is_downbeat: bool,
+    },
+
+    // Tempo updates
+    /// Tempo changed on a deck.
+    TempoChanged { deck: DeckId, bpm: f64 },
+    /// Master deck changed.
+    MasterChanged { deck: Option<DeckId> },
+
+    // Library updates
+    /// Library was updated.
+    LibraryUpdated { track_count: usize },
+    /// Track analysis progress.
+    AnalysisProgress { track_id: TrackId, progress: f32 },
+    /// Track analysis completed.
+    AnalysisComplete {
+        track_id: TrackId,
+        beat_grid: BeatGrid,
+    },
+    /// Search results ready.
+    SearchResults { tracks: Vec<Track> },
+    /// All tracks retrieved.
+    AllTracks { tracks: Vec<Track> },
+
+    // Waveform data
+    /// Waveform data available for a track.
+    WaveformReady {
+        track_id: TrackId,
+        waveform: TrackWaveform,
+    },
+
+    // Hot cues
+    /// Hot cue was set.
+    HotCueSet { deck: DeckId, slot: u8, cue: HotCue },
+    /// Hot cue was cleared.
+    HotCueCleared { deck: DeckId, slot: u8 },
+
+    // Errors
+    /// An error occurred.
+    Error { message: String },
+}
+
+/// Track pending analysis.
+#[derive(Debug, Clone)]
+struct PendingAnalysis {
+    track_id: TrackId,
+    file_path: PathBuf,
+    track_name: String,
+}
+
+/// DJ module state and audio engine.
+pub struct DjModule {
+    /// Deck A state.
+    deck_a: Arc<RwLock<Deck>>,
+    /// Deck B state.
+    deck_b: Arc<RwLock<Deck>>,
+    /// Current master deck.
+    master_deck: Option<DeckId>,
+    /// Library database path.
+    library_path: PathBuf,
+    /// Audio engine configuration.
+    audio_config: AudioEngineConfig,
+    /// Audio engine (created during initialization).
+    audio_engine: Option<DjAudioEngine>,
+    /// Library database (created during initialization, wrapped for thread safety).
+    database: Option<Arc<Mutex<LibraryDatabase>>>,
+    /// Queue of tracks pending background analysis.
+    analysis_queue: VecDeque<PendingAnalysis>,
+    /// Total number of tracks in current analysis batch (for progress display).
+    analysis_batch_total: usize,
+    /// Number of tracks completed in current analysis batch.
+    analysis_batch_completed: usize,
+    /// Handle to the currently running background analysis task.
+    analysis_handle: Option<tokio::task::JoinHandle<Option<AnalysisResult>>>,
+    /// Receiver for streaming waveform progress from background analysis.
+    analysis_progress_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<f32>, f32)>>,
+    /// Currently analyzing track info (track_id, track_name).
+    current_analysis_track: Option<(TrackId, String)>,
+}
+
+impl DjModule {
+    /// Create a new DJ module.
+    pub fn new() -> Self {
+        // Default library path: ~/.halo/library.db
+        let library_path = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".halo")
+            .join("library.db");
+
+        Self {
+            deck_a: Arc::new(RwLock::new(Deck::new(DeckId::A))),
+            deck_b: Arc::new(RwLock::new(Deck::new(DeckId::B))),
+            master_deck: None,
+            library_path,
+            audio_config: AudioEngineConfig::default(),
+            audio_engine: None,
+            database: None,
+            analysis_queue: VecDeque::new(),
+            analysis_batch_total: 0,
+            analysis_batch_completed: 0,
+            analysis_handle: None,
+            analysis_progress_rx: None,
+            current_analysis_track: None,
+        }
+    }
+
+    /// Create a new DJ module with a specific library path.
+    pub fn with_library_path(library_path: PathBuf) -> Self {
+        Self {
+            deck_a: Arc::new(RwLock::new(Deck::new(DeckId::A))),
+            deck_b: Arc::new(RwLock::new(Deck::new(DeckId::B))),
+            master_deck: None,
+            library_path,
+            audio_config: AudioEngineConfig::default(),
+            audio_engine: None,
+            database: None,
+            analysis_queue: VecDeque::new(),
+            analysis_batch_total: 0,
+            analysis_batch_completed: 0,
+            analysis_handle: None,
+            analysis_progress_rx: None,
+            current_analysis_track: None,
+        }
+    }
+
+    /// Set the audio device name.
+    pub fn with_audio_device(mut self, device_name: String) -> Self {
+        self.audio_config.device_name = device_name;
+        self
+    }
+
+    /// Set the audio engine configuration.
+    pub fn with_audio_config(mut self, config: AudioEngineConfig) -> Self {
+        self.audio_config = config;
+        self
+    }
+
+    /// Get the audio engine (if initialized).
+    pub fn audio_engine(&self) -> Option<&DjAudioEngine> {
+        self.audio_engine.as_ref()
+    }
+
+    /// Get the audio engine mutably (if initialized).
+    pub fn audio_engine_mut(&mut self) -> Option<&mut DjAudioEngine> {
+        self.audio_engine.as_mut()
+    }
+
+    /// Get the database (if initialized).
+    pub fn database(&self) -> Option<Arc<Mutex<LibraryDatabase>>> {
+        self.database.clone()
+    }
+
+    /// Get a reference to a deck.
+    pub fn deck(&self, id: DeckId) -> &Arc<RwLock<Deck>> {
+        match id {
+            DeckId::A => &self.deck_a,
+            DeckId::B => &self.deck_b,
+        }
+    }
+
+    /// Get the current master deck.
+    pub fn master_deck(&self) -> Option<DeckId> {
+        self.master_deck
+    }
+
+    /// Set the master deck.
+    pub fn set_master_deck(&mut self, deck: Option<DeckId>) {
+        // Clear master flag on old deck
+        if let Some(old_master) = self.master_deck {
+            self.deck(old_master).write().is_master = false;
+        }
+
+        // Set master flag on new deck
+        if let Some(new_master) = deck {
+            self.deck(new_master).write().is_master = true;
+        }
+
+        self.master_deck = deck;
+    }
+
+    /// Translate a console command to an internal DJ command.
+    fn translate_console_command(&self, cmd: halo_core::ConsoleCommand) -> Option<DjCommand> {
+        use halo_core::ConsoleCommand;
+        match cmd {
+            ConsoleCommand::DjImportFolder { path } => Some(DjCommand::ImportFolder { path }),
+            ConsoleCommand::DjLoadTrack { deck, track_id } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::LoadTrack {
+                    deck: deck_id,
+                    track_id: TrackId(track_id),
+                })
+            }
+            ConsoleCommand::DjPlay { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::Play { deck: deck_id })
+            }
+            ConsoleCommand::DjPause { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::Pause { deck: deck_id })
+            }
+            ConsoleCommand::DjStop { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::Stop { deck: deck_id })
+            }
+            ConsoleCommand::DjSetCue { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::SetCue { deck: deck_id })
+            }
+            ConsoleCommand::DjJumpToCue { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::CuePlay { deck: deck_id })
+            }
+            ConsoleCommand::DjCuePreview { deck, pressed } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::CuePreview {
+                    deck: deck_id,
+                    pressed,
+                })
+            }
+            ConsoleCommand::DjSetHotCue { deck, slot } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::SetHotCue {
+                    deck: deck_id,
+                    slot,
+                })
+            }
+            ConsoleCommand::DjJumpToHotCue { deck, slot } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::JumpToHotCue {
+                    deck: deck_id,
+                    slot,
+                })
+            }
+            ConsoleCommand::DjSetPitch { deck, percent } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::SetPitch {
+                    deck: deck_id,
+                    percent,
+                })
+            }
+            ConsoleCommand::DjToggleSync { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::ToggleSync { deck: deck_id })
+            }
+            ConsoleCommand::DjSetMaster { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::SetMaster { deck: deck_id })
+            }
+            ConsoleCommand::DjSeek {
+                deck,
+                position_seconds,
+            } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::Seek {
+                    deck: deck_id,
+                    position_seconds,
+                })
+            }
+            ConsoleCommand::DjPreviousTrack { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::PreviousTrack { deck: deck_id })
+            }
+            ConsoleCommand::DjNextTrack { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::NextTrack { deck: deck_id })
+            }
+            ConsoleCommand::DjQueryLibrary => Some(DjCommand::GetAllTracks),
+            ConsoleCommand::DjToggleMasterTempo { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::ToggleMasterTempo { deck: deck_id })
+            }
+            ConsoleCommand::DjSetTempoRange { deck, range } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                let tempo_range = match range {
+                    0 => TempoRange::Range6,
+                    1 => TempoRange::Range10,
+                    2 => TempoRange::Range16,
+                    _ => TempoRange::Wide,
+                };
+                Some(DjCommand::SetTempoRange {
+                    deck: deck_id,
+                    range: tempo_range,
+                })
+            }
+            ConsoleCommand::DjSetLoop { deck, beat_count } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::SetLoop {
+                    deck: deck_id,
+                    beat_count,
+                })
+            }
+            ConsoleCommand::DjToggleLoop { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::ToggleLoop { deck: deck_id })
+            }
+            ConsoleCommand::DjHalveLoop { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::HalveLoop { deck: deck_id })
+            }
+            ConsoleCommand::DjDoubleLoop { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::DoubleLoop { deck: deck_id })
+            }
+            ConsoleCommand::DjReanalyzeTrack { track_id } => Some(DjCommand::ReanalyzeTrack {
+                track_id: TrackId(track_id),
+            }),
+            ConsoleCommand::DjUpdateTrackBpm { track_id, bpm } => Some(DjCommand::UpdateTrackBpm {
+                track_id: TrackId(track_id),
+                bpm,
+            }),
+            ConsoleCommand::DjDeleteTrack { track_id } => Some(DjCommand::DeleteTrack {
+                track_id: TrackId(track_id),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Handle a DJ command.
+    fn handle_command(&mut self, command: DjCommand) {
+        match command {
+            DjCommand::Play { deck } => {
+                // Update deck state
+                {
+                    let mut d = self.deck(deck).write();
+                    if d.state.has_track() {
+                        d.state = DeckState::Playing;
+                    }
+                }
+                // Control audio player
+                if let Some(engine) = &self.audio_engine {
+                    engine.deck_player(deck).write().play();
+                }
+                log::info!("Deck {} playing", deck);
+            }
+            DjCommand::Pause { deck } => {
+                // Update deck state
+                {
+                    let mut d = self.deck(deck).write();
+                    if d.state == DeckState::Playing {
+                        d.state = DeckState::Paused;
+                    }
+                }
+                // Control audio player
+                if let Some(engine) = &self.audio_engine {
+                    engine.deck_player(deck).write().pause();
+                }
+                log::info!("Deck {} paused", deck);
+            }
+            DjCommand::PlayPause { deck } => {
+                let should_play = {
+                    let d = self.deck(deck).read();
+                    matches!(d.state, DeckState::Paused | DeckState::Stopped)
+                };
+
+                if should_play {
+                    self.handle_command(DjCommand::Play { deck });
+                } else {
+                    self.handle_command(DjCommand::Pause { deck });
+                }
+            }
+            DjCommand::Stop { deck } => {
+                // Update deck state
+                {
+                    let mut d = self.deck(deck).write();
+                    if d.state.has_track() {
+                        d.state = DeckState::Stopped;
+                        d.position_seconds = 0.0;
+                        d.position_beats = 0.0;
+                    }
+                }
+                // Control audio player
+                if let Some(engine) = &self.audio_engine {
+                    engine.deck_player(deck).write().stop();
+                }
+                log::info!("Deck {} stopped", deck);
+            }
+            DjCommand::SetCue { deck } => {
+                let position = if let Some(engine) = &self.audio_engine {
+                    let player = engine.deck_player(deck).read();
+                    player.position_seconds()
+                } else {
+                    self.deck(deck).read().position_seconds
+                };
+
+                // Update deck state
+                self.deck(deck).write().cue_point = Some(position);
+
+                // Set cue in player
+                if let Some(engine) = &self.audio_engine {
+                    engine.deck_player(deck).write().set_cue_at(position);
+                }
+                log::info!("Deck {} cue set at {:.2}s", deck, position);
+            }
+            DjCommand::CuePreview { deck, pressed } => {
+                let mut d = self.deck(deck).write();
+                if pressed {
+                    if let Some(cue_point) = d.cue_point {
+                        d.cue_preview_start = Some(d.position_seconds);
+                        d.position_seconds = cue_point;
+                        d.state = DeckState::Cueing;
+
+                        // Seek to cue and start playing
+                        if let Some(engine) = &self.audio_engine {
+                            let mut player = engine.deck_player(deck).write();
+                            player.seek(cue_point);
+                            player.play();
+                        }
+                        log::info!("Deck {} cue preview started", deck);
+                    }
+                } else if d.state == DeckState::Cueing {
+                    if let Some(cue_point) = d.cue_point {
+                        d.position_seconds = cue_point;
+
+                        // Pause and seek back to cue
+                        if let Some(engine) = &self.audio_engine {
+                            let mut player = engine.deck_player(deck).write();
+                            player.pause();
+                            player.seek(cue_point);
+                        }
+                    }
+                    d.state = DeckState::Paused;
+                    d.cue_preview_start = None;
+                    log::info!("Deck {} cue preview ended", deck);
+                }
+            }
+            DjCommand::SetPitch { deck, percent } => {
+                let adjusted_bpm = {
+                    let mut d = self.deck(deck).write();
+                    d.pitch_percent = percent.clamp(-1.0, 1.0);
+                    d.update_adjusted_bpm();
+                    d.adjusted_bpm
+                };
+
+                // Update playback rate based on pitch
+                if let Some(engine) = &self.audio_engine {
+                    let playback_rate = adjusted_bpm / self.deck(deck).read().original_bpm;
+                    engine
+                        .deck_player(deck)
+                        .write()
+                        .set_playback_rate(playback_rate);
+                }
+                log::debug!(
+                    "Deck {} pitch set to {:.1}% (BPM: {:.2})",
+                    deck,
+                    percent * 100.0,
+                    adjusted_bpm
+                );
+            }
+            DjCommand::SetTempoRange { deck, range } => {
+                let mut d = self.deck(deck).write();
+                d.tempo_range = range;
+                d.update_adjusted_bpm();
+                log::info!("Deck {} tempo range set to {:?}", deck, range);
+            }
+            DjCommand::SetMaster { deck } => {
+                self.set_master_deck(Some(deck));
+                log::info!("Deck {} set as master", deck);
+            }
+            DjCommand::ToggleSync { deck } => {
+                let (sync_enabled, tempo_range) = {
+                    let mut d = self.deck(deck).write();
+                    d.sync_enabled = !d.sync_enabled;
+                    log::info!(
+                        "Deck {} sync {}",
+                        deck,
+                        if d.sync_enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    );
+                    (d.sync_enabled, d.tempo_range)
+                };
+
+                if let Some(engine) = &self.audio_engine {
+                    if sync_enabled {
+                        // When sync is enabled, immediately sync to master deck's BPM
+                        if engine.sync_to_master(deck, tempo_range) {
+                            // Update UI state with new pitch/BPM
+                            let player = engine.deck_player(deck).read();
+                            let mut d = self.deck(deck).write();
+                            d.pitch_percent = player.playback_rate() - 1.0;
+                            if let Some(bpm) = player.effective_bpm() {
+                                d.adjusted_bpm = bpm;
+                            }
+                            log::info!("Deck {} synced to master BPM", deck);
+                        } else {
+                            log::warn!("Deck {} failed to sync (no master or out of range)", deck);
+                        }
+                    } else {
+                        // When sync is disabled, stop continuous sync
+                        engine.disable_sync(deck);
+                    }
+                }
+            }
+            DjCommand::SetHotCue { deck, slot } => {
+                if slot < 4 {
+                    let position = if let Some(engine) = &self.audio_engine {
+                        engine.deck_player(deck).read().position_seconds()
+                    } else {
+                        self.deck(deck).read().position_seconds
+                    };
+
+                    self.deck(deck).write().set_hot_cue(slot, position);
+                    log::info!("Deck {} hot cue {} set at {:.2}s", deck, slot, position);
+                }
+            }
+            DjCommand::JumpToHotCue { deck, slot } => {
+                if slot < 4 {
+                    let position = {
+                        let d = self.deck(deck).read();
+                        d.hot_cues[slot as usize]
+                            .as_ref()
+                            .map(|cue| cue.position_seconds)
+                    };
+
+                    if let Some(pos) = position {
+                        self.deck(deck).write().position_seconds = pos;
+                        self.deck(deck).write().update_beat_position();
+
+                        if let Some(engine) = &self.audio_engine {
+                            engine.deck_player(deck).write().seek(pos);
+                        }
+                        log::info!("Deck {} jumped to hot cue {}", deck, slot);
+                    }
+                }
+            }
+            DjCommand::ClearHotCue { deck, slot } => {
+                if slot < 4 {
+                    self.deck(deck).write().clear_hot_cue(slot);
+                    log::info!("Deck {} hot cue {} cleared", deck, slot);
+                }
+            }
+            DjCommand::Seek {
+                deck,
+                position_seconds,
+            } => {
+                let clamped_position = {
+                    let d = self.deck(deck).read();
+                    if let Some(track) = &d.loaded_track {
+                        position_seconds.clamp(0.0, track.duration_seconds)
+                    } else {
+                        return;
+                    }
+                };
+
+                {
+                    let mut d = self.deck(deck).write();
+                    d.position_seconds = clamped_position;
+                    d.update_beat_position();
+                }
+
+                if let Some(engine) = &self.audio_engine {
+                    engine.deck_player(deck).write().seek(clamped_position);
+                }
+            }
+            DjCommand::EjectTrack { deck } => {
+                self.deck(deck).write().eject();
+                if let Some(engine) = &self.audio_engine {
+                    engine.deck_player(deck).write().eject();
+                }
+                log::info!("Deck {} ejected", deck);
+            }
+            DjCommand::LoadTrack { deck, track_id } => {
+                log::info!(
+                    "DJ Module: Processing LoadTrack command - deck={:?}, track_id={:?}",
+                    deck,
+                    track_id
+                );
+                self.load_track_to_deck(deck, track_id);
+            }
+            DjCommand::ImportFolder { path } => {
+                self.import_folder(path);
+            }
+            DjCommand::GetAllTracks => {
+                // Handled separately in run loop to send response
+            }
+            DjCommand::SearchLibrary { query } => {
+                if let Some(db) = &self.database {
+                    let db = db.lock().unwrap();
+                    match db.search_tracks(&query) {
+                        Ok(tracks) => {
+                            log::info!("Found {} tracks matching '{}'", tracks.len(), query);
+                        }
+                        Err(e) => {
+                            log::error!("Search failed: {}", e);
+                        }
+                    }
+                }
+            }
+            DjCommand::AnalyzeTrack { track_id } => {
+                log::info!("Track analysis not yet implemented for track {}", track_id);
+            }
+            DjCommand::ReanalyzeTrack { track_id } => {
+                self.reanalyze_track(track_id);
+            }
+            DjCommand::UpdateTrackBpm { track_id, bpm } => {
+                self.update_track_bpm(track_id, bpm);
+            }
+            DjCommand::DeleteTrack { track_id } => {
+                self.delete_track(track_id);
+            }
+            // Handle remaining commands
+            _ => {
+                log::warn!("Unhandled DJ command: {:?}", command);
+            }
+        }
+    }
+
+    /// Load a track from the library onto a deck.
+    fn load_track_to_deck(&mut self, deck: DeckId, track_id: TrackId) {
+        log::info!(
+            "DJ Module: load_track_to_deck called - deck={:?}, track_id={:?}",
+            deck,
+            track_id
+        );
+
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized");
+            return;
+        };
+
+        // Get track and related data from database
+        let (track, hot_cues, beat_grid) = {
+            let db = db.lock().unwrap();
+
+            let track = match db.get_track(track_id) {
+                Ok(Some(track)) => track,
+                Ok(None) => {
+                    log::error!("Track {} not found in library", track_id);
+                    return;
+                }
+                Err(e) => {
+                    log::error!("Failed to load track {}: {}", track_id, e);
+                    return;
+                }
+            };
+
+            let hot_cues = db.get_hot_cues(track_id).unwrap_or_default();
+            let beat_grid = db.get_beat_grid(track_id).ok().flatten();
+
+            (track, hot_cues, beat_grid)
+        };
+
+        // Load track into deck state
+        {
+            let mut d = self.deck(deck).write();
+            d.loaded_track = Some(track.clone());
+            d.state = DeckState::Stopped;
+            d.position_seconds = 0.0;
+            d.position_beats = 0.0;
+            // Use beat grid BPM if available, otherwise fall back to track.bpm or 120
+            d.original_bpm = beat_grid
+                .as_ref()
+                .map(|bg| bg.bpm)
+                .or(track.bpm)
+                .unwrap_or(120.0);
+            d.adjusted_bpm = d.original_bpm;
+
+            // Load hot cues
+            for cue in hot_cues {
+                let slot = cue.slot;
+                if slot < 4 {
+                    d.hot_cues[slot as usize] = Some(cue);
+                }
+            }
+
+            // Load beat grid into deck state
+            d.beat_grid = beat_grid.clone();
+        }
+
+        // Load audio file into player
+        if let Some(engine) = &self.audio_engine {
+            let mut player = engine.deck_player(deck).write();
+            if let Err(e) = player.load(&track.file_path) {
+                log::error!("Failed to load audio file: {}", e);
+                return;
+            }
+            // Also load beat grid into player for sync/BPM calculations
+            if let Some(bg) = beat_grid {
+                player.set_beat_grid(bg);
+            }
+        }
+
+        log::info!(
+            "Deck {} loaded: {} - {}",
+            deck,
+            track.artist.as_deref().unwrap_or("Unknown"),
+            track.title
+        );
+    }
+
+    /// Get all tracks from the library for UI display.
+    fn get_all_tracks_for_ui(&self) -> Option<Vec<halo_core::DjTrackInfo>> {
+        let db = self.database.as_ref()?;
+        let db = db.lock().unwrap();
+
+        match db.get_all_tracks() {
+            Ok(tracks) => {
+                let track_infos: Vec<halo_core::DjTrackInfo> = tracks
+                    .into_iter()
+                    .map(|t| halo_core::DjTrackInfo {
+                        id: t.id.0,
+                        title: t.title,
+                        artist: t.artist,
+                        duration_seconds: t.duration_seconds,
+                        bpm: t.bpm,
+                        file_path: t.file_path,
+                    })
+                    .collect();
+                log::info!("Returning {} tracks to UI", track_infos.len());
+                Some(track_infos)
+            }
+            Err(e) => {
+                log::error!("Failed to get tracks: {}", e);
+                None
+            }
+        }
+    }
+
+    /// Re-analyze a track's BPM.
+    fn reanalyze_track(&mut self, track_id: TrackId) {
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized");
+            return;
+        };
+
+        // Get track info from database
+        let (file_path, track_name) = {
+            let db = db.lock().unwrap();
+            match db.get_track(track_id) {
+                Ok(Some(track)) => (track.file_path.clone(), track.title.clone()),
+                Ok(None) => {
+                    log::error!("Track {} not found", track_id);
+                    return;
+                }
+                Err(e) => {
+                    log::error!("Failed to get track {}: {}", track_id, e);
+                    return;
+                }
+            }
+        };
+
+        // Queue for background analysis
+        log::info!(
+            "Queueing track {} ({}) for re-analysis",
+            track_id,
+            track_name
+        );
+
+        // If no analysis is in progress, start a fresh batch
+        // Otherwise, add to existing batch
+        if self.analysis_queue.is_empty() && !self.is_analysis_running() {
+            self.analysis_batch_completed = 0;
+            self.analysis_batch_total = 1;
+        } else {
+            self.analysis_batch_total += 1;
+        }
+
+        self.analysis_queue.push_back(PendingAnalysis {
+            track_id,
+            file_path: PathBuf::from(file_path),
+            track_name,
+        });
+    }
+
+    /// Update a track's BPM manually.
+    fn update_track_bpm(&mut self, track_id: TrackId, bpm: f64) {
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized");
+            return;
+        };
+
+        let db = db.lock().unwrap();
+        match db.update_track_bpm(track_id, bpm) {
+            Ok(_) => {
+                log::info!("Updated track {} BPM to {:.1}", track_id, bpm);
+            }
+            Err(e) => {
+                log::error!("Failed to update track {} BPM: {}", track_id, e);
+            }
+        }
+    }
+
+    /// Delete a track from the library.
+    fn delete_track(&mut self, track_id: TrackId) {
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized");
+            return;
+        };
+
+        let db = db.lock().unwrap();
+        match db.delete_track(track_id) {
+            Ok(_) => {
+                log::info!("Deleted track {} from library", track_id);
+            }
+            Err(e) => {
+                log::error!("Failed to delete track {}: {}", track_id, e);
+            }
+        }
+    }
+
+    /// Import all audio files from a folder into the library.
+    /// Metadata is extracted immediately; BPM analysis is queued for background processing.
+    fn import_folder(&mut self, path: PathBuf) {
+        let Some(db) = &self.database else {
+            log::error!("Database not initialized, cannot import folder");
+            return;
+        };
+
+        log::info!("Importing folder (metadata only): {:?}", path);
+
+        // Scan directory for audio files
+        let audio_files = scan_directory_for_audio(&path, true);
+        let total_files = audio_files.len();
+        log::info!("Found {} audio files to import", total_files);
+
+        if total_files == 0 {
+            return;
+        }
+
+        let db_guard = db.lock().unwrap();
+
+        let mut imported_count = 0;
+        let mut skipped_count = 0;
+        let mut tracks_to_analyze = Vec::new();
+
+        // Phase 1: Fast metadata import (no analysis)
+        for file_path in audio_files {
+            match import_file_metadata_only(&file_path, &db_guard) {
+                Ok(track) => {
+                    // Check if track needs analysis (no BPM yet)
+                    if track.bpm.is_none() {
+                        tracks_to_analyze.push(PendingAnalysis {
+                            track_id: track.id,
+                            file_path: PathBuf::from(&track.file_path),
+                            track_name: track.title.clone(),
+                        });
+                    } else {
+                        skipped_count += 1; // Already analyzed
+                    }
+                    imported_count += 1;
+                }
+                Err(e) => {
+                    log::warn!("Failed to import file {:?}: {}", file_path, e);
+                }
+            }
+        }
+
+        drop(db_guard); // Release lock before modifying self
+
+        // Phase 2: Queue tracks for background analysis
+        let tracks_to_analyze_count = tracks_to_analyze.len();
+        if !tracks_to_analyze.is_empty() {
+            // If no analysis is in progress, start a fresh batch
+            // Otherwise, add to existing batch
+            if self.analysis_queue.is_empty() && !self.is_analysis_running() {
+                self.analysis_batch_total = tracks_to_analyze_count;
+                self.analysis_batch_completed = 0;
+            } else {
+                self.analysis_batch_total += tracks_to_analyze_count;
+            }
+            self.analysis_queue.extend(tracks_to_analyze);
+            log::info!(
+                "Queued {} tracks for background analysis (total: {})",
+                tracks_to_analyze_count,
+                self.analysis_batch_total
+            );
+        }
+
+        log::info!(
+            "Import complete: {} imported, {} already analyzed, {} queued for analysis",
+            imported_count,
+            skipped_count,
+            tracks_to_analyze_count
+        );
+    }
+
+    /// Check if there are tracks in the analysis queue.
+    fn has_pending_analysis(&self) -> bool {
+        !self.analysis_queue.is_empty()
+    }
+
+    /// Get the current analysis progress info for status display.
+    fn analysis_progress(&self) -> Option<(String, usize, usize)> {
+        // If currently analyzing, show that track
+        if let Some((_, track_name)) = &self.current_analysis_track {
+            return Some((
+                track_name.clone(),
+                self.analysis_batch_completed + 1,
+                self.analysis_batch_total,
+            ));
+        }
+        // Otherwise show next track in queue
+        self.analysis_queue.front().map(|pending| {
+            (
+                pending.track_name.clone(),
+                self.analysis_batch_completed + 1,
+                self.analysis_batch_total,
+            )
+        })
+    }
+
+    /// Check if an analysis task is currently running.
+    fn is_analysis_running(&self) -> bool {
+        self.analysis_handle.is_some()
+    }
+
+    /// Start analyzing the next track in the queue (non-blocking).
+    /// Returns Some((track_id, track_name)) if analysis was started.
+    fn start_next_analysis(&mut self) -> Option<(TrackId, String)> {
+        // Don't start if already analyzing
+        if self.analysis_handle.is_some() {
+            return None;
+        }
+
+        let pending = self.analysis_queue.pop_front()?;
+        let track_id = pending.track_id;
+        let track_name = pending.track_name.clone();
+        let file_path = pending.file_path.clone();
+
+        log::info!(
+            "Starting background analysis for: {} ({}/{})",
+            track_name,
+            self.analysis_batch_completed + 1,
+            self.analysis_batch_total
+        );
+
+        // Create channel for streaming waveform progress
+        let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.analysis_progress_rx = Some(progress_rx);
+
+        // Store current track info
+        self.current_analysis_track = Some((track_id, track_name.clone()));
+
+        // Spawn analysis on blocking thread pool
+        self.analysis_handle = Some(tokio::task::spawn_blocking(move || {
+            let config = AnalysisConfig::default();
+            analyze_file_streaming(
+                &file_path,
+                track_id,
+                &config,
+                100, // Send progress every 100 waveform samples
+                |samples, progress| {
+                    let _ = progress_tx.send((samples, progress));
+                },
+            )
+            .ok()
+        }));
+
+        Some((track_id, track_name))
+    }
+}
+
+impl Default for DjModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl AsyncModule for DjModule {
+    fn id(&self) -> ModuleId {
+        ModuleId::Dj
+    }
+
+    async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        log::info!("Initializing DJ module");
+        log::info!("Library path: {:?}", self.library_path);
+        log::info!("Audio device: {}", self.audio_config.device_name);
+
+        // Ensure library directory exists
+        if let Some(parent) = self.library_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // Initialize database
+        let db = LibraryDatabase::open(&self.library_path)?;
+        self.database = Some(Arc::new(Mutex::new(db)));
+        log::info!("Library database opened");
+
+        // Initialize audio engine
+        let mut engine = DjAudioEngine::new(self.audio_config.clone());
+        if let Err(e) = engine.start() {
+            log::error!("Failed to start audio engine: {}", e);
+            // Continue without audio engine - useful for testing
+        } else {
+            log::info!("Audio engine started");
+        }
+        self.audio_engine = Some(engine);
+
+        log::info!("DJ module initialized");
+        Ok(())
+    }
+
+    async fn run(
+        &mut self,
+        mut rx: mpsc::Receiver<ModuleEvent>,
+        tx: mpsc::Sender<ModuleMessage>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        log::info!("DJ module running");
+
+        // Rhythm sync update interval (roughly 30Hz for smooth phase tracking)
+        let mut rhythm_interval = tokio::time::interval(std::time::Duration::from_millis(33));
+        // Track last beat number to detect beat triggers
+        let mut last_beat_a: Option<u64> = None;
+        let mut last_beat_b: Option<u64> = None;
+
+        loop {
+            tokio::select! {
+                Some(event) = rx.recv() => {
+                    match event {
+                        ModuleEvent::Shutdown => {
+                            log::info!("DJ module received shutdown");
+                            break;
+                        }
+                        // Handle MIDI input via Z1 mapping
+                        ModuleEvent::MidiInput(midi_msg) => {
+                            log::debug!("DJ module received MIDI: {:?}", midi_msg);
+
+                            // Translate MIDI to DJ command via Z1 mapping
+                            let command = match midi_msg {
+                                MidiMessage::NoteOn(note, velocity) => {
+                                    Z1Mapping::translate_note_on(note, velocity)
+                                }
+                                MidiMessage::NoteOff(note) => {
+                                    Z1Mapping::translate_note_off(note)
+                                }
+                                MidiMessage::ControlChange(cc, value) => {
+                                    Z1Mapping::translate_cc(cc, value)
+                                }
+                                MidiMessage::Clock => {
+                                    // MIDI clock messages are handled by rhythm sync
+                                    None
+                                }
+                            };
+
+                            // Execute the command if one was generated
+                            if let Some(cmd) = command {
+                                log::debug!("Executing DJ command from MIDI: {:?}", cmd);
+                                self.handle_command(cmd);
+                            }
+                        }
+                        // Handle DJ commands from console
+                        ModuleEvent::DjCommand(console_cmd) => {
+                            eprintln!("DEBUG: DJ module received command: {:?}", console_cmd);
+                            log::debug!("DJ module received command: {:?}", console_cmd);
+                            // Translate ConsoleCommand to internal DjCommand
+                            let translated = self.translate_console_command(console_cmd);
+                            eprintln!("DEBUG: Translated command: {:?}", translated);
+                            if let Some(cmd) = translated {
+                                // Special handling for commands that need to send responses
+                                match cmd {
+                                    DjCommand::GetAllTracks => {
+                                        if let Some(tracks) = self.get_all_tracks_for_ui() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjLibraryTracks(tracks)
+                                            )).await;
+                                        }
+                                    }
+                                    DjCommand::LoadTrack { deck, track_id } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        let tid = track_id.0;
+                                        eprintln!("DEBUG: Calling handle_command for LoadTrack");
+                                        self.handle_command(DjCommand::LoadTrack { deck, track_id });
+                                        // Get track info (drop lock before await)
+                                        let track_info = {
+                                            let deck_state = self.deck(deck).read();
+                                            deck_state.loaded_track.as_ref().map(|t| {
+                                                (t.title.clone(), t.artist.clone(), t.duration_seconds, t.bpm)
+                                            })
+                                        };
+                                        // Send deck loaded event
+                                        if let Some((title, artist, duration_seconds, bpm)) = track_info.clone() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjDeckLoaded {
+                                                    deck: deck_num,
+                                                    track_id: tid,
+                                                    title,
+                                                    artist,
+                                                    duration_seconds,
+                                                    bpm,
+                                                }
+                                            )).await;
+                                            eprintln!("DEBUG: Sent DjDeckLoaded event for deck {}", deck_num);
+                                        }
+                                        // Check if waveform exists in database
+                                        let existing_waveform = if let Some(db) = &self.database {
+                                            if let Ok(db_guard) = db.lock() {
+                                                db_guard.get_waveform(track_id).ok().flatten()
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        };
+
+                                        // Check if waveform exists AND is the current version with frequency bands
+                                        let use_cached_waveform = existing_waveform
+                                            .as_ref()
+                                            .map(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some())
+                                            .unwrap_or(false);
+
+                                        if let Some(waveform) = existing_waveform.filter(|_| use_cached_waveform) {
+                                            // Waveform exists with colored data - send immediately
+                                            let sample_count = waveform.sample_count;
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjWaveformLoaded {
+                                                    deck: deck_num,
+                                                    samples: waveform.samples,
+                                                    frequency_bands: waveform.frequency_bands.map(|bands| {
+                                                        bands.iter().map(|b| b.as_tuple()).collect()
+                                                    }),
+                                                    duration_seconds: waveform.duration_seconds,
+                                                }
+                                            )).await;
+                                            eprintln!("DEBUG: Sent cached DjWaveformLoaded event for deck {} ({} samples, version {})", deck_num, sample_count, waveform.version);
+
+                                            // Load beat grid from database and auto-cue to first beat
+                                            let beat_grid = if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    db_guard.get_beat_grid(track_id).ok().flatten()
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            };
+
+                                            if let Some(beat_grid) = beat_grid {
+                                                // Store beat grid in deck state
+                                                {
+                                                    let mut deck_state = self.deck(deck).write();
+                                                    deck_state.beat_grid = Some(beat_grid.clone());
+                                                    deck_state.original_bpm = beat_grid.bpm;
+                                                    deck_state.adjusted_bpm = beat_grid.bpm;
+                                                }
+
+                                                // Auto-cue to first beat
+                                                let first_beat_seconds = beat_grid.first_beat_offset_ms / 1000.0;
+                                                {
+                                                    let mut deck_state = self.deck(deck).write();
+                                                    deck_state.cue_point = Some(first_beat_seconds);
+                                                    deck_state.position_seconds = first_beat_seconds;
+                                                }
+
+                                                // Set beat grid and seek audio engine to first beat
+                                                if let Some(engine) = &self.audio_engine {
+                                                    let mut player = engine.deck_player(deck).write();
+                                                    player.set_beat_grid(beat_grid.clone());
+                                                    player.seek(first_beat_seconds);
+                                                }
+
+                                                // Send cue point event
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjCuePointSet {
+                                                        deck: deck_num,
+                                                        position_seconds: first_beat_seconds,
+                                                    }
+                                                )).await;
+
+                                                // Send beat grid loaded event
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjBeatGridLoaded {
+                                                        deck: deck_num,
+                                                        beat_positions: beat_grid.beat_positions.clone(),
+                                                        first_beat_offset: first_beat_seconds,
+                                                        bpm: beat_grid.bpm,
+                                                    }
+                                                )).await;
+                                                eprintln!("DEBUG: Sent DjBeatGridLoaded event for deck {} ({} beats)", deck_num, beat_grid.beat_positions.len());
+                                            }
+                                        } else {
+                                            // No waveform or outdated version - spawn background analysis task
+                                            let (file_path, track_title) = {
+                                                let deck_state = self.deck(deck).read();
+                                                (
+                                                    deck_state.loaded_track.as_ref().map(|t| t.file_path.clone()),
+                                                    deck_state.loaded_track.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| "Unknown".to_string()),
+                                                )
+                                            };
+
+                                            if let Some(path) = file_path {
+                                                eprintln!("DEBUG: Spawning background analysis for colored waveform: {}", path);
+                                                let tx_clone = tx.clone();
+                                                let db_clone = self.database.clone();
+                                                let deck_arc = self.deck(deck).clone();
+                                                let player_arc = self.audio_engine.as_ref().map(|e| e.deck_player(deck).clone());
+
+                                                // Send analysis progress event to show in footer
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjAnalysisProgress {
+                                                        track_id: track_id.0,
+                                                        track_name: track_title.clone(),
+                                                        current: 1,
+                                                        total: 1,
+                                                    }
+                                                )).await;
+
+                                                tokio::spawn(async move {
+                                                    // Create channel for progress updates from blocking analysis
+                                                    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<(Vec<f32>, f32)>();
+
+                                                    // Spawn blocking analysis in a separate thread
+                                                    let analysis_handle = {
+                                                        let progress_tx = progress_tx.clone();
+                                                        let path = path.clone();
+                                                        tokio::task::spawn_blocking(move || {
+                                                            let config = AnalysisConfig::default();
+                                                            analyze_file_streaming(
+                                                                &path,
+                                                                track_id,
+                                                                &config,
+                                                                100, // Send progress every 100 samples (10 updates total)
+                                                                |samples, progress| {
+                                                                    let _ = progress_tx.send((samples, progress));
+                                                                },
+                                                            )
+                                                        })
+                                                    };
+
+                                                    // Drop our copy of progress_tx so channel closes when analysis completes
+                                                    drop(progress_tx);
+
+                                                    // Forward progress updates as they arrive
+                                                    while let Some((samples, progress)) = progress_rx.recv().await {
+                                                        let _ = tx_clone.send(ModuleMessage::Event(
+                                                            ModuleEvent::DjWaveformProgress {
+                                                                deck: deck_num,
+                                                                samples,
+                                                                frequency_bands: None, // Legacy analysis without color data
+                                                                progress,
+                                                            }
+                                                        )).await;
+                                                    }
+
+                                                    // Wait for analysis to complete
+                                                    match analysis_handle.await {
+                                                        Ok(Ok(result)) => {
+                                                            // Save to database
+                                                            if let Some(db) = db_clone {
+                                                                if let Ok(db_guard) = db.lock() {
+                                                                    let _ = db_guard.save_waveform(&result.waveform);
+                                                                    let _ = db_guard.save_beat_grid(&result.beat_grid);
+                                                                    eprintln!("DEBUG: Saved analysis results to database");
+                                                                }
+                                                            }
+
+                                                            // Calculate first beat position
+                                                            let first_beat_seconds = result.beat_grid.first_beat_offset_ms / 1000.0;
+                                                            let beat_positions = result.beat_grid.beat_positions.clone();
+                                                            let bpm = result.beat_grid.bpm;
+
+                                                            // Update deck with beat grid and auto-cue to first beat
+                                                            {
+                                                                let mut deck_state = deck_arc.write();
+                                                                deck_state.beat_grid = Some(result.beat_grid.clone());
+                                                                deck_state.cue_point = Some(first_beat_seconds);
+                                                                deck_state.position_seconds = first_beat_seconds;
+                                                                deck_state.original_bpm = bpm;
+                                                                deck_state.adjusted_bpm = bpm;
+                                                            }
+
+                                                            // Also set beat grid on DeckPlayer for sync/BPM calculations
+                                                            if let Some(player) = &player_arc {
+                                                                let mut player = player.write();
+                                                                player.set_beat_grid(result.beat_grid);
+                                                                player.seek(first_beat_seconds);
+                                                            }
+
+                                                            // Send cue point event
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::DjCuePointSet {
+                                                                    deck: deck_num,
+                                                                    position_seconds: first_beat_seconds,
+                                                                }
+                                                            )).await;
+
+                                                            // Send beat grid loaded event
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::DjBeatGridLoaded {
+                                                                    deck: deck_num,
+                                                                    beat_positions,
+                                                                    first_beat_offset: first_beat_seconds,
+                                                                    bpm,
+                                                                }
+                                                            )).await;
+                                                            eprintln!("DEBUG: Sent DjBeatGridLoaded event for deck {} after analysis", deck_num);
+
+                                                            // Send final waveform
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::DjWaveformLoaded {
+                                                                    deck: deck_num,
+                                                                    samples: result.waveform.samples,
+                                                                    frequency_bands: result.waveform.frequency_bands.map(|bands| {
+                                                                        bands.iter().map(|b| b.as_tuple()).collect()
+                                                                    }),
+                                                                    duration_seconds: result.waveform.duration_seconds,
+                                                                }
+                                                            )).await;
+
+                                                            // Clear status message
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::StatusClear
+                                                            )).await;
+                                                            eprintln!("DEBUG: Background analysis complete for deck {}", deck_num);
+                                                        }
+                                                        Ok(Err(e)) => {
+                                                            // Clear status message on error too
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::StatusClear
+                                                            )).await;
+                                                            eprintln!("DEBUG: Background analysis failed: {}", e);
+                                                            log::error!("Background analysis failed: {}", e);
+                                                        }
+                                                        Err(e) => {
+                                                            // Clear status message on panic too
+                                                            let _ = tx_clone.send(ModuleMessage::Event(
+                                                                ModuleEvent::StatusClear
+                                                            )).await;
+                                                            eprintln!("DEBUG: Analysis task panicked: {}", e);
+                                                            log::error!("Analysis task panicked: {}", e);
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    }
+                                    DjCommand::Play { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        self.handle_command(DjCommand::Play { deck });
+                                        // Get current state after play command
+                                        let position = {
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).read().position_seconds()
+                                            } else {
+                                                self.deck(deck).read().position_seconds
+                                            }
+                                        };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing: true,
+                                                position_seconds: position,
+                                                bpm: Some(adjusted_bpm),
+                                            }
+                                        )).await;
+                                        eprintln!("DEBUG: Sent DjDeckStateChanged (playing) for deck {}", deck_num);
+                                    }
+                                    DjCommand::Pause { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        self.handle_command(DjCommand::Pause { deck });
+                                        // Get current state after pause command
+                                        let position = {
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).read().position_seconds()
+                                            } else {
+                                                self.deck(deck).read().position_seconds
+                                            }
+                                        };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing: false,
+                                                position_seconds: position,
+                                                bpm: Some(adjusted_bpm),
+                                            }
+                                        )).await;
+                                        eprintln!("DEBUG: Sent DjDeckStateChanged (paused) for deck {}", deck_num);
+                                    }
+                                    DjCommand::Stop { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        self.handle_command(DjCommand::Stop { deck });
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing: false,
+                                                position_seconds: 0.0,
+                                                bpm: Some(adjusted_bpm),
+                                            }
+                                        )).await;
+                                    }
+                                    DjCommand::SetCue { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        self.handle_command(DjCommand::SetCue { deck });
+                                        // Get the cue position that was just set
+                                        let cue_position = self.deck(deck).read().cue_point;
+                                        if let Some(position_seconds) = cue_position {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjCuePointSet {
+                                                    deck: deck_num,
+                                                    position_seconds,
+                                                }
+                                            )).await;
+                                            eprintln!("DEBUG: Sent DjCuePointSet for deck {} at {:.2}s", deck_num, position_seconds);
+                                        }
+                                    }
+                                    DjCommand::Seek { deck, position_seconds } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        self.handle_command(DjCommand::Seek { deck, position_seconds });
+                                        // Get current state after seek
+                                        let is_playing = {
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).read().state() == PlayerState::Playing
+                                            } else {
+                                                self.deck(deck).read().state == DeckState::Playing
+                                            }
+                                        };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing,
+                                                position_seconds,
+                                                bpm: Some(adjusted_bpm),
+                                            }
+                                        )).await;
+                                    }
+                                    DjCommand::CuePreview { deck, pressed } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        self.handle_command(DjCommand::CuePreview { deck, pressed });
+                                        // Get state after cue preview action
+                                        // When releasing (pressed=false), use cue_point directly since seek may not have updated player yet
+                                        let (is_playing, position) = {
+                                            let d = self.deck(deck).read();
+                                            if pressed {
+                                                // Starting preview - playing from cue point
+                                                (true, d.cue_point.unwrap_or(0.0))
+                                            } else {
+                                                // Ending preview - stopped at cue point
+                                                (false, d.cue_point.unwrap_or(d.position_seconds))
+                                            }
+                                        };
+                                        let adjusted_bpm = self.deck(deck).read().adjusted_bpm;
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing,
+                                                position_seconds: position,
+                                                bpm: Some(adjusted_bpm),
+                                            }
+                                        )).await;
+                                    }
+                                    DjCommand::PreviousTrack { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Stop playback first
+                                        self.handle_command(DjCommand::Pause { deck });
+                                        let (pause_position, adjusted_bpm) = if let Some(engine) = &self.audio_engine {
+                                            let pos = engine.deck_player(deck).read().position_seconds();
+                                            let bpm = self.deck(deck).read().adjusted_bpm;
+                                            (pos, bpm)
+                                        } else {
+                                            let deck_state = self.deck(deck).read();
+                                            (deck_state.position_seconds, deck_state.adjusted_bpm)
+                                        };
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing: false,
+                                                position_seconds: pause_position,
+                                                bpm: Some(adjusted_bpm),
+                                            }
+                                        )).await;
+
+                                        // Get current position and loaded track ID
+                                        let (position, current_track_id) = {
+                                            let deck_state = self.deck(deck).read();
+                                            let pos = if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).read().position_seconds()
+                                            } else {
+                                                deck_state.position_seconds
+                                            };
+                                            let track_id = deck_state.loaded_track.as_ref().map(|t| t.id);
+                                            (pos, track_id)
+                                        };
+
+                                        // Threshold: if position > 0.5s, seek to start
+                                        if position > 0.5 {
+                                            self.handle_command(DjCommand::Seek { deck, position_seconds: 0.0 });
+                                            let (is_playing, seek_bpm) = {
+                                                if let Some(engine) = &self.audio_engine {
+                                                    let playing = engine.deck_player(deck).read().state() == PlayerState::Playing;
+                                                    let bpm = self.deck(deck).read().adjusted_bpm;
+                                                    (playing, bpm)
+                                                } else {
+                                                    let deck_state = self.deck(deck).read();
+                                                    (deck_state.state == DeckState::Playing, deck_state.adjusted_bpm)
+                                                }
+                                            };
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjDeckStateChanged {
+                                                    deck: deck_num,
+                                                    is_playing,
+                                                    position_seconds: 0.0,
+                                                    bpm: Some(seek_bpm),
+                                                }
+                                            )).await;
+                                            eprintln!("DEBUG: PreviousTrack: Seeked to start of deck {}", deck_num);
+                                        } else if let Some(track_id) = current_track_id {
+                                            // Already at start, try to load previous track
+                                            let prev_track = if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    db_guard.get_adjacent_track(track_id, false).ok().flatten()
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            };
+
+                                            if let Some(track) = prev_track {
+                                                let new_track_id = track.id;
+                                                eprintln!("DEBUG: PreviousTrack: Loading previous track: {}", track.title);
+
+                                                // Load the track using handle_command
+                                                self.handle_command(DjCommand::LoadTrack { deck, track_id: new_track_id });
+
+                                                // Get track info and send loaded event
+                                                let track_info = {
+                                                    let deck_state = self.deck(deck).read();
+                                                    deck_state.loaded_track.as_ref().map(|t| {
+                                                        (t.title.clone(), t.artist.clone(), t.duration_seconds, t.bpm)
+                                                    })
+                                                };
+                                                if let Some((title, artist, duration_seconds, bpm)) = track_info {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjDeckLoaded {
+                                                            deck: deck_num,
+                                                            track_id: new_track_id.0,
+                                                            title,
+                                                            artist,
+                                                            duration_seconds,
+                                                            bpm,
+                                                        }
+                                                    )).await;
+                                                }
+
+                                                // Check for cached waveform
+                                                let existing_waveform = if let Some(db) = &self.database {
+                                                    if let Ok(db_guard) = db.lock() {
+                                                        db_guard.get_waveform(new_track_id).ok().flatten()
+                                                    } else {
+                                                        None
+                                                    }
+                                                } else {
+                                                    None
+                                                };
+
+                                                // Only use waveform if it has colored data
+                                                if let Some(waveform) = existing_waveform.filter(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some()) {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjWaveformLoaded {
+                                                            deck: deck_num,
+                                                            samples: waveform.samples,
+                                                            frequency_bands: waveform.frequency_bands.map(|bands| {
+                                                                bands.iter().map(|b| b.as_tuple()).collect()
+                                                            }),
+                                                            duration_seconds: waveform.duration_seconds,
+                                                        }
+                                                    )).await;
+                                                }
+                                                // Note: If waveform is old/missing, it will be analyzed when LoadTrack is called
+                                            } else {
+                                                eprintln!("DEBUG: PreviousTrack: No previous track available");
+                                            }
+                                        }
+                                    }
+                                    DjCommand::NextTrack { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Stop playback first
+                                        self.handle_command(DjCommand::Pause { deck });
+                                        let (pause_position, next_track_bpm) = if let Some(engine) = &self.audio_engine {
+                                            let pos = engine.deck_player(deck).read().position_seconds();
+                                            let bpm = self.deck(deck).read().adjusted_bpm;
+                                            (pos, bpm)
+                                        } else {
+                                            let deck_state = self.deck(deck).read();
+                                            (deck_state.position_seconds, deck_state.adjusted_bpm)
+                                        };
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjDeckStateChanged {
+                                                deck: deck_num,
+                                                is_playing: false,
+                                                position_seconds: pause_position,
+                                                bpm: Some(next_track_bpm),
+                                            }
+                                        )).await;
+
+                                        // Get loaded track ID
+                                        let current_track_id = {
+                                            let deck_state = self.deck(deck).read();
+                                            deck_state.loaded_track.as_ref().map(|t| t.id)
+                                        };
+
+                                        if let Some(track_id) = current_track_id {
+                                            // Load next track
+                                            let next_track = if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    db_guard.get_adjacent_track(track_id, true).ok().flatten()
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            };
+
+                                            if let Some(track) = next_track {
+                                                let new_track_id = track.id;
+                                                eprintln!("DEBUG: NextTrack: Loading next track: {}", track.title);
+
+                                                // Load the track using handle_command
+                                                self.handle_command(DjCommand::LoadTrack { deck, track_id: new_track_id });
+
+                                                // Get track info and send loaded event
+                                                let track_info = {
+                                                    let deck_state = self.deck(deck).read();
+                                                    deck_state.loaded_track.as_ref().map(|t| {
+                                                        (t.title.clone(), t.artist.clone(), t.duration_seconds, t.bpm)
+                                                    })
+                                                };
+                                                if let Some((title, artist, duration_seconds, bpm)) = track_info {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjDeckLoaded {
+                                                            deck: deck_num,
+                                                            track_id: new_track_id.0,
+                                                            title,
+                                                            artist,
+                                                            duration_seconds,
+                                                            bpm,
+                                                        }
+                                                    )).await;
+                                                }
+
+                                                // Check for cached waveform
+                                                let existing_waveform = if let Some(db) = &self.database {
+                                                    if let Ok(db_guard) = db.lock() {
+                                                        db_guard.get_waveform(new_track_id).ok().flatten()
+                                                    } else {
+                                                        None
+                                                    }
+                                                } else {
+                                                    None
+                                                };
+
+                                                // Only use waveform if it has colored data
+                                                if let Some(waveform) = existing_waveform.filter(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some()) {
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjWaveformLoaded {
+                                                            deck: deck_num,
+                                                            samples: waveform.samples,
+                                                            frequency_bands: waveform.frequency_bands.map(|bands| {
+                                                                bands.iter().map(|b| b.as_tuple()).collect()
+                                                            }),
+                                                            duration_seconds: waveform.duration_seconds,
+                                                        }
+                                                    )).await;
+                                                }
+                                                // Note: If waveform is old/missing, it will be analyzed when LoadTrack is called
+                                            } else {
+                                                eprintln!("DEBUG: NextTrack: No next track available");
+                                            }
+                                        }
+                                    }
+                                    DjCommand::ToggleMasterTempo { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Toggle master tempo on the deck state
+                                        let new_mode = {
+                                            let mut d = self.deck(deck).write();
+                                            d.master_tempo = match d.master_tempo {
+                                                MasterTempoMode::Off => MasterTempoMode::On,
+                                                MasterTempoMode::On => MasterTempoMode::Off,
+                                            };
+                                            d.master_tempo
+                                        };
+
+                                        // Toggle on the audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().toggle_master_tempo();
+                                        }
+
+                                        let enabled = new_mode == MasterTempoMode::On;
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjMasterTempoChanged {
+                                                deck: deck_num,
+                                                enabled,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {} Master Tempo {}", deck, if enabled { "ON" } else { "OFF" });
+                                    }
+                                    DjCommand::SetTempoRange { deck, range } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Update deck state
+                                        {
+                                            let mut d = self.deck(deck).write();
+                                            d.tempo_range = range;
+                                            d.update_adjusted_bpm();
+                                        }
+
+                                        // Update audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_tempo_range(range);
+                                        }
+
+                                        let range_value = match range {
+                                            TempoRange::Range6 => 0,
+                                            TempoRange::Range10 => 1,
+                                            TempoRange::Range16 => 2,
+                                            TempoRange::Wide => 3,
+                                        };
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjTempoRangeChanged {
+                                                deck: deck_num,
+                                                range: range_value,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {} tempo range set to {:?}", deck, range);
+                                    }
+                                    DjCommand::SetLoop { deck, beat_count } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        let beat_count_f64 = beat_count as f64;
+
+                                        // Get current position and beat grid
+                                        let (loop_in, loop_out) = {
+                                            let d = self.deck(deck).read();
+
+                                            // Get current position from audio engine
+                                            let current_pos = if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).read().position_seconds()
+                                            } else {
+                                                d.position_seconds
+                                            };
+
+                                            // Quantize to nearest beat
+                                            if let Some(beat_grid) = &d.beat_grid {
+                                                let loop_in = beat_grid.nearest_beat(current_pos);
+                                                let loop_out = beat_grid.beat_position_after(loop_in, beat_count_f64);
+                                                (loop_in, loop_out)
+                                            } else {
+                                                // No beat grid - use current position without quantization
+                                                let beat_duration = 60.0 / d.original_bpm.max(1.0);
+                                                let loop_out = current_pos + (beat_count_f64 * beat_duration);
+                                                (current_pos, loop_out)
+                                            }
+                                        };
+
+                                        // Update deck state
+                                        {
+                                            let mut d = self.deck(deck).write();
+                                            d.loop_state.loop_in = Some(loop_in);
+                                            d.loop_state.loop_out = Some(loop_out);
+                                            d.loop_state.active = true;
+                                            d.loop_state.beat_count = beat_count_f64;
+                                        }
+
+                                        // Update audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_loop(loop_in, loop_out);
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in: Some(loop_in),
+                                                loop_out: Some(loop_out),
+                                                active: true,
+                                                beat_count: beat_count_f64,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Set {}-beat loop from {:.2}s to {:.2}s", deck, beat_count_f64, loop_in, loop_out);
+                                    }
+                                    DjCommand::ToggleLoop { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Get current loop state
+                                        let (loop_in, loop_out, new_active, beat_count) = {
+                                            let mut d = self.deck(deck).write();
+                                            if d.loop_state.is_defined() {
+                                                d.loop_state.active = !d.loop_state.active;
+                                                (d.loop_state.loop_in, d.loop_state.loop_out, d.loop_state.active, d.loop_state.beat_count)
+                                            } else {
+                                                (None, None, false, 0.0)
+                                            }
+                                        };
+
+                                        // Update audio player
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_loop_active(new_active);
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in,
+                                                loop_out,
+                                                active: new_active,
+                                                beat_count,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Loop {}", deck, if new_active { "enabled" } else { "disabled" });
+                                    }
+                                    DjCommand::HalveLoop { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Calculate halved loop (min 1/32 beat)
+                                        let (loop_in, new_loop_out, new_beat_count, is_active) = {
+                                            let mut d = self.deck(deck).write();
+                                            if let (Some(in_pt), Some(out_pt)) = (d.loop_state.loop_in, d.loop_state.loop_out) {
+                                                let length = out_pt - in_pt;
+                                                let new_length = length / 2.0;
+                                                let new_beat_count = (d.loop_state.beat_count / 2.0).max(MIN_LOOP_BEATS);
+                                                let new_out = in_pt + new_length;
+
+                                                // Update state
+                                                d.loop_state.loop_out = Some(new_out);
+                                                d.loop_state.beat_count = new_beat_count;
+
+                                                (Some(in_pt), Some(new_out), new_beat_count, d.loop_state.active)
+                                            } else {
+                                                (None, None, 0.0, false)
+                                            }
+                                        };
+
+                                        // Update audio player if loop is defined
+                                        if let (Some(loop_in_val), Some(loop_out_val)) = (loop_in, new_loop_out) {
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).write().set_loop(loop_in_val, loop_out_val);
+                                            }
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in,
+                                                loop_out: new_loop_out,
+                                                active: is_active,
+                                                beat_count: new_beat_count,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Halved loop to {} beats", deck, new_beat_count);
+                                    }
+                                    DjCommand::DoubleLoop { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Calculate doubled loop (max 512 beats)
+                                        let (loop_in, new_loop_out, new_beat_count, is_active) = {
+                                            let mut d = self.deck(deck).write();
+                                            if let (Some(in_pt), Some(out_pt)) = (d.loop_state.loop_in, d.loop_state.loop_out) {
+                                                let length = out_pt - in_pt;
+                                                let new_length = length * 2.0;
+                                                let new_beat_count = (d.loop_state.beat_count * 2.0).min(MAX_LOOP_BEATS);
+                                                let new_out = in_pt + new_length;
+
+                                                // Update state
+                                                d.loop_state.loop_out = Some(new_out);
+                                                d.loop_state.beat_count = new_beat_count;
+
+                                                (Some(in_pt), Some(new_out), new_beat_count, d.loop_state.active)
+                                            } else {
+                                                (None, None, 0.0, false)
+                                            }
+                                        };
+
+                                        // Update audio player if loop is defined
+                                        if let (Some(loop_in_val), Some(loop_out_val)) = (loop_in, new_loop_out) {
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.deck_player(deck).write().set_loop(loop_in_val, loop_out_val);
+                                            }
+                                        }
+
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjLoopStateChanged {
+                                                deck: deck_num,
+                                                loop_in,
+                                                loop_out: new_loop_out,
+                                                active: is_active,
+                                                beat_count: new_beat_count,
+                                            }
+                                        )).await;
+                                        log::info!("Deck {}: Doubled loop to {} beats", deck, new_beat_count);
+                                    }
+                                    DjCommand::ImportFolder { path } => {
+                                        // Import metadata immediately
+                                        self.import_folder(path);
+
+                                        // Send library update to UI immediately
+                                        if let Some(tracks) = self.get_all_tracks_for_ui() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjLibraryTracks(tracks)
+                                            )).await;
+                                        }
+
+                                        // Send initial analysis progress if there are tracks to analyze
+                                        if let Some((track_name, current, total)) = self.analysis_progress() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjAnalysisProgress {
+                                                    track_id: 0, // Will be updated during actual analysis
+                                                    track_name,
+                                                    current,
+                                                    total,
+                                                }
+                                            )).await;
+                                        }
+                                    }
+                                    DjCommand::ReanalyzeTrack { track_id } => {
+                                        // Queue track for re-analysis
+                                        self.reanalyze_track(track_id);
+
+                                        // Send immediate progress event
+                                        if let Some((track_name, current, total)) = self.analysis_progress() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjAnalysisProgress {
+                                                    track_id: track_id.0,
+                                                    track_name,
+                                                    current,
+                                                    total,
+                                                }
+                                            )).await;
+                                        }
+                                    }
+                                    DjCommand::ToggleSync { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Toggle sync state
+                                        let sync_enabled = {
+                                            let mut d = self.deck(deck).write();
+                                            d.sync_enabled = !d.sync_enabled;
+                                            log::info!(
+                                                "Deck {} sync {}",
+                                                deck,
+                                                if d.sync_enabled { "enabled" } else { "disabled" }
+                                            );
+                                            d.sync_enabled
+                                        };
+
+                                        if sync_enabled {
+                                            // Match master's tempo range
+                                            if let Some(master) = self.master_deck {
+                                                let master_tempo_range = self.deck(master).read().tempo_range;
+                                                self.deck(deck).write().tempo_range = master_tempo_range;
+
+                                                // Send tempo range change event
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjTempoRangeChanged {
+                                                        deck: deck_num,
+                                                        range: master_tempo_range.to_u8(),
+                                                    }
+                                                )).await;
+                                            }
+
+                                            // Sync to master's BPM
+                                            let tempo_range = self.deck(deck).read().tempo_range;
+                                            if let Some(engine) = &self.audio_engine {
+                                                if engine.sync_to_master(deck, tempo_range) {
+                                                    // Get new pitch position
+                                                    let (pitch_percent, adjusted_bpm) = {
+                                                        let player = engine.deck_player(deck).read();
+                                                        let pitch = (player.playback_rate() - 1.0) / tempo_range.as_fraction();
+                                                        let bpm = player.effective_bpm().unwrap_or(120.0);
+                                                        (pitch.clamp(-1.0, 1.0), bpm)
+                                                    };
+
+                                                    // Update deck state
+                                                    {
+                                                        let mut d = self.deck(deck).write();
+                                                        d.pitch_percent = pitch_percent;
+                                                        d.adjusted_bpm = adjusted_bpm;
+                                                    }
+
+                                                    // Send pitch changed event
+                                                    let _ = tx.send(ModuleMessage::Event(
+                                                        ModuleEvent::DjPitchChanged {
+                                                            deck: deck_num,
+                                                            pitch_percent,
+                                                            tempo_range: tempo_range.to_u8(),
+                                                            adjusted_bpm,
+                                                        }
+                                                    )).await;
+
+                                                    log::info!("Deck {} synced to master BPM: {:.1}", deck, adjusted_bpm);
+                                                } else {
+                                                    log::warn!("Deck {} failed to sync (no master or out of range)", deck);
+                                                }
+                                            }
+                                        } else {
+                                            // Disable sync
+                                            if let Some(engine) = &self.audio_engine {
+                                                engine.disable_sync(deck);
+                                            }
+                                        }
+                                    }
+                                    DjCommand::SetPitch { deck, percent } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+                                        let tempo_range = self.deck(deck).read().tempo_range;
+
+                                        // Apply pitch to this deck
+                                        let adjusted_bpm = {
+                                            let mut d = self.deck(deck).write();
+                                            d.pitch_percent = percent;
+                                            d.update_adjusted_bpm();
+                                            d.adjusted_bpm
+                                        };
+
+                                        // Update audio engine
+                                        if let Some(engine) = &self.audio_engine {
+                                            engine.deck_player(deck).write().set_pitch(percent, tempo_range);
+                                        }
+
+                                        // Send pitch changed event for this deck
+                                        let _ = tx.send(ModuleMessage::Event(
+                                            ModuleEvent::DjPitchChanged {
+                                                deck: deck_num,
+                                                pitch_percent: percent,
+                                                tempo_range: tempo_range.to_u8(),
+                                                adjusted_bpm,
+                                            }
+                                        )).await;
+
+                                        // If this deck is master, update all synced decks
+                                        if self.master_deck == Some(deck) {
+                                            let other_deck = if deck == DeckId::A { DeckId::B } else { DeckId::A };
+                                            let other_deck_num = if deck == DeckId::A { 1 } else { 0 };
+                                            let sync_enabled = self.deck(other_deck).read().sync_enabled;
+
+                                            if sync_enabled {
+                                                let (original_bpm, other_tempo_range) = {
+                                                    let d = self.deck(other_deck).read();
+                                                    (d.original_bpm, d.tempo_range)
+                                                };
+
+                                                // Calculate required pitch for synced deck to match master BPM
+                                                let required_rate = adjusted_bpm / original_bpm;
+                                                let range_fraction = other_tempo_range.as_fraction();
+                                                let new_pitch = ((required_rate - 1.0) / range_fraction).clamp(-1.0, 1.0);
+
+                                                // Apply to synced deck
+                                                let other_adjusted_bpm = {
+                                                    let mut d = self.deck(other_deck).write();
+                                                    d.pitch_percent = new_pitch;
+                                                    d.update_adjusted_bpm();
+                                                    d.adjusted_bpm
+                                                };
+
+                                                // Update audio engine
+                                                if let Some(engine) = &self.audio_engine {
+                                                    engine.deck_player(other_deck).write().set_pitch(new_pitch, other_tempo_range);
+                                                }
+
+                                                // Send pitch changed event for synced deck
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjPitchChanged {
+                                                        deck: other_deck_num,
+                                                        pitch_percent: new_pitch,
+                                                        tempo_range: other_tempo_range.to_u8(),
+                                                        adjusted_bpm: other_adjusted_bpm,
+                                                    }
+                                                )).await;
+
+                                                log::debug!("Synced deck {} pitch to {:.2} (BPM: {:.1})", other_deck, new_pitch, other_adjusted_bpm);
+                                            }
+                                        }
+                                    }
+                                    other => {
+                                        eprintln!("DEBUG: Calling handle_command for {:?}", other);
+                                        self.handle_command(other);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Process analysis queue during idle time (non-blocking)
+                _ = rhythm_interval.tick() => {
+                    // Poll for streaming waveform progress (non-blocking)
+                    if let Some(rx) = &mut self.analysis_progress_rx {
+                        while let Ok((samples, progress)) = rx.try_recv() {
+                            if let Some((track_id, _)) = &self.current_analysis_track {
+                                // Send streaming waveform progress with special deck value (255 = library analysis)
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjWaveformProgress {
+                                        deck: 255,
+                                        samples,
+                                        frequency_bands: None,
+                                        progress,
+                                    }
+                                )).await;
+                            }
+                        }
+                    }
+
+                    // Check if background analysis task completed (non-blocking)
+                    let analysis_finished = self.analysis_handle.as_ref().map_or(false, |h| h.is_finished());
+                    if analysis_finished {
+                        // Take ownership of the handle and await it
+                        let handle = self.analysis_handle.take().unwrap();
+                        let (track_id, track_name) = self.current_analysis_track.take().unwrap_or((TrackId(0), String::new()));
+                        self.analysis_progress_rx = None;
+
+                        match handle.await {
+                            Ok(Some(analysis_result)) => {
+                                // Save results to database
+                                if let Some(db) = &self.database {
+                                    if let Ok(db_guard) = db.lock() {
+                                        let _ = db_guard.save_waveform(&analysis_result.waveform);
+                                        let _ = db_guard.save_beat_grid(&analysis_result.beat_grid);
+                                        let _ = db_guard.update_track_bpm(track_id, analysis_result.beat_grid.bpm);
+                                    }
+                                }
+
+                                self.analysis_batch_completed += 1;
+                                log::info!(
+                                    "Analysis complete for {}: BPM={:.1}",
+                                    track_name,
+                                    analysis_result.beat_grid.bpm
+                                );
+
+                                // Send analysis complete event
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjAnalysisComplete {
+                                        track_id: track_id.0,
+                                        bpm: Some(analysis_result.beat_grid.bpm),
+                                    }
+                                )).await;
+                            }
+                            Ok(None) | Err(_) => {
+                                log::error!("Analysis failed for {}", track_name);
+                                self.analysis_batch_completed += 1;
+
+                                // Send analysis complete event with no BPM
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjAnalysisComplete {
+                                        track_id: track_id.0,
+                                        bpm: None,
+                                    }
+                                )).await;
+                            }
+                        }
+
+                        // Check if all analysis is complete
+                        if !self.has_pending_analysis() && !self.is_analysis_running() {
+                            let _ = tx.send(ModuleMessage::Event(
+                                ModuleEvent::StatusClear
+                            )).await;
+
+                            // Send updated library with BPM values
+                            if let Some(tracks) = self.get_all_tracks_for_ui() {
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjLibraryTracks(tracks)
+                                )).await;
+                            }
+                        }
+                    }
+
+                    // Start next analysis if none is running and queue is not empty (non-blocking)
+                    if !self.is_analysis_running() && self.has_pending_analysis() {
+                        if let Some((track_id, track_name)) = self.start_next_analysis() {
+                            // Send progress event
+                            let _ = tx.send(ModuleMessage::Event(
+                                ModuleEvent::DjAnalysisProgress {
+                                    track_id: track_id.0,
+                                    track_name,
+                                    current: self.analysis_batch_completed + 1,
+                                    total: self.analysis_batch_total,
+                                }
+                            )).await;
+                        }
+                    }
+                    // Collect events to send (without holding locks across await)
+                    let mut events_to_send = Vec::new();
+
+                    if let Some(engine) = &self.audio_engine {
+                        // Update sync corrections for continuous beat lock
+                        engine.update_sync_corrections();
+
+                        // Get master deck rhythm sync info
+                        if let Some(master) = engine.master_deck() {
+                            let player = engine.deck_player(master).read();
+                            if player.state() == PlayerState::Playing {
+                                if let (Some(bpm), Some(beat_phase), Some(bar_phase), Some(phrase_phase)) = (
+                                    player.effective_bpm(),
+                                    player.beat_phase(),
+                                    player.bar_phase(),
+                                    player.phrase_phase(),
+                                ) {
+                                    events_to_send.push(ModuleEvent::DjRhythmSync {
+                                        bpm,
+                                        beat_phase,
+                                        bar_phase,
+                                        phrase_phase,
+                                    });
+                                }
+                            }
+                        }
+
+                        // Send position updates and check for beat triggers on Deck A
+                        {
+                            let player = engine.deck_player(DeckId::A).read();
+                            let is_playing = player.state() == PlayerState::Playing;
+                            let position = player.position_seconds();
+                            let adjusted_bpm = self.deck(DeckId::A).read().adjusted_bpm;
+
+                            // Always send position updates when playing
+                            if is_playing {
+                                events_to_send.push(ModuleEvent::DjDeckStateChanged {
+                                    deck: 0,
+                                    is_playing: true,
+                                    position_seconds: position,
+                                    bpm: Some(adjusted_bpm),
+                                });
+                            }
+
+                            // Check for beat triggers
+                            if is_playing {
+                                if let Some(beat_num) = player.current_beat_number() {
+                                    if last_beat_a.map_or(true, |last| beat_num > last) {
+                                        let is_downbeat = player.bar_phase().map_or(false, |phase| phase < 0.25);
+                                        events_to_send.push(ModuleEvent::DjBeat {
+                                            deck: 0,
+                                            beat_number: beat_num,
+                                            is_downbeat,
+                                        });
+                                        last_beat_a = Some(beat_num);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Send position updates and check for beat triggers on Deck B
+                        {
+                            let player = engine.deck_player(DeckId::B).read();
+                            let is_playing = player.state() == PlayerState::Playing;
+                            let position = player.position_seconds();
+                            let adjusted_bpm = self.deck(DeckId::B).read().adjusted_bpm;
+
+                            // Always send position updates when playing
+                            if is_playing {
+                                events_to_send.push(ModuleEvent::DjDeckStateChanged {
+                                    deck: 1,
+                                    is_playing: true,
+                                    position_seconds: position,
+                                    bpm: Some(adjusted_bpm),
+                                });
+                            }
+
+                            // Check for beat triggers
+                            if is_playing {
+                                if let Some(beat_num) = player.current_beat_number() {
+                                    if last_beat_b.map_or(true, |last| beat_num > last) {
+                                        let is_downbeat = player.bar_phase().map_or(false, |phase| phase < 0.25);
+                                        events_to_send.push(ModuleEvent::DjBeat {
+                                            deck: 1,
+                                            beat_number: beat_num,
+                                            is_downbeat,
+                                        });
+                                        last_beat_b = Some(beat_num);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Now send events (locks are dropped, safe to await)
+                    for event in events_to_send {
+                        let _ = tx.send(ModuleMessage::Event(event)).await;
+                    }
+                }
+            }
+        }
+
+        // Send status before shutdown
+        let _ = tx
+            .send(ModuleMessage::Status("DJ module stopped".to_string()))
+            .await;
+
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        log::info!("Shutting down DJ module");
+
+        // Stop audio engine
+        if let Some(engine) = &mut self.audio_engine {
+            engine.stop();
+            log::info!("Audio engine stopped");
+        }
+
+        // Close database (implicitly done when dropped)
+        self.database = None;
+
+        log::info!("DJ module shutdown complete");
+        Ok(())
+    }
+
+    fn status(&self) -> HashMap<String, String> {
+        let deck_a = self.deck_a.read();
+        let deck_b = self.deck_b.read();
+
+        let mut status = HashMap::new();
+        status.insert("deck_a_state".to_string(), format!("{:?}", deck_a.state));
+        status.insert("deck_b_state".to_string(), format!("{:?}", deck_b.state));
+        status.insert(
+            "deck_a_bpm".to_string(),
+            format!("{:.2}", deck_a.adjusted_bpm),
+        );
+        status.insert(
+            "deck_b_bpm".to_string(),
+            format!("{:.2}", deck_b.adjusted_bpm),
+        );
+        status.insert(
+            "master".to_string(),
+            self.master_deck
+                .map(|d| format!("{}", d))
+                .unwrap_or_else(|| "none".to_string()),
+        );
+        status.insert(
+            "library_path".to_string(),
+            self.library_path.display().to_string(),
+        );
+        status
+    }
+}
