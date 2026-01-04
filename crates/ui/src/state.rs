@@ -26,7 +26,7 @@ pub struct DjDeckState {
     pub beat_positions: Vec<f64>,
     pub first_beat_offset: f64,
     pub master_tempo_enabled: bool,
-    pub tempo_range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=Wide (±100%)
+    pub tempo_range: u8,    // 0=±6%, 1=±10%, 2=±16%, 3=Wide (±100%)
     pub pitch_percent: f64, // Pitch fader position (-1.0 to 1.0)
     // Loop state
     pub loop_in: Option<f64>,

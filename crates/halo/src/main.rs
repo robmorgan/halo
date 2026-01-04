@@ -207,6 +207,9 @@ async fn main() -> anyhow::Result<()> {
     if settings.push2_enabled {
         console.register_module(Box::new(halo_push2::Push2Module::new()));
         println!("Push 2 support: enabled");
+        println!("  (USB display diagnostics will appear during initialization)");
+    } else {
+        println!("Push 2 support: disabled (set push2_enabled: true in config.json to enable)");
     }
 
     // // Blue Strobe Fast

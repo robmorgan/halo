@@ -2218,6 +2218,14 @@ impl LightingConsole {
                                         rhythm_state.bar_phase = bar_phase;
                                         rhythm_state.phrase_phase = phrase_phase;
                                     }
+                                    drop(rhythm_state);
+                                    // Broadcast to other modules (e.g., Push 2) - non-blocking for high-frequency updates
+                                    self.module_manager.try_broadcast_event(ModuleEvent::DjRhythmSync {
+                                        bpm,
+                                        beat_phase,
+                                        bar_phase,
+                                        phrase_phase,
+                                    });
                                 }
                                 ModuleEvent::DjBeat { deck, beat_number, is_downbeat } => {
                                     // Log DJ beat events for debugging
@@ -2232,17 +2240,35 @@ impl LightingConsole {
                                 }
                                 ModuleEvent::DjDeckLoaded { deck, track_id, title, artist, duration_seconds, bpm } => {
                                     log::info!("DJ deck {} loaded: {} - {}", deck, artist.as_deref().unwrap_or("Unknown"), title);
+                                    // Send to UI
                                     let _ = event_tx.send(ConsoleEvent::DjTrackLoaded {
+                                        deck,
+                                        track_id,
+                                        title: title.clone(),
+                                        artist: artist.clone(),
+                                        duration_seconds,
+                                        bpm,
+                                    });
+                                    // Broadcast to other modules (e.g., Push 2)
+                                    self.module_manager.broadcast_event(ModuleEvent::DjDeckLoaded {
                                         deck,
                                         track_id,
                                         title,
                                         artist,
                                         duration_seconds,
                                         bpm,
-                                    });
+                                    }).await;
                                 }
                                 ModuleEvent::DjDeckStateChanged { deck, is_playing, position_seconds, bpm } => {
+                                    // Send to UI
                                     let _ = event_tx.send(ConsoleEvent::DjDeckStateChanged {
+                                        deck,
+                                        is_playing,
+                                        position_seconds,
+                                        bpm,
+                                    });
+                                    // Broadcast to other modules (e.g., Push 2) - non-blocking for high-frequency updates
+                                    self.module_manager.try_broadcast_event(ModuleEvent::DjDeckStateChanged {
                                         deck,
                                         is_playing,
                                         position_seconds,
@@ -2264,12 +2290,20 @@ impl LightingConsole {
                                     });
                                 }
                                 ModuleEvent::DjWaveformLoaded { deck, samples, duration_seconds, frequency_bands } => {
+                                    // Send to UI
                                     let _ = event_tx.send(ConsoleEvent::DjWaveformLoaded {
+                                        deck,
+                                        samples: samples.clone(),
+                                        duration_seconds,
+                                        frequency_bands: frequency_bands.clone(),
+                                    });
+                                    // Broadcast to other modules (e.g., Push 2)
+                                    self.module_manager.broadcast_event(ModuleEvent::DjWaveformLoaded {
                                         deck,
                                         samples,
                                         duration_seconds,
                                         frequency_bands,
-                                    });
+                                    }).await;
                                 }
                                 ModuleEvent::DjBeatGridLoaded { deck, beat_positions, first_beat_offset, bpm } => {
                                     let _ = event_tx.send(ConsoleEvent::DjBeatGridLoaded {

@@ -37,12 +37,14 @@ impl DisplayRenderer {
         }
     }
 
-    /// Render the full display.
-    pub fn render(
+    /// Render the full display with interpolated positions for smooth scrolling.
+    pub fn render_with_positions(
         &mut self,
         buffer: &mut FrameBuffer,
         deck_a: &DeckDisplayState,
         deck_b: &DeckDisplayState,
+        pos_a: f64,
+        pos_b: f64,
     ) {
         buffer.clear();
 
@@ -50,27 +52,33 @@ impl DisplayRenderer {
         buffer.draw_vline(DECK_WIDTH - 1, 0, DISPLAY_HEIGHT, colors::DARK_GRAY);
         buffer.draw_vline(DECK_WIDTH, 0, DISPLAY_HEIGHT, colors::DARK_GRAY);
 
-        // Render each deck
-        self.render_deck(buffer, deck_a, 0);
-        self.render_deck(buffer, deck_b, DECK_WIDTH + 2);
+        // Render each deck with interpolated position
+        self.render_deck(buffer, deck_a, 0, pos_a);
+        self.render_deck(buffer, deck_b, DECK_WIDTH + 2, pos_b);
     }
 
     /// Render a single deck section.
-    fn render_deck(&mut self, buffer: &mut FrameBuffer, deck: &DeckDisplayState, x_offset: usize) {
+    fn render_deck(
+        &mut self,
+        buffer: &mut FrameBuffer,
+        deck: &DeckDisplayState,
+        x_offset: usize,
+        position: f64,
+    ) {
         // Waveform area (top 60 pixels)
-        self.render_waveform(buffer, deck, x_offset, 0, DECK_WIDTH - 4, 60);
+        self.render_waveform(buffer, deck, x_offset, 0, DECK_WIDTH - 4, 60, position);
 
         // Track info (60-100)
         self.render_track_info(buffer, deck, x_offset, 62);
 
-        // Transport state (100-130)
-        self.render_transport(buffer, deck, x_offset, 102);
+        // Transport state (100-130) - pass interpolated position
+        self.render_transport(buffer, deck, x_offset, 102, position);
 
         // BPM (130-160)
         self.render_bpm(buffer, deck, x_offset, 132);
     }
 
-    /// Render waveform placeholder.
+    /// Render zoomed waveform centered on playhead (optimized).
     fn render_waveform(
         &self,
         buffer: &mut FrameBuffer,
@@ -79,6 +87,7 @@ impl DisplayRenderer {
         y: usize,
         w: usize,
         h: usize,
+        position: f64,
     ) {
         // Draw waveform background
         buffer.draw_rect(x, y, w, h, colors::DARK_GRAY);
@@ -89,43 +98,93 @@ impl DisplayRenderer {
             return;
         }
 
-        // Draw center line
         let center_y = y + h / 2;
+        let half_height = (h / 2) as f32;
+        let waveform = &deck.waveform;
+
+        // Check if we have waveform data
+        if waveform.amplitudes.is_empty() || deck.duration_seconds <= 0.0 {
+            buffer.draw_hline(x, center_y, w, colors::GRAY);
+            buffer.draw_vline(x + w / 2, y, h, colors::WHITE);
+            return;
+        }
+
+        // Visible time window (~8 seconds centered on playhead)
+        let visible_seconds = 8.0;
+        let start_time = (position - visible_seconds / 2.0).max(0.0);
+        let end_time = (position + visible_seconds / 2.0).min(deck.duration_seconds);
+
+        // Use pre-computed samples_per_second
+        let start_sample = (start_time * waveform.samples_per_second) as usize;
+        let end_sample =
+            ((end_time * waveform.samples_per_second) as usize).min(waveform.amplitudes.len());
+        let samples_in_view = end_sample.saturating_sub(start_sample);
+
+        if samples_in_view > 0 {
+            // Pre-calculate step for sample selection
+            let step = samples_in_view as f32 / w as f32;
+
+            for px in 0..w {
+                let sample_idx = start_sample + (px as f32 * step) as usize;
+                if sample_idx >= waveform.amplitudes.len() {
+                    continue;
+                }
+
+                let amplitude = waveform.amplitudes[sample_idx];
+                let bar_height = (amplitude * half_height * 0.9) as usize;
+
+                if bar_height == 0 {
+                    continue;
+                }
+
+                // Use pre-computed color
+                let color = waveform.colors[sample_idx];
+
+                // Draw mirrored waveform (optimized: draw line instead of pixel-by-pixel)
+                let top_y = center_y.saturating_sub(bar_height);
+                let bot_y = (center_y + bar_height).min(y + h - 1);
+                buffer.draw_vline(x + px, top_y, bot_y - top_y, color);
+            }
+        }
+
+        // Draw center line
         buffer.draw_hline(x, center_y, w, colors::GRAY);
 
-        // Draw simple waveform representation (placeholder)
-        // In a real implementation, this would use actual waveform data
-        let progress = if deck.duration_seconds > 0.0 {
-            (deck.position_seconds / deck.duration_seconds).clamp(0.0, 1.0)
+        // Calculate playhead position using interpolated position
+        let playhead_x = if position < visible_seconds / 2.0 {
+            x + ((w / 2) as f64 * (position / (visible_seconds / 2.0))) as usize
+        } else if position > deck.duration_seconds - visible_seconds / 2.0 {
+            let time_from_end = deck.duration_seconds - position;
+            x + w - ((w / 2) as f64 * (time_from_end / (visible_seconds / 2.0))) as usize
         } else {
-            0.0
+            x + w / 2
         };
 
-        // Draw position indicator
-        let pos_x = x + (progress * (w as f64)) as usize;
-        buffer.draw_vline(pos_x, y, h, colors::WHITE);
+        // Draw playhead
+        buffer.draw_vline(playhead_x, y, h, colors::WHITE);
 
-        // Draw cue point if set
+        // Draw cue point if visible
         if let Some(cue) = deck.cue_point {
-            if deck.duration_seconds > 0.0 {
-                let cue_x = x + ((cue / deck.duration_seconds) * (w as f64)) as usize;
+            if cue >= start_time && cue <= end_time {
+                let cue_x =
+                    x + (((cue - start_time) / (end_time - start_time)) * w as f64) as usize;
                 buffer.draw_vline(cue_x, y, h, colors::ORANGE);
             }
         }
 
-        // Draw hot cues
+        // Draw hot cues if visible
         for (i, hot_cue) in deck.hot_cues.iter().enumerate() {
             if let Some(pos) = hot_cue {
-                if deck.duration_seconds > 0.0 {
-                    let hc_x = x + ((*pos / deck.duration_seconds) * (w as f64)) as usize;
+                if *pos >= start_time && *pos <= end_time {
+                    let hc_x =
+                        x + (((*pos - start_time) / (end_time - start_time)) * w as f64) as usize;
                     let color = match i {
                         0 => colors::RED,
                         1 => colors::GREEN,
                         2 => colors::BLUE,
-                        3 => colors::CYAN,
-                        _ => colors::WHITE,
+                        _ => colors::CYAN,
                     };
-                    buffer.draw_vline(hc_x, y + 2, 10, color);
+                    buffer.draw_vline(hc_x, y, 8, color);
                 }
             }
         }
@@ -171,10 +230,11 @@ impl DisplayRenderer {
         deck: &DeckDisplayState,
         x: usize,
         y: usize,
+        position: f64,
     ) {
-        // Time display
-        let pos_min = (deck.position_seconds / 60.0) as u32;
-        let pos_sec = (deck.position_seconds % 60.0) as u32;
+        // Time display using interpolated position
+        let pos_min = (position / 60.0) as u32;
+        let pos_sec = (position % 60.0) as u32;
         let dur_min = (deck.duration_seconds / 60.0) as u32;
         let dur_sec = (deck.duration_seconds % 60.0) as u32;
 

@@ -11,6 +11,9 @@ pub const DISPLAY_HEIGHT: usize = 160;
 /// Total frame size in bytes (960 * 160 * 2 bytes per pixel)
 pub const FRAME_SIZE: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT * 2;
 
+/// Line stride for USB transfer (1024 pixels per line, padded from 960)
+const LINE_STRIDE: usize = 2048; // 1024 pixels * 2 bytes
+
 /// XOR mask for USB transfer
 const XOR_MASK: [u8; 4] = [0xE7, 0xF3, 0xE7, 0xFF];
 
@@ -139,15 +142,36 @@ impl FrameBuffer {
     }
 
     /// Convert frame buffer to USB transfer format with XOR encoding.
+    ///
+    /// The Push 2 display requires each line to have a stride of 2048 bytes
+    /// (1024 pixels), even though only 960 pixels are visible. The extra
+    /// 128 bytes per line must be filled with XOR-encoded zeros.
     pub fn to_usb_frame(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(FRAME_SIZE);
+        // Total size: 160 lines * 2048 bytes per line
+        let total_size = DISPLAY_HEIGHT * LINE_STRIDE;
+        let mut data = Vec::with_capacity(total_size);
 
-        // Convert to bytes and apply XOR mask
-        for (i, &pixel) in self.pixels.iter().enumerate() {
-            let bytes = pixel.to_le_bytes();
-            let offset = (i * 2) % 4;
-            data.push(bytes[0] ^ XOR_MASK[offset]);
-            data.push(bytes[1] ^ XOR_MASK[(offset + 1) % 4]);
+        // Process each line
+        for y in 0..DISPLAY_HEIGHT {
+            let line_start = y * DISPLAY_WIDTH;
+
+            // Convert visible pixels (960 pixels = 1920 bytes)
+            for x in 0..DISPLAY_WIDTH {
+                let pixel = self.pixels[line_start + x];
+                let bytes = pixel.to_le_bytes();
+                let byte_offset = (x * 2) % 4;
+                data.push(bytes[0] ^ XOR_MASK[byte_offset]);
+                data.push(bytes[1] ^ XOR_MASK[(byte_offset + 1) % 4]);
+            }
+
+            // Add padding bytes (128 bytes = 64 filler pixels)
+            // These are XOR-encoded zeros
+            let visible_bytes = DISPLAY_WIDTH * 2; // 1920 bytes
+            let padding_bytes = LINE_STRIDE - visible_bytes; // 128 bytes
+            for i in 0..padding_bytes {
+                let byte_offset = (visible_bytes + i) % 4;
+                data.push(0x00 ^ XOR_MASK[byte_offset]);
+            }
         }
 
         data

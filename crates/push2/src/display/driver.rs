@@ -53,6 +53,34 @@ pub struct Push2Display {
 }
 
 impl Push2Display {
+    /// List all USB devices for debugging purposes.
+    /// Returns a vector of "vendor_id:product_id" strings.
+    pub fn list_usb_devices() -> Vec<String> {
+        let context = match Context::new() {
+            Ok(c) => c,
+            Err(e) => return vec![format!("Failed to create USB context: {e}")],
+        };
+
+        match context.devices() {
+            Ok(devices) => devices
+                .iter()
+                .filter_map(|d| {
+                    d.device_descriptor().ok().map(|desc| {
+                        let vid = desc.vendor_id();
+                        let pid = desc.product_id();
+                        let is_push2 = vid == PUSH2_VENDOR_ID && pid == PUSH2_PRODUCT_ID;
+                        if is_push2 {
+                            format!("{vid:04x}:{pid:04x} (Push 2)")
+                        } else {
+                            format!("{vid:04x}:{pid:04x}")
+                        }
+                    })
+                })
+                .collect(),
+            Err(e) => vec![format!("Failed to enumerate devices: {e}")],
+        }
+    }
+
     /// Create a new Push2Display by connecting to the device.
     pub fn new() -> Result<Self, Push2DisplayError> {
         let context = Context::new()?;

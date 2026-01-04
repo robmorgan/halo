@@ -362,7 +362,9 @@ fn detect_bpm(samples: &[f32], sample_rate: u32, config: &AnalysisConfig) -> (f6
     if half_lag >= min_lag {
         // Look for a peak near half the lag
         for &(lag, strength) in &peaks {
-            if lag >= half_lag.saturating_sub(2) && lag <= half_lag + 2 && strength > best_strength * 0.7
+            if lag >= half_lag.saturating_sub(2)
+                && lag <= half_lag + 2
+                && strength > best_strength * 0.7
             {
                 // Found a strong peak at half the lag, prefer it
                 final_lag = lag;

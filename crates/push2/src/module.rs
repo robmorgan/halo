@@ -23,8 +23,19 @@ pub enum Push2Mode {
     Settings,
 }
 
-/// State for DJ deck display
+/// Pre-computed waveform data optimized for display
 #[derive(Debug, Clone, Default)]
+pub struct DisplayWaveform {
+    /// Downsampled amplitude values (one per display pixel at max zoom)
+    pub amplitudes: Vec<f32>,
+    /// Pre-computed BGR565 colors for each sample
+    pub colors: Vec<u16>,
+    /// Samples per second (for time-to-index conversion)
+    pub samples_per_second: f64,
+}
+
+/// State for DJ deck display
+#[derive(Debug, Clone)]
 pub struct DeckDisplayState {
     pub title: String,
     pub artist: String,
@@ -36,6 +47,29 @@ pub struct DeckDisplayState {
     pub sync_enabled: bool,
     pub cue_point: Option<f64>,
     pub hot_cues: [Option<f64>; 4],
+    /// Pre-computed waveform for fast rendering
+    pub waveform: DisplayWaveform,
+    /// Last time we received a position update (for interpolation)
+    pub last_update: std::time::Instant,
+}
+
+impl Default for DeckDisplayState {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            artist: String::new(),
+            duration_seconds: 0.0,
+            position_seconds: 0.0,
+            bpm: 0.0,
+            is_playing: false,
+            is_master: false,
+            sync_enabled: false,
+            cue_point: None,
+            hot_cues: [None; 4],
+            waveform: DisplayWaveform::default(),
+            last_update: std::time::Instant::now(),
+        }
+    }
 }
 
 /// State for lighting display
@@ -116,11 +150,18 @@ impl Push2Module {
 
     /// Try to connect to the Push 2 display via USB.
     fn connect_display(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // List USB devices for debugging
+        let usb_devices = Push2Display::list_usb_devices();
+        let push2_found = usb_devices.iter().any(|d| d.contains("Push 2"));
+
+        tracing::debug!("USB devices found: {:?}", usb_devices);
+
         match Push2Display::new() {
             Ok(display) => {
                 self.display = Some(display);
                 self.status
                     .insert("display".to_string(), "connected".to_string());
+                eprintln!("Push 2 display: connected via USB");
                 tracing::info!("Push 2 display connected");
                 Ok(())
             }
@@ -128,7 +169,25 @@ impl Push2Module {
                 self.display = None;
                 self.status
                     .insert("display".to_string(), "not_connected".to_string());
-                tracing::warn!("Push 2 display not available: {}. MIDI-only mode.", e);
+
+                // Print detailed diagnostic info to stderr for visibility
+                eprintln!("WARNING: Push 2 display not available: {e}");
+                eprintln!("  USB devices found ({} total):", usb_devices.len());
+                for device in &usb_devices {
+                    eprintln!("    - {device}");
+                }
+                if !push2_found {
+                    eprintln!("  Push 2 NOT detected in USB device list!");
+                    eprintln!("  Check: Is Push 2 connected via USB? (Not just MIDI)");
+                } else {
+                    eprintln!("  Push 2 detected but display connection failed.");
+                    eprintln!(
+                        "  On macOS: Check System Preferences > Privacy & Security > USB access"
+                    );
+                }
+                eprintln!("  Continuing in MIDI-only mode (LEDs work, display blank).");
+
+                tracing::warn!("Push 2 display not available: {e}. MIDI-only mode.");
                 // Don't fail - continue with MIDI only
                 Ok(())
             }
@@ -324,6 +383,128 @@ impl Push2Module {
         Push2Mapping::translate_cc(cc, value).map(ModuleEvent::DjCommand)
     }
 
+    /// Process a single module event. Returns true if shutdown was received.
+    fn process_event(&mut self, event: &ModuleEvent) -> bool {
+        match event {
+            ModuleEvent::Shutdown => {
+                tracing::info!("Push 2 module received shutdown");
+                return true;
+            }
+
+            ModuleEvent::DjDeckStateChanged {
+                deck,
+                is_playing,
+                position_seconds,
+                bpm: _,
+            } => {
+                self.update_deck_state(*deck, *is_playing, *position_seconds);
+            }
+
+            ModuleEvent::DjDeckLoaded {
+                deck,
+                title,
+                artist,
+                duration_seconds,
+                bpm,
+                ..
+            } => {
+                self.update_deck_loaded(
+                    *deck,
+                    title.clone(),
+                    artist.clone(),
+                    *duration_seconds,
+                    *bpm,
+                );
+            }
+
+            ModuleEvent::DjRhythmSync {
+                bpm, beat_phase, ..
+            } => {
+                // Update BPM display for master deck
+                if self.deck_a.is_master {
+                    self.deck_a.bpm = *bpm;
+                } else if self.deck_b.is_master {
+                    self.deck_b.bpm = *bpm;
+                }
+                // Could pulse LEDs on beat here
+                let _ = beat_phase;
+            }
+
+            ModuleEvent::DjWaveformLoaded {
+                deck,
+                samples,
+                frequency_bands,
+                duration_seconds,
+            } => {
+                let state = if *deck == 0 {
+                    &mut self.deck_a
+                } else {
+                    &mut self.deck_b
+                };
+
+                // Pre-compute waveform for fast rendering
+                // Target: ~100 samples per second for smooth scrolling
+                let target_samples_per_second = 100.0;
+                let target_sample_count =
+                    (duration_seconds * target_samples_per_second).ceil() as usize;
+                let source_len = samples.len();
+
+                if source_len == 0 || *duration_seconds <= 0.0 {
+                    state.waveform = DisplayWaveform::default();
+                } else {
+                    let mut amplitudes = Vec::with_capacity(target_sample_count);
+                    let mut colors = Vec::with_capacity(target_sample_count);
+
+                    let has_bands = frequency_bands.is_some()
+                        && frequency_bands.as_ref().unwrap().len() == source_len;
+
+                    for i in 0..target_sample_count {
+                        // Map to source sample
+                        let src_idx =
+                            ((i as f64 / target_sample_count as f64) * source_len as f64) as usize;
+                        let src_idx = src_idx.min(source_len - 1);
+
+                        let amp = samples[src_idx].abs().min(1.0);
+                        amplitudes.push(amp);
+
+                        // Pre-compute color
+                        let color = if has_bands {
+                            let (low, mid, high) = frequency_bands.as_ref().unwrap()[src_idx];
+                            let max_band = low.max(mid).max(high);
+                            if max_band > 0.01 {
+                                let r = ((high / max_band) * 200.0 + 40.0) as u8;
+                                let g = ((mid / max_band) * 200.0 + 40.0) as u8;
+                                let b = ((low / max_band) * 200.0 + 60.0) as u8;
+                                crate::display::FrameBuffer::rgb_to_bgr565(r, g, b)
+                            } else {
+                                0x07FF // Cyan
+                            }
+                        } else {
+                            0x07FF // Cyan
+                        };
+                        colors.push(color);
+                    }
+
+                    state.waveform = DisplayWaveform {
+                        amplitudes,
+                        colors,
+                        samples_per_second: target_samples_per_second,
+                    };
+                }
+
+                tracing::debug!(
+                    "Push 2: Pre-computed waveform for deck {} ({} -> {} samples)",
+                    deck,
+                    source_len,
+                    state.waveform.amplitudes.len()
+                );
+            }
+
+            _ => {}
+        }
+        false
+    }
+
     /// Update deck display state from events.
     fn update_deck_state(&mut self, deck: u8, is_playing: bool, position_seconds: f64) {
         let state = if deck == 0 {
@@ -333,10 +514,24 @@ impl Push2Module {
         };
         state.is_playing = is_playing;
         state.position_seconds = position_seconds;
+        state.last_update = std::time::Instant::now();
 
         // Update LED state
         let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
         self.led_state.update_transport(deck_id, is_playing);
+    }
+
+    /// Get interpolated position for smooth display.
+    fn get_interpolated_position(state: &DeckDisplayState) -> f64 {
+        if !state.is_playing {
+            return state.position_seconds;
+        }
+
+        let elapsed = state.last_update.elapsed().as_secs_f64();
+        let interpolated = state.position_seconds + elapsed;
+
+        // Clamp to track duration
+        interpolated.min(state.duration_seconds)
     }
 
     /// Update deck loaded state.
@@ -359,10 +554,19 @@ impl Push2Module {
         state.bpm = bpm.unwrap_or(0.0);
     }
 
-    /// Render the display frame.
+    /// Render the display frame with interpolated positions.
     fn render_display(&mut self) {
-        self.renderer
-            .render(&mut self.frame_buffer, &self.deck_a, &self.deck_b);
+        // Calculate interpolated positions for smooth rendering
+        let pos_a = Self::get_interpolated_position(&self.deck_a);
+        let pos_b = Self::get_interpolated_position(&self.deck_b);
+
+        self.renderer.render_with_positions(
+            &mut self.frame_buffer,
+            &self.deck_a,
+            &self.deck_b,
+            pos_a,
+            pos_b,
+        );
     }
 
     /// Send display frame to Push 2.
@@ -427,8 +631,8 @@ impl AsyncModule for Push2Module {
         self.status
             .insert("state".to_string(), "running".to_string());
 
-        // Display refresh interval (~30fps)
-        let mut display_interval = tokio::time::interval(Duration::from_millis(33));
+        // Display refresh interval (~40fps for smooth waveform scrolling)
+        let mut display_interval = tokio::time::interval(Duration::from_millis(25));
 
         // LED update interval (slower, ~10fps)
         let mut led_interval = tokio::time::interval(Duration::from_millis(100));
@@ -438,34 +642,18 @@ impl AsyncModule for Push2Module {
 
         loop {
             tokio::select! {
-                // Handle module events
+                // Handle module events - drain all pending to stay current
                 Some(event) = rx.recv() => {
-                    match event {
-                        ModuleEvent::Shutdown => {
-                            tracing::info!("Push 2 module received shutdown");
-                            break;
-                        }
+                    // Process first event
+                    if self.process_event(&event) {
+                        break; // Shutdown received
+                    }
 
-                        ModuleEvent::DjDeckStateChanged { deck, is_playing, position_seconds, bpm: _ } => {
-                            self.update_deck_state(deck, is_playing, position_seconds);
+                    // Drain all pending events to catch up to latest state
+                    while let Ok(event) = rx.try_recv() {
+                        if self.process_event(&event) {
+                            break; // Shutdown received
                         }
-
-                        ModuleEvent::DjDeckLoaded { deck, title, artist, duration_seconds, bpm, .. } => {
-                            self.update_deck_loaded(deck, title, artist, duration_seconds, bpm);
-                        }
-
-                        ModuleEvent::DjRhythmSync { bpm, beat_phase, .. } => {
-                            // Update BPM display for master deck
-                            if self.deck_a.is_master {
-                                self.deck_a.bpm = bpm;
-                            } else if self.deck_b.is_master {
-                                self.deck_b.bpm = bpm;
-                            }
-                            // Could pulse LEDs on beat here
-                            let _ = beat_phase;
-                        }
-
-                        _ => {}
                     }
                 }
 
