@@ -271,6 +271,17 @@ pub enum ConsoleCommand {
     DjDeleteTrack {
         track_id: i64,
     },
+    DjNudgeBeatGrid {
+        deck: u8,
+        offset_ms: f64,
+    },
+    DjSetDownbeat {
+        deck: u8,
+    },
+    DjShiftBeatGrid {
+        deck: u8,
+        beats: i32,
+    },
 
     // Ableton Link toggle
     ToggleAbletonLink,
@@ -604,6 +615,8 @@ pub enum ConsoleEvent {
         beat_positions: Vec<f64>,
         first_beat_offset: f64,
         bpm: f64,
+        /// If true, this is a nudge adjustment and position should not change.
+        is_nudge: bool,
     },
     DjMasterTempoChanged {
         deck: u8,

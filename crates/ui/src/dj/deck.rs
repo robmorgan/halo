@@ -6,6 +6,72 @@ use tokio::sync::mpsc;
 
 use super::TrackDragPayload;
 
+/// Waveform zoom levels (visible duration in seconds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WaveformZoomLevel {
+    Overview,
+    Seconds16,
+    #[default]
+    Seconds8,
+    Seconds4,
+    Seconds2,
+    Seconds1,
+}
+
+impl WaveformZoomLevel {
+    /// Get the visible duration in seconds for this zoom level.
+    /// Returns None for Overview mode (full track).
+    pub fn visible_duration(&self) -> Option<f64> {
+        match self {
+            Self::Overview => None,
+            Self::Seconds16 => Some(16.0),
+            Self::Seconds8 => Some(8.0),
+            Self::Seconds4 => Some(4.0),
+            Self::Seconds2 => Some(2.0),
+            Self::Seconds1 => Some(1.0),
+        }
+    }
+
+    /// Get display label for UI.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Overview => "OVERVIEW",
+            Self::Seconds16 => "16s",
+            Self::Seconds8 => "8s",
+            Self::Seconds4 => "4s",
+            Self::Seconds2 => "2s",
+            Self::Seconds1 => "1s",
+        }
+    }
+
+    /// Zoom in one level (returns self if already at max zoom).
+    pub fn zoom_in(&self) -> Self {
+        match self {
+            Self::Overview => Self::Seconds16,
+            Self::Seconds16 => Self::Seconds8,
+            Self::Seconds8 => Self::Seconds4,
+            Self::Seconds4 => Self::Seconds2,
+            Self::Seconds2 | Self::Seconds1 => Self::Seconds1,
+        }
+    }
+
+    /// Zoom out one level (returns self if already at min zoom).
+    pub fn zoom_out(&self) -> Self {
+        match self {
+            Self::Overview | Self::Seconds16 => Self::Overview,
+            Self::Seconds8 => Self::Seconds16,
+            Self::Seconds4 => Self::Seconds8,
+            Self::Seconds2 => Self::Seconds4,
+            Self::Seconds1 => Self::Seconds2,
+        }
+    }
+
+    /// Check if this is a zoomed view (not overview).
+    pub fn is_zoomed(&self) -> bool {
+        !matches!(self, Self::Overview)
+    }
+}
+
 /// Visual state for a single deck.
 #[derive(Default)]
 pub struct DeckWidget {
@@ -25,6 +91,8 @@ pub struct DeckWidget {
     pub pitch: f64,
     /// Whether the deck is playing.
     pub is_playing: bool,
+    /// Whether the deck is waiting for quantized sync start.
+    pub waiting_for_quantized_start: bool,
     /// Whether this deck is the master.
     pub is_master: bool,
     /// Whether sync is enabled.
@@ -55,8 +123,8 @@ pub struct DeckWidget {
     pub master_tempo_enabled: bool,
     /// Tempo range setting (0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%).
     pub tempo_range: u8,
-    /// Whether to show zoomed waveform (CDJ-style scrolling view).
-    pub waveform_zoomed: bool,
+    /// Current waveform zoom level (CDJ-style scrolling view).
+    pub waveform_zoom_level: WaveformZoomLevel,
     // Loop state
     /// Loop IN point in seconds.
     pub loop_in: Option<f64>,
@@ -190,40 +258,60 @@ impl DeckWidget {
 
         ui.add_space(8.0);
 
-        // Waveform display with zoom toggle
+        // Waveform display with zoom controls
         ui.horizontal(|ui| {
-            // Zoom toggle button
-            let zoom_icon = if self.waveform_zoomed {
-                "🔍−"
-            } else {
-                "🔍+"
-            };
-            let zoom_tooltip = if self.waveform_zoomed {
-                "Switch to overview"
-            } else {
-                "Switch to zoomed view"
-            };
+            // Zoom out button
             if ui
-                .add(egui::Button::new(zoom_icon).min_size(Vec2::new(30.0, 20.0)))
-                .on_hover_text(zoom_tooltip)
+                .add_enabled(
+                    !matches!(self.waveform_zoom_level, WaveformZoomLevel::Overview),
+                    egui::Button::new("-").min_size(Vec2::new(24.0, 20.0)),
+                )
+                .on_hover_text("Zoom out")
                 .clicked()
             {
-                self.waveform_zoomed = !self.waveform_zoomed;
+                self.waveform_zoom_level = self.waveform_zoom_level.zoom_out();
             }
 
-            ui.label(if self.waveform_zoomed {
-                egui::RichText::new("ZOOM")
-                    .size(10.0)
-                    .color(Color32::from_rgb(0, 200, 255))
+            // Clickable zoom level label
+            let label_color = if self.waveform_zoom_level.is_zoomed() {
+                Color32::from_rgb(0, 200, 255)
             } else {
-                egui::RichText::new("OVERVIEW")
-                    .size(10.0)
-                    .color(Color32::GRAY)
-            });
+                Color32::GRAY
+            };
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new(self.waveform_zoom_level.label())
+                            .size(10.0)
+                            .color(label_color),
+                    )
+                    .min_size(Vec2::new(60.0, 20.0)),
+                )
+                .on_hover_text("Toggle overview/zoom")
+                .clicked()
+            {
+                if self.waveform_zoom_level.is_zoomed() {
+                    self.waveform_zoom_level = WaveformZoomLevel::Overview;
+                } else {
+                    self.waveform_zoom_level = WaveformZoomLevel::Seconds8;
+                }
+            }
+
+            // Zoom in button
+            if ui
+                .add_enabled(
+                    !matches!(self.waveform_zoom_level, WaveformZoomLevel::Seconds1),
+                    egui::Button::new("+").min_size(Vec2::new(24.0, 20.0)),
+                )
+                .on_hover_text("Zoom in")
+                .clicked()
+            {
+                self.waveform_zoom_level = self.waveform_zoom_level.zoom_in();
+            }
         });
 
         // Render the appropriate waveform view
-        if self.waveform_zoomed {
+        if self.waveform_zoom_level.is_zoomed() {
             self.render_zoomed_waveform(ui, deck_number, console_tx);
         } else {
             self.render_waveform(ui, deck_number, console_tx);
@@ -281,21 +369,22 @@ impl DeckWidget {
             let small_button_size = Vec2::new(40.0, 40.0);
 
             // Play/Pause button
-            let play_text = if self.is_playing { "||" } else { ">" };
-            let play_color = if self.is_playing {
-                Color32::from_rgb(0, 200, 100)
+            let (play_text, play_color) = if self.waiting_for_quantized_start {
+                ("SYNC", Color32::from_rgb(255, 200, 0)) // Yellow when waiting for sync
+            } else if self.is_playing {
+                ("||", Color32::from_rgb(0, 200, 100))
             } else {
-                Color32::WHITE
+                (">", Color32::WHITE)
             };
             if ui
                 .add_sized(
                     button_size,
-                    egui::Button::new(egui::RichText::new(play_text).size(20.0).color(play_color)),
+                    egui::Button::new(egui::RichText::new(play_text).size(14.0).color(play_color)),
                 )
                 .clicked()
             {
-                if self.is_playing {
-                    // Currently playing, send pause
+                if self.is_playing || self.waiting_for_quantized_start {
+                    // Currently playing or waiting, send pause
                     let _ = console_tx.send(ConsoleCommand::DjPause { deck: deck_number });
                 } else {
                     // Currently paused, send play
@@ -667,6 +756,67 @@ impl DeckWidget {
 
         ui.add_space(8.0);
 
+        // Beat Grid Editor
+        egui::CollapsingHeader::new("Beat Grid")
+            .id_salt(format!("beat_grid_{}", deck_label))
+            .show(ui, |ui| {
+                // First row: Set Downbeat and Beat Shift
+                ui.horizontal(|ui| {
+                    if ui.button("Set Downbeat").clicked() {
+                        let _ = console_tx.send(ConsoleCommand::DjSetDownbeat {
+                            deck: deck_number,
+                        });
+                    }
+                    ui.separator();
+                    if ui.button("◀ Beat").clicked() {
+                        let _ = console_tx.send(ConsoleCommand::DjShiftBeatGrid {
+                            deck: deck_number,
+                            beats: -1,
+                        });
+                    }
+                    if ui.button("Beat ▶").clicked() {
+                        let _ = console_tx.send(ConsoleCommand::DjShiftBeatGrid {
+                            deck: deck_number,
+                            beats: 1,
+                        });
+                    }
+                });
+
+                // Second row: Fine nudge controls
+                ui.horizontal(|ui| {
+                    ui.label(format!("Offset: {:.1}ms", self.first_beat_offset * 1000.0));
+                    ui.separator();
+
+                    let nudge_size = Vec2::new(45.0, 24.0);
+                    if ui.add_sized(nudge_size, egui::Button::new("-10")).clicked() {
+                        let _ = console_tx.send(ConsoleCommand::DjNudgeBeatGrid {
+                            deck: deck_number,
+                            offset_ms: -10.0,
+                        });
+                    }
+                    if ui.add_sized(nudge_size, egui::Button::new("-1")).clicked() {
+                        let _ = console_tx.send(ConsoleCommand::DjNudgeBeatGrid {
+                            deck: deck_number,
+                            offset_ms: -1.0,
+                        });
+                    }
+                    if ui.add_sized(nudge_size, egui::Button::new("+1")).clicked() {
+                        let _ = console_tx.send(ConsoleCommand::DjNudgeBeatGrid {
+                            deck: deck_number,
+                            offset_ms: 1.0,
+                        });
+                    }
+                    if ui.add_sized(nudge_size, egui::Button::new("+10")).clicked() {
+                        let _ = console_tx.send(ConsoleCommand::DjNudgeBeatGrid {
+                            deck: deck_number,
+                            offset_ms: 10.0,
+                        });
+                    }
+                });
+            });
+
+        ui.add_space(8.0);
+
         // Pitch fader
         ui.horizontal(|ui| {
             ui.label("Pitch:");
@@ -704,7 +854,7 @@ impl DeckWidget {
 
     /// Render the waveform display.
     fn render_waveform(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         deck_number: u8,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
@@ -724,6 +874,14 @@ impl DeckWidget {
                     deck: deck_number,
                     position_seconds,
                 });
+            }
+        }
+
+        // Handle scroll wheel zoom (scroll up to zoom in from overview)
+        if response.hovered() {
+            let scroll_delta = ui.input(|i| i.raw_scroll_delta.y);
+            if scroll_delta > 0.0 {
+                self.waveform_zoom_level = self.waveform_zoom_level.zoom_in();
             }
         }
 
@@ -925,7 +1083,7 @@ impl DeckWidget {
     /// Shows approximately 8 seconds of audio with the playhead fixed at 1/3 from left.
     /// The waveform scrolls as the track plays, giving a "driving" feel like a CDJ-3000.
     fn render_zoomed_waveform(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         deck_number: u8,
         console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
@@ -941,7 +1099,7 @@ impl DeckWidget {
         painter.rect_filled(rect, Rounding::same(4), Color32::from_gray(10));
 
         // Zoomed view parameters
-        let zoom_window_seconds = 8.0; // Show 8 seconds of audio
+        let zoom_window_seconds = self.waveform_zoom_level.visible_duration().unwrap_or(8.0);
         let playhead_position = 0.33; // Playhead at 1/3 from left (like CDJ-3000)
 
         // Calculate the time window to display
@@ -959,6 +1117,16 @@ impl DeckWidget {
                     deck: deck_number,
                     position_seconds,
                 });
+            }
+        }
+
+        // Handle scroll wheel zoom
+        if response.hovered() {
+            let scroll_delta = ui.input(|i| i.raw_scroll_delta.y);
+            if scroll_delta > 0.0 {
+                self.waveform_zoom_level = self.waveform_zoom_level.zoom_in();
+            } else if scroll_delta < 0.0 {
+                self.waveform_zoom_level = self.waveform_zoom_level.zoom_out();
             }
         }
 
@@ -1230,11 +1398,18 @@ impl DeckWidget {
     }
 }
 
-/// Format seconds as MM:SS.ss
+/// Format seconds as MM:SS.ss (handles negative values for countdown display).
 fn format_time(seconds: f64) -> String {
-    let mins = (seconds / 60.0).floor() as u32;
-    let secs = seconds % 60.0;
-    format!("{:02}:{:05.2}", mins, secs)
+    if seconds < 0.0 {
+        let abs_seconds = seconds.abs();
+        let mins = (abs_seconds / 60.0).floor() as u32;
+        let secs = abs_seconds % 60.0;
+        format!("-{:02}:{:05.2}", mins, secs)
+    } else {
+        let mins = (seconds / 60.0).floor() as u32;
+        let secs = seconds % 60.0;
+        format!("{:02}:{:05.2}", mins, secs)
+    }
 }
 
 /// Get color for a hot cue slot.

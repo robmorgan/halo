@@ -24,6 +24,7 @@ symphonia = { version = "0.5", features = [
 
 # BPM and beat detection
 rustfft = "6.2"
+aubio-rs = { version = "0.2", features = ["builtin", "bindgen"] }
 
 # Time-stretching for Master Tempo (SoundTouch WSOLA algorithm)
 soundtouch = { version = "0.5", features = ["bundled"] }

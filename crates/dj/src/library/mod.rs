@@ -14,5 +14,5 @@ pub use import::{
 };
 pub use types::{
     AudioFormat, BeatGrid, FrequencyBands, HotCue, MasterTempoMode, TempoRange, Track, TrackId,
-    TrackWaveform, WAVEFORM_VERSION_COLORED, WAVEFORM_VERSION_LEGACY,
+    TrackWaveform,
 };

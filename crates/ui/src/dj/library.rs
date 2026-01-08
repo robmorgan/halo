@@ -307,7 +307,7 @@ impl LibraryBrowser {
                         let track_bpm = track.bpm.unwrap_or(120.0);
                         let track_file_path = track.file_path.clone();
                         base_response.context_menu(|ui| {
-                            if ui.button("Re-analyze BPM").clicked() {
+                            if ui.button("Reanalyze").clicked() {
                                 context_reanalyze_track_id = Some(track_id);
                                 ui.close_menu();
                             }

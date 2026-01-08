@@ -406,6 +406,82 @@ impl DjAudioEngine {
         true
     }
 
+    /// Start playback on a synced deck, quantized to master's next beat.
+    ///
+    /// This implements Rekordbox-style quantized play start where playback is
+    /// delayed until the master's next beat boundary so beats align from the start.
+    ///
+    /// Returns true if playback was started or scheduled.
+    pub fn start_quantized_playback(&self, deck: DeckId) -> bool {
+        let master = match self.master_deck() {
+            Some(m) if m != deck => m,
+            _ => {
+                // No master or self is master - just play normally
+                self.deck_player(deck).write().play();
+                return true;
+            }
+        };
+
+        // Get master's beat info
+        let (master_bpm, master_beat_phase) = {
+            let player = self.deck_player(master).read();
+            match (player.effective_bpm(), player.beat_phase()) {
+                (Some(bpm), Some(phase)) => (bpm, phase),
+                _ => {
+                    // Master has no beat grid - play normally
+                    self.deck_player(deck).write().play();
+                    return true;
+                }
+            }
+        };
+
+        // Get syncing deck's first beat position and current position
+        let (sync_first_beat, sync_current_pos) = {
+            let player = self.deck_player(deck).read();
+            let first_beat = player.first_beat_seconds().unwrap_or(0.0);
+            let current_pos = player.position_seconds();
+            (first_beat, current_pos)
+        };
+
+        // Calculate time until master's next beat
+        let beat_duration = 60.0 / master_bpm;
+        let time_to_master_next_beat = beat_duration * (1.0 - master_beat_phase);
+
+        // Calculate time from sync deck's current position to its first beat
+        let time_to_sync_first_beat = sync_first_beat - sync_current_pos;
+
+        // Calculate the delay needed so first beats align
+        // We want: sync's first beat fires when master's next beat fires
+        let delay = time_to_master_next_beat - time_to_sync_first_beat;
+
+        log::info!(
+            "Quantized play: master_phase={:.3}, time_to_master_beat={:.3}s, sync_first_beat={:.3}s, delay={:.3}s",
+            master_beat_phase,
+            time_to_master_next_beat,
+            sync_first_beat,
+            delay
+        );
+
+        let mut player = self.deck_player(deck).write();
+
+        if delay <= 0.01 {
+            // Delay is negligible or negative - need to seek forward in syncing deck
+            // Seek to position where first beat will align with master's current beat
+            let seek_pos = sync_current_pos - delay;
+            if seek_pos >= 0.0 && seek_pos < player.duration_seconds() {
+                player.seek(seek_pos);
+            }
+            player.play();
+            log::info!("Quantized play: immediate start (seek to {:.3}s)", seek_pos);
+        } else {
+            // Schedule delayed playback
+            player.schedule_play_after(delay, sync_first_beat);
+            log::info!("Quantized play: delayed start in {:.3}s", delay);
+        }
+
+        true
+    }
+
     /// Disable sync on a deck.
     pub fn disable_sync(&self, deck: DeckId) {
         let mut player = self.deck_player(deck).write();

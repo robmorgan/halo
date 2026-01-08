@@ -96,6 +96,7 @@ pub enum ModuleEvent {
         beat_positions: Vec<f64>,
         first_beat_offset: f64,
         bpm: f64,
+        is_nudge: bool,
     },
     /// DJ master tempo changed
     DjMasterTempoChanged {

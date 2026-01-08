@@ -151,72 +151,71 @@ impl Track {
 }
 
 /// Beat grid analysis data.
+///
+/// Note: BPM is stored in `Track.bpm`, not here. Beat positions are calculated
+/// on-the-fly from `first_beat_offset_ms` and the track's BPM when loading.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BeatGrid {
     /// ID of the track this beat grid belongs to.
     pub track_id: TrackId,
-    /// Detected BPM.
-    pub bpm: f64,
     /// Time offset to the first beat in milliseconds.
     pub first_beat_offset_ms: f64,
-    /// Beat positions in seconds (can be empty if only BPM/offset stored).
+    /// Beat positions in seconds (calculated from first_beat_offset_ms and track BPM).
     pub beat_positions: Vec<f64>,
     /// Analysis confidence (0.0-1.0).
     pub confidence: f32,
     /// When the analysis was performed.
     pub analyzed_at: DateTime<Utc>,
-    /// Version of the analysis algorithm.
-    pub algorithm_version: String,
 }
 
 impl BeatGrid {
-    /// Get the beat interval in seconds.
-    pub fn beat_interval_seconds(&self) -> f64 {
-        60.0 / self.bpm
+    /// Get the beat interval in seconds for a given BPM.
+    pub fn beat_interval_seconds(bpm: f64) -> f64 {
+        60.0 / bpm
     }
 
-    /// Get the beat number at a given position.
-    pub fn beat_at_position(&self, position_seconds: f64) -> f64 {
+    /// Get the beat number at a given position for a given BPM.
+    pub fn beat_at_position(&self, position_seconds: f64, bpm: f64) -> f64 {
         let offset_seconds = self.first_beat_offset_ms / 1000.0;
-        (position_seconds - offset_seconds) / self.beat_interval_seconds()
+        (position_seconds - offset_seconds) / Self::beat_interval_seconds(bpm)
     }
 
-    /// Get the phase (0.0-1.0) within the current beat.
-    pub fn beat_phase_at_position(&self, position_seconds: f64) -> f64 {
-        let beat = self.beat_at_position(position_seconds);
+    /// Get the phase (0.0-1.0) within the current beat for a given BPM.
+    pub fn beat_phase_at_position(&self, position_seconds: f64, bpm: f64) -> f64 {
+        let beat = self.beat_at_position(position_seconds, bpm);
         beat - beat.floor()
     }
 
-    /// Get the bar phase (0.0-1.0) assuming 4/4 time.
-    pub fn bar_phase_at_position(&self, position_seconds: f64) -> f64 {
-        let beat = self.beat_at_position(position_seconds);
+    /// Get the bar phase (0.0-1.0) assuming 4/4 time for a given BPM.
+    pub fn bar_phase_at_position(&self, position_seconds: f64, bpm: f64) -> f64 {
+        let beat = self.beat_at_position(position_seconds, bpm);
         let bar = beat / 4.0;
         bar - bar.floor()
     }
 
-    /// Get the phrase phase (0.0-1.0) assuming 8-bar phrases.
-    pub fn phrase_phase_at_position(&self, position_seconds: f64) -> f64 {
-        let beat = self.beat_at_position(position_seconds);
+    /// Get the phrase phase (0.0-1.0) assuming 8-bar phrases for a given BPM.
+    pub fn phrase_phase_at_position(&self, position_seconds: f64, bpm: f64) -> f64 {
+        let beat = self.beat_at_position(position_seconds, bpm);
         let phrase = beat / 32.0; // 8 bars * 4 beats
         phrase - phrase.floor()
     }
 
-    /// Find the nearest beat position to the given time (seconds).
+    /// Find the nearest beat position to the given time (seconds) for a given BPM.
     ///
     /// Returns the time in seconds of the beat closest to the given position.
     /// Used for quantizing loop IN points to beat boundaries.
-    pub fn nearest_beat(&self, position_seconds: f64) -> f64 {
-        let beat_number = self.beat_at_position(position_seconds);
+    pub fn nearest_beat(&self, position_seconds: f64, bpm: f64) -> f64 {
+        let beat_number = self.beat_at_position(position_seconds, bpm);
         let quantized_beat = beat_number.round();
         let offset_seconds = self.first_beat_offset_ms / 1000.0;
-        offset_seconds + (quantized_beat * self.beat_interval_seconds())
+        offset_seconds + (quantized_beat * Self::beat_interval_seconds(bpm))
     }
 
-    /// Get the position N beats after a given position (seconds).
+    /// Get the position N beats after a given position (seconds) for a given BPM.
     ///
     /// Used for calculating loop OUT points from loop IN.
-    pub fn beat_position_after(&self, position_seconds: f64, beat_count: f64) -> f64 {
-        position_seconds + (beat_count * self.beat_interval_seconds())
+    pub fn beat_position_after(position_seconds: f64, beat_count: f64, bpm: f64) -> f64 {
+        position_seconds + (beat_count * Self::beat_interval_seconds(bpm))
     }
 }
 
@@ -266,10 +265,6 @@ impl FrequencyBands {
     }
 }
 
-/// Waveform data version.
-pub const WAVEFORM_VERSION_LEGACY: u8 = 1;
-pub const WAVEFORM_VERSION_COLORED: u8 = 2;
-
 /// Waveform data for UI visualization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackWaveform {
@@ -278,14 +273,11 @@ pub struct TrackWaveform {
     /// Downsampled waveform peaks (absolute values, 0.0-1.0).
     pub samples: Vec<f32>,
     /// 3-band frequency data for coloring (parallel to samples).
-    /// None for legacy waveforms (pre-colored analysis).
     pub frequency_bands: Option<Vec<FrequencyBands>>,
     /// Number of samples in the waveform.
     pub sample_count: usize,
     /// Duration of the track in seconds.
     pub duration_seconds: f64,
-    /// Waveform format version (1=legacy amplitude only, 2=colored with frequency bands).
-    pub version: u8,
 }
 
 impl TrackWaveform {
@@ -420,68 +412,58 @@ mod tests {
     fn test_beat_grid_calculations() {
         let grid = BeatGrid {
             track_id: TrackId(1),
-            bpm: 120.0,
             first_beat_offset_ms: 500.0, // 0.5 seconds
             beat_positions: vec![],
             confidence: 0.95,
             analyzed_at: Utc::now(),
-            algorithm_version: "1.0".to_string(),
         };
+        let bpm = 120.0;
 
         // At 120 BPM, beat interval is 0.5 seconds
-        assert!((grid.beat_interval_seconds() - 0.5).abs() < 0.001);
+        assert!((BeatGrid::beat_interval_seconds(bpm) - 0.5).abs() < 0.001);
 
         // At position 1.0 seconds (0.5s after first beat), should be beat 1.0
-        assert!((grid.beat_at_position(1.0) - 1.0).abs() < 0.001);
+        assert!((grid.beat_at_position(1.0, bpm) - 1.0).abs() < 0.001);
 
         // At position 0.75 seconds (0.25s into first beat), phase should be 0.5
-        assert!((grid.beat_phase_at_position(0.75) - 0.5).abs() < 0.001);
+        assert!((grid.beat_phase_at_position(0.75, bpm) - 0.5).abs() < 0.001);
     }
 
     #[test]
     fn test_nearest_beat() {
         let grid = BeatGrid {
             track_id: TrackId(1),
-            bpm: 120.0,
             first_beat_offset_ms: 0.0,
             beat_positions: vec![],
             confidence: 0.95,
             analyzed_at: Utc::now(),
-            algorithm_version: "1.0".to_string(),
         };
+        let bpm = 120.0;
 
         // At 120 BPM, beats are at 0.0, 0.5, 1.0, 1.5, etc.
         // Position 0.2 should snap to 0.0
-        assert!((grid.nearest_beat(0.2) - 0.0).abs() < 0.001);
+        assert!((grid.nearest_beat(0.2, bpm) - 0.0).abs() < 0.001);
         // Position 0.3 should snap to 0.5
-        assert!((grid.nearest_beat(0.3) - 0.5).abs() < 0.001);
+        assert!((grid.nearest_beat(0.3, bpm) - 0.5).abs() < 0.001);
         // Position 0.75 should snap to 1.0
-        assert!((grid.nearest_beat(0.75) - 1.0).abs() < 0.001);
+        assert!((grid.nearest_beat(0.75, bpm) - 1.0).abs() < 0.001);
         // Position 1.24 should snap to 1.0
-        assert!((grid.nearest_beat(1.24) - 1.0).abs() < 0.001);
+        assert!((grid.nearest_beat(1.24, bpm) - 1.0).abs() < 0.001);
         // Position 1.26 should snap to 1.5
-        assert!((grid.nearest_beat(1.26) - 1.5).abs() < 0.001);
+        assert!((grid.nearest_beat(1.26, bpm) - 1.5).abs() < 0.001);
     }
 
     #[test]
     fn test_beat_position_after() {
-        let grid = BeatGrid {
-            track_id: TrackId(1),
-            bpm: 120.0,
-            first_beat_offset_ms: 0.0,
-            beat_positions: vec![],
-            confidence: 0.95,
-            analyzed_at: Utc::now(),
-            algorithm_version: "1.0".to_string(),
-        };
+        let bpm = 120.0;
 
         // At 120 BPM, beat interval is 0.5 seconds
         // 4 beats after 0.0 should be 2.0 seconds
-        assert!((grid.beat_position_after(0.0, 4.0) - 2.0).abs() < 0.001);
+        assert!((BeatGrid::beat_position_after(0.0, 4.0, bpm) - 2.0).abs() < 0.001);
         // 8 beats after 0.0 should be 4.0 seconds
-        assert!((grid.beat_position_after(0.0, 8.0) - 4.0).abs() < 0.001);
+        assert!((BeatGrid::beat_position_after(0.0, 8.0, bpm) - 4.0).abs() < 0.001);
         // 4 beats after 1.0 should be 3.0 seconds
-        assert!((grid.beat_position_after(1.0, 4.0) - 3.0).abs() < 0.001);
+        assert!((BeatGrid::beat_position_after(1.0, 4.0, bpm) - 3.0).abs() < 0.001);
     }
 
     #[test]

@@ -37,9 +37,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result: AnalysisResult =
         halo_dj::library::analysis::analyze_file(audio_file, TrackId(0), &config)?;
     let beat_grid = result.beat_grid;
+    let bpm = result.bpm;
     println!(
         "Detected BPM: {:.2} (confidence: {:.1}%)",
-        beat_grid.bpm,
+        bpm,
         beat_grid.confidence * 100.0
     );
     println!(
@@ -61,11 +62,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut player = engine.deck_player(DeckId::A).write();
         player.load(audio_file)?;
-        player.set_beat_grid(beat_grid.clone());
+        player.set_beat_grid(beat_grid.clone(), bpm);
         println!(
             "Loaded: {:.2}s @ {:.2} BPM\n",
             player.duration_seconds(),
-            beat_grid.bpm
+            bpm
         );
     }
 

@@ -105,6 +105,7 @@ pub fn import_and_analyze_file<P: AsRef<Path>>(
         let beat_grid = db.get_beat_grid(existing.id)?;
         let waveform = db.get_waveform(existing.id)?;
         let analysis = beat_grid.map(|bg| AnalysisResult {
+            bpm: existing.bpm.unwrap_or(120.0),
             beat_grid: bg,
             waveform: waveform.unwrap_or_else(|| super::types::TrackWaveform {
                 track_id: existing.id,
@@ -112,7 +113,6 @@ pub fn import_and_analyze_file<P: AsRef<Path>>(
                 frequency_bands: None,
                 sample_count: 0,
                 duration_seconds: existing.duration_seconds,
-                version: 1,
             }),
         });
         return Ok(ImportResult {
@@ -151,15 +151,15 @@ pub fn import_and_analyze_file<P: AsRef<Path>>(
                 }
 
                 // Update track BPM from analysis
-                if let Err(e) = db.update_track_bpm(track_id, result.beat_grid.bpm) {
+                if let Err(e) = db.update_track_bpm(track_id, result.bpm) {
                     log::warn!("Failed to update track BPM: {}", e);
                 } else {
-                    track.bpm = Some(result.beat_grid.bpm);
+                    track.bpm = Some(result.bpm);
                 }
 
                 log::info!(
                     "Analysis complete: BPM={:.1} (confidence={:.2})",
-                    result.beat_grid.bpm,
+                    result.bpm,
                     result.beat_grid.confidence
                 );
 

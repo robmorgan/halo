@@ -159,7 +159,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(analysis) = &result.analysis {
             println!();
             println!("Analysis Results:");
-            println!("  BPM:           {:.2}", analysis.beat_grid.bpm);
+            println!("  BPM:           {:.2}", analysis.bpm);
             println!(
                 "  Confidence:    {:.2}%",
                 analysis.beat_grid.confidence * 100.0

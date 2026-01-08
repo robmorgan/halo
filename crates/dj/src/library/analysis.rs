@@ -1,10 +1,11 @@
 //! Audio analysis for BPM detection and beat grid generation.
 //!
-//! Uses FFT-based autocorrelation for BPM detection and FFT for waveform coloring.
+//! Uses aubio for BPM detection and beat tracking, with FFT for waveform coloring.
 
 use std::fs::File;
 use std::path::Path;
 
+use aubio_rs::{OnsetMode, Tempo};
 use chrono::Utc;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
@@ -15,7 +16,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-use super::types::{BeatGrid, FrequencyBands, TrackId, TrackWaveform, WAVEFORM_VERSION_COLORED};
+use super::types::{BeatGrid, FrequencyBands, TrackId, TrackWaveform};
 
 /// Analysis configuration.
 #[derive(Debug, Clone)]
@@ -57,7 +58,9 @@ impl Default for AnalysisConfig {
 /// Result of audio analysis.
 #[derive(Debug, Clone)]
 pub struct AnalysisResult {
-    /// Detected beat grid.
+    /// Detected BPM (single source of truth for tempo).
+    pub bpm: f64,
+    /// Detected beat grid (first_beat_offset and beat_positions).
     pub beat_grid: BeatGrid,
     /// Generated waveform.
     pub waveform: TrackWaveform,
@@ -79,37 +82,28 @@ pub fn analyze_file<P: AsRef<Path>>(
     // Generate colored waveform with 3-band frequency analysis
     let waveform = generate_colored_waveform(&samples, sample_rate, track_id, config);
 
-    // Detect BPM using autocorrelation
-    let (bpm, confidence) = detect_bpm(&samples, sample_rate, config);
-    log::info!("Detected BPM: {:.2} (confidence: {:.2})", bpm, confidence);
+    // Detect BPM and beat positions using aubio
+    let (bpm, confidence, beat_positions) = detect_beats_aubio(&samples, sample_rate, config);
+    log::info!(
+        "Detected BPM: {:.2} (confidence: {:.2}, {} beats)",
+        bpm,
+        confidence,
+        beat_positions.len()
+    );
 
-    // Find first beat offset
-    let first_beat_offset_ms = find_first_beat(&samples, sample_rate, bpm);
-    log::debug!("First beat offset: {:.2} ms", first_beat_offset_ms);
-
-    // Generate beat positions
-    let duration_seconds = samples.len() as f64 / sample_rate as f64;
-    let beat_interval = 60.0 / bpm;
-    let first_beat_seconds = first_beat_offset_ms / 1000.0;
-
-    let mut beat_positions = Vec::new();
-    let mut pos = first_beat_seconds;
-    while pos < duration_seconds {
-        beat_positions.push(pos);
-        pos += beat_interval;
-    }
+    // Calculate first beat offset from detected beats
+    let first_beat_offset_ms = beat_positions.first().copied().unwrap_or(0.0) * 1000.0;
 
     let beat_grid = BeatGrid {
         track_id,
-        bpm,
         first_beat_offset_ms,
         beat_positions,
         confidence,
         analyzed_at: Utc::now(),
-        algorithm_version: "1.0".to_string(),
     };
 
     Ok(AnalysisResult {
+        bpm,
         beat_grid,
         waveform,
     })
@@ -149,37 +143,28 @@ where
     // Generate full colored waveform with 3-band FFT analysis
     let waveform = generate_colored_waveform(&samples, sample_rate, track_id, config);
 
-    // Detect BPM using autocorrelation
-    let (bpm, confidence) = detect_bpm(&samples, sample_rate, config);
-    log::info!("Detected BPM: {:.2} (confidence: {:.2})", bpm, confidence);
+    // Detect BPM and beat positions using aubio
+    let (bpm, confidence, beat_positions) = detect_beats_aubio(&samples, sample_rate, config);
+    log::info!(
+        "Detected BPM: {:.2} (confidence: {:.2}, {} beats)",
+        bpm,
+        confidence,
+        beat_positions.len()
+    );
 
-    // Find first beat offset
-    let first_beat_offset_ms = find_first_beat(&samples, sample_rate, bpm);
-    log::debug!("First beat offset: {:.2} ms", first_beat_offset_ms);
-
-    // Generate beat positions
-    let duration_seconds = samples.len() as f64 / sample_rate as f64;
-    let beat_interval = 60.0 / bpm;
-    let first_beat_seconds = first_beat_offset_ms / 1000.0;
-
-    let mut beat_positions = Vec::new();
-    let mut pos = first_beat_seconds;
-    while pos < duration_seconds {
-        beat_positions.push(pos);
-        pos += beat_interval;
-    }
+    // Calculate first beat offset from detected beats
+    let first_beat_offset_ms = beat_positions.first().copied().unwrap_or(0.0) * 1000.0;
 
     let beat_grid = BeatGrid {
         track_id,
-        bpm,
         first_beat_offset_ms,
         beat_positions,
         confidence,
         analyzed_at: Utc::now(),
-        algorithm_version: "1.0".to_string(),
     };
 
     Ok(AnalysisResult {
+        bpm,
         beat_grid,
         waveform,
     })
@@ -411,6 +396,206 @@ fn detect_bpm(samples: &[f32], sample_rate: u32, config: &AnalysisConfig) -> (f6
     );
 
     (bpm, confidence)
+}
+
+/// Detect BPM and beat positions using aubio's Tempo tracker.
+///
+/// This provides more accurate beat detection than simple autocorrelation
+/// by using aubio's sophisticated beat tracking algorithm that detects
+/// actual beat positions rather than just estimating from a first beat offset.
+///
+/// Returns (bpm, confidence, beat_positions_in_seconds).
+fn detect_beats_aubio(
+    samples: &[f32],
+    sample_rate: u32,
+    config: &AnalysisConfig,
+) -> (f64, f32, Vec<f64>) {
+    let buf_size = 1024;
+    let hop_size = 512;
+
+    // Create aubio Tempo detector with HFC onset mode (good for percussive content)
+    let mut tempo = match Tempo::new(OnsetMode::Hfc, buf_size, hop_size, sample_rate) {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("Failed to create aubio Tempo: {}", e);
+            return (120.0, 0.0, Vec::new());
+        }
+    };
+
+    // Process audio in chunks and collect beat positions
+    let mut beat_positions: Vec<f64> = Vec::new();
+    let mut output = vec![0.0f32; 1];
+
+    for (chunk_idx, chunk) in samples.chunks(hop_size).enumerate() {
+        // Pad last chunk if needed
+        let input: Vec<f32> = if chunk.len() < hop_size {
+            let mut padded = chunk.to_vec();
+            padded.resize(hop_size, 0.0);
+            padded
+        } else {
+            chunk.to_vec()
+        };
+
+        // Process chunk through tempo detector
+        if tempo.do_(&input, &mut output).is_ok() {
+            // If output[0] > 0, a beat was detected at this position
+            if output[0] > 0.0 {
+                let beat_time = chunk_idx as f64 * hop_size as f64 / sample_rate as f64;
+                beat_positions.push(beat_time);
+            }
+        }
+    }
+
+    // Get final BPM and confidence from aubio
+    let bpm = tempo.get_bpm() as f64;
+    let confidence = tempo.get_confidence();
+
+    // Clamp BPM to valid range
+    let bpm = if bpm > 0.0 && bpm >= config.min_bpm && bpm <= config.max_bpm {
+        bpm
+    } else if bpm > 0.0 && bpm < config.min_bpm {
+        // Double if detected BPM is too low (common octave error)
+        bpm * 2.0
+    } else if bpm > config.max_bpm {
+        // Halve if detected BPM is too high
+        bpm / 2.0
+    } else {
+        120.0 // Fallback
+    };
+
+    log::debug!(
+        "Aubio BPM: {:.2}, confidence: {:.2}, beats detected: {}",
+        bpm,
+        confidence,
+        beat_positions.len()
+    );
+
+    // Refine beat positions to align with actual transients
+    let refined_positions = refine_beats_to_transients(samples, sample_rate, &beat_positions);
+
+    log::debug!(
+        "Refined {} beats to transient positions",
+        refined_positions.len()
+    );
+
+    (bpm, confidence, refined_positions)
+}
+
+/// Refine all beat positions to align with actual transients.
+///
+/// Takes coarse beat positions (from aubio) and refines each one to the
+/// precise transient onset within a search window.
+fn refine_beats_to_transients(
+    samples: &[f32],
+    sample_rate: u32,
+    coarse_beats: &[f64],
+) -> Vec<f64> {
+    coarse_beats
+        .iter()
+        .map(|&beat_time| refine_beat_to_transient(samples, sample_rate, beat_time))
+        .collect()
+}
+
+/// Refine a single beat position to the nearest transient onset.
+///
+/// Searches within ±30ms of the coarse beat position to find the exact
+/// sample where the transient attack begins. Uses onset detection based
+/// on energy increase rate, focusing on low frequencies (kick drums).
+///
+/// The algorithm:
+/// 1. Extract a window of samples around the coarse beat position
+/// 2. Apply a simple low-pass filter to focus on kick drum frequencies
+/// 3. Calculate the onset function (rate of energy increase)
+/// 4. Find the maximum onset within the window
+/// 5. Return the refined time position
+fn refine_beat_to_transient(samples: &[f32], sample_rate: u32, coarse_beat_time: f64) -> f64 {
+    // Search window: ±30ms around the coarse beat
+    let window_ms = 30.0;
+    let window_samples = ((window_ms / 1000.0) * sample_rate as f64) as usize;
+
+    let beat_sample = (coarse_beat_time * sample_rate as f64) as usize;
+    let start = beat_sample.saturating_sub(window_samples);
+    let end = (beat_sample + window_samples).min(samples.len());
+
+    if end <= start + 10 {
+        return coarse_beat_time;
+    }
+
+    // Simple low-pass filter for kick drum emphasis (moving average)
+    // This smooths high frequencies while preserving the kick transient
+    let filter_size = (sample_rate / 2000) as usize; // ~500Hz cutoff
+    let filter_size = filter_size.max(4).min(32);
+
+    // Calculate filtered energy in small windows
+    let hop = filter_size / 2;
+    let mut energies: Vec<(usize, f32)> = Vec::new();
+
+    let mut i = start;
+    while i + filter_size <= end {
+        // Calculate RMS energy in this small window
+        let energy: f32 = samples[i..i + filter_size]
+            .iter()
+            .map(|&s| s * s)
+            .sum::<f32>()
+            / filter_size as f32;
+        energies.push((i + filter_size / 2, energy.sqrt()));
+        i += hop;
+    }
+
+    if energies.len() < 3 {
+        return coarse_beat_time;
+    }
+
+    // Calculate onset function (positive derivative of energy)
+    // The transient is where energy increases most rapidly
+    let mut max_onset = 0.0f32;
+    let mut max_onset_idx = beat_sample;
+
+    for i in 1..energies.len() {
+        let onset = (energies[i].1 - energies[i - 1].1).max(0.0);
+
+        // Weight by proximity to original beat (prefer refinements close to the coarse position)
+        let distance_from_beat =
+            (energies[i].0 as f64 - beat_sample as f64).abs() / window_samples as f64;
+        let proximity_weight = 1.0 - (distance_from_beat * 0.3) as f32; // Mild preference for center
+
+        let weighted_onset = onset * proximity_weight;
+
+        if weighted_onset > max_onset {
+            max_onset = weighted_onset;
+            max_onset_idx = energies[i].0;
+        }
+    }
+
+    // If no significant onset found, return original
+    if max_onset < 0.001 {
+        return coarse_beat_time;
+    }
+
+    // Further refine: find the exact sample where the attack starts
+    // Look backwards from the onset peak to find where energy starts rising
+    let attack_search_start = max_onset_idx.saturating_sub(filter_size * 2);
+    let attack_search_end = max_onset_idx.min(samples.len());
+
+    if attack_search_end > attack_search_start {
+        // Find the sample with steepest positive slope (attack start)
+        let mut max_slope = 0.0f32;
+        let mut attack_sample = max_onset_idx;
+
+        for i in (attack_search_start + 1)..attack_search_end {
+            let slope = samples[i].abs() - samples[i - 1].abs();
+            if slope > max_slope {
+                max_slope = slope;
+                attack_sample = i;
+            }
+        }
+
+        if max_slope > 0.01 {
+            return attack_sample as f64 / sample_rate as f64;
+        }
+    }
+
+    max_onset_idx as f64 / sample_rate as f64
 }
 
 /// Compute autocorrelation using FFT (Wiener-Khinchin theorem).
@@ -661,7 +846,6 @@ fn generate_colored_waveform(
             frequency_bands: Some(vec![FrequencyBands::default(); target_samples]),
             sample_count: target_samples,
             duration_seconds: 0.0,
-            version: WAVEFORM_VERSION_COLORED,
         };
     }
 
@@ -774,7 +958,6 @@ fn generate_colored_waveform(
         frequency_bands: Some(frequency_bands),
         sample_count: target_samples,
         duration_seconds,
-        version: WAVEFORM_VERSION_COLORED,
     }
 }
 
@@ -853,6 +1036,5 @@ mod tests {
             waveform.frequency_bands.as_ref().unwrap().len(),
             expected_samples
         );
-        assert_eq!(waveform.version, WAVEFORM_VERSION_COLORED);
     }
 }

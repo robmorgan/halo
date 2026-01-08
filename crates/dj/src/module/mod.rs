@@ -22,7 +22,7 @@ use crate::library::database::LibraryDatabase;
 use crate::library::import::{import_file_metadata_only, scan_directory_for_audio};
 use crate::library::{
     analyze_file_streaming, AnalysisConfig, AnalysisResult, BeatGrid, HotCue, MasterTempoMode,
-    TempoRange, Track, TrackId, TrackWaveform, WAVEFORM_VERSION_COLORED,
+    TempoRange, Track, TrackId, TrackWaveform,
 };
 use crate::midi::z1_mapping::Z1Mapping;
 
@@ -126,6 +126,14 @@ pub enum DjCommand {
     HalveLoop { deck: DeckId },
     /// Double the current loop length.
     DoubleLoop { deck: DeckId },
+
+    // Beat grid commands
+    /// Nudge the beat grid offset.
+    NudgeBeatGrid { deck: DeckId, offset_ms: f64 },
+    /// Set the downbeat at the current playback position.
+    SetDownbeat { deck: DeckId },
+    /// Shift the beat grid by whole beat intervals.
+    ShiftBeatGrid { deck: DeckId, beats: i32 },
 
     // Configuration commands
     /// Set the output channels for a deck.
@@ -476,6 +484,24 @@ impl DjModule {
             ConsoleCommand::DjDeleteTrack { track_id } => Some(DjCommand::DeleteTrack {
                 track_id: TrackId(track_id),
             }),
+            ConsoleCommand::DjNudgeBeatGrid { deck, offset_ms } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::NudgeBeatGrid {
+                    deck: deck_id,
+                    offset_ms,
+                })
+            }
+            ConsoleCommand::DjSetDownbeat { deck } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::SetDownbeat { deck: deck_id })
+            }
+            ConsoleCommand::DjShiftBeatGrid { deck, beats } => {
+                let deck_id = if deck == 0 { DeckId::A } else { DeckId::B };
+                Some(DjCommand::ShiftBeatGrid {
+                    deck: deck_id,
+                    beats,
+                })
+            }
             _ => None,
         }
     }
@@ -491,9 +517,15 @@ impl DjModule {
                         d.state = DeckState::Playing;
                     }
                 }
-                // Control audio player
+                // Control audio player - use quantized playback if sync is enabled
                 if let Some(engine) = &self.audio_engine {
-                    engine.deck_player(deck).write().play();
+                    let is_synced = engine.deck_player(deck).read().is_sync_enabled();
+                    let master = engine.master_deck();
+                    if is_synced && master.is_some() && master != Some(deck) {
+                        engine.start_quantized_playback(deck);
+                    } else {
+                        engine.deck_player(deck).write().play();
+                    }
                 }
                 log::info!("Deck {} playing", deck);
             }
@@ -814,12 +846,10 @@ impl DjModule {
             d.state = DeckState::Stopped;
             d.position_seconds = 0.0;
             d.position_beats = 0.0;
-            // Use beat grid BPM if available, otherwise fall back to track.bpm or 120
-            d.original_bpm = beat_grid
-                .as_ref()
-                .map(|bg| bg.bpm)
-                .or(track.bpm)
-                .unwrap_or(120.0);
+            // Reset pitch to 0 when loading a new track
+            d.pitch_percent = 0.0;
+            // Always use track.bpm as the authoritative BPM source
+            d.original_bpm = track.bpm.unwrap_or(120.0);
             d.adjusted_bpm = d.original_bpm;
 
             // Load hot cues
@@ -830,20 +860,36 @@ impl DjModule {
                 }
             }
 
-            // Load beat grid into deck state
-            d.beat_grid = beat_grid.clone();
+            // Load beat grid into deck state, using track.bpm for beat positions
+            if let Some(mut bg) = beat_grid.clone() {
+                // Recalculate beat positions from first_beat_offset and track.bpm
+                let offset_seconds = bg.first_beat_offset_ms / 1000.0;
+                let beat_interval = 60.0 / d.original_bpm;
+                let mut positions = Vec::new();
+                let mut pos = offset_seconds;
+                while pos < track.duration_seconds {
+                    positions.push(pos);
+                    pos += beat_interval;
+                }
+                bg.beat_positions = positions;
+                d.beat_grid = Some(bg);
+            } else {
+                d.beat_grid = None;
+            }
         }
 
         // Load audio file into player
+        let original_bpm = self.deck(deck).read().original_bpm;
         if let Some(engine) = &self.audio_engine {
             let mut player = engine.deck_player(deck).write();
             if let Err(e) = player.load(&track.file_path) {
                 log::error!("Failed to load audio file: {}", e);
                 return;
             }
-            // Also load beat grid into player for sync/BPM calculations
-            if let Some(bg) = beat_grid {
-                player.set_beat_grid(bg);
+            // Load beat grid into player with track's BPM
+            let deck_beat_grid = self.deck(deck).read().beat_grid.clone();
+            if let Some(bg) = deck_beat_grid {
+                player.set_beat_grid(bg, original_bpm);
             }
         }
 
@@ -1248,6 +1294,20 @@ impl AsyncModule for DjModule {
                                                 }
                                             )).await;
                                             eprintln!("DEBUG: Sent DjDeckLoaded event for deck {}", deck_num);
+
+                                            // Send pitch changed event (pitch reset to 0 on load)
+                                            let (tempo_range, adjusted_bpm) = {
+                                                let d = self.deck(deck).read();
+                                                (d.tempo_range.to_u8(), d.adjusted_bpm)
+                                            };
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjPitchChanged {
+                                                    deck: deck_num,
+                                                    pitch_percent: 0.0,
+                                                    tempo_range,
+                                                    adjusted_bpm,
+                                                }
+                                            )).await;
                                         }
                                         // Check if waveform exists in database
                                         let existing_waveform = if let Some(db) = &self.database {
@@ -1260,10 +1320,10 @@ impl AsyncModule for DjModule {
                                             None
                                         };
 
-                                        // Check if waveform exists AND is the current version with frequency bands
+                                        // Check if waveform exists with frequency bands (colored waveform)
                                         let use_cached_waveform = existing_waveform
                                             .as_ref()
-                                            .map(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some())
+                                            .map(|w| w.frequency_bands.is_some())
                                             .unwrap_or(false);
 
                                         if let Some(waveform) = existing_waveform.filter(|_| use_cached_waveform) {
@@ -1279,7 +1339,7 @@ impl AsyncModule for DjModule {
                                                     duration_seconds: waveform.duration_seconds,
                                                 }
                                             )).await;
-                                            eprintln!("DEBUG: Sent cached DjWaveformLoaded event for deck {} ({} samples, version {})", deck_num, sample_count, waveform.version);
+                                            eprintln!("DEBUG: Sent cached DjWaveformLoaded event for deck {} ({} samples)", deck_num, sample_count);
 
                                             // Load beat grid from database and auto-cue to first beat
                                             let beat_grid = if let Some(db) = &self.database {
@@ -1292,13 +1352,40 @@ impl AsyncModule for DjModule {
                                                 None
                                             };
 
-                                            if let Some(beat_grid) = beat_grid {
+                                            if let Some(mut beat_grid) = beat_grid {
+                                                // Get track's authoritative BPM
+                                                let track_bpm = {
+                                                    let d = self.deck(deck).read();
+                                                    d.loaded_track
+                                                        .as_ref()
+                                                        .and_then(|t| t.bpm)
+                                                        .unwrap_or(120.0)
+                                                };
+
+                                                // Recalculate beat positions from first_beat_offset and track.bpm
+                                                let duration = {
+                                                    let d = self.deck(deck).read();
+                                                    d.loaded_track
+                                                        .as_ref()
+                                                        .map(|t| t.duration_seconds)
+                                                        .unwrap_or(0.0)
+                                                };
+                                                let offset_seconds = beat_grid.first_beat_offset_ms / 1000.0;
+                                                let beat_interval = 60.0 / track_bpm;
+                                                let mut positions = Vec::new();
+                                                let mut pos = offset_seconds;
+                                                while pos < duration {
+                                                    positions.push(pos);
+                                                    pos += beat_interval;
+                                                }
+                                                beat_grid.beat_positions = positions;
+
                                                 // Store beat grid in deck state
                                                 {
                                                     let mut deck_state = self.deck(deck).write();
                                                     deck_state.beat_grid = Some(beat_grid.clone());
-                                                    deck_state.original_bpm = beat_grid.bpm;
-                                                    deck_state.adjusted_bpm = beat_grid.bpm;
+                                                    deck_state.original_bpm = track_bpm;
+                                                    deck_state.adjusted_bpm = track_bpm;
                                                 }
 
                                                 // Auto-cue to first beat
@@ -1312,7 +1399,7 @@ impl AsyncModule for DjModule {
                                                 // Set beat grid and seek audio engine to first beat
                                                 if let Some(engine) = &self.audio_engine {
                                                     let mut player = engine.deck_player(deck).write();
-                                                    player.set_beat_grid(beat_grid.clone());
+                                                    player.set_beat_grid(beat_grid.clone(), track_bpm);
                                                     player.seek(first_beat_seconds);
                                                 }
 
@@ -1330,7 +1417,8 @@ impl AsyncModule for DjModule {
                                                         deck: deck_num,
                                                         beat_positions: beat_grid.beat_positions.clone(),
                                                         first_beat_offset: first_beat_seconds,
-                                                        bpm: beat_grid.bpm,
+                                                        bpm: track_bpm,
+                                                        is_nudge: false,
                                                     }
                                                 )).await;
                                                 eprintln!("DEBUG: Sent DjBeatGridLoaded event for deck {} ({} beats)", deck_num, beat_grid.beat_positions.len());
@@ -1414,7 +1502,7 @@ impl AsyncModule for DjModule {
                                                             // Calculate first beat position
                                                             let first_beat_seconds = result.beat_grid.first_beat_offset_ms / 1000.0;
                                                             let beat_positions = result.beat_grid.beat_positions.clone();
-                                                            let bpm = result.beat_grid.bpm;
+                                                            let bpm = result.bpm;
 
                                                             // Update deck with beat grid and auto-cue to first beat
                                                             {
@@ -1429,7 +1517,7 @@ impl AsyncModule for DjModule {
                                                             // Also set beat grid on DeckPlayer for sync/BPM calculations
                                                             if let Some(player) = &player_arc {
                                                                 let mut player = player.write();
-                                                                player.set_beat_grid(result.beat_grid);
+                                                                player.set_beat_grid(result.beat_grid, bpm);
                                                                 player.seek(first_beat_seconds);
                                                             }
 
@@ -1448,6 +1536,7 @@ impl AsyncModule for DjModule {
                                                                     beat_positions,
                                                                     first_beat_offset: first_beat_seconds,
                                                                     bpm,
+                                                                    is_nudge: false,
                                                                 }
                                                             )).await;
                                                             eprintln!("DEBUG: Sent DjBeatGridLoaded event for deck {} after analysis", deck_num);
@@ -1716,7 +1805,7 @@ impl AsyncModule for DjModule {
                                                 };
 
                                                 // Only use waveform if it has colored data
-                                                if let Some(waveform) = existing_waveform.filter(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some()) {
+                                                if let Some(waveform) = existing_waveform.filter(|w| w.frequency_bands.is_some()) {
                                                     let _ = tx.send(ModuleMessage::Event(
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
@@ -1813,7 +1902,7 @@ impl AsyncModule for DjModule {
                                                 };
 
                                                 // Only use waveform if it has colored data
-                                                if let Some(waveform) = existing_waveform.filter(|w| w.version >= WAVEFORM_VERSION_COLORED && w.frequency_bands.is_some()) {
+                                                if let Some(waveform) = existing_waveform.filter(|w| w.frequency_bands.is_some()) {
                                                     let _ = tx.send(ModuleMessage::Event(
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
@@ -1903,13 +1992,14 @@ impl AsyncModule for DjModule {
                                             };
 
                                             // Quantize to nearest beat
+                                            let bpm = d.original_bpm;
                                             if let Some(beat_grid) = &d.beat_grid {
-                                                let loop_in = beat_grid.nearest_beat(current_pos);
-                                                let loop_out = beat_grid.beat_position_after(loop_in, beat_count_f64);
+                                                let loop_in = beat_grid.nearest_beat(current_pos, bpm);
+                                                let loop_out = BeatGrid::beat_position_after(loop_in, beat_count_f64, bpm);
                                                 (loop_in, loop_out)
                                             } else {
                                                 // No beat grid - use current position without quantization
-                                                let beat_duration = 60.0 / d.original_bpm.max(1.0);
+                                                let beat_duration = 60.0 / bpm.max(1.0);
                                                 let loop_out = current_pos + (beat_count_f64 * beat_duration);
                                                 (current_pos, loop_out)
                                             }
@@ -2231,6 +2321,292 @@ impl AsyncModule for DjModule {
                                             }
                                         }
                                     }
+                                    DjCommand::NudgeBeatGrid { deck, offset_ms } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Get current beat grid and track info (use deck.original_bpm as authoritative)
+                                        let beat_info = {
+                                            let d = self.deck(deck).read();
+                                            let duration = d.loaded_track.as_ref().map(|t| t.duration_seconds).unwrap_or(0.0);
+                                            let bpm = d.original_bpm;
+                                            d.beat_grid.as_ref().map(|bg| {
+                                                (bg.track_id, bg.first_beat_offset_ms, bpm, duration)
+                                            })
+                                        };
+
+                                        if let Some((track_id, current_offset_ms, bpm, duration)) = beat_info {
+                                            // Calculate new offset (clamp to valid range)
+                                            let new_offset_ms = (current_offset_ms + offset_ms).max(0.0);
+                                            let new_offset_seconds = new_offset_ms / 1000.0;
+
+                                            // Recalculate beat positions from new offset
+                                            let beat_interval = 60.0 / bpm;
+                                            let mut new_positions = Vec::new();
+                                            let mut pos = new_offset_seconds;
+                                            while pos < duration {
+                                                new_positions.push(pos);
+                                                pos += beat_interval;
+                                            }
+
+                                            // Update deck state
+                                            {
+                                                let mut d = self.deck(deck).write();
+                                                if let Some(bg) = &mut d.beat_grid {
+                                                    bg.first_beat_offset_ms = new_offset_ms;
+                                                    bg.beat_positions = new_positions.clone();
+                                                }
+                                            }
+
+                                            // Update audio engine
+                                            if let Some(engine) = &self.audio_engine {
+                                                let mut player = engine.deck_player(deck).write();
+                                                if let Some(bg) = player.beat_grid_mut() {
+                                                    bg.first_beat_offset_ms = new_offset_ms;
+                                                    bg.beat_positions = new_positions.clone();
+                                                }
+                                            }
+
+                                            // Persist to database
+                                            if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    let _ = db_guard.update_beat_grid_offset(track_id, new_offset_ms, &new_positions);
+                                                }
+                                            }
+
+                                            // Send event to update UI (is_nudge=true so position doesn't change)
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjBeatGridLoaded {
+                                                    deck: deck_num,
+                                                    beat_positions: new_positions,
+                                                    first_beat_offset: new_offset_seconds,
+                                                    bpm,
+                                                    is_nudge: true,
+                                                }
+                                            )).await;
+
+                                            log::info!("Deck {}: Beat grid nudged by {:.1}ms (new offset: {:.1}ms)", deck, offset_ms, new_offset_ms);
+                                        }
+                                    }
+                                    DjCommand::SetDownbeat { deck } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Get current playback position from audio engine
+                                        let current_pos = self.audio_engine.as_ref()
+                                            .map(|e| e.deck_player(deck).read().position_seconds())
+                                            .unwrap_or(0.0);
+
+                                        // Get beat grid and track info (use deck.original_bpm as authoritative)
+                                        let beat_info = {
+                                            let d = self.deck(deck).read();
+                                            let duration = d.loaded_track.as_ref().map(|t| t.duration_seconds).unwrap_or(0.0);
+                                            let bpm = d.original_bpm;
+                                            d.beat_grid.as_ref().map(|bg| (bg.track_id, bpm, duration))
+                                        };
+
+                                        if let Some((track_id, bpm, duration)) = beat_info {
+                                            let new_offset_ms = current_pos * 1000.0;
+                                            let beat_interval = 60.0 / bpm;
+
+                                            // Recalculate beat positions starting from current position
+                                            let mut new_positions = Vec::new();
+                                            let mut pos = current_pos;
+                                            while pos < duration {
+                                                new_positions.push(pos);
+                                                pos += beat_interval;
+                                            }
+
+                                            // Update deck state
+                                            {
+                                                let mut d = self.deck(deck).write();
+                                                if let Some(bg) = &mut d.beat_grid {
+                                                    bg.first_beat_offset_ms = new_offset_ms;
+                                                    bg.beat_positions = new_positions.clone();
+                                                }
+                                            }
+
+                                            // Update audio engine
+                                            if let Some(engine) = &self.audio_engine {
+                                                let mut player = engine.deck_player(deck).write();
+                                                if let Some(bg) = player.beat_grid_mut() {
+                                                    bg.first_beat_offset_ms = new_offset_ms;
+                                                    bg.beat_positions = new_positions.clone();
+                                                }
+                                            }
+
+                                            // Persist to database
+                                            if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    let _ = db_guard.update_beat_grid_offset(track_id, new_offset_ms, &new_positions);
+                                                }
+                                            }
+
+                                            // Send event to update UI
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjBeatGridLoaded {
+                                                    deck: deck_num,
+                                                    beat_positions: new_positions,
+                                                    first_beat_offset: current_pos,
+                                                    bpm,
+                                                    is_nudge: true,
+                                                }
+                                            )).await;
+
+                                            log::info!("Deck {}: Set downbeat at {:.3}s", deck, current_pos);
+                                        }
+                                    }
+                                    DjCommand::ShiftBeatGrid { deck, beats } => {
+                                        let deck_num = if deck == DeckId::A { 0 } else { 1 };
+
+                                        // Get beat grid info (use deck.original_bpm as authoritative)
+                                        let beat_info = {
+                                            let d = self.deck(deck).read();
+                                            let duration = d.loaded_track.as_ref().map(|t| t.duration_seconds).unwrap_or(0.0);
+                                            let bpm = d.original_bpm;
+                                            d.beat_grid.as_ref().map(|bg| {
+                                                (bg.track_id, bg.first_beat_offset_ms, bpm, duration)
+                                            })
+                                        };
+
+                                        if let Some((track_id, current_offset_ms, bpm, duration)) = beat_info {
+                                            let beat_interval_ms = 60000.0 / bpm;
+                                            let shift_ms = beats as f64 * beat_interval_ms;
+                                            let new_offset_ms = (current_offset_ms + shift_ms).max(0.0);
+                                            let new_offset_seconds = new_offset_ms / 1000.0;
+
+                                            // Recalculate beat positions
+                                            let beat_interval = 60.0 / bpm;
+                                            let mut new_positions = Vec::new();
+                                            let mut pos = new_offset_seconds;
+                                            while pos < duration {
+                                                new_positions.push(pos);
+                                                pos += beat_interval;
+                                            }
+
+                                            // Update deck state
+                                            {
+                                                let mut d = self.deck(deck).write();
+                                                if let Some(bg) = &mut d.beat_grid {
+                                                    bg.first_beat_offset_ms = new_offset_ms;
+                                                    bg.beat_positions = new_positions.clone();
+                                                }
+                                            }
+
+                                            // Update audio engine
+                                            if let Some(engine) = &self.audio_engine {
+                                                let mut player = engine.deck_player(deck).write();
+                                                if let Some(bg) = player.beat_grid_mut() {
+                                                    bg.first_beat_offset_ms = new_offset_ms;
+                                                    bg.beat_positions = new_positions.clone();
+                                                }
+                                            }
+
+                                            // Persist to database
+                                            if let Some(db) = &self.database {
+                                                if let Ok(db_guard) = db.lock() {
+                                                    let _ = db_guard.update_beat_grid_offset(track_id, new_offset_ms, &new_positions);
+                                                }
+                                            }
+
+                                            // Send event to update UI
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjBeatGridLoaded {
+                                                    deck: deck_num,
+                                                    beat_positions: new_positions,
+                                                    first_beat_offset: new_offset_seconds,
+                                                    bpm,
+                                                    is_nudge: true,
+                                                }
+                                            )).await;
+
+                                            log::info!("Deck {}: Shifted beat grid by {} beats", deck, beats);
+                                        }
+                                    }
+                                    DjCommand::UpdateTrackBpm { track_id, bpm } => {
+                                        // Update BPM in tracks table only (beat grid recalculated on load)
+                                        if let Some(db) = &self.database {
+                                            if let Ok(db_guard) = db.lock() {
+                                                match db_guard.update_track_bpm(track_id, bpm) {
+                                                    Ok(_) => {
+                                                        log::info!("Updated track {} BPM to {:.1}", track_id, bpm);
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!("Failed to update track {} BPM: {}", track_id, e);
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Update loaded decks in real-time
+                                        for (deck, deck_num) in [(DeckId::A, 0u8), (DeckId::B, 1u8)] {
+                                            let beat_info = {
+                                                let d = self.deck(deck).read();
+                                                let is_loaded = d.loaded_track.as_ref()
+                                                    .map(|t| t.id == track_id)
+                                                    .unwrap_or(false);
+                                                if is_loaded {
+                                                    let duration = d.loaded_track.as_ref()
+                                                        .map(|t| t.duration_seconds)
+                                                        .unwrap_or(0.0);
+                                                    d.beat_grid.as_ref().map(|bg| {
+                                                        (bg.first_beat_offset_ms, duration)
+                                                    })
+                                                } else {
+                                                    None
+                                                }
+                                            };
+
+                                            if let Some((offset_ms, duration)) = beat_info {
+                                                let offset_seconds = offset_ms / 1000.0;
+                                                let beat_interval = 60.0 / bpm;
+
+                                                // Recalculate beat positions with new BPM
+                                                let mut new_positions = Vec::new();
+                                                let mut pos = offset_seconds;
+                                                while pos < duration {
+                                                    new_positions.push(pos);
+                                                    pos += beat_interval;
+                                                }
+
+                                                // Update deck state
+                                                {
+                                                    let mut d = self.deck(deck).write();
+                                                    d.original_bpm = bpm;
+                                                    d.adjusted_bpm = bpm;
+                                                    if let Some(bg) = &mut d.beat_grid {
+                                                        bg.beat_positions = new_positions.clone();
+                                                    }
+                                                }
+
+                                                // Update audio engine (need to reload beat grid with new BPM)
+                                                if let Some(engine) = &self.audio_engine {
+                                                    let beat_grid = self.deck(deck).read().beat_grid.clone();
+                                                    if let Some(bg) = beat_grid {
+                                                        engine.deck_player(deck).write().set_beat_grid(bg, bpm);
+                                                    }
+                                                }
+
+                                                // Send event to update UI
+                                                let _ = tx.send(ModuleMessage::Event(
+                                                    ModuleEvent::DjBeatGridLoaded {
+                                                        deck: deck_num,
+                                                        beat_positions: new_positions,
+                                                        first_beat_offset: offset_seconds,
+                                                        bpm,
+                                                        is_nudge: true,
+                                                    }
+                                                )).await;
+
+                                                log::info!("Deck {}: Updated beat grid for new BPM {:.1}", deck, bpm);
+                                            }
+                                        }
+
+                                        // Send updated library to UI so it refreshes
+                                        if let Some(tracks) = self.get_all_tracks_for_ui() {
+                                            let _ = tx.send(ModuleMessage::Event(
+                                                ModuleEvent::DjLibraryTracks(tracks)
+                                            )).await;
+                                        }
+                                    }
                                     other => {
                                         eprintln!("DEBUG: Calling handle_command for {:?}", other);
                                         self.handle_command(other);
@@ -2276,7 +2652,7 @@ impl AsyncModule for DjModule {
                                     if let Ok(db_guard) = db.lock() {
                                         let _ = db_guard.save_waveform(&analysis_result.waveform);
                                         let _ = db_guard.save_beat_grid(&analysis_result.beat_grid);
-                                        let _ = db_guard.update_track_bpm(track_id, analysis_result.beat_grid.bpm);
+                                        let _ = db_guard.update_track_bpm(track_id, analysis_result.bpm);
                                     }
                                 }
 
@@ -2284,14 +2660,14 @@ impl AsyncModule for DjModule {
                                 log::info!(
                                     "Analysis complete for {}: BPM={:.1}",
                                     track_name,
-                                    analysis_result.beat_grid.bpm
+                                    analysis_result.bpm
                                 );
 
                                 // Send analysis complete event
                                 let _ = tx.send(ModuleMessage::Event(
                                     ModuleEvent::DjAnalysisComplete {
                                         track_id: track_id.0,
-                                        bpm: Some(analysis_result.beat_grid.bpm),
+                                        bpm: Some(analysis_result.bpm),
                                     }
                                 )).await;
                             }
@@ -2367,16 +2743,27 @@ impl AsyncModule for DjModule {
 
                         // Send position updates and check for beat triggers on Deck A
                         {
+                            // Check for quantized play trigger first (needs write lock)
+                            let started_from_quantized = {
+                                let mut player = engine.deck_player(DeckId::A).write();
+                                player.check_quantized_play()
+                            };
+
                             let player = engine.deck_player(DeckId::A).read();
                             let is_playing = player.state() == PlayerState::Playing;
-                            let position = player.position_seconds();
+                            let is_waiting = player.is_waiting_for_quantized_start();
+                            let position = if is_waiting {
+                                player.virtual_position()
+                            } else {
+                                player.position_seconds()
+                            };
                             let adjusted_bpm = self.deck(DeckId::A).read().adjusted_bpm;
 
-                            // Always send position updates when playing
-                            if is_playing {
+                            // Send position updates when playing or waiting for quantized start
+                            if is_playing || is_waiting || started_from_quantized {
                                 events_to_send.push(ModuleEvent::DjDeckStateChanged {
                                     deck: 0,
-                                    is_playing: true,
+                                    is_playing: is_playing || started_from_quantized,
                                     position_seconds: position,
                                     bpm: Some(adjusted_bpm),
                                 });
@@ -2400,16 +2787,27 @@ impl AsyncModule for DjModule {
 
                         // Send position updates and check for beat triggers on Deck B
                         {
+                            // Check for quantized play trigger first (needs write lock)
+                            let started_from_quantized = {
+                                let mut player = engine.deck_player(DeckId::B).write();
+                                player.check_quantized_play()
+                            };
+
                             let player = engine.deck_player(DeckId::B).read();
                             let is_playing = player.state() == PlayerState::Playing;
-                            let position = player.position_seconds();
+                            let is_waiting = player.is_waiting_for_quantized_start();
+                            let position = if is_waiting {
+                                player.virtual_position()
+                            } else {
+                                player.position_seconds()
+                            };
                             let adjusted_bpm = self.deck(DeckId::B).read().adjusted_bpm;
 
-                            // Always send position updates when playing
-                            if is_playing {
+                            // Send position updates when playing or waiting for quantized start
+                            if is_playing || is_waiting || started_from_quantized {
                                 events_to_send.push(ModuleEvent::DjDeckStateChanged {
                                     deck: 1,
-                                    is_playing: true,
+                                    is_playing: is_playing || started_from_quantized,
                                     position_seconds: position,
                                     bpm: Some(adjusted_bpm),
                                 });

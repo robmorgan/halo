@@ -18,6 +18,7 @@ pub struct DjDeckState {
     pub position_seconds: f64,
     pub bpm: Option<f64>,
     pub is_playing: bool,
+    pub waiting_for_quantized_start: bool,
     pub cue_point: Option<f64>,
     pub waveform: Vec<f32>,
     /// 3-band frequency data for colored waveform (low, mid, high).
@@ -319,6 +320,8 @@ impl ConsoleState {
                 };
                 deck_state.is_playing = is_playing;
                 deck_state.position_seconds = position_seconds;
+                // Detect quantized sync wait state: position is negative (virtual countdown)
+                deck_state.waiting_for_quantized_start = position_seconds < 0.0;
                 if let Some(new_bpm) = bpm {
                     deck_state.bpm = Some(new_bpm);
                 }
@@ -373,14 +376,23 @@ impl ConsoleState {
                 beat_positions,
                 first_beat_offset,
                 bpm: _,
+                is_nudge,
             } => {
                 // Only update actual decks (0 or 1)
                 if deck == 0 {
                     self.dj_deck_a.beat_positions = beat_positions;
                     self.dj_deck_a.first_beat_offset = first_beat_offset;
+                    // Only sync position on initial load, not on nudge adjustments
+                    if !is_nudge {
+                        self.dj_deck_a.position_seconds = first_beat_offset;
+                    }
                 } else if deck == 1 {
                     self.dj_deck_b.beat_positions = beat_positions;
                     self.dj_deck_b.first_beat_offset = first_beat_offset;
+                    // Only sync position on initial load, not on nudge adjustments
+                    if !is_nudge {
+                        self.dj_deck_b.position_seconds = first_beat_offset;
+                    }
                 }
             }
             halo_core::ConsoleEvent::DjMasterTempoChanged { deck, enabled } => {

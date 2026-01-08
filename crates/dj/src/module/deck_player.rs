@@ -89,6 +89,8 @@ pub struct DeckPlayer {
     // Beat tracking fields
     /// Beat grid for the loaded track.
     beat_grid: Option<BeatGrid>,
+    /// Base BPM from track.bpm (single source of truth for tempo).
+    base_bpm: f64,
     /// Current beat index in the beat grid.
     current_beat_index: usize,
     /// Beat event that occurred during the last sample (if any).
@@ -124,6 +126,14 @@ pub struct DeckPlayer {
     sync_correction: f64,
     /// Base playback rate (before sync correction is applied).
     base_playback_rate: f64,
+
+    // Quantized play fields
+    /// Scheduled play delay in seconds (for quantized sync start).
+    pending_play_delay: Option<f64>,
+    /// When the quantized play was scheduled.
+    play_scheduled_at: Option<std::time::Instant>,
+    /// Virtual position offset for display during countdown (can be negative).
+    virtual_position_offset: f64,
 }
 
 impl DeckPlayer {
@@ -149,6 +159,7 @@ impl DeckPlayer {
             pending_seek: None,
             loaded_path: None,
             beat_grid: None,
+            base_bpm: 120.0,
             current_beat_index: 0,
             last_beat_event: None,
             prev_position_seconds: 0.0,
@@ -162,6 +173,9 @@ impl DeckPlayer {
             sync_enabled: false,
             sync_correction: 0.0,
             base_playback_rate: 1.0,
+            pending_play_delay: None,
+            play_scheduled_at: None,
+            virtual_position_offset: 0.0,
         }
     }
 
@@ -233,6 +247,9 @@ impl DeckPlayer {
         self.loop_active = false;
         // Reset time stretcher with new sample rate
         self.time_stretcher = TimeStretcher::new(self.sample_rate, self.channels as u32);
+        // Reset playback rate to 1.0 (no pitch adjustment)
+        self.playback_rate = 1.0;
+        self.base_playback_rate = 1.0;
         self.state = PlayerState::Ready;
 
         log::info!(
@@ -435,6 +452,80 @@ impl DeckPlayer {
             );
             false
         }
+    }
+
+    /// Get the time in seconds of the first beat in this track.
+    pub fn first_beat_seconds(&self) -> Option<f64> {
+        self.beat_grid
+            .as_ref()
+            .and_then(|bg| bg.beat_positions.first().copied())
+    }
+
+    /// Schedule playback to start after a delay (for quantized sync start).
+    ///
+    /// - `delay_seconds`: How long to wait before starting playback
+    /// - `first_beat_time`: Time of first beat in track (for virtual position calculation)
+    pub fn schedule_play_after(&mut self, delay_seconds: f64, first_beat_time: f64) {
+        self.pending_play_delay = Some(delay_seconds);
+        self.play_scheduled_at = Some(std::time::Instant::now());
+        // Virtual position starts negative (time before first beat fires)
+        self.virtual_position_offset = -(delay_seconds + first_beat_time);
+        self.state = PlayerState::Paused; // Show as "ready to play"
+        log::info!(
+            "Deck {}: Scheduled quantized play in {:.3}s (virtual pos: {:.3})",
+            self.deck_id,
+            delay_seconds,
+            self.virtual_position_offset
+        );
+    }
+
+    /// Check if waiting for quantized play start.
+    pub fn is_waiting_for_quantized_start(&self) -> bool {
+        self.pending_play_delay.is_some()
+    }
+
+    /// Get the virtual position (including offset for quantized start countdown).
+    /// This can be negative when waiting for quantized play.
+    pub fn virtual_position(&self) -> f64 {
+        if let (Some(delay), Some(scheduled_at)) = (self.pending_play_delay, self.play_scheduled_at)
+        {
+            // During countdown, return negative position that counts up to 0
+            let elapsed = scheduled_at.elapsed().as_secs_f64();
+            let remaining = delay - elapsed;
+            if let Some(first_beat) = self.first_beat_seconds() {
+                // Position relative to first beat: negative means before first beat fires
+                -remaining - first_beat + self.position_seconds()
+            } else {
+                -remaining + self.position_seconds()
+            }
+        } else {
+            self.position_seconds() + self.virtual_position_offset
+        }
+    }
+
+    /// Cancel any pending quantized play.
+    pub fn cancel_quantized_play(&mut self) {
+        self.pending_play_delay = None;
+        self.play_scheduled_at = None;
+        self.virtual_position_offset = 0.0;
+    }
+
+    /// Check and trigger scheduled play if delay has elapsed.
+    /// Returns true if playback was just started.
+    pub fn check_quantized_play(&mut self) -> bool {
+        if let (Some(delay), Some(scheduled_at)) = (self.pending_play_delay, self.play_scheduled_at)
+        {
+            if scheduled_at.elapsed().as_secs_f64() >= delay {
+                // Time to start playback
+                self.pending_play_delay = None;
+                self.play_scheduled_at = None;
+                self.virtual_position_offset = 0.0;
+                self.state = PlayerState::Playing;
+                log::info!("Deck {}: Quantized play started", self.deck_id);
+                return true;
+            }
+        }
+        false
     }
 
     /// Get the current effective BPM (adjusted for playback rate).
@@ -897,14 +988,17 @@ impl DeckPlayer {
     // Beat tracking methods
 
     /// Set the beat grid for beat tracking.
-    pub fn set_beat_grid(&mut self, beat_grid: BeatGrid) {
+    ///
+    /// The `bpm` parameter should come from `track.bpm` (the single source of truth).
+    pub fn set_beat_grid(&mut self, beat_grid: BeatGrid, bpm: f64) {
         log::debug!(
             "Deck {}: Beat grid set - BPM: {:.2}, {} beats",
             self.deck_id,
-            beat_grid.bpm,
+            bpm,
             beat_grid.beat_positions.len()
         );
         self.beat_grid = Some(beat_grid);
+        self.base_bpm = bpm;
         self.update_beat_index_for_position();
     }
 
@@ -920,16 +1014,27 @@ impl DeckPlayer {
         self.beat_grid.as_ref()
     }
 
-    /// Get the BPM from the beat grid (adjusted for playback rate).
-    pub fn bpm(&self) -> Option<f64> {
-        self.beat_grid
-            .as_ref()
-            .map(|bg| bg.bpm * self.playback_rate)
+    /// Get a mutable reference to the beat grid (if set).
+    pub fn beat_grid_mut(&mut self) -> Option<&mut BeatGrid> {
+        self.beat_grid.as_mut()
     }
 
-    /// Get the original BPM from the beat grid.
+    /// Get the BPM (adjusted for playback rate).
+    pub fn bpm(&self) -> Option<f64> {
+        if self.beat_grid.is_some() {
+            Some(self.base_bpm * self.playback_rate)
+        } else {
+            None
+        }
+    }
+
+    /// Get the original BPM (from track.bpm).
     pub fn original_bpm(&self) -> Option<f64> {
-        self.beat_grid.as_ref().map(|bg| bg.bpm)
+        if self.beat_grid.is_some() {
+            Some(self.base_bpm)
+        } else {
+            None
+        }
     }
 
     /// Get the current beat number (0-indexed).
@@ -952,9 +1057,15 @@ impl DeckPlayer {
 
         let current_pos = self.position_seconds();
 
-        // If before first beat
+        // If before first beat, calculate "virtual" beat phase
+        // This allows proper sync alignment when starting before the first beat
         if current_pos < positions[0] {
-            return Some(0.0);
+            let time_to_first = positions[0] - current_pos;
+            let beat_duration = 60.0 / self.base_bpm;
+            let beats_before = time_to_first / beat_duration;
+            // Phase counts backwards from 1.0 (e.g., 0.5 beats before = phase 0.5)
+            let phase = 1.0 - (beats_before - beats_before.floor());
+            return Some(if phase >= 1.0 { 0.0 } else { phase });
         }
 
         // Find current beat interval
@@ -964,7 +1075,7 @@ impl DeckPlayer {
                 positions[self.current_beat_index + 1]
             } else {
                 // Estimate next beat using BPM
-                beat_start + 60.0 / beat_grid.bpm
+                beat_start + 60.0 / self.base_bpm
             };
 
             let beat_duration = beat_end - beat_start;
@@ -1051,7 +1162,7 @@ impl DeckPlayer {
                     position_seconds: beat_pos,
                     is_downbeat: beat_number % 4 == 0,
                     is_phrase_start: beat_number % 16 == 0,
-                    bpm: beat_grid.bpm * self.playback_rate,
+                    bpm: self.base_bpm * self.playback_rate,
                 });
 
                 self.current_beat_index += 1;
@@ -1311,16 +1422,15 @@ mod tests {
         let mut player = DeckPlayer::new(DeckId::A);
 
         // Set up a beat grid at 120 BPM
+        let bpm = 120.0;
         let beat_grid = BeatGrid {
             track_id: TrackId(1),
-            bpm: 120.0,
             first_beat_offset_ms: 0.0,
             beat_positions: vec![],
             confidence: 0.95,
             analyzed_at: Utc::now(),
-            algorithm_version: "1.0".to_string(),
         };
-        player.set_beat_grid(beat_grid);
+        player.set_beat_grid(beat_grid, bpm);
 
         // Original BPM should be 120
         assert!((player.original_bpm().unwrap() - 120.0).abs() < 0.001);

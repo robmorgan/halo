@@ -2052,6 +2052,42 @@ impl LightingConsole {
                     )
                     .await;
             }
+            DjNudgeBeatGrid { deck, offset_ms } => {
+                log::debug!("DJ: Nudging beat grid on deck {} by {}ms", deck, offset_ms);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjNudgeBeatGrid { deck, offset_ms },
+                        ),
+                    )
+                    .await;
+            }
+            DjSetDownbeat { deck } => {
+                log::debug!("DJ: Setting downbeat on deck {}", deck);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjSetDownbeat { deck },
+                        ),
+                    )
+                    .await;
+            }
+            DjShiftBeatGrid { deck, beats } => {
+                log::debug!("DJ: Shifting beat grid on deck {} by {} beats", deck, beats);
+                let _ = self
+                    .module_manager
+                    .send_to_module(
+                        crate::modules::traits::ModuleId::Dj,
+                        crate::modules::traits::ModuleEvent::DjCommand(
+                            ConsoleCommand::DjShiftBeatGrid { deck, beats },
+                        ),
+                    )
+                    .await;
+            }
 
             // Settings management
             UpdateSettings { settings } => {
@@ -2305,12 +2341,13 @@ impl LightingConsole {
                                         frequency_bands,
                                     }).await;
                                 }
-                                ModuleEvent::DjBeatGridLoaded { deck, beat_positions, first_beat_offset, bpm } => {
+                                ModuleEvent::DjBeatGridLoaded { deck, beat_positions, first_beat_offset, bpm, is_nudge } => {
                                     let _ = event_tx.send(ConsoleEvent::DjBeatGridLoaded {
                                         deck,
                                         beat_positions,
                                         first_beat_offset,
                                         bpm,
+                                        is_nudge,
                                     });
                                 }
                                 ModuleEvent::DjMasterTempoChanged { deck, enabled } => {

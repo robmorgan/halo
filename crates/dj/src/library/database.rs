@@ -5,10 +5,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result as SqliteResult};
 
-use super::types::{
-    AudioFormat, BeatGrid, FrequencyBands, HotCue, Track, TrackId, TrackWaveform,
-    WAVEFORM_VERSION_COLORED, WAVEFORM_VERSION_LEGACY,
-};
+use super::types::{AudioFormat, BeatGrid, FrequencyBands, HotCue, Track, TrackId, TrackWaveform};
 
 /// Database connection wrapper for the DJ library.
 pub struct LibraryDatabase {
@@ -123,20 +120,6 @@ impl LibraryDatabase {
         if !has_frequency_bands {
             self.conn
                 .execute("ALTER TABLE waveforms ADD COLUMN frequency_bands BLOB", [])?;
-        }
-
-        // Add version column if it doesn't exist
-        let has_version = self.conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('waveforms') WHERE name='version'",
-            [],
-            |row| row.get::<_, i32>(0),
-        )? > 0;
-
-        if !has_version {
-            self.conn.execute(
-                "ALTER TABLE waveforms ADD COLUMN version INTEGER DEFAULT 1",
-                [],
-            )?;
         }
 
         Ok(())
@@ -344,7 +327,10 @@ impl LibraryDatabase {
 
     // Beat grid operations
 
-    /// Save a beat grid.
+    /// Save a beat grid for a track.
+    ///
+    /// Note: BPM is stored in `tracks.bpm`, not in beat_grids. The bpm column
+    /// is kept for database schema backward compatibility but set to 0.0.
     pub fn save_beat_grid(&self, beat_grid: &BeatGrid) -> SqliteResult<()> {
         // Serialize beat positions as JSON blob
         let positions_blob = serde_json::to_vec(&beat_grid.beat_positions).unwrap_or_default();
@@ -358,23 +344,26 @@ impl LibraryDatabase {
             "#,
             params![
                 beat_grid.track_id.0,
-                beat_grid.bpm,
+                0.0_f64, // BPM is stored in tracks.bpm, not here
                 beat_grid.first_beat_offset_ms,
                 positions_blob,
                 beat_grid.confidence,
                 beat_grid.analyzed_at.to_rfc3339(),
-                beat_grid.algorithm_version,
+                "current", // algorithm_version column kept for schema compatibility
             ],
         )?;
         Ok(())
     }
 
     /// Get the beat grid for a track.
+    ///
+    /// Note: BPM is stored in `tracks.bpm`, not in beat_grids. Beat positions
+    /// should be recalculated from `first_beat_offset_ms` and `track.bpm` when loading.
     pub fn get_beat_grid(&self, track_id: TrackId) -> SqliteResult<Option<BeatGrid>> {
         let mut stmt = self.conn.prepare(
             r#"
-            SELECT track_id, bpm, first_beat_offset_ms, beat_positions,
-                   confidence, analyzed_at, algorithm_version
+            SELECT track_id, first_beat_offset_ms, beat_positions,
+                   confidence, analyzed_at
             FROM beat_grids WHERE track_id = ?1
             "#,
         )?;
@@ -382,25 +371,39 @@ impl LibraryDatabase {
         let mut rows = stmt.query(params![track_id.0])?;
 
         if let Some(row) = rows.next()? {
-            let positions_blob: Vec<u8> = row.get(3)?;
+            let positions_blob: Vec<u8> = row.get(2)?;
             let beat_positions: Vec<f64> =
                 serde_json::from_slice(&positions_blob).unwrap_or_default();
-            let analyzed_at_str: String = row.get(5)?;
+            let analyzed_at_str: String = row.get(4)?;
 
             Ok(Some(BeatGrid {
                 track_id: TrackId(row.get(0)?),
-                bpm: row.get(1)?,
-                first_beat_offset_ms: row.get(2)?,
+                first_beat_offset_ms: row.get(1)?,
                 beat_positions,
-                confidence: row.get(4)?,
+                confidence: row.get(3)?,
                 analyzed_at: DateTime::parse_from_rfc3339(&analyzed_at_str)
                     .map(|dt| dt.with_timezone(&Utc))
                     .unwrap_or_else(|_| Utc::now()),
-                algorithm_version: row.get(6)?,
             }))
         } else {
             Ok(None)
         }
+    }
+
+    /// Update the beat grid offset and positions.
+    pub fn update_beat_grid_offset(
+        &self,
+        track_id: TrackId,
+        new_offset_ms: f64,
+        new_beat_positions: &[f64],
+    ) -> SqliteResult<()> {
+        let positions_blob = serde_json::to_vec(new_beat_positions).unwrap_or_default();
+
+        self.conn.execute(
+            "UPDATE beat_grids SET first_beat_offset_ms = ?1, beat_positions = ?2 WHERE track_id = ?3",
+            params![new_offset_ms, positions_blob, track_id.0],
+        )?;
+        Ok(())
     }
 
     // Hot cue operations
@@ -504,8 +507,8 @@ impl LibraryDatabase {
         self.conn.execute(
             r#"
             INSERT OR REPLACE INTO waveforms (
-                track_id, samples, sample_count, duration_seconds, frequency_bands, version
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                track_id, samples, sample_count, duration_seconds, frequency_bands
+            ) VALUES (?1, ?2, ?3, ?4, ?5)
             "#,
             params![
                 waveform.track_id.0,
@@ -513,7 +516,6 @@ impl LibraryDatabase {
                 waveform.sample_count,
                 waveform.duration_seconds,
                 frequency_bands_bytes,
-                waveform.version as i32,
             ],
         )?;
         Ok(())
@@ -523,7 +525,7 @@ impl LibraryDatabase {
     pub fn get_waveform(&self, track_id: TrackId) -> SqliteResult<Option<TrackWaveform>> {
         let mut stmt = self.conn.prepare(
             r#"
-            SELECT track_id, samples, sample_count, duration_seconds, frequency_bands, version
+            SELECT track_id, samples, sample_count, duration_seconds, frequency_bands
             FROM waveforms WHERE track_id = ?1
             "#,
         )?;
@@ -551,17 +553,12 @@ impl LibraryDatabase {
                     .collect()
             });
 
-            let version: i32 = row
-                .get::<_, Option<i32>>(5)?
-                .unwrap_or(WAVEFORM_VERSION_LEGACY as i32);
-
             Ok(Some(TrackWaveform {
                 track_id: TrackId(row.get(0)?),
                 samples,
                 frequency_bands,
                 sample_count: row.get(2)?,
                 duration_seconds: row.get(3)?,
-                version: version as u8,
             }))
         } else {
             Ok(None)

@@ -90,15 +90,17 @@ impl DjPanel {
         self.deck_a.position_seconds = state.dj_deck_a.position_seconds;
         self.deck_a.adjusted_bpm = state.dj_deck_a.bpm.unwrap_or(120.0);
         self.deck_a.is_playing = state.dj_deck_a.is_playing;
+        self.deck_a.waiting_for_quantized_start = state.dj_deck_a.waiting_for_quantized_start;
         self.deck_a.cue_point = state.dj_deck_a.cue_point;
         if self.deck_a.waveform.len() != state.dj_deck_a.waveform.len() {
             self.deck_a.waveform = state.dj_deck_a.waveform.clone();
             self.deck_a.waveform_colors = state.dj_deck_a.waveform_colors.clone();
         }
-        if self.deck_a.beat_positions.len() != state.dj_deck_a.beat_positions.len() {
+        // Always sync beat positions (nudge changes values without changing count)
+        if self.deck_a.beat_positions != state.dj_deck_a.beat_positions {
             self.deck_a.beat_positions = state.dj_deck_a.beat_positions.clone();
-            self.deck_a.first_beat_offset = state.dj_deck_a.first_beat_offset;
         }
+        self.deck_a.first_beat_offset = state.dj_deck_a.first_beat_offset;
 
         self.deck_b.track_title = state.dj_deck_b.track_title.clone();
         self.deck_b.track_artist = state.dj_deck_b.track_artist.clone();
@@ -106,15 +108,17 @@ impl DjPanel {
         self.deck_b.position_seconds = state.dj_deck_b.position_seconds;
         self.deck_b.adjusted_bpm = state.dj_deck_b.bpm.unwrap_or(120.0);
         self.deck_b.is_playing = state.dj_deck_b.is_playing;
+        self.deck_b.waiting_for_quantized_start = state.dj_deck_b.waiting_for_quantized_start;
         self.deck_b.cue_point = state.dj_deck_b.cue_point;
         if self.deck_b.waveform.len() != state.dj_deck_b.waveform.len() {
             self.deck_b.waveform = state.dj_deck_b.waveform.clone();
             self.deck_b.waveform_colors = state.dj_deck_b.waveform_colors.clone();
         }
-        if self.deck_b.beat_positions.len() != state.dj_deck_b.beat_positions.len() {
+        // Always sync beat positions (nudge changes values without changing count)
+        if self.deck_b.beat_positions != state.dj_deck_b.beat_positions {
             self.deck_b.beat_positions = state.dj_deck_b.beat_positions.clone();
-            self.deck_b.first_beat_offset = state.dj_deck_b.first_beat_offset;
         }
+        self.deck_b.first_beat_offset = state.dj_deck_b.first_beat_offset;
 
         // Sync Master Tempo state
         self.deck_a.master_tempo_enabled = state.dj_deck_a.master_tempo_enabled;

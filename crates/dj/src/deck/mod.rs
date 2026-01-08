@@ -257,14 +257,14 @@ impl Deck {
     /// Update beat position from current time position.
     pub fn update_beat_position(&mut self) {
         if let Some(beat_grid) = &self.beat_grid {
-            self.position_beats = beat_grid.beat_at_position(self.position_seconds);
+            self.position_beats = beat_grid.beat_at_position(self.position_seconds, self.original_bpm);
         }
     }
 
     /// Get the current beat phase (0.0-1.0).
     pub fn beat_phase(&self) -> f64 {
         if let Some(beat_grid) = &self.beat_grid {
-            beat_grid.beat_phase_at_position(self.position_seconds)
+            beat_grid.beat_phase_at_position(self.position_seconds, self.original_bpm)
         } else {
             0.0
         }
@@ -273,7 +273,7 @@ impl Deck {
     /// Get the current bar phase (0.0-1.0).
     pub fn bar_phase(&self) -> f64 {
         if let Some(beat_grid) = &self.beat_grid {
-            beat_grid.bar_phase_at_position(self.position_seconds)
+            beat_grid.bar_phase_at_position(self.position_seconds, self.original_bpm)
         } else {
             0.0
         }
@@ -282,7 +282,7 @@ impl Deck {
     /// Get the current phrase phase (0.0-1.0).
     pub fn phrase_phase(&self) -> f64 {
         if let Some(beat_grid) = &self.beat_grid {
-            beat_grid.phrase_phase_at_position(self.position_seconds)
+            beat_grid.phrase_phase_at_position(self.position_seconds, self.original_bpm)
         } else {
             0.0
         }
