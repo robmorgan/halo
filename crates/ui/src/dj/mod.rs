@@ -8,6 +8,7 @@
 
 mod deck;
 mod library;
+mod waveform_texture;
 
 use std::sync::Arc;
 

@@ -6,6 +6,7 @@ use eframe::egui::{self, Color32, Rect, Rounding, Stroke, Vec2};
 use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
 
+use super::waveform_texture::WaveformTexture;
 use super::TrackDragPayload;
 
 /// Waveform zoom levels (visible duration in seconds).
@@ -135,6 +136,8 @@ pub struct DeckWidget {
     pub loop_active: bool,
     /// Number of beats in the current loop (supports 1/32 to 512 beats).
     pub loop_beat_count: f64,
+    /// Cached GPU texture for waveform rendering.
+    waveform_texture: WaveformTexture,
 }
 
 impl Default for DeckWidget {
@@ -167,6 +170,7 @@ impl Default for DeckWidget {
             loop_out: None,
             loop_active: false,
             loop_beat_count: 4.0,
+            waveform_texture: WaveformTexture::default(),
         }
     }
 }
@@ -924,44 +928,26 @@ impl DeckWidget {
         // Background
         painter.rect_filled(rect, Rounding::same(4), Color32::from_gray(15));
 
-        // Draw waveform (batched for performance)
+        // GPU texture-based waveform rendering (update once, draw instantly)
         if !self.waveform.is_empty() {
-            let num_samples = self.waveform.len();
-            let samples_per_pixel = num_samples as f32 / available_width;
-            let mid_y = rect.center().y;
-
-            // Pre-allocate shapes vector for batch drawing
-            let mut shapes: Vec<egui::Shape> = Vec::with_capacity(available_width as usize);
-
-            for x in 0..available_width as usize {
-                let sample_idx = (x as f32 * samples_per_pixel) as usize;
-                if sample_idx < num_samples {
-                    let amplitude = self.waveform[sample_idx].abs() * (height / 2.0);
-                    // Use frequency-based RGB coloring if available, otherwise fall back to
-                    // gradient
-                    let color = if let Some(ref colors) = self.waveform_colors {
-                        if sample_idx < colors.len() {
-                            let (low, mid, high) = colors[sample_idx];
-                            // Convert frequency bands to RGB (Red=bass, Green=mids, Blue=highs)
-                            frequency_bands_to_color(low, mid, high)
-                        } else {
-                            waveform_color(sample_idx as f64 / num_samples as f64)
-                        }
-                    } else {
-                        waveform_color(sample_idx as f64 / num_samples as f64)
-                    };
-                    shapes.push(egui::Shape::line_segment(
-                        [
-                            egui::pos2(rect.left() + x as f32, mid_y - amplitude),
-                            egui::pos2(rect.left() + x as f32, mid_y + amplitude),
-                        ],
-                        Stroke::new(1.0, color),
-                    ));
-                }
+            // Update texture only when waveform data changes
+            // Use high resolution (up to 8000px) for crisp display in both overview and zoomed
+            // views
+            if self
+                .waveform_texture
+                .needs_update(&self.waveform, &self.waveform_colors)
+            {
+                let texture_width = self.waveform.len().min(8000);
+                self.waveform_texture.update(
+                    ui.ctx(),
+                    &self.waveform,
+                    &self.waveform_colors,
+                    texture_width,
+                );
             }
 
-            // Single batched draw call
-            painter.extend(shapes);
+            // Draw the pre-rendered texture (O(1) CPU work)
+            self.waveform_texture.draw_overview(ui, rect);
         } else {
             // Empty waveform placeholder
             painter.text(
@@ -1174,58 +1160,32 @@ impl DeckWidget {
             }
         }
 
-        // Draw waveform (batched with pre-computed sample indices for performance)
+        // GPU texture-based waveform rendering (update once, scroll via UV coords)
         if !self.waveform.is_empty() && self.duration_seconds > 0.0 {
-            let num_samples = self.waveform.len();
-            let samples_per_second = num_samples as f64 / self.duration_seconds;
-            let mid_y = rect.center().y;
-
-            // Pre-compute sample increment for incremental calculation (1 add per pixel vs 3 ops)
-            let samples_per_pixel =
-                (zoom_window_seconds * samples_per_second) / available_width as f64;
-            let start_sample = window_start * samples_per_second;
-            let max_sample = self.duration_seconds * samples_per_second;
-
-            // Pre-allocate shapes vector for batch drawing
-            let mut shapes: Vec<egui::Shape> = Vec::with_capacity(available_width as usize);
-            let mut sample_pos = start_sample;
-
-            for x in 0..available_width as usize {
-                // Skip if outside track bounds (pre-computed bounds check)
-                if sample_pos >= 0.0 && sample_pos < max_sample {
-                    let sample_idx = sample_pos as usize;
-                    if sample_idx < num_samples {
-                        let amplitude = self.waveform[sample_idx].abs() * (height / 2.0) * 0.9;
-
-                        // Use frequency-based RGB coloring if available
-                        let color = if let Some(ref colors) = self.waveform_colors {
-                            if sample_idx < colors.len() {
-                                let (low, mid, high) = colors[sample_idx];
-                                frequency_bands_to_color(low, mid, high)
-                            } else {
-                                // Fall back to gradient using pre-computed position
-                                waveform_color(sample_pos / max_sample)
-                            }
-                        } else {
-                            waveform_color(sample_pos / max_sample)
-                        };
-
-                        shapes.push(egui::Shape::line_segment(
-                            [
-                                egui::pos2(rect.left() + x as f32, mid_y - amplitude),
-                                egui::pos2(rect.left() + x as f32, mid_y + amplitude),
-                            ],
-                            Stroke::new(1.0, color),
-                        ));
-                    }
-                }
-
-                // Single addition per pixel instead of 3 operations
-                sample_pos += samples_per_pixel;
+            // Update texture only when waveform data changes
+            // Use same high resolution as overview (8000px) so texture is shared between views
+            if self
+                .waveform_texture
+                .needs_update(&self.waveform, &self.waveform_colors)
+            {
+                let texture_width = self.waveform.len().min(8000);
+                self.waveform_texture.update(
+                    ui.ctx(),
+                    &self.waveform,
+                    &self.waveform_colors,
+                    texture_width,
+                );
             }
 
-            // Single batched draw call
-            painter.extend(shapes);
+            // Draw zoomed portion of texture using UV offset (O(1) CPU work)
+            self.waveform_texture.draw_zoomed(
+                ui,
+                rect,
+                self.position_seconds,
+                self.duration_seconds,
+                zoom_window_seconds,
+                playhead_position as f32,
+            );
         } else {
             // Empty waveform placeholder
             painter.text(
@@ -1482,34 +1442,6 @@ fn hot_cue_color(slot: usize) -> Color32 {
         3 => Color32::from_rgb(255, 255, 100), // Yellow
         _ => Color32::GRAY,
     }
-}
-
-/// Get color for waveform based on position (legacy fallback).
-fn waveform_color(progress: f64) -> Color32 {
-    // Gradient from cyan to purple
-    let r = (100.0 + progress * 155.0) as u8;
-    let g = (200.0 - progress * 100.0) as u8;
-    let b = 255;
-    Color32::from_rgb(r, g, b)
-}
-
-/// Convert 3-band frequency data to RGB color (CDJ/rekordbox style).
-///
-/// The input values are normalized (sum to ~1.0), representing which
-/// frequency band dominates:
-/// - Low frequencies (bass): Red
-/// - Mid frequencies (vocals/instruments): Green
-/// - High frequencies (hi-hats/cymbals): Blue
-fn frequency_bands_to_color(low: f32, mid: f32, high: f32) -> Color32 {
-    // Scale up the values to get vibrant colors
-    // Since values are normalized (sum to 1), multiply by 3 to get full range
-    let scale = 2.5;
-
-    let r = (low * scale * 255.0).clamp(0.0, 255.0) as u8;
-    let g = (mid * scale * 255.0).clamp(0.0, 255.0) as u8;
-    let b = (high * scale * 255.0).clamp(0.0, 255.0) as u8;
-
-    Color32::from_rgb(r, g, b)
 }
 
 /// Check if playhead position is approximately at the cue point.
