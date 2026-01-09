@@ -2379,12 +2379,13 @@ impl LightingConsole {
                                         beat_count,
                                     });
                                 }
-                                ModuleEvent::DjAnalysisProgress { track_id, track_name, current, total } => {
+                                ModuleEvent::DjAnalysisProgress { track_id, track_name, current, total, progress } => {
                                     let _ = event_tx.send(ConsoleEvent::DjAnalysisProgress {
                                         track_id,
                                         track_name,
                                         current,
                                         total,
+                                        progress,
                                     });
                                 }
                                 ModuleEvent::DjAnalysisComplete { track_id, bpm } => {

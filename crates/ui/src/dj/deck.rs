@@ -1,5 +1,7 @@
 //! Deck widget for DJ playback display and control.
 
+use std::sync::Arc;
+
 use eframe::egui::{self, Color32, Rect, Rounding, Stroke, Vec2};
 use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
@@ -73,7 +75,6 @@ impl WaveformZoomLevel {
 }
 
 /// Visual state for a single deck.
-#[derive(Default)]
 pub struct DeckWidget {
     /// Currently loaded track title.
     pub track_title: Option<String>,
@@ -103,11 +104,11 @@ pub struct DeckWidget {
     pub cue_point: Option<f64>,
     /// Beat phase (0.0 to 1.0).
     pub beat_phase: f64,
-    /// Waveform data for display.
-    pub waveform: Vec<f32>,
+    /// Waveform data for display (Arc for zero-copy sharing from state).
+    pub waveform: Arc<Vec<f32>>,
     /// 3-band frequency data for colored waveform (low, mid, high).
-    /// None for legacy waveforms without frequency analysis.
-    pub waveform_colors: Option<Vec<(f32, f32, f32)>>,
+    /// Arc for zero-copy sharing. None for legacy waveforms without frequency analysis.
+    pub waveform_colors: Option<Arc<Vec<(f32, f32, f32)>>>,
     /// Beat positions in seconds (from beat grid analysis).
     pub beat_positions: Vec<f64>,
     /// First beat offset in seconds.
@@ -134,6 +135,40 @@ pub struct DeckWidget {
     pub loop_active: bool,
     /// Number of beats in the current loop (supports 1/32 to 512 beats).
     pub loop_beat_count: f64,
+}
+
+impl Default for DeckWidget {
+    fn default() -> Self {
+        Self {
+            track_title: None,
+            track_artist: None,
+            duration_seconds: 0.0,
+            position_seconds: 0.0,
+            original_bpm: 0.0,
+            adjusted_bpm: 0.0,
+            pitch: 0.0,
+            is_playing: false,
+            waiting_for_quantized_start: false,
+            is_master: false,
+            sync_enabled: false,
+            hot_cues: [None; 4],
+            cue_point: None,
+            beat_phase: 0.0,
+            waveform: Arc::new(Vec::new()),
+            waveform_colors: None,
+            beat_positions: Vec::new(),
+            first_beat_offset: 0.0,
+            cue_preview_active: false,
+            cue_press_handled: false,
+            master_tempo_enabled: false,
+            tempo_range: 1,
+            waveform_zoom_level: WaveformZoomLevel::default(),
+            loop_in: None,
+            loop_out: None,
+            loop_active: false,
+            loop_beat_count: 4.0,
+        }
+    }
 }
 
 impl DeckWidget {
@@ -763,9 +798,8 @@ impl DeckWidget {
                 // First row: Set Downbeat and Beat Shift
                 ui.horizontal(|ui| {
                     if ui.button("Set Downbeat").clicked() {
-                        let _ = console_tx.send(ConsoleCommand::DjSetDownbeat {
-                            deck: deck_number,
-                        });
+                        let _ =
+                            console_tx.send(ConsoleCommand::DjSetDownbeat { deck: deck_number });
                     }
                     ui.separator();
                     if ui.button("◀ Beat").clicked() {
@@ -890,11 +924,14 @@ impl DeckWidget {
         // Background
         painter.rect_filled(rect, Rounding::same(4), Color32::from_gray(15));
 
-        // Draw waveform
+        // Draw waveform (batched for performance)
         if !self.waveform.is_empty() {
             let num_samples = self.waveform.len();
             let samples_per_pixel = num_samples as f32 / available_width;
             let mid_y = rect.center().y;
+
+            // Pre-allocate shapes vector for batch drawing
+            let mut shapes: Vec<egui::Shape> = Vec::with_capacity(available_width as usize);
 
             for x in 0..available_width as usize {
                 let sample_idx = (x as f32 * samples_per_pixel) as usize;
@@ -913,15 +950,18 @@ impl DeckWidget {
                     } else {
                         waveform_color(sample_idx as f64 / num_samples as f64)
                     };
-                    painter.line_segment(
+                    shapes.push(egui::Shape::line_segment(
                         [
                             egui::pos2(rect.left() + x as f32, mid_y - amplitude),
                             egui::pos2(rect.left() + x as f32, mid_y + amplitude),
                         ],
                         Stroke::new(1.0, color),
-                    );
+                    ));
                 }
             }
+
+            // Single batched draw call
+            painter.extend(shapes);
         } else {
             // Empty waveform placeholder
             painter.text(
@@ -933,13 +973,15 @@ impl DeckWidget {
             );
         }
 
-        // Draw beat grid markers
+        // Draw beat grid markers (batched for performance)
         if self.duration_seconds > 0.0 && !self.beat_positions.is_empty() {
             let beat_interval = if self.adjusted_bpm > 0.0 {
                 60.0 / self.adjusted_bpm
             } else {
                 0.5 // Default if BPM unknown
             };
+
+            let mut beat_shapes: Vec<egui::Shape> = Vec::with_capacity(self.beat_positions.len());
 
             for (idx, beat_pos) in self.beat_positions.iter().enumerate() {
                 if *beat_pos >= 0.0 && *beat_pos <= self.duration_seconds {
@@ -962,12 +1004,14 @@ impl DeckWidget {
                         Color32::from_rgba_unmultiplied(255, 255, 255, 40)
                     };
 
-                    painter.line_segment(
+                    beat_shapes.push(egui::Shape::line_segment(
                         [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                         Stroke::new(1.0, color),
-                    );
+                    ));
                 }
             }
+
+            painter.extend(beat_shapes);
         }
 
         // Playhead position
@@ -1130,48 +1174,58 @@ impl DeckWidget {
             }
         }
 
-        // Draw waveform
+        // Draw waveform (batched with pre-computed sample indices for performance)
         if !self.waveform.is_empty() && self.duration_seconds > 0.0 {
             let num_samples = self.waveform.len();
             let samples_per_second = num_samples as f64 / self.duration_seconds;
             let mid_y = rect.center().y;
 
+            // Pre-compute sample increment for incremental calculation (1 add per pixel vs 3 ops)
+            let samples_per_pixel =
+                (zoom_window_seconds * samples_per_second) / available_width as f64;
+            let start_sample = window_start * samples_per_second;
+            let max_sample = self.duration_seconds * samples_per_second;
+
+            // Pre-allocate shapes vector for batch drawing
+            let mut shapes: Vec<egui::Shape> = Vec::with_capacity(available_width as usize);
+            let mut sample_pos = start_sample;
+
             for x in 0..available_width as usize {
-                // Calculate the time position for this pixel
-                let pixel_progress = x as f64 / available_width as f64;
-                let time_at_pixel = window_start + (pixel_progress * zoom_window_seconds);
+                // Skip if outside track bounds (pre-computed bounds check)
+                if sample_pos >= 0.0 && sample_pos < max_sample {
+                    let sample_idx = sample_pos as usize;
+                    if sample_idx < num_samples {
+                        let amplitude = self.waveform[sample_idx].abs() * (height / 2.0) * 0.9;
 
-                // Skip if outside track bounds
-                if time_at_pixel < 0.0 || time_at_pixel >= self.duration_seconds {
-                    continue;
-                }
-
-                // Get the sample index for this time
-                let sample_idx = (time_at_pixel * samples_per_second) as usize;
-                if sample_idx < num_samples {
-                    let amplitude = self.waveform[sample_idx].abs() * (height / 2.0) * 0.9;
-
-                    // Use frequency-based RGB coloring if available
-                    let color = if let Some(ref colors) = self.waveform_colors {
-                        if sample_idx < colors.len() {
-                            let (low, mid, high) = colors[sample_idx];
-                            frequency_bands_to_color(low, mid, high)
+                        // Use frequency-based RGB coloring if available
+                        let color = if let Some(ref colors) = self.waveform_colors {
+                            if sample_idx < colors.len() {
+                                let (low, mid, high) = colors[sample_idx];
+                                frequency_bands_to_color(low, mid, high)
+                            } else {
+                                // Fall back to gradient using pre-computed position
+                                waveform_color(sample_pos / max_sample)
+                            }
                         } else {
-                            waveform_color(time_at_pixel / self.duration_seconds)
-                        }
-                    } else {
-                        waveform_color(time_at_pixel / self.duration_seconds)
-                    };
+                            waveform_color(sample_pos / max_sample)
+                        };
 
-                    painter.line_segment(
-                        [
-                            egui::pos2(rect.left() + x as f32, mid_y - amplitude),
-                            egui::pos2(rect.left() + x as f32, mid_y + amplitude),
-                        ],
-                        Stroke::new(1.0, color),
-                    );
+                        shapes.push(egui::Shape::line_segment(
+                            [
+                                egui::pos2(rect.left() + x as f32, mid_y - amplitude),
+                                egui::pos2(rect.left() + x as f32, mid_y + amplitude),
+                            ],
+                            Stroke::new(1.0, color),
+                        ));
+                    }
                 }
+
+                // Single addition per pixel instead of 3 operations
+                sample_pos += samples_per_pixel;
             }
+
+            // Single batched draw call
+            painter.extend(shapes);
         } else {
             // Empty waveform placeholder
             painter.text(
@@ -1183,13 +1237,18 @@ impl DeckWidget {
             );
         }
 
-        // Draw beat grid markers (only those in visible window)
+        // Draw beat grid markers (batched, only those in visible window)
         if self.duration_seconds > 0.0 && !self.beat_positions.is_empty() {
             let beat_interval = if self.adjusted_bpm > 0.0 {
                 60.0 / self.adjusted_bpm
             } else {
                 0.5
             };
+
+            // Estimate visible beats for capacity (roughly 2 beats/sec at 120bpm)
+            let estimated_visible_beats =
+                (zoom_window_seconds * self.adjusted_bpm / 60.0).ceil() as usize + 2;
+            let mut beat_shapes: Vec<egui::Shape> = Vec::with_capacity(estimated_visible_beats);
 
             for (idx, beat_pos) in self.beat_positions.iter().enumerate() {
                 // Only draw beats within visible window
@@ -1211,12 +1270,14 @@ impl DeckWidget {
                         Color32::from_rgba_unmultiplied(255, 255, 255, 50)
                     };
 
-                    painter.line_segment(
+                    beat_shapes.push(egui::Shape::line_segment(
                         [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
                         Stroke::new(if is_downbeat { 2.0 } else { 1.0 }, color),
-                    );
+                    ));
                 }
             }
+
+            painter.extend(beat_shapes);
         }
 
         // Loop region overlay (only if visible in window)

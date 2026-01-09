@@ -257,7 +257,8 @@ impl Deck {
     /// Update beat position from current time position.
     pub fn update_beat_position(&mut self) {
         if let Some(beat_grid) = &self.beat_grid {
-            self.position_beats = beat_grid.beat_at_position(self.position_seconds, self.original_bpm);
+            self.position_beats =
+                beat_grid.beat_at_position(self.position_seconds, self.original_bpm);
         }
     }
 

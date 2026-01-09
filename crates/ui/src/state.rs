@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use halo_core::audio::waveform::WaveformData;
@@ -10,7 +11,7 @@ use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::mpsc;
 
 /// State for a DJ deck.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DjDeckState {
     pub track_title: Option<String>,
     pub track_artist: Option<String>,
@@ -20,10 +21,11 @@ pub struct DjDeckState {
     pub is_playing: bool,
     pub waiting_for_quantized_start: bool,
     pub cue_point: Option<f64>,
-    pub waveform: Vec<f32>,
+    /// Waveform samples (Arc for zero-copy sharing between state and UI).
+    pub waveform: Arc<Vec<f32>>,
     /// 3-band frequency data for colored waveform (low, mid, high).
-    /// None for legacy tracks without frequency analysis.
-    pub waveform_colors: Option<Vec<(f32, f32, f32)>>,
+    /// Arc for zero-copy sharing. None for legacy tracks without frequency analysis.
+    pub waveform_colors: Option<Arc<Vec<(f32, f32, f32)>>>,
     pub beat_positions: Vec<f64>,
     pub first_beat_offset: f64,
     pub master_tempo_enabled: bool,
@@ -34,6 +36,32 @@ pub struct DjDeckState {
     pub loop_out: Option<f64>,
     pub loop_active: bool,
     pub loop_beat_count: f64,
+}
+
+impl Default for DjDeckState {
+    fn default() -> Self {
+        Self {
+            track_title: None,
+            track_artist: None,
+            duration_seconds: 0.0,
+            position_seconds: 0.0,
+            bpm: None,
+            is_playing: false,
+            waiting_for_quantized_start: false,
+            cue_point: None,
+            waveform: Arc::new(Vec::new()),
+            waveform_colors: None,
+            beat_positions: Vec::new(),
+            first_beat_offset: 0.0,
+            master_tempo_enabled: false,
+            tempo_range: 1,
+            pitch_percent: 0.0,
+            loop_in: None,
+            loop_out: None,
+            loop_active: false,
+            loop_beat_count: 4.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -71,7 +99,7 @@ pub struct ConsoleState {
     pub dj_deck_a: DjDeckState,
     pub dj_deck_b: DjDeckState,
     pub status_message: Option<String>,
-    pub status_progress: Option<(usize, usize)>, // (current, total)
+    pub status_progress: Option<(usize, usize, f32)>, // (current, total, intra_track_progress)
 }
 
 impl Default for ConsoleState {
@@ -304,7 +332,7 @@ impl ConsoleState {
                 deck_state.duration_seconds = duration_seconds;
                 deck_state.bpm = bpm;
                 deck_state.position_seconds = 0.0;
-                deck_state.waveform.clear(); // Clear previous waveform immediately
+                deck_state.waveform = Arc::new(Vec::new()); // Clear previous waveform immediately
                 deck_state.waveform_colors = None; // Clear previous color data
             }
             halo_core::ConsoleEvent::DjDeckStateChanged {
@@ -432,10 +460,11 @@ impl ConsoleState {
                 track_name,
                 current,
                 total,
+                progress,
                 ..
             } => {
                 self.status_message = Some(format!("Analyzing {}", track_name));
-                self.status_progress = Some((current, total));
+                self.status_progress = Some((current, total, progress));
             }
             halo_core::ConsoleEvent::DjAnalysisComplete { track_id, bpm } => {
                 // Update the track's BPM in our local list
@@ -458,7 +487,8 @@ impl ConsoleState {
                     .and_then(|n| n.to_str())
                     .unwrap_or(&current_file);
                 self.status_message = Some(format!("Importing {}", filename));
-                self.status_progress = Some((current, total));
+                // Import progress doesn't have intra-track progress, use 0.0
+                self.status_progress = Some((current, total, 0.0));
             }
             halo_core::ConsoleEvent::DjPitchChanged {
                 deck,

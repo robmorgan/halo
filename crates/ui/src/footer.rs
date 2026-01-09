@@ -25,9 +25,13 @@ pub fn render(
         ui.add_space(12.0);
         // Show status message if available, otherwise empty
         if let Some(ref message) = state.status_message {
-            let status_text = if let Some((current, total)) = state.status_progress {
+            let status_text = if let Some((current, total, intra_progress)) = state.status_progress {
                 let percentage = if total > 0 {
-                    (current as f32 / total as f32 * 100.0) as u32
+                    // Calculate overall progress including intra-track progress
+                    // For track 2/10 at 50% done: (1 + 0.5) / 10 = 15%
+                    let completed = (current.saturating_sub(1)) as f32;
+                    let overall = (completed + intra_progress) / total as f32;
+                    (overall * 100.0) as u32
                 } else {
                     0
                 };

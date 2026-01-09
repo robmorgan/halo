@@ -55,6 +55,53 @@ impl Default for AnalysisConfig {
     }
 }
 
+/// Correct octave errors by preferring common dance music tempos.
+///
+/// Uses a two-tier preference system:
+/// - Primary: 115-135 BPM (house/tech house sweet spot)
+/// - Secondary: 80-160 BPM (full dance music range)
+///
+/// This prevents 120 BPM tracks from being detected as 60 or 240 BPM.
+fn correct_octave_errors_dance(raw_bpm: f64, min_bpm: f64, max_bpm: f64) -> f64 {
+    let candidates = [raw_bpm, raw_bpm * 2.0, raw_bpm / 2.0];
+
+    candidates
+        .into_iter()
+        .filter(|&bpm| bpm >= min_bpm && bpm <= max_bpm)
+        .min_by(|&a, &b| {
+            let score_a = tempo_preference_score(a);
+            let score_b = tempo_preference_score(b);
+            score_a
+                .partial_cmp(&score_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(raw_bpm.clamp(min_bpm, max_bpm))
+}
+
+/// Score a tempo by how close it is to common dance music ranges.
+/// Lower score = better (0 = within primary target range).
+fn tempo_preference_score(bpm: f64) -> f64 {
+    // Primary sweet spot: 115-135 BPM (house/techno center)
+    const PRIMARY_LOW: f64 = 115.0;
+    const PRIMARY_HIGH: f64 = 135.0;
+    // Secondary range: 80-160 BPM (hip-hop through techno)
+    const SECONDARY_LOW: f64 = 80.0;
+    const SECONDARY_HIGH: f64 = 160.0;
+    // Center point for scoring
+    const CENTER: f64 = 125.0;
+
+    if bpm >= PRIMARY_LOW && bpm <= PRIMARY_HIGH {
+        // Primary range - best score, slight preference toward center
+        (bpm - CENTER).abs() * 0.01
+    } else if bpm >= SECONDARY_LOW && bpm <= SECONDARY_HIGH {
+        // Secondary range - good but penalized slightly
+        10.0 + (bpm - CENTER).abs() * 0.1
+    } else {
+        // Outside range - heavily penalized
+        100.0 + (bpm - CENTER).abs()
+    }
+}
+
 /// Result of audio analysis.
 #[derive(Debug, Clone)]
 pub struct AnalysisResult {
@@ -82,16 +129,28 @@ pub fn analyze_file<P: AsRef<Path>>(
     // Generate colored waveform with 3-band frequency analysis
     let waveform = generate_colored_waveform(&samples, sample_rate, track_id, config);
 
-    // Detect BPM and beat positions using aubio
-    let (bpm, confidence, beat_positions) = detect_beats_aubio(&samples, sample_rate, config);
+    // Detect BPM and beat positions using multi-method consensus
+    let (detected_bpm, detected_confidence, detected_beats) =
+        detect_beats_aubio(&samples, sample_rate, config);
     log::info!(
         "Detected BPM: {:.2} (confidence: {:.2}, {} beats)",
-        bpm,
-        confidence,
-        beat_positions.len()
+        detected_bpm,
+        detected_confidence,
+        detected_beats.len()
     );
 
-    // Calculate first beat offset from detected beats
+    // Validate and correct beat grid if necessary
+    let track_duration = samples.len() as f64 / sample_rate as f64;
+    let (bpm, confidence, beat_positions) = validate_and_correct_beat_grid(
+        &detected_beats,
+        detected_bpm,
+        detected_confidence,
+        track_duration,
+        config.min_bpm,
+        config.max_bpm,
+    );
+
+    // Calculate first beat offset from validated beats
     let first_beat_offset_ms = beat_positions.first().copied().unwrap_or(0.0) * 1000.0;
 
     let beat_grid = BeatGrid {
@@ -143,16 +202,28 @@ where
     // Generate full colored waveform with 3-band FFT analysis
     let waveform = generate_colored_waveform(&samples, sample_rate, track_id, config);
 
-    // Detect BPM and beat positions using aubio
-    let (bpm, confidence, beat_positions) = detect_beats_aubio(&samples, sample_rate, config);
+    // Detect BPM and beat positions using multi-method consensus
+    let (detected_bpm, detected_confidence, detected_beats) =
+        detect_beats_aubio(&samples, sample_rate, config);
     log::info!(
         "Detected BPM: {:.2} (confidence: {:.2}, {} beats)",
-        bpm,
-        confidence,
-        beat_positions.len()
+        detected_bpm,
+        detected_confidence,
+        detected_beats.len()
     );
 
-    // Calculate first beat offset from detected beats
+    // Validate and correct beat grid if necessary
+    let track_duration = samples.len() as f64 / sample_rate as f64;
+    let (bpm, confidence, beat_positions) = validate_and_correct_beat_grid(
+        &detected_beats,
+        detected_bpm,
+        detected_confidence,
+        track_duration,
+        config.min_bpm,
+        config.max_bpm,
+    );
+
+    // Calculate first beat offset from validated beats
     let first_beat_offset_ms = beat_positions.first().copied().unwrap_or(0.0) * 1000.0;
 
     let beat_grid = BeatGrid {
@@ -398,11 +469,10 @@ fn detect_bpm(samples: &[f32], sample_rate: u32, config: &AnalysisConfig) -> (f6
     (bpm, confidence)
 }
 
-/// Detect BPM and beat positions using aubio's Tempo tracker.
+/// Detect BPM and beat positions using multi-method consensus.
 ///
-/// This provides more accurate beat detection than simple autocorrelation
-/// by using aubio's sophisticated beat tracking algorithm that detects
-/// actual beat positions rather than just estimating from a first beat offset.
+/// Runs multiple detection methods (Energy, SpecFlux, FFT autocorrelation)
+/// and selects the best result based on confidence and dance tempo proximity.
 ///
 /// Returns (bpm, confidence, beat_positions_in_seconds).
 fn detect_beats_aubio(
@@ -410,11 +480,238 @@ fn detect_beats_aubio(
     sample_rate: u32,
     config: &AnalysisConfig,
 ) -> (f64, f32, Vec<f64>) {
+    // Method 1: Energy mode (good for kick drums in dance music)
+    let (bpm_energy, conf_energy, beats_energy) =
+        detect_beats_aubio_with_mode(samples, sample_rate, config, OnsetMode::Energy);
+
+    // Method 2: SpecFlux mode (aubio's recommended for general tempo detection)
+    let (bpm_specflux, conf_specflux, beats_specflux) =
+        detect_beats_aubio_with_mode(samples, sample_rate, config, OnsetMode::SpecFlux);
+
+    // Method 3: FFT autocorrelation on bass envelope (fallback)
+    let (bpm_fft, conf_fft) = detect_bpm(samples, sample_rate, config);
+
+    log::debug!(
+        "Multi-method BPM: Energy={:.2} (conf={:.2}), SpecFlux={:.2} (conf={:.2}), FFT={:.2} (conf={:.2})",
+        bpm_energy, conf_energy, bpm_specflux, conf_specflux, bpm_fft, conf_fft
+    );
+
+    // Select best result using consensus
+    select_best_bpm_consensus(
+        bpm_energy,
+        conf_energy,
+        &beats_energy,
+        bpm_specflux,
+        conf_specflux,
+        &beats_specflux,
+        bpm_fft,
+        conf_fft,
+    )
+}
+
+/// Select the best BPM from multiple detection methods using consensus.
+///
+/// Scoring considers:
+/// - Detection confidence
+/// - Agreement between methods
+/// - Proximity to common dance tempos
+fn select_best_bpm_consensus(
+    bpm1: f64,
+    conf1: f32,
+    beats1: &[f64],
+    bpm2: f64,
+    conf2: f32,
+    beats2: &[f64],
+    bpm3: f64,
+    conf3: f32,
+) -> (f64, f32, Vec<f64>) {
+    // Check if methods agree (within 2% or octave relationship)
+    let agree_1_2 = bpms_agree(bpm1, bpm2);
+    let agree_1_3 = bpms_agree(bpm1, bpm3);
+    let agree_2_3 = bpms_agree(bpm2, bpm3);
+
+    // If two or more methods agree, use that BPM
+    if agree_1_2 && agree_1_3 {
+        // All three agree - use method with highest confidence
+        if conf1 >= conf2 {
+            log::debug!("Consensus: all methods agree, using Energy ({:.2} BPM)", bpm1);
+            return (bpm1, (conf1 + conf2 + conf3) / 3.0, beats1.to_vec());
+        } else {
+            log::debug!(
+                "Consensus: all methods agree, using SpecFlux ({:.2} BPM)",
+                bpm2
+            );
+            return (bpm2, (conf1 + conf2 + conf3) / 3.0, beats2.to_vec());
+        }
+    } else if agree_1_2 {
+        // Energy and SpecFlux agree
+        let combined_conf = (conf1 + conf2) / 2.0;
+        if conf1 >= conf2 {
+            log::debug!(
+                "Consensus: Energy and SpecFlux agree, using Energy ({:.2} BPM)",
+                bpm1
+            );
+            return (bpm1, combined_conf, beats1.to_vec());
+        } else {
+            log::debug!(
+                "Consensus: Energy and SpecFlux agree, using SpecFlux ({:.2} BPM)",
+                bpm2
+            );
+            return (bpm2, combined_conf, beats2.to_vec());
+        }
+    } else if agree_1_3 {
+        // Energy and FFT agree
+        log::debug!(
+            "Consensus: Energy and FFT agree, using Energy ({:.2} BPM)",
+            bpm1
+        );
+        return (bpm1, (conf1 + conf3) / 2.0, beats1.to_vec());
+    } else if agree_2_3 {
+        // SpecFlux and FFT agree
+        log::debug!(
+            "Consensus: SpecFlux and FFT agree, using SpecFlux ({:.2} BPM)",
+            bpm2
+        );
+        return (bpm2, (conf2 + conf3) / 2.0, beats2.to_vec());
+    }
+
+    // No agreement - score each by confidence and tempo preference
+    let score1 = conf1 as f64 * 10.0 - tempo_preference_score(bpm1) * 0.5;
+    let score2 = conf2 as f64 * 10.0 - tempo_preference_score(bpm2) * 0.5;
+    let score3 = conf3 as f64 * 10.0 - tempo_preference_score(bpm3) * 0.5;
+
+    if score1 >= score2 && score1 >= score3 {
+        log::debug!(
+            "Consensus: no agreement, using Energy ({:.2} BPM, score={:.2})",
+            bpm1,
+            score1
+        );
+        (bpm1, conf1, beats1.to_vec())
+    } else if score2 >= score3 {
+        log::debug!(
+            "Consensus: no agreement, using SpecFlux ({:.2} BPM, score={:.2})",
+            bpm2,
+            score2
+        );
+        (bpm2, conf2, beats2.to_vec())
+    } else {
+        // FFT method doesn't provide beats, use Energy's beats with FFT's BPM
+        log::debug!(
+            "Consensus: no agreement, using FFT BPM ({:.2}) with Energy beats",
+            bpm3
+        );
+        (bpm3, conf3, beats1.to_vec())
+    }
+}
+
+/// Validate and correct beat grid to ensure intervals match the detected BPM.
+///
+/// If the median beat interval differs significantly from the expected interval,
+/// recalculates the BPM from the actual intervals and regenerates a consistent grid.
+///
+/// Returns (corrected_bpm, corrected_confidence, corrected_beats).
+fn validate_and_correct_beat_grid(
+    beats: &[f64],
+    detected_bpm: f64,
+    detected_confidence: f32,
+    track_duration: f64,
+    min_bpm: f64,
+    max_bpm: f64,
+) -> (f64, f32, Vec<f64>) {
+    if beats.len() < 8 {
+        // Not enough beats to validate - return original
+        return (detected_bpm, detected_confidence, beats.to_vec());
+    }
+
+    // Calculate actual intervals between detected beats
+    let intervals: Vec<f64> = beats.windows(2).map(|w| w[1] - w[0]).collect();
+
+    // Calculate median interval (robust against outliers)
+    let mut sorted_intervals = intervals.clone();
+    sorted_intervals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median_interval = sorted_intervals[sorted_intervals.len() / 2];
+
+    // Calculate BPM from median interval
+    let actual_bpm = 60.0 / median_interval;
+
+    // Check if detected BPM matches actual beat intervals
+    let expected_interval = 60.0 / detected_bpm;
+    let interval_error = (median_interval - expected_interval).abs() / expected_interval;
+
+    if interval_error <= 0.02 {
+        // Within 2% tolerance - beat grid is consistent
+        log::debug!(
+            "Beat grid validation passed: detected={:.2} BPM, actual intervals suggest {:.2} BPM",
+            detected_bpm,
+            actual_bpm
+        );
+        return (detected_bpm, detected_confidence, beats.to_vec());
+    }
+
+    // BPM mismatch - recalculate from beat intervals
+    log::info!(
+        "Beat grid validation: BPM mismatch! Detected {:.2}, intervals suggest {:.2} (error={:.1}%)",
+        detected_bpm,
+        actual_bpm,
+        interval_error * 100.0
+    );
+
+    // Apply octave correction to the actual BPM
+    let corrected_bpm = correct_octave_errors_dance(actual_bpm, min_bpm, max_bpm);
+    let corrected_interval = 60.0 / corrected_bpm;
+
+    // Regenerate consistent beat grid from first beat
+    let first_beat = beats[0];
+    let num_beats = ((track_duration - first_beat) / corrected_interval).ceil() as usize;
+
+    let corrected_beats: Vec<f64> = (0..num_beats)
+        .map(|i| first_beat + i as f64 * corrected_interval)
+        .filter(|&t| t < track_duration)
+        .collect();
+
+    // Reduce confidence since we had to correct
+    let corrected_confidence = (detected_confidence * 0.8).max(0.3);
+
+    log::info!(
+        "Beat grid corrected: {:.2} BPM -> {:.2} BPM, {} beats",
+        detected_bpm,
+        corrected_bpm,
+        corrected_beats.len()
+    );
+
+    (corrected_bpm, corrected_confidence, corrected_beats)
+}
+
+/// Check if two BPM values agree (within 2% or octave relationship).
+fn bpms_agree(bpm1: f64, bpm2: f64) -> bool {
+    let ratio = bpm1 / bpm2;
+    let tolerance = 0.02;
+
+    // Check direct agreement
+    if (ratio - 1.0).abs() < tolerance {
+        return true;
+    }
+    // Check octave relationships (2x or 0.5x)
+    if (ratio - 2.0).abs() < tolerance || (ratio - 0.5).abs() < tolerance {
+        return true;
+    }
+    false
+}
+
+/// Detect BPM and beat positions using aubio's Tempo tracker with a specific onset mode.
+///
+/// Returns (bpm, confidence, beat_positions_in_seconds).
+fn detect_beats_aubio_with_mode(
+    samples: &[f32],
+    sample_rate: u32,
+    config: &AnalysisConfig,
+    onset_mode: OnsetMode,
+) -> (f64, f32, Vec<f64>) {
     let buf_size = 1024;
     let hop_size = 512;
 
-    // Create aubio Tempo detector with HFC onset mode (good for percussive content)
-    let mut tempo = match Tempo::new(OnsetMode::Hfc, buf_size, hop_size, sample_rate) {
+    // Create aubio Tempo detector with specified onset mode
+    let mut tempo = match Tempo::new(onset_mode, buf_size, hop_size, sample_rate) {
         Ok(t) => t,
         Err(e) => {
             log::warn!("Failed to create aubio Tempo: {}", e);
@@ -447,20 +744,14 @@ fn detect_beats_aubio(
     }
 
     // Get final BPM and confidence from aubio
-    let bpm = tempo.get_bpm() as f64;
+    let raw_bpm = tempo.get_bpm() as f64;
     let confidence = tempo.get_confidence();
 
-    // Clamp BPM to valid range
-    let bpm = if bpm > 0.0 && bpm >= config.min_bpm && bpm <= config.max_bpm {
-        bpm
-    } else if bpm > 0.0 && bpm < config.min_bpm {
-        // Double if detected BPM is too low (common octave error)
-        bpm * 2.0
-    } else if bpm > config.max_bpm {
-        // Halve if detected BPM is too high
-        bpm / 2.0
+    // Apply dance-tempo-aware octave correction
+    let bpm = if raw_bpm > 0.0 {
+        correct_octave_errors_dance(raw_bpm, config.min_bpm, config.max_bpm)
     } else {
-        120.0 // Fallback
+        120.0 // Fallback for invalid detection
     };
 
     log::debug!(
@@ -485,11 +776,7 @@ fn detect_beats_aubio(
 ///
 /// Takes coarse beat positions (from aubio) and refines each one to the
 /// precise transient onset within a search window.
-fn refine_beats_to_transients(
-    samples: &[f32],
-    sample_rate: u32,
-    coarse_beats: &[f64],
-) -> Vec<f64> {
+fn refine_beats_to_transients(samples: &[f32], sample_rate: u32, coarse_beats: &[f64]) -> Vec<f64> {
     coarse_beats
         .iter()
         .map(|&beat_time| refine_beat_to_transient(samples, sample_rate, beat_time))
@@ -509,8 +796,8 @@ fn refine_beats_to_transients(
 /// 4. Find the maximum onset within the window
 /// 5. Return the refined time position
 fn refine_beat_to_transient(samples: &[f32], sample_rate: u32, coarse_beat_time: f64) -> f64 {
-    // Search window: ±30ms around the coarse beat
-    let window_ms = 30.0;
+    // Search window: ±50ms around the coarse beat (wider for better kick detection)
+    let window_ms = 50.0;
     let window_samples = ((window_ms / 1000.0) * sample_rate as f64) as usize;
 
     let beat_sample = (coarse_beat_time * sample_rate as f64) as usize;

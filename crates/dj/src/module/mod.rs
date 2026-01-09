@@ -1332,9 +1332,9 @@ impl AsyncModule for DjModule {
                                             let _ = tx.send(ModuleMessage::Event(
                                                 ModuleEvent::DjWaveformLoaded {
                                                     deck: deck_num,
-                                                    samples: waveform.samples,
+                                                    samples: Arc::new(waveform.samples),
                                                     frequency_bands: waveform.frequency_bands.map(|bands| {
-                                                        bands.iter().map(|b| b.as_tuple()).collect()
+                                                        Arc::new(bands.iter().map(|b| b.as_tuple()).collect())
                                                     }),
                                                     duration_seconds: waveform.duration_seconds,
                                                 }
@@ -1447,6 +1447,7 @@ impl AsyncModule for DjModule {
                                                         track_name: track_title.clone(),
                                                         current: 1,
                                                         total: 1,
+                                                        progress: 0.0,
                                                     }
                                                 )).await;
 
@@ -1480,7 +1481,7 @@ impl AsyncModule for DjModule {
                                                         let _ = tx_clone.send(ModuleMessage::Event(
                                                             ModuleEvent::DjWaveformProgress {
                                                                 deck: deck_num,
-                                                                samples,
+                                                                samples: Arc::new(samples),
                                                                 frequency_bands: None, // Legacy analysis without color data
                                                                 progress,
                                                             }
@@ -1545,9 +1546,9 @@ impl AsyncModule for DjModule {
                                                             let _ = tx_clone.send(ModuleMessage::Event(
                                                                 ModuleEvent::DjWaveformLoaded {
                                                                     deck: deck_num,
-                                                                    samples: result.waveform.samples,
+                                                                    samples: Arc::new(result.waveform.samples),
                                                                     frequency_bands: result.waveform.frequency_bands.map(|bands| {
-                                                                        bands.iter().map(|b| b.as_tuple()).collect()
+                                                                        Arc::new(bands.iter().map(|b| b.as_tuple()).collect())
                                                                     }),
                                                                     duration_seconds: result.waveform.duration_seconds,
                                                                 }
@@ -1809,9 +1810,9 @@ impl AsyncModule for DjModule {
                                                     let _ = tx.send(ModuleMessage::Event(
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
-                                                            samples: waveform.samples,
+                                                            samples: Arc::new(waveform.samples),
                                                             frequency_bands: waveform.frequency_bands.map(|bands| {
-                                                                bands.iter().map(|b| b.as_tuple()).collect()
+                                                                Arc::new(bands.iter().map(|b| b.as_tuple()).collect())
                                                             }),
                                                             duration_seconds: waveform.duration_seconds,
                                                         }
@@ -1906,9 +1907,9 @@ impl AsyncModule for DjModule {
                                                     let _ = tx.send(ModuleMessage::Event(
                                                         ModuleEvent::DjWaveformLoaded {
                                                             deck: deck_num,
-                                                            samples: waveform.samples,
+                                                            samples: Arc::new(waveform.samples),
                                                             frequency_bands: waveform.frequency_bands.map(|bands| {
-                                                                bands.iter().map(|b| b.as_tuple()).collect()
+                                                                Arc::new(bands.iter().map(|b| b.as_tuple()).collect())
                                                             }),
                                                             duration_seconds: waveform.duration_seconds,
                                                         }
@@ -2159,6 +2160,7 @@ impl AsyncModule for DjModule {
                                                     track_name,
                                                     current,
                                                     total,
+                                                    progress: 0.0,
                                                 }
                                             )).await;
                                         }
@@ -2175,6 +2177,7 @@ impl AsyncModule for DjModule {
                                                     track_name,
                                                     current,
                                                     total,
+                                                    progress: 0.0,
                                                 }
                                             )).await;
                                         }
@@ -2623,13 +2626,24 @@ impl AsyncModule for DjModule {
                     // Poll for streaming waveform progress (non-blocking)
                     if let Some(rx) = &mut self.analysis_progress_rx {
                         while let Ok((samples, progress)) = rx.try_recv() {
-                            if let Some((track_id, _)) = &self.current_analysis_track {
+                            if let Some((track_id, track_name)) = &self.current_analysis_track {
                                 // Send streaming waveform progress with special deck value (255 = library analysis)
                                 let _ = tx.send(ModuleMessage::Event(
                                     ModuleEvent::DjWaveformProgress {
                                         deck: 255,
-                                        samples,
+                                        samples: Arc::new(samples),
                                         frequency_bands: None,
+                                        progress,
+                                    }
+                                )).await;
+
+                                // Also send analysis progress event with intra-track progress for footer display
+                                let _ = tx.send(ModuleMessage::Event(
+                                    ModuleEvent::DjAnalysisProgress {
+                                        track_id: track_id.0,
+                                        track_name: track_name.clone(),
+                                        current: self.analysis_batch_completed + 1,
+                                        total: self.analysis_batch_total,
                                         progress,
                                     }
                                 )).await;
@@ -2710,6 +2724,7 @@ impl AsyncModule for DjModule {
                                     track_name,
                                     current: self.analysis_batch_completed + 1,
                                     total: self.analysis_batch_total,
+                                    progress: 0.0,
                                 }
                             )).await;
                         }

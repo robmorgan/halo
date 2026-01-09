@@ -9,6 +9,8 @@
 mod deck;
 mod library;
 
+use std::sync::Arc;
+
 pub use deck::DeckWidget;
 use eframe::egui;
 use halo_core::ConsoleCommand;
@@ -92,9 +94,10 @@ impl DjPanel {
         self.deck_a.is_playing = state.dj_deck_a.is_playing;
         self.deck_a.waiting_for_quantized_start = state.dj_deck_a.waiting_for_quantized_start;
         self.deck_a.cue_point = state.dj_deck_a.cue_point;
-        if self.deck_a.waveform.len() != state.dj_deck_a.waveform.len() {
-            self.deck_a.waveform = state.dj_deck_a.waveform.clone();
-            self.deck_a.waveform_colors = state.dj_deck_a.waveform_colors.clone();
+        // Use Arc::ptr_eq for fast identity comparison (zero-copy waveform sharing)
+        if !Arc::ptr_eq(&self.deck_a.waveform, &state.dj_deck_a.waveform) {
+            self.deck_a.waveform = Arc::clone(&state.dj_deck_a.waveform);
+            self.deck_a.waveform_colors = state.dj_deck_a.waveform_colors.as_ref().map(Arc::clone);
         }
         // Always sync beat positions (nudge changes values without changing count)
         if self.deck_a.beat_positions != state.dj_deck_a.beat_positions {
@@ -110,9 +113,10 @@ impl DjPanel {
         self.deck_b.is_playing = state.dj_deck_b.is_playing;
         self.deck_b.waiting_for_quantized_start = state.dj_deck_b.waiting_for_quantized_start;
         self.deck_b.cue_point = state.dj_deck_b.cue_point;
-        if self.deck_b.waveform.len() != state.dj_deck_b.waveform.len() {
-            self.deck_b.waveform = state.dj_deck_b.waveform.clone();
-            self.deck_b.waveform_colors = state.dj_deck_b.waveform_colors.clone();
+        // Use Arc::ptr_eq for fast identity comparison (zero-copy waveform sharing)
+        if !Arc::ptr_eq(&self.deck_b.waveform, &state.dj_deck_b.waveform) {
+            self.deck_b.waveform = Arc::clone(&state.dj_deck_b.waveform);
+            self.deck_b.waveform_colors = state.dj_deck_b.waveform_colors.as_ref().map(Arc::clone);
         }
         // Always sync beat positions (nudge changes values without changing count)
         if self.deck_b.beat_positions != state.dj_deck_b.beat_positions {

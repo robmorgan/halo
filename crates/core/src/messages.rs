@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use halo_fixtures::Fixture;
 use serde::{Deserialize, Serialize};
@@ -595,16 +596,20 @@ pub enum ConsoleEvent {
     },
     DjWaveformProgress {
         deck: u8,
-        samples: Vec<f32>,
+        /// Waveform samples (Arc for zero-copy sharing).
+        samples: Arc<Vec<f32>>,
         /// 3-band frequency data for colored waveform (low, mid, high).
-        frequency_bands: Option<Vec<(f32, f32, f32)>>,
+        /// Arc for zero-copy sharing.
+        frequency_bands: Option<Arc<Vec<(f32, f32, f32)>>>,
         progress: f32,
     },
     DjWaveformLoaded {
         deck: u8,
-        samples: Vec<f32>,
+        /// Waveform samples (Arc for zero-copy sharing).
+        samples: Arc<Vec<f32>>,
         /// 3-band frequency data for colored waveform (low, mid, high).
-        frequency_bands: Option<Vec<(f32, f32, f32)>>,
+        /// Arc for zero-copy sharing.
+        frequency_bands: Option<Arc<Vec<(f32, f32, f32)>>>,
         duration_seconds: f64,
     },
     DjLibraryTracks {
@@ -645,6 +650,8 @@ pub enum ConsoleEvent {
         track_name: String,
         current: usize,
         total: usize,
+        /// Progress within current track (0.0-1.0)
+        progress: f32,
     },
     DjAnalysisComplete {
         track_id: i64,
