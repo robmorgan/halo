@@ -311,7 +311,7 @@ impl LibraryBrowser {
                                 context_reanalyze_track_id = Some(track_id);
                                 ui.close_menu();
                             }
-                            if ui.button("Fix BPM...").clicked() {
+                            if ui.button("Edit BPM...").clicked() {
                                 context_edit_bpm_track = Some((track_id, track_bpm));
                                 ui.close_menu();
                             }
@@ -425,27 +425,33 @@ impl LibraryBrowser {
             });
         });
 
-        // BPM reanalysis confirmation dialog
+        // BPM edit dialog - allows manual BPM correction and triggers reanalysis
         if let Some(track_id) = self.editing_bpm_track_id {
             let mut open = true;
-            egui::Window::new("Reanalyze BPM")
+            egui::Window::new("Edit BPM")
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .open(&mut open)
                 .show(ui.ctx(), |ui| {
-                    ui.label(format!("Current BPM: {}", self.bpm_edit_value));
+                    ui.horizontal(|ui| {
+                        ui.label("BPM:");
+                        ui.add(egui::TextEdit::singleline(&mut self.bpm_edit_value).desired_width(60.0));
+                    });
                     ui.add_space(4.0);
                     ui.label(
-                        RichText::new("This will reanalyze the track to detect\nthe correct BPM and regenerate the beat grid.")
+                        RichText::new("Saving will update the BPM and regenerate\nthe beat grid based on the new tempo.")
                             .size(11.0)
                             .color(Color32::GRAY),
                     );
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.button("Reanalyze").clicked() {
-                            // Trigger full reanalysis (will detect BPM with improved algorithm)
-                            let _ = console_tx.send(ConsoleCommand::DjReanalyzeTrack { track_id });
+                        if ui.button("Save").clicked() {
+                            if let Ok(bpm) = self.bpm_edit_value.parse::<f64>() {
+                                // Update BPM and trigger reanalysis to regenerate beat grid
+                                let _ = console_tx.send(ConsoleCommand::DjUpdateTrackBpm { track_id, bpm });
+                                let _ = console_tx.send(ConsoleCommand::DjReanalyzeTrack { track_id });
+                            }
                             self.editing_bpm_track_id = None;
                         }
                         if ui.button("Cancel").clicked() {
