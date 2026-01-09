@@ -332,8 +332,14 @@ impl ConsoleState {
                 deck_state.duration_seconds = duration_seconds;
                 deck_state.bpm = bpm;
                 deck_state.position_seconds = 0.0;
+                deck_state.is_playing = false; // Reset play state when new track is loaded
+                deck_state.waiting_for_quantized_start = false;
+                deck_state.cue_point = None; // Clear cue point for new track
                 deck_state.waveform = Arc::new(Vec::new()); // Clear previous waveform immediately
                 deck_state.waveform_colors = None; // Clear previous color data
+                deck_state.loop_in = None; // Clear loop state
+                deck_state.loop_out = None;
+                deck_state.loop_active = false;
             }
             halo_core::ConsoleEvent::DjDeckStateChanged {
                 deck,
