@@ -1,0 +1,2 @@
+# This file ensures the audio directory is tracked by git
+# Actual audio files are ignored - see ../.gitignore

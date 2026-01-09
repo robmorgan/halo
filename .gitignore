@@ -4,3 +4,8 @@ target
 /ce
 /assets/music
 
+# BPM accuracy test audio files (downloaded via scripts/download_test_audio.sh)
+/crates/dj/tests/fixtures/audio/*.mp3
+/crates/dj/tests/fixtures/audio/*.wav
+/crates/dj/tests/fixtures/giantsteps-tempo-dataset/
+
