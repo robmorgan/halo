@@ -2033,6 +2033,7 @@ dependencies = [
  "serde_json",
  "soundtouch",
  "symphonia",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
 ]

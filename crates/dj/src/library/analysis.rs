@@ -1,6 +1,11 @@
 //! Audio analysis for BPM detection and beat grid generation.
 //!
-//! Uses aubio for BPM detection and beat tracking, with FFT for waveform coloring.
+//! Uses a multi-method approach for robust BPM detection:
+//! - Queen Mary-style algorithm (Complex Domain onset + Viterbi tempo tracking)
+//! - Aubio Energy and SpecFlux modes
+//! - FFT autocorrelation fallback
+//!
+//! The QM-style algorithm is prioritized as it's the most accurate for most music.
 
 use std::fs::File;
 use std::path::Path;
@@ -16,6 +21,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
+use super::qm_tempo::{detect_tempo_qm, QmTempoConfig};
 use super::types::{BeatGrid, FrequencyBands, TrackId, TrackWaveform};
 
 /// Analysis configuration.
@@ -471,8 +477,11 @@ fn detect_bpm(samples: &[f32], sample_rate: u32, config: &AnalysisConfig) -> (f6
 
 /// Detect BPM and beat positions using multi-method consensus.
 ///
-/// Runs multiple detection methods (Energy, SpecFlux, FFT autocorrelation)
-/// and selects the best result based on confidence and dance tempo proximity.
+/// Runs multiple detection methods and selects the best result:
+/// 1. Queen Mary-style (Complex Domain + Viterbi) - most accurate, prioritized
+/// 2. Aubio Energy mode - good for kick drums in dance music
+/// 3. Aubio SpecFlux mode - aubio's recommended for general tempo detection
+/// 4. FFT autocorrelation - fallback
 ///
 /// Returns (bpm, confidence, beat_positions_in_seconds).
 fn detect_beats_aubio(
@@ -480,24 +489,38 @@ fn detect_beats_aubio(
     sample_rate: u32,
     config: &AnalysisConfig,
 ) -> (f64, f32, Vec<f64>) {
-    // Method 1: Energy mode (good for kick drums in dance music)
+    // Method 1: Queen Mary-style detection (highest priority)
+    let qm_config = QmTempoConfig {
+        fft_size: config.fft_size,
+        hop_size: config.hop_size,
+        min_bpm: config.min_bpm,
+        max_bpm: config.max_bpm,
+        ..QmTempoConfig::default()
+    };
+    let qm_result = detect_tempo_qm(samples, sample_rate, &qm_config);
+    let (bpm_qm, conf_qm, beats_qm) = (qm_result.bpm, qm_result.confidence, qm_result.beats);
+
+    // Method 2: Energy mode (good for kick drums in dance music)
     let (bpm_energy, conf_energy, beats_energy) =
         detect_beats_aubio_with_mode(samples, sample_rate, config, OnsetMode::Energy);
 
-    // Method 2: SpecFlux mode (aubio's recommended for general tempo detection)
+    // Method 3: SpecFlux mode (aubio's recommended for general tempo detection)
     let (bpm_specflux, conf_specflux, beats_specflux) =
         detect_beats_aubio_with_mode(samples, sample_rate, config, OnsetMode::SpecFlux);
 
-    // Method 3: FFT autocorrelation on bass envelope (fallback)
+    // Method 4: FFT autocorrelation on bass envelope (fallback)
     let (bpm_fft, conf_fft) = detect_bpm(samples, sample_rate, config);
 
     log::debug!(
-        "Multi-method BPM: Energy={:.2} (conf={:.2}), SpecFlux={:.2} (conf={:.2}), FFT={:.2} (conf={:.2})",
-        bpm_energy, conf_energy, bpm_specflux, conf_specflux, bpm_fft, conf_fft
+        "Multi-method BPM: QM={:.2} (conf={:.2}), Energy={:.2} (conf={:.2}), SpecFlux={:.2} (conf={:.2}), FFT={:.2} (conf={:.2})",
+        bpm_qm, conf_qm, bpm_energy, conf_energy, bpm_specflux, conf_specflux, bpm_fft, conf_fft
     );
 
-    // Select best result using consensus
-    select_best_bpm_consensus(
+    // Select best result using enhanced consensus with QM priority
+    select_best_bpm_consensus_with_qm(
+        bpm_qm,
+        conf_qm,
+        &beats_qm,
         bpm_energy,
         conf_energy,
         &beats_energy,
@@ -509,99 +532,179 @@ fn detect_beats_aubio(
     )
 }
 
-/// Select the best BPM from multiple detection methods using consensus.
+/// Select the best BPM from multiple detection methods using enhanced consensus with QM priority.
+///
+/// The Queen Mary-style detector is prioritized when:
+/// 1. It has good confidence (>= 0.4)
+/// 2. At least one other method agrees with it
 ///
 /// Scoring considers:
-/// - Detection confidence
+/// - Detection confidence (QM weighted higher)
 /// - Agreement between methods
 /// - Proximity to common dance tempos
-fn select_best_bpm_consensus(
-    bpm1: f64,
-    conf1: f32,
-    beats1: &[f64],
-    bpm2: f64,
-    conf2: f32,
-    beats2: &[f64],
-    bpm3: f64,
-    conf3: f32,
+#[allow(clippy::too_many_arguments)]
+fn select_best_bpm_consensus_with_qm(
+    bpm_qm: f64,
+    conf_qm: f32,
+    beats_qm: &[f64],
+    bpm_energy: f64,
+    conf_energy: f32,
+    beats_energy: &[f64],
+    bpm_specflux: f64,
+    conf_specflux: f32,
+    beats_specflux: &[f64],
+    bpm_fft: f64,
+    conf_fft: f32,
 ) -> (f64, f32, Vec<f64>) {
-    // Check if methods agree (within 2% or octave relationship)
-    let agree_1_2 = bpms_agree(bpm1, bpm2);
-    let agree_1_3 = bpms_agree(bpm1, bpm3);
-    let agree_2_3 = bpms_agree(bpm2, bpm3);
+    // Check agreement between methods
+    let qm_agrees_energy = bpms_agree(bpm_qm, bpm_energy);
+    let qm_agrees_specflux = bpms_agree(bpm_qm, bpm_specflux);
+    let qm_agrees_fft = bpms_agree(bpm_qm, bpm_fft);
+    let energy_agrees_specflux = bpms_agree(bpm_energy, bpm_specflux);
+    let energy_agrees_fft = bpms_agree(bpm_energy, bpm_fft);
+    let specflux_agrees_fft = bpms_agree(bpm_specflux, bpm_fft);
 
-    // If two or more methods agree, use that BPM
-    if agree_1_2 && agree_1_3 {
-        // All three agree - use method with highest confidence
-        if conf1 >= conf2 {
-            log::debug!("Consensus: all methods agree, using Energy ({:.2} BPM)", bpm1);
-            return (bpm1, (conf1 + conf2 + conf3) / 3.0, beats1.to_vec());
+    // Count how many methods agree with QM
+    let qm_agreement_count =
+        qm_agrees_energy as u32 + qm_agrees_specflux as u32 + qm_agrees_fft as u32;
+
+    // Priority 1: QM has good confidence and at least one other method agrees
+    if conf_qm >= 0.4 && qm_agreement_count >= 1 && !beats_qm.is_empty() {
+        let boost = 1.0 + (qm_agreement_count as f32 * 0.1); // Boost confidence with agreement
+        let combined_conf = (conf_qm * boost).min(1.0);
+        log::debug!(
+            "Consensus: QM wins with {} agreeing methods ({:.2} BPM, conf={:.2})",
+            qm_agreement_count,
+            bpm_qm,
+            combined_conf
+        );
+        return (bpm_qm, combined_conf, beats_qm.to_vec());
+    }
+
+    // Priority 2: QM has high confidence even without agreement
+    if conf_qm >= 0.6 && !beats_qm.is_empty() {
+        log::debug!(
+            "Consensus: QM wins on high confidence ({:.2} BPM, conf={:.2})",
+            bpm_qm,
+            conf_qm
+        );
+        return (bpm_qm, conf_qm, beats_qm.to_vec());
+    }
+
+    // Priority 3: Majority agreement among other methods
+    let other_agreement_count =
+        energy_agrees_specflux as u32 + energy_agrees_fft as u32 + specflux_agrees_fft as u32;
+
+    if other_agreement_count >= 2 {
+        // All three non-QM methods agree
+        let best_conf = conf_energy.max(conf_specflux);
+        if conf_energy >= conf_specflux {
+            log::debug!(
+                "Consensus: Energy/SpecFlux/FFT all agree, using Energy ({:.2} BPM)",
+                bpm_energy
+            );
+            return (bpm_energy, best_conf, beats_energy.to_vec());
         } else {
             log::debug!(
-                "Consensus: all methods agree, using SpecFlux ({:.2} BPM)",
-                bpm2
+                "Consensus: Energy/SpecFlux/FFT all agree, using SpecFlux ({:.2} BPM)",
+                bpm_specflux
             );
-            return (bpm2, (conf1 + conf2 + conf3) / 3.0, beats2.to_vec());
+            return (bpm_specflux, best_conf, beats_specflux.to_vec());
         }
-    } else if agree_1_2 {
-        // Energy and SpecFlux agree
-        let combined_conf = (conf1 + conf2) / 2.0;
-        if conf1 >= conf2 {
+    }
+
+    // Priority 4: Two methods agree
+    if energy_agrees_specflux {
+        let combined_conf = (conf_energy + conf_specflux) / 2.0;
+        if conf_energy >= conf_specflux {
             log::debug!(
                 "Consensus: Energy and SpecFlux agree, using Energy ({:.2} BPM)",
-                bpm1
+                bpm_energy
             );
-            return (bpm1, combined_conf, beats1.to_vec());
+            return (bpm_energy, combined_conf, beats_energy.to_vec());
         } else {
             log::debug!(
                 "Consensus: Energy and SpecFlux agree, using SpecFlux ({:.2} BPM)",
-                bpm2
+                bpm_specflux
             );
-            return (bpm2, combined_conf, beats2.to_vec());
+            return (bpm_specflux, combined_conf, beats_specflux.to_vec());
         }
-    } else if agree_1_3 {
-        // Energy and FFT agree
+    }
+
+    if energy_agrees_fft {
         log::debug!(
             "Consensus: Energy and FFT agree, using Energy ({:.2} BPM)",
-            bpm1
+            bpm_energy
         );
-        return (bpm1, (conf1 + conf3) / 2.0, beats1.to_vec());
-    } else if agree_2_3 {
-        // SpecFlux and FFT agree
+        return (
+            bpm_energy,
+            (conf_energy + conf_fft) / 2.0,
+            beats_energy.to_vec(),
+        );
+    }
+
+    if specflux_agrees_fft {
         log::debug!(
             "Consensus: SpecFlux and FFT agree, using SpecFlux ({:.2} BPM)",
-            bpm2
+            bpm_specflux
         );
-        return (bpm2, (conf2 + conf3) / 2.0, beats2.to_vec());
+        return (
+            bpm_specflux,
+            (conf_specflux + conf_fft) / 2.0,
+            beats_specflux.to_vec(),
+        );
     }
 
-    // No agreement - score each by confidence and tempo preference
-    let score1 = conf1 as f64 * 10.0 - tempo_preference_score(bpm1) * 0.5;
-    let score2 = conf2 as f64 * 10.0 - tempo_preference_score(bpm2) * 0.5;
-    let score3 = conf3 as f64 * 10.0 - tempo_preference_score(bpm3) * 0.5;
+    // Priority 5: No agreement - use weighted scoring
+    // QM gets a 1.5x weight since it uses more sophisticated analysis
+    let score_qm = conf_qm as f64 * 15.0 - tempo_preference_score(bpm_qm) * 0.3;
+    let score_energy = conf_energy as f64 * 10.0 - tempo_preference_score(bpm_energy) * 0.5;
+    let score_specflux = conf_specflux as f64 * 10.0 - tempo_preference_score(bpm_specflux) * 0.5;
+    let score_fft = conf_fft as f64 * 10.0 - tempo_preference_score(bpm_fft) * 0.5;
 
-    if score1 >= score2 && score1 >= score3 {
-        log::debug!(
-            "Consensus: no agreement, using Energy ({:.2} BPM, score={:.2})",
-            bpm1,
-            score1
-        );
-        (bpm1, conf1, beats1.to_vec())
-    } else if score2 >= score3 {
-        log::debug!(
-            "Consensus: no agreement, using SpecFlux ({:.2} BPM, score={:.2})",
-            bpm2,
-            score2
-        );
-        (bpm2, conf2, beats2.to_vec())
-    } else {
-        // FFT method doesn't provide beats, use Energy's beats with FFT's BPM
-        log::debug!(
-            "Consensus: no agreement, using FFT BPM ({:.2}) with Energy beats",
-            bpm3
-        );
-        (bpm3, conf3, beats1.to_vec())
+    // Find the best score
+    let mut best_score = score_qm;
+    let mut best_method = "QM";
+    let mut best_bpm = bpm_qm;
+    let mut best_conf = conf_qm;
+    let mut best_beats = beats_qm;
+
+    if score_energy > best_score {
+        best_score = score_energy;
+        best_method = "Energy";
+        best_bpm = bpm_energy;
+        best_conf = conf_energy;
+        best_beats = beats_energy;
     }
+    if score_specflux > best_score {
+        best_score = score_specflux;
+        best_method = "SpecFlux";
+        best_bpm = bpm_specflux;
+        best_conf = conf_specflux;
+        best_beats = beats_specflux;
+    }
+    if score_fft > best_score {
+        best_method = "FFT";
+        best_bpm = bpm_fft;
+        best_conf = conf_fft;
+        // FFT doesn't provide beats, use the best available
+        best_beats = if !beats_qm.is_empty() {
+            beats_qm
+        } else if !beats_energy.is_empty() {
+            beats_energy
+        } else {
+            beats_specflux
+        };
+    }
+
+    log::debug!(
+        "Consensus: no agreement, using {} ({:.2} BPM, score={:.2})",
+        best_method,
+        best_bpm,
+        best_score
+    );
+
+    (best_bpm, best_conf, best_beats.to_vec())
 }
 
 /// Validate and correct beat grid to ensure intervals match the detected BPM.

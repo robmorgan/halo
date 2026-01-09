@@ -47,5 +47,10 @@ dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0"
 
+[features]
+# Enable BPM accuracy tests that require external audio files
+accuracy-tests = []
+
 [dev-dependencies]
 env_logger = "0.11"
+tempfile = "3.15"
