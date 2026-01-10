@@ -93,11 +93,16 @@ impl WaveformTexture {
         let num_samples = waveform.len();
         let samples_per_pixel = num_samples as f32 / texture_width as f32;
 
+        // First pass: calculate heights for all columns to enable smooth connections
+        let mut heights: Vec<usize> = Vec::with_capacity(texture_width);
+        let mut sample_colors: Vec<Color32> = Vec::with_capacity(texture_width);
+
         for x in 0..texture_width {
             let sample_idx = (x as f32 * samples_per_pixel) as usize;
             if sample_idx < num_samples {
                 let amplitude = waveform[sample_idx].abs();
                 let height = (amplitude * (TEXTURE_HEIGHT / 2) as f32 * 0.95) as usize;
+                heights.push(height);
 
                 // Get color for this sample
                 let color = if let Some(ref color_data) = colors {
@@ -110,15 +115,60 @@ impl WaveformTexture {
                 } else {
                     gradient_color(sample_idx as f64 / num_samples as f64)
                 };
+                sample_colors.push(color);
+            } else {
+                heights.push(0);
+                sample_colors.push(Color32::TRANSPARENT);
+            }
+        }
 
-                // Draw vertical line (symmetric around center)
-                for dy in 0..=height {
-                    if mid_y + dy < TEXTURE_HEIGHT {
-                        pixels[(mid_y + dy) * texture_width + x] = color;
-                    }
-                    if mid_y >= dy {
-                        pixels[(mid_y - dy) * texture_width + x] = color;
-                    }
+        // Second pass: draw outline-style waveform (connecting adjacent peaks)
+        for x in 0..texture_width {
+            let height = heights[x];
+            let color = sample_colors[x];
+
+            if height == 0 {
+                continue;
+            }
+
+            // Get adjacent heights for smooth connections
+            let prev_height = if x > 0 { heights[x - 1] } else { height };
+            let next_height = if x + 1 < texture_width {
+                heights[x + 1]
+            } else {
+                height
+            };
+
+            // Calculate the range to fill for smooth diagonal connections
+            let min_height = height.min(prev_height).min(next_height);
+            let max_height = height.max(prev_height).max(next_height);
+
+            // Draw the outline edge with smooth connections to neighbors
+            // Fill from min to max height to create connected envelope
+            for dy in min_height..=max_height {
+                // Top edge (above center)
+                if mid_y + dy < TEXTURE_HEIGHT {
+                    pixels[(mid_y + dy) * texture_width + x] = color;
+                }
+                // Bottom edge (below center)
+                if mid_y >= dy {
+                    pixels[(mid_y - dy) * texture_width + x] = color;
+                }
+            }
+
+            // Add a subtle fill inside the envelope (dimmed version of color)
+            let fill_color = Color32::from_rgba_unmultiplied(
+                color.r() / 3,
+                color.g() / 3,
+                color.b() / 3,
+                180,
+            );
+            for dy in 1..min_height {
+                if mid_y + dy < TEXTURE_HEIGHT {
+                    pixels[(mid_y + dy) * texture_width + x] = fill_color;
+                }
+                if mid_y >= dy {
+                    pixels[(mid_y - dy) * texture_width + x] = fill_color;
                 }
             }
         }
