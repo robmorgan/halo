@@ -21,8 +21,12 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
+#[cfg(not(feature = "qm-native"))]
 use super::qm_tempo::{detect_tempo_qm, QmTempoConfig};
 use super::types::{BeatGrid, FrequencyBands, TrackId, TrackWaveform};
+
+#[cfg(feature = "qm-native")]
+use super::qm_native::{median_tempo, NativeTempoTracker};
 
 /// Analysis configuration.
 #[derive(Debug, Clone)]
@@ -479,6 +483,7 @@ fn detect_bpm(samples: &[f32], sample_rate: u32, config: &AnalysisConfig) -> (f6
 ///
 /// Runs multiple detection methods and selects the best result:
 /// 1. Queen Mary-style (Complex Domain + Viterbi) - most accurate, prioritized
+///    When qm-native feature is enabled, uses actual C++ QM-DSP library.
 /// 2. Aubio Energy mode - good for kick drums in dance music
 /// 3. Aubio SpecFlux mode - aubio's recommended for general tempo detection
 /// 4. FFT autocorrelation - fallback
@@ -490,15 +495,25 @@ fn detect_beats_aubio(
     config: &AnalysisConfig,
 ) -> (f64, f32, Vec<f64>) {
     // Method 1: Queen Mary-style detection (highest priority)
-    let qm_config = QmTempoConfig {
-        fft_size: config.fft_size,
-        hop_size: config.hop_size,
-        min_bpm: config.min_bpm,
-        max_bpm: config.max_bpm,
-        ..QmTempoConfig::default()
+    // Use native C++ QM-DSP when feature is enabled, otherwise use Rust implementation
+    #[cfg(feature = "qm-native")]
+    let (bpm_qm, conf_qm, beats_qm) = {
+        log::debug!("Using native QM-DSP C++ library for tempo detection");
+        detect_tempo_native(samples, sample_rate, config)
     };
-    let qm_result = detect_tempo_qm(samples, sample_rate, &qm_config);
-    let (bpm_qm, conf_qm, beats_qm) = (qm_result.bpm, qm_result.confidence, qm_result.beats);
+
+    #[cfg(not(feature = "qm-native"))]
+    let (bpm_qm, conf_qm, beats_qm) = {
+        let qm_config = QmTempoConfig {
+            fft_size: config.fft_size,
+            hop_size: config.hop_size,
+            min_bpm: config.min_bpm,
+            max_bpm: config.max_bpm,
+            ..QmTempoConfig::default()
+        };
+        let qm_result = detect_tempo_qm(samples, sample_rate, &qm_config);
+        (qm_result.bpm, qm_result.confidence, qm_result.beats)
+    };
 
     // Method 2: Energy mode (good for kick drums in dance music)
     let (bpm_energy, conf_energy, beats_energy) =
@@ -1208,6 +1223,159 @@ fn calculate_bass_onset_envelope(
     }
 
     onset_env
+}
+
+/// Detect BPM using native QM-DSP TempoTrackV2 library.
+///
+/// This uses the actual C++ QM-DSP implementation for maximum accuracy.
+/// The detection function is computed from spectral flux in bass frequencies.
+#[cfg(feature = "qm-native")]
+pub fn detect_tempo_native(
+    samples: &[f32],
+    sample_rate: u32,
+    config: &AnalysisConfig,
+) -> (f64, f32, Vec<f64>) {
+    if samples.len() < sample_rate as usize * 4 {
+        return (120.0, 0.0, Vec::new());
+    }
+
+    // Use spectral flux detection function (similar to QM-DSP's Complex onset mode)
+    let df = compute_detection_function_for_native(samples, sample_rate, config);
+
+    if df.len() < 256 {
+        log::warn!("Detection function too short for native QM-DSP");
+        return (120.0, 0.0, Vec::new());
+    }
+
+    // Create native tracker with sample rate and hop size
+    let mut tracker = NativeTempoTracker::new(sample_rate as f32, config.hop_size as i32);
+
+    // Calculate beat periods and tempi
+    let (beat_periods, tempi) = tracker.calculate_beat_period(&df);
+
+    if tempi.is_empty() {
+        log::warn!("Native QM-DSP returned no tempo estimates");
+        return (120.0, 0.0, Vec::new());
+    }
+
+    // Get median BPM from per-frame tempi
+    let raw_bpm = median_tempo(&tempi);
+
+    // Apply octave correction for dance music
+    let bpm = correct_octave_errors_dance(raw_bpm, config.min_bpm, config.max_bpm);
+
+    // Calculate beat positions from beat periods
+    let beats_frames = tracker.calculate_beats(&df, &beat_periods);
+
+    // Convert beat positions from frame units to seconds
+    let hop_time = config.hop_size as f64 / sample_rate as f64;
+    let beats: Vec<f64> = beats_frames
+        .iter()
+        .map(|&frame| frame * hop_time)
+        .collect();
+
+    // Calculate confidence based on tempo estimate consistency
+    let confidence = if tempi.len() > 10 {
+        let mean = tempi.iter().sum::<f64>() / tempi.len() as f64;
+        let variance =
+            tempi.iter().map(|&t| (t - mean).powi(2)).sum::<f64>() / tempi.len() as f64;
+        let std_dev = variance.sqrt();
+        let cv = std_dev / mean; // Coefficient of variation
+        // Lower CV = more consistent = higher confidence
+        (1.0 - cv.min(0.5) * 2.0).max(0.3) as f32
+    } else {
+        0.5
+    };
+
+    log::debug!(
+        "Native QM-DSP: raw={:.2} BPM, corrected={:.2} BPM, confidence={:.2}, {} beats",
+        raw_bpm,
+        bpm,
+        confidence,
+        beats.len()
+    );
+
+    (bpm, confidence, beats)
+}
+
+/// Compute detection function for native QM-DSP tempo tracker.
+///
+/// Uses complex spectral difference (similar to QM-DSP's ComplexOD onset detector).
+#[cfg(feature = "qm-native")]
+fn compute_detection_function_for_native(
+    samples: &[f32],
+    _sample_rate: u32,
+    config: &AnalysisConfig,
+) -> Vec<f64> {
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(config.fft_size);
+
+    let mut df = Vec::new();
+    let mut prev_mag = vec![0.0f32; config.fft_size / 2 + 1];
+    let mut prev_phase = vec![0.0f32; config.fft_size / 2 + 1];
+    let mut prev_prev_phase = vec![0.0f32; config.fft_size / 2 + 1];
+
+    // Hanning window
+    let window: Vec<f32> = (0..config.fft_size)
+        .map(|i| {
+            0.5 * (1.0
+                - (2.0 * std::f32::consts::PI * i as f32 / (config.fft_size - 1) as f32).cos())
+        })
+        .collect();
+
+    for start in (0..samples.len().saturating_sub(config.fft_size)).step_by(config.hop_size) {
+        // Apply window and compute FFT
+        let mut buffer: Vec<Complex<f32>> = samples[start..start + config.fft_size]
+            .iter()
+            .zip(window.iter())
+            .map(|(s, w)| Complex::new(s * w, 0.0))
+            .collect();
+
+        fft.process(&mut buffer);
+
+        // Complex spectral difference (CSD) detection function
+        // Measures both magnitude and phase changes
+        let mut sum = 0.0f64;
+
+        for (bin, c) in buffer.iter().enumerate().take(config.fft_size / 2 + 1) {
+            let mag = c.norm();
+            let phase = c.arg();
+
+            // Phase deviation: difference from expected phase based on previous two frames
+            let expected_phase = 2.0 * prev_phase[bin] - prev_prev_phase[bin];
+            let phase_dev = princarg(phase - expected_phase);
+
+            // Target magnitude and phase for "no change" case
+            let target = Complex::from_polar(prev_mag[bin], expected_phase);
+            let actual = Complex::new(mag * phase_dev.cos(), mag * phase_dev.sin());
+
+            // Euclidean distance in complex plane (half-wave rectified)
+            let diff = (actual - target).norm();
+            sum += diff as f64;
+
+            // Store for next frame
+            prev_prev_phase[bin] = prev_phase[bin];
+            prev_phase[bin] = phase;
+            prev_mag[bin] = mag;
+        }
+
+        df.push(sum);
+    }
+
+    df
+}
+
+/// Principal argument function: wrap phase to [-π, π)
+#[cfg(feature = "qm-native")]
+fn princarg(phase: f32) -> f32 {
+    let mut p = phase;
+    while p >= std::f32::consts::PI {
+        p -= 2.0 * std::f32::consts::PI;
+    }
+    while p < -std::f32::consts::PI {
+        p += 2.0 * std::f32::consts::PI;
+    }
+    p
 }
 
 /// Generate colored waveform with 3-band frequency analysis for visualization.

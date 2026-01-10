@@ -2017,6 +2017,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "aubio-rs",
+ "cc",
  "chrono",
  "cpal 0.17.0",
  "dirs",
