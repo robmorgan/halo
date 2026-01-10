@@ -197,8 +197,20 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Create the async console with loaded settings
-    let console =
+    let mut console =
         LightingConsole::new_with_settings(80., network_config.clone(), settings.clone()).unwrap();
+
+    // Register the DJ module
+    console.register_module(Box::new(halo_dj::DjModule::new()));
+
+    // Register the Push 2 module if enabled
+    if settings.push2_enabled {
+        console.register_module(Box::new(halo_push2::Push2Module::new()));
+        println!("Push 2 support: enabled");
+        println!("  (USB display diagnostics will appear during initialization)");
+    } else {
+        println!("Push 2 support: disabled (set push2_enabled: true in config.json to enable)");
+    }
 
     // // Blue Strobe Fast
     // console.add_midi_override(
@@ -254,10 +266,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Spawn the console task with channel communication
     let console_task = tokio::spawn(async move {
+        eprintln!("DEBUG: Console task started");
         // Run the console with channels
         if let Err(e) = console.run_with_channels(command_rx, event_tx).await {
             println!("Console error: {}", e);
         }
+        eprintln!("DEBUG: Console task ended");
     });
 
     // Store the show file path for later loading after UI starts

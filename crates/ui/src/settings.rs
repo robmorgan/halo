@@ -49,6 +49,9 @@ pub struct SettingsPanel {
     // Fixture settings
     pub enable_pan_tilt_limits: bool,
 
+    // Push 2 settings
+    pub push2_enabled: bool,
+
     // Internal state
     initialized: bool,
 }
@@ -89,6 +92,9 @@ impl Default for SettingsPanel {
 
             // Fixture defaults
             enable_pan_tilt_limits: true,
+
+            // Push 2 defaults
+            push2_enabled: false,
 
             // Internal state
             initialized: false,
@@ -144,6 +150,9 @@ impl SettingsPanel {
 
         // Load fixture settings
         self.enable_pan_tilt_limits = settings.enable_pan_tilt_limits;
+
+        // Load Push 2 settings
+        self.push2_enabled = settings.push2_enabled;
     }
 
     pub fn render(
@@ -618,6 +627,8 @@ impl SettingsPanel {
             pixel_universe_mapping: std::collections::HashMap::new(),
 
             enable_pan_tilt_limits: self.enable_pan_tilt_limits,
+
+            push2_enabled: self.push2_enabled,
         };
 
         // Send update command

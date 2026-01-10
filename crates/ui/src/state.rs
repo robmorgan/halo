@@ -1,12 +1,68 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use halo_core::audio::waveform::WaveformData;
 use halo_core::{
-    AudioDeviceInfo, ConsoleCommand, CueList, PlaybackState, RhythmState, Settings, Show, TimeCode,
+    AudioDeviceInfo, ConsoleCommand, CueList, DjTrackInfo, PlaybackState, RhythmState, Settings,
+    Show, TimeCode,
 };
 use halo_fixtures::{Fixture, FixtureLibrary};
 use tokio::sync::mpsc;
+
+/// State for a DJ deck.
+#[derive(Debug, Clone)]
+pub struct DjDeckState {
+    pub track_title: Option<String>,
+    pub track_artist: Option<String>,
+    pub duration_seconds: f64,
+    pub position_seconds: f64,
+    pub bpm: Option<f64>,
+    pub is_playing: bool,
+    pub waiting_for_quantized_start: bool,
+    pub cue_point: Option<f64>,
+    /// Waveform samples (Arc for zero-copy sharing between state and UI).
+    pub waveform: Arc<Vec<f32>>,
+    /// 3-band frequency data for colored waveform (low, mid, high).
+    /// Arc for zero-copy sharing. None for legacy tracks without frequency analysis.
+    pub waveform_colors: Option<Arc<Vec<(f32, f32, f32)>>>,
+    pub beat_positions: Vec<f64>,
+    pub first_beat_offset: f64,
+    pub master_tempo_enabled: bool,
+    pub tempo_range: u8,    // 0=±6%, 1=±10%, 2=±16%, 3=Wide (±100%)
+    pub pitch_percent: f64, // Pitch fader position (-1.0 to 1.0)
+    // Loop state
+    pub loop_in: Option<f64>,
+    pub loop_out: Option<f64>,
+    pub loop_active: bool,
+    pub loop_beat_count: f64,
+}
+
+impl Default for DjDeckState {
+    fn default() -> Self {
+        Self {
+            track_title: None,
+            track_artist: None,
+            duration_seconds: 0.0,
+            position_seconds: 0.0,
+            bpm: None,
+            is_playing: false,
+            waiting_for_quantized_start: false,
+            cue_point: None,
+            waveform: Arc::new(Vec::new()),
+            waveform_colors: None,
+            beat_positions: Vec::new(),
+            first_beat_offset: 0.0,
+            master_tempo_enabled: false,
+            tempo_range: 1,
+            pitch_percent: 0.0,
+            loop_in: None,
+            loop_out: None,
+            loop_active: false,
+            loop_beat_count: 4.0,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ConsoleState {
@@ -39,6 +95,11 @@ pub struct ConsoleState {
     pub audio_duration: Option<f64>,
     pub audio_bpm: Option<f64>,
     pub pixel_data: HashMap<usize, Vec<(u8, u8, u8)>>,
+    pub dj_tracks: Vec<DjTrackInfo>,
+    pub dj_deck_a: DjDeckState,
+    pub dj_deck_b: DjDeckState,
+    pub status_message: Option<String>,
+    pub status_progress: Option<(usize, usize, f32)>, // (current, total, intra_track_progress)
 }
 
 impl Default for ConsoleState {
@@ -65,6 +126,8 @@ impl Default for ConsoleState {
                 bars_per_phrase: 4,
                 last_tap_time: None,
                 tap_count: 0,
+                bpm: 120.0,
+                tempo_source: halo_core::TempoSource::Internal,
             },
             show: None,
             timecode: None,
@@ -81,6 +144,11 @@ impl Default for ConsoleState {
             audio_duration: None,
             audio_bpm: None,
             pixel_data: HashMap::new(),
+            dj_tracks: Vec::new(),
+            dj_deck_a: DjDeckState::default(),
+            dj_deck_b: DjDeckState::default(),
+            status_message: None,
+            status_progress: None,
         }
     }
 }
@@ -242,6 +310,206 @@ impl ConsoleState {
                 for (fixture_id, pixels) in pixel_data {
                     self.pixel_data.insert(fixture_id, pixels);
                 }
+            }
+            halo_core::ConsoleEvent::DjLibraryTracks { tracks } => {
+                self.dj_tracks = tracks;
+            }
+            halo_core::ConsoleEvent::DjTrackLoaded {
+                deck,
+                track_id: _,
+                title,
+                artist,
+                duration_seconds,
+                bpm,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.track_title = Some(title);
+                deck_state.track_artist = artist;
+                deck_state.duration_seconds = duration_seconds;
+                deck_state.bpm = bpm;
+                deck_state.position_seconds = 0.0;
+                deck_state.is_playing = false; // Reset play state when new track is loaded
+                deck_state.waiting_for_quantized_start = false;
+                deck_state.cue_point = None; // Clear cue point for new track
+                deck_state.waveform = Arc::new(Vec::new()); // Clear previous waveform immediately
+                deck_state.waveform_colors = None; // Clear previous color data
+                deck_state.loop_in = None; // Clear loop state
+                deck_state.loop_out = None;
+                deck_state.loop_active = false;
+            }
+            halo_core::ConsoleEvent::DjDeckStateChanged {
+                deck,
+                is_playing,
+                position_seconds,
+                bpm,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.is_playing = is_playing;
+                deck_state.position_seconds = position_seconds;
+                // Detect quantized sync wait state: position is negative (virtual countdown)
+                deck_state.waiting_for_quantized_start = position_seconds < 0.0;
+                if let Some(new_bpm) = bpm {
+                    deck_state.bpm = Some(new_bpm);
+                }
+            }
+            halo_core::ConsoleEvent::DjCuePointSet {
+                deck,
+                position_seconds,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.cue_point = Some(position_seconds);
+            }
+            halo_core::ConsoleEvent::DjWaveformProgress {
+                deck,
+                samples,
+                frequency_bands,
+                progress: _,
+            } => {
+                // Progressive waveform update - replace with partial samples
+                // Only update actual decks (0 or 1), ignore library analysis (255)
+                if deck == 0 {
+                    self.dj_deck_a.waveform = samples;
+                    self.dj_deck_a.waveform_colors = frequency_bands;
+                } else if deck == 1 {
+                    self.dj_deck_b.waveform = samples;
+                    self.dj_deck_b.waveform_colors = frequency_bands;
+                }
+                // deck == 255 is library analysis, ignore for deck display
+            }
+            halo_core::ConsoleEvent::DjWaveformLoaded {
+                deck,
+                samples,
+                frequency_bands,
+                duration_seconds: _,
+            } => {
+                // Final waveform - replace with complete samples
+                // Only update actual decks (0 or 1), ignore library analysis (255)
+                if deck == 0 {
+                    self.dj_deck_a.waveform = samples;
+                    self.dj_deck_a.waveform_colors = frequency_bands;
+                } else if deck == 1 {
+                    self.dj_deck_b.waveform = samples;
+                    self.dj_deck_b.waveform_colors = frequency_bands;
+                }
+                // deck == 255 is library analysis, ignore for deck display
+            }
+            halo_core::ConsoleEvent::DjBeatGridLoaded {
+                deck,
+                beat_positions,
+                first_beat_offset,
+                bpm: _,
+                is_nudge,
+            } => {
+                // Only update actual decks (0 or 1)
+                if deck == 0 {
+                    self.dj_deck_a.beat_positions = beat_positions;
+                    self.dj_deck_a.first_beat_offset = first_beat_offset;
+                    // Only sync position on initial load, not on nudge adjustments
+                    if !is_nudge {
+                        self.dj_deck_a.position_seconds = first_beat_offset;
+                    }
+                } else if deck == 1 {
+                    self.dj_deck_b.beat_positions = beat_positions;
+                    self.dj_deck_b.first_beat_offset = first_beat_offset;
+                    // Only sync position on initial load, not on nudge adjustments
+                    if !is_nudge {
+                        self.dj_deck_b.position_seconds = first_beat_offset;
+                    }
+                }
+            }
+            halo_core::ConsoleEvent::DjMasterTempoChanged { deck, enabled } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.master_tempo_enabled = enabled;
+            }
+            halo_core::ConsoleEvent::DjTempoRangeChanged { deck, range } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.tempo_range = range;
+            }
+            halo_core::ConsoleEvent::DjLoopStateChanged {
+                deck,
+                loop_in,
+                loop_out,
+                active,
+                beat_count,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.loop_in = loop_in;
+                deck_state.loop_out = loop_out;
+                deck_state.loop_active = active;
+                deck_state.loop_beat_count = beat_count;
+            }
+            halo_core::ConsoleEvent::DjAnalysisProgress {
+                track_name,
+                current,
+                total,
+                progress,
+                ..
+            } => {
+                self.status_message = Some(format!("Analyzing {}", track_name));
+                self.status_progress = Some((current, total, progress));
+            }
+            halo_core::ConsoleEvent::DjAnalysisComplete { track_id, bpm } => {
+                // Update the track's BPM in our local list
+                if let Some(track) = self.dj_tracks.iter_mut().find(|t| t.id == track_id) {
+                    track.bpm = bpm;
+                }
+            }
+            halo_core::ConsoleEvent::StatusClear => {
+                self.status_message = None;
+                self.status_progress = None;
+            }
+            halo_core::ConsoleEvent::DjImportProgress {
+                current,
+                total,
+                current_file,
+            } => {
+                // Extract just the filename from the path for display
+                let filename = std::path::Path::new(&current_file)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&current_file);
+                self.status_message = Some(format!("Importing {}", filename));
+                // Import progress doesn't have intra-track progress, use 0.0
+                self.status_progress = Some((current, total, 0.0));
+            }
+            halo_core::ConsoleEvent::DjPitchChanged {
+                deck,
+                pitch_percent,
+                tempo_range,
+                adjusted_bpm,
+            } => {
+                let deck_state = if deck == 0 {
+                    &mut self.dj_deck_a
+                } else {
+                    &mut self.dj_deck_b
+                };
+                deck_state.pitch_percent = pitch_percent;
+                deck_state.tempo_range = tempo_range;
+                deck_state.bpm = Some(adjusted_bpm);
             }
             _ => {
                 // Handle other events as needed

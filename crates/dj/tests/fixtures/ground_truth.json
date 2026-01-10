@@ -1,0 +1,4656 @@
+{
+  "version": 1,
+  "dataset": "giantsteps-tempo",
+  "description": "BPM ground truth from GiantSteps Tempo Dataset (crowdsourced corrections)",
+  "source": "https://github.com/GiantSteps/giantsteps-tempo-dataset",
+  "tracks": [
+    {
+      "filename": "1030011.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "1068430.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1084996.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "1092771.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1114156.LOFI.mp3",
+      "expected_bpm": 86.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "1118326.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "1120171.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1171800.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1174239.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "1177875.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "1183908.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1198571.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "122772.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1234668.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1234669.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1234745.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1234750.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1240669.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1240672.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1317507.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1327052.LOFI.mp3",
+      "expected_bpm": 0.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "1329955.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "1380256.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1418652.LOFI.mp3",
+      "expected_bpm": 66.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1424458.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1461087.LOFI.mp3",
+      "expected_bpm": 90.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1469706.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "1479462.LOFI.mp3",
+      "expected_bpm": 99.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1514866.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1548088.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1556416.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "1560139.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1560729.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "1562235.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "1569136.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "1623443.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "1626348.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1676961.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1698047.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "172384.LOFI.mp3",
+      "expected_bpm": 84.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "1728723.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1735621.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1743969.LOFI.mp3",
+      "expected_bpm": 79.0,
+      "tolerance_percent": 2.0,
+      "genre": "pop-rock",
+      "notes": ""
+    },
+    {
+      "filename": "1747518.LOFI.mp3",
+      "expected_bpm": 71.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "1753073.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "1765409.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "1791554.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1816200.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1817444.LOFI.mp3",
+      "expected_bpm": 172.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1825982.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "1839656.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1842615.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "1851619.LOFI.mp3",
+      "expected_bpm": 99.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "1855660.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1874244.LOFI.mp3",
+      "expected_bpm": 71.0,
+      "tolerance_percent": 2.0,
+      "genre": "reggae-dub",
+      "notes": ""
+    },
+    {
+      "filename": "1885798.LOFI.mp3",
+      "expected_bpm": 101.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "1889739.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "1889844.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1896782.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1905591.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1905592.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1918704.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1921248.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "1929611.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "1943706.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1950701.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "1955621.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "1960598.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "1968659.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "1973680.LOFI.mp3",
+      "expected_bpm": 80.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "1974485.LOFI.mp3",
+      "expected_bpm": 167.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "1982430.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "1982431.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "2013128.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "2022116.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "2039114.LOFI.mp3",
+      "expected_bpm": 119.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "2048806.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "2061919.LOFI.mp3",
+      "expected_bpm": 141.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "2071203.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "2083393.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "2083969.LOFI.mp3",
+      "expected_bpm": 69.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "2088277.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "2088281.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "210560.LOFI.mp3",
+      "expected_bpm": 78.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "220883.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "2422602.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "2432724.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "2442269.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "2673896.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "2676246.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "2676506.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "2677224.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "2702022.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "2703359.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "2704868.LOFI.mp3",
+      "expected_bpm": 133.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "2706792.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "2720752.LOFI.mp3",
+      "expected_bpm": 112.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "2725284.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "2725286.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "2725352.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "2725358.LOFI.mp3",
+      "expected_bpm": 141.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "2725361.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "2726350.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "2726353.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "2726355.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "2734649.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "2734862.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "2741734.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "2745205.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "2751688.LOFI.mp3",
+      "expected_bpm": 120.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "2757093.LOFI.mp3",
+      "expected_bpm": 81.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "2759853.LOFI.mp3",
+      "expected_bpm": 130.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "278893.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "28952.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "2992360.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "3013673.LOFI.mp3",
+      "expected_bpm": 156.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "3013772.LOFI.mp3",
+      "expected_bpm": 83.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3016341.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "3023605.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "3040535.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3041381.LOFI.mp3",
+      "expected_bpm": 0.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3041383.LOFI.mp3",
+      "expected_bpm": 0.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3058700.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3059880.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3062661.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3069960.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3079792.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "3088145.LOFI.mp3",
+      "expected_bpm": 64.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3089629.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3091433.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3091814.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "3097674.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3101046.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "310291.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3109241.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3116297.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3124242.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3125254.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3128068.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "3128701.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3130573.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3134837.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3151015.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "pop-rock",
+      "notes": ""
+    },
+    {
+      "filename": "3158774.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3165747.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3167057.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3169408.LOFI.mp3",
+      "expected_bpm": 112.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "3173482.LOFI.mp3",
+      "expected_bpm": 83.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3173803.LOFI.mp3",
+      "expected_bpm": 188.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "3181214.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3188462.LOFI.mp3",
+      "expected_bpm": 115.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "3189712.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3190021.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3190084.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3194652.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3202338.LOFI.mp3",
+      "expected_bpm": 80.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "3208076.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3209004.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3209061.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3211234.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3213176.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3218565.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "3218804.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3220340.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3226171.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3226172.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3226180.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3230477.LOFI.mp3",
+      "expected_bpm": 101.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3230949.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3241615.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3244386.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3247762.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "3261686.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "3261883.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3264338.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3267829.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3269490.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3269670.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3281282.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3289180.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "3291017.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3297802.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "3298908.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3303241.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3304445.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3312045.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3313129.LOFI.mp3",
+      "expected_bpm": 85.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3317417.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3333492.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "333579.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3336126.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3336604.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3343760.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3344148.LOFI.mp3",
+      "expected_bpm": 109.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "3349486.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3368053.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3368054.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3368055.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3370500.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3372883.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3377892.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3383105.LOFI.mp3",
+      "expected_bpm": 81.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3387888.LOFI.mp3",
+      "expected_bpm": 88.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3391054.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3398611.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "3403794.LOFI.mp3",
+      "expected_bpm": 192.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "3405537.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3409480.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3412362.LOFI.mp3",
+      "expected_bpm": 119.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3414605.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "3414746.LOFI.mp3",
+      "expected_bpm": 86.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "3419452.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3428474.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "3433621.LOFI.mp3",
+      "expected_bpm": 85.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "3435022.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3439626.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3443201.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "344470.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "3453642.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3460093.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3460094.LOFI.mp3",
+      "expected_bpm": 171.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3467867.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3471827.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3475669.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3475672.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3480108.LOFI.mp3",
+      "expected_bpm": 130.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "3482508.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3482510.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3482733.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3484119.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "3485917.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3486206.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3492833.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3493047.LOFI.mp3",
+      "expected_bpm": 141.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3509304.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3511308.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "3512227.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3519546.LOFI.mp3",
+      "expected_bpm": 167.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3520036.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3530058.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3534448.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "3535112.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3535520.LOFI.mp3",
+      "expected_bpm": 110.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "3558940.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3564559.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3565815.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3566606.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3574815.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3577628.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3577631.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3593643.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3596904.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3605780.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3612407.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3618176.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3621649.LOFI.mp3",
+      "expected_bpm": 178.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3629920.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3630279.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3630280.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3638589.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "3640677.LOFI.mp3",
+      "expected_bpm": 115.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3642438.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3649527.LOFI.mp3",
+      "expected_bpm": 90.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "3649559.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3650152.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3651620.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "3655121.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3656301.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3658743.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "365981.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3660450.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3661855.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3665864.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3674961.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3678548.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3682931.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "368533.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3692859.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3696445.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3703893.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3706845.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3711752.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "3721308.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3724279.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3725208.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3730279.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "3733281.LOFI.mp3",
+      "expected_bpm": 70.0,
+      "tolerance_percent": 2.0,
+      "genre": "reggae-dub",
+      "notes": ""
+    },
+    {
+      "filename": "3741346.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3742708.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "3743957.LOFI.mp3",
+      "expected_bpm": 85.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3746398.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3752371.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "3754674.LOFI.mp3",
+      "expected_bpm": 71.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3766995.LOFI.mp3",
+      "expected_bpm": 95.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "3783220.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "3787878.LOFI.mp3",
+      "expected_bpm": 130.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3789981.LOFI.mp3",
+      "expected_bpm": 86.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3790342.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3792954.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "3801596.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "3807114.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3809763.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "3813277.LOFI.mp3",
+      "expected_bpm": 110.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "3818797.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3819089.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "3824612.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "3828895.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "3829043.LOFI.mp3",
+      "expected_bpm": 85.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3835017.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3853293.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3853477.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3863423.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3863498.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "hip-hop",
+      "notes": ""
+    },
+    {
+      "filename": "3865706.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3871968.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3873406.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "3873575.LOFI.mp3",
+      "expected_bpm": 88.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3875632.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3875836.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3877057.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3879813.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "3883083.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3883902.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3886051.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "3886124.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3889689.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "3892740.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "pop-rock",
+      "notes": ""
+    },
+    {
+      "filename": "3902915.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "3907042.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3914630.LOFI.mp3",
+      "expected_bpm": 86.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3920460.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "3928924.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3942754.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "3958395.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "funk-r-and-b",
+      "notes": ""
+    },
+    {
+      "filename": "3961040.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3961797.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "3962200.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "3964688.LOFI.mp3",
+      "expected_bpm": 110.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "3970827.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "3980001.LOFI.mp3",
+      "expected_bpm": 167.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "3981797.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "3983645.LOFI.mp3",
+      "expected_bpm": 110.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "3983646.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "400259.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4004314.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "4004668.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4005630.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4006551.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4012083.LOFI.mp3",
+      "expected_bpm": 167.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4014747.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4014749.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4017608.LOFI.mp3",
+      "expected_bpm": 101.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4017611.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4017781.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4017892.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "4017909.LOFI.mp3",
+      "expected_bpm": 112.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4018082.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4018083.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4018084.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4018085.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4018247.LOFI.mp3",
+      "expected_bpm": 96.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "4020698.LOFI.mp3",
+      "expected_bpm": 141.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4029289.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4029970.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4031300.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4032006.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4033240.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4035020.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4038987.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4043892.LOFI.mp3",
+      "expected_bpm": 183.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4044590.LOFI.mp3",
+      "expected_bpm": 100.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4044591.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4045981.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4047428.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "4067151.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4071447.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4072499.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4077896.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4086561.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4091609.LOFI.mp3",
+      "expected_bpm": 80.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "4093057.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "4093135.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4093555.LOFI.mp3",
+      "expected_bpm": 92.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4101363.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4101447.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4106593.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4107957.LOFI.mp3",
+      "expected_bpm": 93.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "4117487.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4120277.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4122833.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4136911.LOFI.mp3",
+      "expected_bpm": 153.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "4140514.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4140702.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "4145229.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4149743.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4149811.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4151958.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4152109.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4153394.LOFI.mp3",
+      "expected_bpm": 80.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "4157075.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4161667.LOFI.mp3",
+      "expected_bpm": 106.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4162259.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4162274.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4162405.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4162511.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "4163571.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4163572.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "4163586.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4163587.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4163588.LOFI.mp3",
+      "expected_bpm": 90.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4166222.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4166612.LOFI.mp3",
+      "expected_bpm": 124.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4172572.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4186191.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4191591.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4192452.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4193623.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4207348.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4214761.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4216184.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4218466.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "4226166.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4226227.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4226434.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4231951.LOFI.mp3",
+      "expected_bpm": 141.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4233696.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4235798.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4237913.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4264210.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4264359.LOFI.mp3",
+      "expected_bpm": 85.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4265125.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "426992.LOFI.mp3",
+      "expected_bpm": 167.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4275052.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4279669.LOFI.mp3",
+      "expected_bpm": 82.0,
+      "tolerance_percent": 2.0,
+      "genre": "indie-dance-nu-disco",
+      "notes": ""
+    },
+    {
+      "filename": "4283622.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4283854.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4284345.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4288893.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4297277.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4300617.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4300619.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4301518.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4304445.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4313859.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4315749.LOFI.mp3",
+      "expected_bpm": 130.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4323506.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4325441.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4331667.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4332592.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4346730.LOFI.mp3",
+      "expected_bpm": 86.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4353566.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4358231.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4360483.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4360488.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4365752.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4366506.LOFI.mp3",
+      "expected_bpm": 197.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4372309.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4377106.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4381717.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4386702.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4397324.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4397469.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4398117.LOFI.mp3",
+      "expected_bpm": 179.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4399289.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4403315.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4403519.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4404346.LOFI.mp3",
+      "expected_bpm": 188.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "4407745.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "4409752.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4411925.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4416336.LOFI.mp3",
+      "expected_bpm": 188.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "4416506.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4416888.LOFI.mp3",
+      "expected_bpm": 89.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4416962.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4418582.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4419049.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4420924.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4426890.LOFI.mp3",
+      "expected_bpm": 106.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4427618.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "4442121.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4446908.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "4457771.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4459005.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4459187.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4460536.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4468729.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4469489.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4469780.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4471292.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4471702.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4473065.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4474027.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4474029.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4475855.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4480118.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "4480454.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4483708.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4486124.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4486412.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4489017.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4493439.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4494659.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4495270.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4497852.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4508138.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "4509910.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4512512.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4514851.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4517258.LOFI.mp3",
+      "expected_bpm": 82.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4532060.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4540818.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4543103.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "4547732.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4549757.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4558106.LOFI.mp3",
+      "expected_bpm": 128.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4559522.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4565270.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4566667.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4567978.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4567979.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4585539.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4586220.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4593850.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "4596215.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4604737.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "4609093.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4609944.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "4610426.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4611640.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4623143.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4624663.LOFI.mp3",
+      "expected_bpm": 167.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4625875.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4631727.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4633603.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "hip-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4650113.LOFI.mp3",
+      "expected_bpm": 117.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4653852.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4661735.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4666231.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4667626.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4671406.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4671443.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4677606.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4678080.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4693039.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "progressive-house",
+      "notes": ""
+    },
+    {
+      "filename": "4693198.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "4694833.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4696505.LOFI.mp3",
+      "expected_bpm": 160.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4703149.LOFI.mp3",
+      "expected_bpm": 110.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4710576.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4711578.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4714481.LOFI.mp3",
+      "expected_bpm": 112.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4723905.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4735587.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4735758.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4743012.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4749611.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "4767260.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4772658.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4773857.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4773948.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4800274.LOFI.mp3",
+      "expected_bpm": 141.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4800275.LOFI.mp3",
+      "expected_bpm": 141.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4810810.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4816604.LOFI.mp3",
+      "expected_bpm": 70.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4823439.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4823611.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "4826952.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4826957.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4827285.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4827287.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4845088.LOFI.mp3",
+      "expected_bpm": 90.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4850346.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "deep-house",
+      "notes": ""
+    },
+    {
+      "filename": "4853692.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4860099.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4861484.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4863146.LOFI.mp3",
+      "expected_bpm": 110.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "4875475.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "4884993.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4896659.LOFI.mp3",
+      "expected_bpm": 85.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4899365.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4921810.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "4936740.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "4937390.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "4947281.LOFI.mp3",
+      "expected_bpm": 136.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4951739.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "4955051.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4955053.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "4960424.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "4969415.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4984238.LOFI.mp3",
+      "expected_bpm": 116.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "4993934.LOFI.mp3",
+      "expected_bpm": 140.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "5024644.LOFI.mp3",
+      "expected_bpm": 142.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5039329.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5051606.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "5068771.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5070846.LOFI.mp3",
+      "expected_bpm": 110.0,
+      "tolerance_percent": 2.0,
+      "genre": "glitch-hop",
+      "notes": ""
+    },
+    {
+      "filename": "5073839.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5076753.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "5076821.LOFI.mp3",
+      "expected_bpm": 169.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5078640.LOFI.mp3",
+      "expected_bpm": 172.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5079918.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "5081990.LOFI.mp3",
+      "expected_bpm": 85.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "5089294.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5102537.LOFI.mp3",
+      "expected_bpm": 123.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "5117279.LOFI.mp3",
+      "expected_bpm": 119.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "5118757.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "5135326.LOFI.mp3",
+      "expected_bpm": 130.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "5137153.LOFI.mp3",
+      "expected_bpm": 130.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5137154.LOFI.mp3",
+      "expected_bpm": 134.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5137157.LOFI.mp3",
+      "expected_bpm": 153.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5137158.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5143186.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "5157605.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "5160584.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "5162042.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5171396.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5195826.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5202182.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "5204781.LOFI.mp3",
+      "expected_bpm": 125.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "5213896.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5214265.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "5214755.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5214943.LOFI.mp3",
+      "expected_bpm": 74.0,
+      "tolerance_percent": 2.0,
+      "genre": "chill-out",
+      "notes": ""
+    },
+    {
+      "filename": "5237462.LOFI.mp3",
+      "expected_bpm": 121.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "5248391.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5258365.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "5261461.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "house",
+      "notes": ""
+    },
+    {
+      "filename": "5268098.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "5294335.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "tech-house",
+      "notes": ""
+    },
+    {
+      "filename": "5302339.LOFI.mp3",
+      "expected_bpm": 163.0,
+      "tolerance_percent": 2.0,
+      "genre": "breaks",
+      "notes": ""
+    },
+    {
+      "filename": "5314439.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "5315510.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "5335389.LOFI.mp3",
+      "expected_bpm": 71.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "5345058.LOFI.mp3",
+      "expected_bpm": 147.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "5347155.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5355157.LOFI.mp3",
+      "expected_bpm": 167.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "5356489.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "psy-trance",
+      "notes": ""
+    },
+    {
+      "filename": "5363251.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "536656.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "5377710.LOFI.mp3",
+      "expected_bpm": 129.0,
+      "tolerance_percent": 2.0,
+      "genre": "electro-house",
+      "notes": ""
+    },
+    {
+      "filename": "5406759.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "minimal",
+      "notes": ""
+    },
+    {
+      "filename": "5431709.LOFI.mp3",
+      "expected_bpm": 87.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "547692.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "587794.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "633082.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "672063.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "672064.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "691688.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "691694.LOFI.mp3",
+      "expected_bpm": 144.0,
+      "tolerance_percent": 2.0,
+      "genre": "hard-dance",
+      "notes": ""
+    },
+    {
+      "filename": "710469.LOFI.mp3",
+      "expected_bpm": 156.0,
+      "tolerance_percent": 2.0,
+      "genre": "hardcore-hard-techno",
+      "notes": ""
+    },
+    {
+      "filename": "750132.LOFI.mp3",
+      "expected_bpm": 132.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "825292.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "861484.LOFI.mp3",
+      "expected_bpm": 171.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "906680.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "906681.LOFI.mp3",
+      "expected_bpm": 172.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "906760.LOFI.mp3",
+      "expected_bpm": 104.0,
+      "tolerance_percent": 2.0,
+      "genre": "dj-tools",
+      "notes": ""
+    },
+    {
+      "filename": "907836.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "907837.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "925895.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "dubstep",
+      "notes": ""
+    },
+    {
+      "filename": "942357.LOFI.mp3",
+      "expected_bpm": 170.0,
+      "tolerance_percent": 2.0,
+      "genre": "electronica",
+      "notes": ""
+    },
+    {
+      "filename": "94350.LOFI.mp3",
+      "expected_bpm": 150.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    },
+    {
+      "filename": "956606.LOFI.mp3",
+      "expected_bpm": 127.0,
+      "tolerance_percent": 2.0,
+      "genre": "techno",
+      "notes": ""
+    },
+    {
+      "filename": "986931.LOFI.mp3",
+      "expected_bpm": 139.0,
+      "tolerance_percent": 2.0,
+      "genre": "trance",
+      "notes": ""
+    },
+    {
+      "filename": "989704.LOFI.mp3",
+      "expected_bpm": 174.0,
+      "tolerance_percent": 2.0,
+      "genre": "drum-and-bass",
+      "notes": ""
+    }
+  ]
+}

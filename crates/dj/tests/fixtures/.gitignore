@@ -1,0 +1,9 @@
+# Ignore downloaded audio files (too large and potentially copyrighted)
+audio/*.mp3
+audio/*.wav
+audio/*.flac
+audio/*.m4a
+audio/*.ogg
+
+# Keep the audio directory structure
+!audio/.gitkeep

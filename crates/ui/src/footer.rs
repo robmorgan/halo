@@ -1,4 +1,4 @@
-use eframe::egui::{Align, CornerRadius, Direction, Layout, RichText};
+use eframe::egui::{Align, Color32, CornerRadius, Direction, Layout, RichText};
 use halo_core::ConsoleCommand;
 use tokio::sync::mpsc;
 
@@ -8,7 +8,6 @@ pub fn render(
     ui: &mut eframe::egui::Ui,
     _console_tx: &mpsc::UnboundedSender<ConsoleCommand>,
     state: &crate::state::ConsoleState,
-    fps: u32,
 ) {
     let theme = Theme::default();
     let fixture_count = state.fixtures.len();
@@ -24,11 +23,29 @@ pub fn render(
 
     ui.horizontal(|ui| {
         ui.add_space(12.0);
-        ui.label(
-            RichText::new(format!("FPS: {}", fps))
-                .size(12.0)
-                .color(theme.text_dim),
-        );
+        // Show status message if available, otherwise empty
+        if let Some(ref message) = state.status_message {
+            let status_text = if let Some((current, total, intra_progress)) = state.status_progress
+            {
+                let percentage = if total > 0 {
+                    // Calculate overall progress including intra-track progress
+                    // For track 2/10 at 50% done: (1 + 0.5) / 10 = 15%
+                    let completed = (current.saturating_sub(1)) as f32;
+                    let overall = (completed + intra_progress) / total as f32;
+                    (overall * 100.0) as u32
+                } else {
+                    0
+                };
+                format!("{} ({}/{} - {}%)", message, current, total, percentage)
+            } else {
+                message.clone()
+            };
+            ui.label(
+                RichText::new(status_text)
+                    .size(12.0)
+                    .color(Color32::from_rgb(100, 180, 255)), // Light blue for status
+            );
+        }
 
         ui.with_layout(
             Layout::centered_and_justified(Direction::LeftToRight),
@@ -50,7 +67,7 @@ pub fn render(
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_space(12.0);
-            ui.label(RichText::new("Halo v0.4").size(12.0).color(theme.text_dim));
+            ui.label(RichText::new("Halo v0.5").size(12.0).color(theme.text_dim));
         });
     });
 }

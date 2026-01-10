@@ -1,10 +1,22 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use halo_fixtures::Fixture;
 use serde::{Deserialize, Serialize};
 
 use crate::audio::device_enumerator::AudioDeviceInfo;
 use crate::{CueList, EffectType, MidiOverride, PlaybackState, RhythmState, Show, TimeCode};
+
+/// Track information for UI display.
+#[derive(Debug, Clone)]
+pub struct DjTrackInfo {
+    pub id: i64,
+    pub title: String,
+    pub artist: Option<String>,
+    pub duration_seconds: f64,
+    pub bpm: Option<f64>,
+    pub file_path: String,
+}
 
 /// Commands sent from UI to Console
 #[derive(Debug, Clone)]
@@ -161,6 +173,120 @@ pub enum ConsoleCommand {
     EnableAbletonLink,
     DisableAbletonLink,
 
+    // Tempo source
+    SetTempoSource {
+        source: crate::rhythm::rhythm::TempoSource,
+    },
+
+    // DJ commands
+    DjImportFolder {
+        path: PathBuf,
+    },
+    DjLoadTrack {
+        deck: u8,
+        track_id: i64,
+    },
+    DjPlay {
+        deck: u8,
+    },
+    DjPause {
+        deck: u8,
+    },
+    DjStop {
+        deck: u8,
+    },
+    DjSetCue {
+        deck: u8,
+    },
+    DjJumpToCue {
+        deck: u8,
+    },
+    DjCuePreview {
+        deck: u8,
+        pressed: bool,
+    },
+    DjSetHotCue {
+        deck: u8,
+        slot: u8,
+    },
+    DjJumpToHotCue {
+        deck: u8,
+        slot: u8,
+    },
+    DjSetPitch {
+        deck: u8,
+        percent: f64,
+    },
+    DjToggleSync {
+        deck: u8,
+    },
+    DjSetMaster {
+        deck: u8,
+    },
+    DjSeek {
+        deck: u8,
+        position_seconds: f64,
+    },
+    DjSeekBeats {
+        deck: u8,
+        beats: i32,
+    },
+    DjNudgePitch {
+        deck: u8,
+        delta: f64,
+    },
+    DjPreviousTrack {
+        deck: u8,
+    },
+    DjNextTrack {
+        deck: u8,
+    },
+    DjQueryLibrary,
+    DjToggleMasterTempo {
+        deck: u8,
+    },
+    DjSetTempoRange {
+        deck: u8,
+        range: u8, // 0=±6%, 1=±10%, 2=±16%, 3=±25%, 4=±50%
+    },
+    DjSetLoop {
+        deck: u8,
+        beat_count: u8, // 4 or 8 beats
+    },
+    DjToggleLoop {
+        deck: u8,
+    },
+    DjHalveLoop {
+        deck: u8,
+    },
+    DjDoubleLoop {
+        deck: u8,
+    },
+    DjReanalyzeTrack {
+        track_id: i64,
+    },
+    DjUpdateTrackBpm {
+        track_id: i64,
+        bpm: f64,
+    },
+    DjDeleteTrack {
+        track_id: i64,
+    },
+    DjNudgeBeatGrid {
+        deck: u8,
+        offset_ms: f64,
+    },
+    DjSetDownbeat {
+        deck: u8,
+    },
+    DjShiftBeatGrid {
+        deck: u8,
+        beats: i32,
+    },
+
+    // Ableton Link toggle
+    ToggleAbletonLink,
+
     // Effects
     ApplyEffect {
         fixture_ids: Vec<usize>,
@@ -281,6 +407,9 @@ pub struct Settings {
 
     // Fixture settings
     pub enable_pan_tilt_limits: bool,
+
+    // Push 2 settings
+    pub push2_enabled: bool,
 }
 
 impl Default for Settings {
@@ -317,6 +446,9 @@ impl Default for Settings {
 
             // Fixture defaults
             enable_pan_tilt_limits: true,
+
+            // Push 2 defaults
+            push2_enabled: false,
         }
     }
 }
@@ -430,6 +562,104 @@ pub enum ConsoleEvent {
         enabled: bool,
         num_peers: u64,
     },
+
+    // DJ events
+    DjLibraryUpdated {
+        track_count: usize,
+    },
+    DjImportProgress {
+        current: usize,
+        total: usize,
+        current_file: String,
+    },
+    DjImportComplete {
+        imported_count: usize,
+        skipped_count: usize,
+    },
+    DjTrackLoaded {
+        deck: u8,
+        track_id: i64,
+        title: String,
+        artist: Option<String>,
+        duration_seconds: f64,
+        bpm: Option<f64>,
+    },
+    DjDeckStateChanged {
+        deck: u8,
+        is_playing: bool,
+        position_seconds: f64,
+        bpm: Option<f64>,
+    },
+    DjCuePointSet {
+        deck: u8,
+        position_seconds: f64,
+    },
+    DjWaveformProgress {
+        deck: u8,
+        /// Waveform samples (Arc for zero-copy sharing).
+        samples: Arc<Vec<f32>>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        /// Arc for zero-copy sharing.
+        frequency_bands: Option<Arc<Vec<(f32, f32, f32)>>>,
+        progress: f32,
+    },
+    DjWaveformLoaded {
+        deck: u8,
+        /// Waveform samples (Arc for zero-copy sharing).
+        samples: Arc<Vec<f32>>,
+        /// 3-band frequency data for colored waveform (low, mid, high).
+        /// Arc for zero-copy sharing.
+        frequency_bands: Option<Arc<Vec<(f32, f32, f32)>>>,
+        duration_seconds: f64,
+    },
+    DjLibraryTracks {
+        tracks: Vec<DjTrackInfo>,
+    },
+    DjBeatGridLoaded {
+        deck: u8,
+        beat_positions: Vec<f64>,
+        first_beat_offset: f64,
+        bpm: f64,
+        /// If true, this is a nudge adjustment and position should not change.
+        is_nudge: bool,
+    },
+    DjMasterTempoChanged {
+        deck: u8,
+        enabled: bool,
+    },
+    DjTempoRangeChanged {
+        deck: u8,
+        range: u8,
+    },
+    /// Pitch fader position changed (for sync following).
+    DjPitchChanged {
+        deck: u8,
+        pitch_percent: f64,
+        tempo_range: u8,
+        adjusted_bpm: f64,
+    },
+    DjLoopStateChanged {
+        deck: u8,
+        loop_in: Option<f64>,
+        loop_out: Option<f64>,
+        active: bool,
+        beat_count: f64,
+    },
+    DjAnalysisProgress {
+        track_id: i64,
+        track_name: String,
+        current: usize,
+        total: usize,
+        /// Progress within current track (0.0-1.0)
+        progress: f32,
+    },
+    DjAnalysisComplete {
+        track_id: i64,
+        bpm: Option<f64>,
+    },
+
+    // Status events
+    StatusClear,
 
     // Programmer events
     ProgrammerStateUpdated {

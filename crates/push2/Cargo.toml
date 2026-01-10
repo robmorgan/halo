@@ -1,0 +1,30 @@
+[package]
+name = "halo-push2"
+version = "0.1.0"
+edition = "2021"
+description = "Ableton Push 2 integration for Halo lighting console"
+license = "MIT"
+
+[dependencies]
+# Internal crates
+halo-core = { path = "../core" }
+halo-dj = { path = "../dj" }
+
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+async-trait = "0.1"
+
+# USB access for display
+rusb = "0.9"
+
+# MIDI I/O
+midir = "0.10"
+
+# Logging
+tracing = "0.1"
+
+# Error handling
+thiserror = "2.0"
+
+[dev-dependencies]
+tokio-test = "0.4"

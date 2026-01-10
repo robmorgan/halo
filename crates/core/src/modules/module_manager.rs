@@ -108,6 +108,21 @@ impl ModuleManager {
         }
     }
 
+    /// Broadcast an event to all modules without blocking.
+    /// Uses try_send which will drop the event if a channel is full.
+    /// Use this for high-frequency events like position updates.
+    pub fn try_broadcast_event(&self, event: ModuleEvent) {
+        for (id, sender) in &self.module_senders {
+            if let Err(e) = sender.try_send(event.clone()) {
+                // Only log if it's not a "channel full" error (which is expected for high-frequency
+                // events)
+                if !matches!(e, tokio::sync::mpsc::error::TrySendError::Full(_)) {
+                    log::warn!("Failed to broadcast event to module {:?}: {}", id, e);
+                }
+            }
+        }
+    }
+
     /// Get the message receiver (should only be called once)
     pub fn take_message_receiver(&mut self) -> Option<mpsc::Receiver<ModuleMessage>> {
         self.message_receiver.take()
