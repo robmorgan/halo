@@ -21,12 +21,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-#[cfg(not(feature = "qm-native"))]
-use super::qm_tempo::{detect_tempo_qm, QmTempoConfig};
-use super::types::{BeatGrid, FrequencyBands, TrackId, TrackWaveform};
-
-#[cfg(feature = "qm-native")]
 use super::qm_native::{median_tempo, NativeTempoTracker};
+use super::types::{BeatGrid, FrequencyBands, TrackId, TrackWaveform};
 
 /// Analysis configuration.
 #[derive(Debug, Clone)]
@@ -494,26 +490,8 @@ fn detect_beats_aubio(
     sample_rate: u32,
     config: &AnalysisConfig,
 ) -> (f64, f32, Vec<f64>) {
-    // Method 1: Queen Mary-style detection (highest priority)
-    // Use native C++ QM-DSP when feature is enabled, otherwise use Rust implementation
-    #[cfg(feature = "qm-native")]
-    let (bpm_qm, conf_qm, beats_qm) = {
-        log::debug!("Using native QM-DSP C++ library for tempo detection");
-        detect_tempo_native(samples, sample_rate, config)
-    };
-
-    #[cfg(not(feature = "qm-native"))]
-    let (bpm_qm, conf_qm, beats_qm) = {
-        let qm_config = QmTempoConfig {
-            fft_size: config.fft_size,
-            hop_size: config.hop_size,
-            min_bpm: config.min_bpm,
-            max_bpm: config.max_bpm,
-            ..QmTempoConfig::default()
-        };
-        let qm_result = detect_tempo_qm(samples, sample_rate, &qm_config);
-        (qm_result.bpm, qm_result.confidence, qm_result.beats)
-    };
+    // Method 1: Queen Mary-style detection using native C++ QM-DSP library (highest priority)
+    let (bpm_qm, conf_qm, beats_qm) = detect_tempo_native(samples, sample_rate, config);
 
     // Method 2: Energy mode (good for kick drums in dance music)
     let (bpm_energy, conf_energy, beats_energy) =
@@ -1039,140 +1017,6 @@ fn compute_fft_autocorrelation(signal: &[f32]) -> Vec<f32> {
     buffer.iter().map(|c| c.re * norm).collect()
 }
 
-/// Calculate onset envelope using spectral flux.
-fn calculate_onset_envelope(samples: &[f32], config: &AnalysisConfig) -> Vec<f32> {
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(config.fft_size);
-
-    let mut onset_env = Vec::new();
-    let mut prev_spectrum = vec![0.0f32; config.fft_size / 2 + 1];
-
-    let window: Vec<f32> = (0..config.fft_size)
-        .map(|i| {
-            0.5 * (1.0
-                - (2.0 * std::f32::consts::PI * i as f32 / (config.fft_size - 1) as f32).cos())
-        })
-        .collect();
-
-    for start in (0..samples.len().saturating_sub(config.fft_size)).step_by(config.hop_size) {
-        // Apply window and compute FFT
-        let mut buffer: Vec<Complex<f32>> = samples[start..start + config.fft_size]
-            .iter()
-            .zip(window.iter())
-            .map(|(s, w)| Complex::new(s * w, 0.0))
-            .collect();
-
-        fft.process(&mut buffer);
-
-        // Calculate magnitude spectrum
-        let spectrum: Vec<f32> = buffer[..config.fft_size / 2 + 1]
-            .iter()
-            .map(|c| c.norm())
-            .collect();
-
-        // Calculate spectral flux (half-wave rectified difference)
-        let flux: f32 = spectrum
-            .iter()
-            .zip(prev_spectrum.iter())
-            .map(|(curr, prev)| (curr - prev).max(0.0))
-            .sum();
-
-        onset_env.push(flux);
-        prev_spectrum = spectrum;
-    }
-
-    onset_env
-}
-
-/// Find the offset to the first downbeat using low-frequency onset detection.
-///
-/// This function detects kick drum hits by analyzing low-frequency energy,
-/// then finds the phase offset that best aligns with the detected BPM.
-fn find_first_beat(samples: &[f32], sample_rate: u32, bpm: f64) -> f64 {
-    let config = AnalysisConfig::default();
-
-    // Calculate low-frequency onset envelope (kick drums are typically 40-120 Hz)
-    let bass_onset_env = calculate_bass_onset_envelope(samples, sample_rate, &config);
-
-    if bass_onset_env.is_empty() {
-        return 0.0;
-    }
-
-    let beat_interval_seconds = 60.0 / bpm;
-    let hop_time = config.hop_size as f64 / sample_rate as f64;
-
-    // Find onset threshold (mean + 2 * std deviation for strong kicks)
-    let mean: f32 = bass_onset_env.iter().sum::<f32>() / bass_onset_env.len() as f32;
-    let variance: f32 = bass_onset_env
-        .iter()
-        .map(|x| (x - mean).powi(2))
-        .sum::<f32>()
-        / bass_onset_env.len() as f32;
-    let std_dev = variance.sqrt();
-    let threshold = mean + 2.0 * std_dev;
-
-    // Collect strong onset times (potential kick drums) in the first 30 seconds
-    let max_search_frames = (30.0 / hop_time) as usize;
-    let search_frames = bass_onset_env.len().min(max_search_frames);
-
-    let mut onset_times: Vec<f64> = Vec::new();
-    for (i, &value) in bass_onset_env[..search_frames].iter().enumerate() {
-        if value > threshold {
-            let time = i as f64 * hop_time;
-            // Avoid onsets too close together (minimum 100ms apart)
-            if onset_times.last().map_or(true, |&last| time - last > 0.1) {
-                onset_times.push(time);
-            }
-        }
-    }
-
-    if onset_times.is_empty() {
-        // Fallback: find the single strongest onset in first 10 seconds
-        let search_limit = (10.0 / hop_time) as usize;
-        let limit = bass_onset_env.len().min(search_limit);
-        if let Some((idx, _)) = bass_onset_env[..limit]
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        {
-            return idx as f64 * hop_time * 1000.0;
-        }
-        return 0.0;
-    }
-
-    // Find the phase offset that maximizes alignment with detected onsets
-    // Test 100 different phase offsets within one beat interval
-    let num_phases = 100;
-    let mut best_phase = 0.0;
-    let mut best_score = 0.0;
-
-    for phase_idx in 0..num_phases {
-        let phase_offset = (phase_idx as f64 / num_phases as f64) * beat_interval_seconds;
-        let mut score = 0.0;
-
-        for &onset_time in &onset_times {
-            // Calculate distance to nearest beat at this phase
-            let beats_from_start = (onset_time - phase_offset) / beat_interval_seconds;
-            let nearest_beat_offset =
-                beats_from_start.round() * beat_interval_seconds + phase_offset;
-            let distance = (onset_time - nearest_beat_offset).abs();
-
-            // Score based on proximity (closer = higher score)
-            // Use Gaussian weighting: exp(-(distance/sigma)^2)
-            let sigma = beat_interval_seconds * 0.1; // 10% of beat interval tolerance
-            score += (-((distance / sigma).powi(2))).exp();
-        }
-
-        if score > best_score {
-            best_score = score;
-            best_phase = phase_offset;
-        }
-    }
-
-    // Return phase offset in milliseconds
-    best_phase * 1000.0
-}
-
 /// Calculate low-frequency (bass) onset envelope for kick drum detection.
 ///
 /// Focuses on 40-200 Hz range where kick drums have most energy.
@@ -1228,8 +1072,7 @@ fn calculate_bass_onset_envelope(
 /// Detect BPM using native QM-DSP TempoTrackV2 library.
 ///
 /// This uses the actual C++ QM-DSP implementation for maximum accuracy.
-/// The detection function is computed from spectral flux in bass frequencies.
-#[cfg(feature = "qm-native")]
+/// The detection function is computed from spectral flux.
 pub fn detect_tempo_native(
     samples: &[f32],
     sample_rate: u32,
@@ -1301,7 +1144,6 @@ pub fn detect_tempo_native(
 /// Compute detection function for native QM-DSP tempo tracker.
 ///
 /// Uses complex spectral difference (similar to QM-DSP's ComplexOD onset detector).
-#[cfg(feature = "qm-native")]
 fn compute_detection_function_for_native(
     samples: &[f32],
     _sample_rate: u32,
@@ -1366,7 +1208,6 @@ fn compute_detection_function_for_native(
 }
 
 /// Principal argument function: wrap phase to [-π, π)
-#[cfg(feature = "qm-native")]
 fn princarg(phase: f32) -> f32 {
     let mut p = phase;
     while p >= std::f32::consts::PI {

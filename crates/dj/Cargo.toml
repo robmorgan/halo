@@ -48,9 +48,10 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0"
 
 [features]
+default = ["qm-native"]
 # Enable BPM accuracy tests that require external audio files
 accuracy-tests = []
-# Use vendored QM-DSP C++ library for tempo detection
+# Use vendored QM-DSP C++ library for tempo detection (enabled by default)
 qm-native = []
 
 [build-dependencies]

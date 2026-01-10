@@ -5,9 +5,6 @@ mod types;
 pub mod analysis;
 pub mod database;
 pub mod import;
-pub mod qm_tempo;
-
-#[cfg(feature = "qm-native")]
 pub mod qm_native;
 
 pub use analysis::{analyze_file, analyze_file_streaming, AnalysisConfig, AnalysisResult};
@@ -16,9 +13,6 @@ pub use import::{
     import_and_analyze_directory, import_and_analyze_file, import_directory, import_file,
     is_supported_audio_file, supported_extensions, ImportResult,
 };
-pub use qm_tempo::{detect_tempo_qm, OnsetMethod, QmTempoConfig, QmTempoResult};
-
-#[cfg(feature = "qm-native")]
 pub use qm_native::{median_tempo, NativeTempoTracker};
 pub use types::{
     AudioFormat, BeatGrid, FrequencyBands, HotCue, MasterTempoMode, TempoRange, Track, TrackId,
