@@ -19,15 +19,15 @@ edition = "2021"
 halo-core = { path = "../core" }
 halo-ui = { path = "../ui" }
 halo-fixtures = { path = "../fixtures" }
-rusty_link = "0.4.6"
+rusty_link = "0.4.8"
 artnet_protocol = "0.4.4"
 anyhow = "1.0.100"
 log = "0.4.29"
 midir = "0.10.3"
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4.5.54", features = ["derive"] }
 crossterm = "0.29.0"
 eframe = "0.33.3"
 parking_lot = "0.12.5"
-rfd = "0.16.0"
-tokio = { version = "1.48.0", features = ["full"] }
+rfd = "0.17.1"
+tokio = { version = "1.49.0", features = ["full"] }
 rodio = "0.21.1"
