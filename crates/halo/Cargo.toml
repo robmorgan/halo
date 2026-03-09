@@ -21,13 +21,13 @@ halo-ui = { path = "../ui" }
 halo-fixtures = { path = "../fixtures" }
 rusty_link = "0.4.8"
 artnet_protocol = "0.4.4"
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 log = "0.4.29"
 midir = "0.10.3"
-clap = { version = "4.5.57", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 crossterm = "0.29.0"
 eframe = "0.33.3"
 parking_lot = "0.12.5"
 rfd = "0.17.2"
-tokio = { version = "1.49.0", features = ["full"] }
-rodio = "0.21.1"
+tokio = { version = "1.50.0", features = ["full"] }
+rodio = "0.22.2"
