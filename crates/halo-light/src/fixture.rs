@@ -282,8 +282,9 @@ pub fn default_rig(library: &FixtureLibrary) -> Rig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashSet;
+
+    use super::*;
 
     #[test]
     fn default_rig_is_well_formed() {

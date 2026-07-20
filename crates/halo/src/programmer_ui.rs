@@ -9,16 +9,16 @@
 use std::collections::HashSet;
 
 use eframe::egui;
-
 use halo_light::cues::LANE_COUNT;
-use crate::fader::{Fader, Notches};
 use halo_light::fixture::{ALL_KINDS, FixtureKind, Rig};
-use crate::knob::{Knob, KnobArc};
 use halo_light::programmer::{
     self, ALL_INTERVALS, ALL_VIEWS, ALL_WAVEFORMS, COLOR_PRESETS, Distribution, EffectConfig,
     LaneOutput, LaneSource, PIXEL_EFFECTS, PanTiltTarget, ParamView, Programmer, ProgrammerParams,
     effect_value,
 };
+
+use crate::fader::{Fader, Notches};
+use crate::knob::{Knob, KnobArc};
 
 /// Everything the programmer panel reads and writes.
 pub struct ProgrammerCtx<'a> {
@@ -788,7 +788,11 @@ pub fn fixture_grid(
 
         let alpha = 0.15 + 0.85 * out.level.clamp(0.0, 1.0);
         let [r, g, b] = f.kind.color();
-        painter.rect_filled(cell, 4.0, egui::Color32::from_rgb(r, g, b).gamma_multiply(alpha));
+        painter.rect_filled(
+            cell,
+            4.0,
+            egui::Color32::from_rgb(r, g, b).gamma_multiply(alpha),
+        );
         if out.source == LaneSource::Programmer {
             painter.rect_stroke(
                 cell.shrink(1.5),

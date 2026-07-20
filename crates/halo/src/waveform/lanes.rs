@@ -3,11 +3,11 @@
 //! bars scroll in lockstep with the audio.
 
 use eframe::egui;
+use halo_light::cues::{CueSet, LANE_COUNT};
+use halo_light::programmer::{LaneOutput, LaneSource};
 
 use super::zoomed::ZoomSpan;
 use super::{FrameMap, GridMarks, LANES, palette};
-use halo_light::cues::{CueSet, LANE_COUNT};
-use halo_light::programmer::{LaneOutput, LaneSource};
 
 /// Height of each lane row in points.
 const LANE_ROW_H: f32 = 14.0;

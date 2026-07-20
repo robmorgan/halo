@@ -1,24 +1,24 @@
-use eframe::egui;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
+use eframe::egui;
+use halo_light::artnet::{ARTNET_PORT, ArtNetMode, NetworkConfig};
+use halo_light::cues::{ALL_LANES, CueSet, LANE_COUNT, Lane};
+use halo_light::fixture::{ALL_KINDS, Rig, RigFile, default_rig};
+use halo_light::fixture_library::FixtureLibrary;
+use halo_light::programmer::{
+    self, LaneOutput, LaneSource, ParamView, Programmer, ProgrammerParams,
+};
 use timestretch::{AudioBuffer, BeatGrid, Channels, PreAnalysisArtifact};
 
 use crate::audio::{AudioOutput, AudioSettings, DeckAudio, list_output_devices};
-use halo_light::cues::{ALL_LANES, CueSet, LANE_COUNT, Lane};
 use crate::deck::Deck;
 use crate::decoder::decode_file;
-use crate::fader::{Fader, Notches};
-use halo_light::artnet::{ARTNET_PORT, ArtNetMode, NetworkConfig};
-use halo_light::fixture::{ALL_KINDS, Rig, RigFile, default_rig};
-use halo_light::fixture_library::FixtureLibrary;
-
 use crate::dmx;
+use crate::fader::{Fader, Notches};
 use crate::knob::{Knob, KnobArc};
 use crate::library::{Library, PlaylistRow, SortColumn, TrackRow};
-use halo_light::programmer::{self, LaneOutput, LaneSource, ParamView, Programmer, ProgrammerParams};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
 use crate::show::simulate_show;
 use crate::state::{MixerShared, ScrubPhase, Transport};
@@ -1383,7 +1383,9 @@ impl HaloApp {
                     .striped(true)
                     .min_col_width(44.0)
                     .show(ui, |ui| {
-                        for h in ["FIXTURE", "KIND", "PROFILE", "UNIV", "ADDR", "COL", "ROW", ""] {
+                        for h in [
+                            "FIXTURE", "KIND", "PROFILE", "UNIV", "ADDR", "COL", "ROW", "",
+                        ] {
                             ui.label(egui::RichText::new(h).weak().size(10.0));
                         }
                         ui.end_row();
@@ -1417,9 +1419,7 @@ impl HaloApp {
                                 .width(230.0)
                                 .show_ui(ui, |ui| {
                                     for (pid, name) in &profiles {
-                                        if ui
-                                            .selectable_label(&f.profile_id == pid, name)
-                                            .clicked()
+                                        if ui.selectable_label(&f.profile_id == pid, name).clicked()
                                             && &f.profile_id != pid
                                         {
                                             f.profile_id = pid.clone();
@@ -1702,11 +1702,7 @@ impl HaloApp {
                         }
                     });
                 }
-                ui.label(
-                    egui::RichText::new(self.net.summary())
-                        .weak()
-                        .size(11.0),
-                );
+                ui.label(egui::RichText::new(self.net.summary()).weak().size(11.0));
                 if artnet_dirty {
                     self.apply_artnet();
                 }

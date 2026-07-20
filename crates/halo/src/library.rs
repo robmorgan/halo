@@ -252,7 +252,11 @@ impl Library {
     }
 
     /// Persist a track's lighting cues (JSON, times in seconds).
-    pub fn store_cues(&self, track_id: i64, file: &halo_light::cues::CueFile) -> Result<(), String> {
+    pub fn store_cues(
+        &self,
+        track_id: i64,
+        file: &halo_light::cues::CueFile,
+    ) -> Result<(), String> {
         let json = serde_json::to_string(file).map_err(|e| format!("serialize cues: {e}"))?;
         self.conn
             .execute(

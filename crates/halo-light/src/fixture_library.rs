@@ -331,7 +331,10 @@ impl FixtureLibrary {
 fn pixel_bar_channels(pixel_count: usize) -> Vec<Channel> {
     let mut channels = Vec::with_capacity(pixel_count * 3);
     for i in 0..pixel_count {
-        channels.push(ch(&format!("Pixel {} Red", i + 1), ChannelType::PixelRed(i)));
+        channels.push(ch(
+            &format!("Pixel {} Red", i + 1),
+            ChannelType::PixelRed(i),
+        ));
         channels.push(ch(
             &format!("Pixel {} Green", i + 1),
             ChannelType::PixelGreen(i),
@@ -385,5 +388,4 @@ mod tests {
         assert_eq!(limits.clamp(&ChannelType::Tilt, 255), 128);
         assert_eq!(limits.clamp(&ChannelType::Dimmer, 255), 255);
     }
-
 }

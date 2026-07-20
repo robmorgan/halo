@@ -7,14 +7,13 @@
 //! universe always ships all 512 channels, so "off" is sent, not held.
 //!
 //! Value semantics (v1, until Phase L2's per-fixture programming):
-//! - A fixture's intensity is its lane's resolved level × the programmer
-//!   dimmer. Fixtures without a dimmer channel fold intensity into their
-//!   color channels.
-//! - Palette (RGBW), position, gobo, and strobe apply rig-wide; *effects*
-//!   run across the fixture selection (or the whole rig when nothing is
-//!   selected), with Step/Wave distribution by ordinal in that cohort.
-//! - HIGHLIGHT snaps the selection to open white. PREVIEW (blind) renders
-//!   as if the programmer params were untouched defaults.
+//! - A fixture's intensity is its lane's resolved level × the programmer dimmer. Fixtures without a
+//!   dimmer channel fold intensity into their color channels.
+//! - Palette (RGBW), position, gobo, and strobe apply rig-wide; *effects* run across the fixture
+//!   selection (or the whole rig when nothing is selected), with Step/Wave distribution by ordinal
+//!   in that cohort.
+//! - HIGHLIGHT snaps the selection to open white. PREVIEW (blind) renders as if the programmer
+//!   params were untouched defaults.
 
 use std::collections::{HashMap, HashSet};
 
@@ -284,10 +283,7 @@ fn render_pixel_bar(
             // Breathe: everything swells over 2 beats.
             5 => {
                 let ph = frac(beat_t / 2.0) as f32;
-                (
-                    0.5 - 0.5 * (ph * std::f32::consts::TAU).cos(),
-                    None,
-                )
+                (0.5 - 0.5 * (ph * std::f32::consts::TAU).cos(), None)
             }
             // Strobe all: a hard flash on each beat.
             6 => (if frac(beat_t) < 0.15 { 1.0 } else { 0.0 }, None),
@@ -414,7 +410,10 @@ mod tests {
             &HashSet::new(),
             0.0,
         );
-        assert_eq!(value_of(&rig, &library, &half, "SM1", &smoke_ch), u8_of(0.5));
+        assert_eq!(
+            value_of(&rig, &library, &half, "SM1", &smoke_ch),
+            u8_of(0.5)
+        );
         assert_eq!(value_of(&rig, &library, &half, "PY1", &safety_ch), 255);
         assert_eq!(
             value_of(&rig, &library, &half, "PY1", &fire_ch),
@@ -545,7 +544,10 @@ mod tests {
         let profile = library.get(&pb1.profile_id).unwrap();
         let base = (pb1.start_address - 1) as usize;
         let slot = &lit[&pb1.universe][base..base + profile.footprint()];
-        let lit_pixels = slot.chunks(3).filter(|px| px.iter().any(|&v| v > 0)).count();
+        let lit_pixels = slot
+            .chunks(3)
+            .filter(|px| px.iter().any(|&v| v > 0))
+            .count();
         let n = profile.footprint() / 3;
         assert!(lit_pixels > 0, "chase lights a window");
         assert!(lit_pixels < n, "chase is a window, not the whole bar");

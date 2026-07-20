@@ -8,10 +8,10 @@
 use std::collections::HashSet;
 
 use eframe::egui;
+use halo_light::cues::{ALL_LANES, CueSet};
 
 use super::zoomed::ZoomSpan;
 use super::{FrameMap, GridMarks, LANES, overlay_plan, palette};
-use halo_light::cues::{ALL_LANES, CueSet};
 
 /// Editor lane row height in points (~3× the perform strip's rows).
 const EDIT_ROW_H: f32 = 44.0;

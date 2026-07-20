@@ -19,8 +19,13 @@ pub use zoomed::{ScrubGesture, ZoomSpan, ZoomedParams, paint_zoomed};
 
 /// Label + color per lane, shared by the perform strip, the Prepare
 /// editor, and the programmer UI.
-pub(crate) const LANES: [(halo_light::cues::Lane, &str, egui::Color32); halo_light::cues::LANE_COUNT] = [
-    (halo_light::cues::Lane::Lighting, "LGT", palette::LANE_LIGHTING),
+pub(crate) const LANES: [(halo_light::cues::Lane, &str, egui::Color32);
+    halo_light::cues::LANE_COUNT] = [
+    (
+        halo_light::cues::Lane::Lighting,
+        "LGT",
+        palette::LANE_LIGHTING,
+    ),
     (halo_light::cues::Lane::Pixels, "PXL", palette::LANE_PIXELS),
     (halo_light::cues::Lane::Fx, "FX", palette::LANE_FX),
 ];

@@ -5,6 +5,7 @@
 //! demo cues (and to exercise the lane painters before a rig exists).
 
 use halo_light::cues::{CueSet, Lane};
+
 use crate::waveform::GridMarks;
 
 /// splitmix64: a tiny deterministic PRNG so the simulation needs no `rand`

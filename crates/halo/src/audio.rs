@@ -10,12 +10,12 @@
 //! channel 2 is the Prepare view's audition player, which bypasses the
 //! crossfader (its fader alone is its volume).
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleRate, Stream, StreamConfig};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{SampleRate, Stream, StreamConfig};
 use timestretch::engine::EngineProcessor;
 
 use crate::deck::{ProcessorSlot, SampleSlot};

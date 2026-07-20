@@ -136,10 +136,12 @@ pub fn spawn_dmx_engine() -> DmxShared {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::net::{SocketAddr, UdpSocket};
+
     use halo_light::artnet::ArtNetMode;
     use halo_light::fixture::default_rig;
-    use std::net::{SocketAddr, UdpSocket};
+
+    use super::*;
 
     /// End-to-end: real engine thread → resolve → render → Art-Net UDP,
     /// received by a local listener standing in for a node.
