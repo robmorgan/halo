@@ -19,6 +19,17 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
 
+      # crates/halo depends on ../../../timestretch-rs as a sibling path
+      # dependency (it evolves alongside halo, unpublished-version-ahead of
+      # crates.io) — check it out one level above this checkout so that
+      # relative path resolves the same way it does on a local machine where
+      # both repos live side by side.
+      - name: Check out timestretch-rs (sibling path dependency)
+        uses: actions/checkout@v6
+        with:
+          repository: robmorgan/timestretch-rs
+          path: ../timestretch-rs
+
       - name: Install Rust toolchain (Nightly for fmt)
         uses: actions-rs/toolchain@v1
         with:
@@ -67,6 +78,12 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v6
+
+      - name: Check out timestretch-rs (sibling path dependency)
+        uses: actions/checkout@v6
+        with:
+          repository: robmorgan/timestretch-rs
+          path: ../timestretch-rs
 
       - name: Install system dependencies
         run: |
