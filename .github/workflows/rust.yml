@@ -98,7 +98,13 @@ jobs:
           sudo apt-get install -y \
             libasound2-dev \
             libjack-dev \
-            libpulse-dev
+            libpulse-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxcursor-dev \
+            libxkbcommon-dev \
+            libwayland-dev
 
       - name: Install Rust toolchain (Nightly for fmt)
         uses: actions-rs/toolchain@v1
