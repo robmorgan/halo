@@ -1,33 +1,44 @@
-# [lib]
-# name = "halo"
-# path = "src/lib.rs"
-# bench = false
-
-[[bin]]
-name = "halo"
-path = "src/main.rs"
-bench = false
-
 [package]
 name = "halo"
-description = "Realtime lighting console for live performances and precise automation."
 version = "0.1.0"
-authors = ["Rob Morgan <robbym@gmail.com>"]
-edition = "2021"
+edition = "2024"
+publish = false
 
 [dependencies]
-halo-core = { path = "../core" }
-halo-ui = { path = "../ui" }
-halo-fixtures = { path = "../fixtures" }
-rusty_link = "0.4.8"
-artnet_protocol = "0.4.4"
-anyhow = "1.0.101"
-log = "0.4.29"
-midir = "0.10.3"
-clap = { version = "4.5.57", features = ["derive"] }
-crossterm = "0.29.0"
-eframe = "0.33.3"
-parking_lot = "0.12.5"
-rfd = "0.17.2"
-tokio = { version = "1.49.0", features = ["full"] }
-rodio = "0.21.1"
+halo-light = { workspace = true }
+# Local path so the crate can evolve alongside Halo without publishing.
+timestretch = { path = "../../../timestretch-rs" }
+# wgpu backend (native Metal on macOS): the default glow backend presents
+# through CGLFlushDrawable / OpenGL-on-Metal, which profiled as the single
+# biggest CPU cost of the timestretch reference app.
+eframe = { version = "0.31", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "persistence",
+    "wgpu",
+    # winit refuses to build on Linux at all without one of these — they're
+    # part of eframe's own `default` feature set, which is otherwise off here.
+    "wayland",
+    "x11",
+] }
+cpal = "0.15"
+symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "vorbis"] }
+egui_extras = { version = "0.31", default-features = false }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dirs = "5"
+libc = "0.2"
+rfd = "0.15"
+lofty = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+log = { workspace = true }
+env_logger = "0.11"
+
+# `cargo install cargo-bundle && cargo bundle --release` builds Halo.app.
+[package.metadata.bundle]
+name = "Halo"
+identifier = "com.robmorgan.halo"
+category = "public.app-category.music"
+short_description = "Two-deck DJ app powered by the timestretch engine"
+osx_minimum_system_version = "12.0"
