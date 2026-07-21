@@ -6,114 +6,113 @@
 </h1>
 </p>
 <p align="center">
-  <strong>Lighting console bringing advanced features to solo performances.</strong>
+  <strong>A two-deck DJ app with a built-in lighting console.</strong>
 </p>
 
 ## About
 
-⭕️ Halo is a real-time lighting console, designed to bring modern, immersive experiences into the hands of solo
-performers. Traditional consoles are typically deployed at front of house (FOH) and require a dedicated lighting
-designer. On the other hand, software designed for solo performers is often limited in features and is difficult to
-operate during a live show. Halo bridges this gap through a combination of pre-defined cues, beat-synchronized
-effects, and live improvisation through MIDI overrides. This enables performers to elevate their shows with immersive
-lighting that responds to their performance.
+**⭕️ Halo is a DJ app with a built-in lighting console, designed for solo performers who want to deliver immersive
+live shows.**
+
+Mix across two decks while Halo drives the lighting rig in sync with your set. Lighting cues can be prepared per track,
+then shaped and overridden live from a console-style programmer—so one performer can control the music, the lights, and
+the energy of the room from a single app, without relying on a dedicated lighting operator.
+
+Halo is designed to integrate seamlessly with the Ableton Push 2, providing hands-on real-time control and visual
+feedback without forcing you to perform through a mouse and keyboard.
+
+Built for macOS in Rust, Halo uses the [`timestretch`](https://github.com/robmorgan/timestretch-rs) engine for
+real-time tempo and pitch control.
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/9c5dae6a-0f76-417e-bd9e-6472253865ba" alt="Halo Screenshot" width="600">
+  <img src="_docs/screenshot.png" alt="Halo Screenshot" width="600">
 </p>
 
 > [!WARNING]
 > This project is still in heavy development and unsuitable for production use (even though I'm using it for shows).
 
-
 ## Features
 
-* **Intuitive UI.** Featuring a Dashboard, Programmer, Cue Editor, Patch Panel, Show Manager, and Settings panels.
-* **Show File System.** Save and load complete shows with cues, effects, and fixture assignments.
-* **Programmer.** Control lighting fixtures using a professional programmer interface with real-time feedback.
-* **Cue System.** Create, save, and recall lighting scenes using cue lists with timecode synchronization.
-* **Effect Engine.** Beat synchronized effects engine with sine, sawtooth and square patterns plus customizable parameters.
-* **Pixel Engine.** Dedicated pixel engine for displaying various effects and colors on pixel bar fixtures.
-* **Multi-destination Art-Net.** Route different fixture types (traditional lighting, pixels) to separate Art-Net nodes.
-* **Audio Playback.** Integrated audio file playback synchronized with cues and Ableton Link.
-* **SMPTE Timecode.** Both internal and external timecode synchronization for precise show timing and automation.
-* **MIDI Integration.** Control your show with MIDI devices (currently supports Akai MPK49) with override system.
-* **Configuration System.** Persistent settings with UI-based configuration panel for audio, MIDI, and DMX preferences.
-* **Fixture Library.** Built-in support for various lighting fixtures with extensible fixture definitions.
-* **Async Module Architecture.** Separate modules for DMX (44Hz output), Audio, MIDI, and Timecode running concurrently.
+### DJ
+
+* **Dual decks** powered by one `timestretch` engine each: warm-start seeks, gapless loop wrap, and keylocked
+  tempo control.
+* **Full mixer chain** per deck: trim → 3-band isolator EQ (full-kill) → resonant LP/HP filter → channel fader,
+  into a constant-power crossfader, master fader, and soft limiter.
+* **CDJ-style transport**: play/pause and cue (set while paused, hold to preview, release to return).
+* **Hot cues** — 8 per deck, with Normal and Gated modes and optional quantize to the beat grid.
+* **Loops** — manual in/out, 4-beat quantized autoloop, and halve/double controls from 1/16 up to 16 beats.
+* **Tempo & sync** — tempo slider with ±8/±16/±50% ranges, keylock, pitch-bend nudges, and one-button sync that
+  locks BPM and beat phase to a master deck.
+* **Audible scrub** with momentum — grab the waveform and hear it, like dragging a platter.
+* **Rich waveforms** — 3-band RGB overview strip and a zoomed, centered-playhead view with beat/bar marks,
+  rendered from background track analysis.
+* **Track library** — SQLite-backed browser with playlists, search, sortable columns (BPM, key, duration, …),
+  folder import, and background analysis. BPM comes from analysis; musical key is read from file tags.
+* **Prepare & Perform views** — audition tracks on an independent third channel and edit cues in Prepare, then
+  play the show in Perform.
+* **Meters everywhere** — per-deck and master levels plus an audio-callback CPU meter.
+
+### Lighting
+
+* **Per-track cue lanes** (Lighting / Pixels / FX) under the waveforms, edited directly and persisted in the
+  library alongside the track.
+* **Console-style programmer** — fixture grid, group selects, and Intensity/Color/Position/Beam/Pixel FX views
+  with beat-synced effects; latch or flash overrides sit above track cues, with STORE-from-live.
+* **Real fixture engine** — a default rig patched from real fixture profiles, editable live in the PATCH tab
+  (profile, universe, address, grid position) and persisted to the library.
+* **Art-Net output** — a dedicated 44 Hz engine thread resolves cues + programmer state into per-universe DMX
+  frames and sends them over Art-Net (broadcast or unicast to a node), independent of the UI.
+
+See [ROADMAP.md](ROADMAP.md) for the full feature arc and what's next.
 
 ## Requirements
 
-* **macOS** (required for Core Audio and MIDI dependencies)
-* **Rust toolchain** (cargo, rustc) - MSRV: 1.90.0
-* **Network interface for Art-Net output** (e.g., [Enttec ODE MK2](https://support.enttec.com/support/solutions/articles/101000438016-ode-mk2-70405-70406-))
-* **Optional:** MIDI controller (e.g., Akai MPK49, Novation Launch Control XL)
-* **Optional:** Ableton Link compatible device/software for beat synchronization
+* **macOS 12+** (Core Audio via cpal; the UI uses the wgpu backend)
+* **Rust toolchain** (stable for building/testing; nightly only for `cargo +nightly fmt`)
+* **[`timestretch-rs`](https://github.com/robmorgan/timestretch-rs)** cloned alongside this repo (path dependency)
+* **Optional:** an Art-Net node and DMX fixtures for the lighting rig
 
 ## Installation
 
+Halo depends on the `timestretch` crate by local path, so clone the two repos side by side:
+
 ```bash
 git clone https://github.com/robmorgan/halo.git
+git clone https://github.com/robmorgan/timestretch-rs.git
 cd halo
 cargo build --release
 ```
 
+To build a macOS app bundle (`Halo.app`):
+
+```bash
+cargo install cargo-bundle
+cargo bundle --release
+```
+
 ## Usage
 
-### Basic Usage
-
-Start with Art-Net broadcast mode:
-
 ```bash
-cargo run --release -- --source-ip <SOURCE_IP>
+cargo run --release
 ```
 
-Load a show file:
+Load tracks through the in-app library or file dialog, or pass a file directly to load it on launch:
 
 ```bash
-cargo run --release -- --source-ip <SOURCE_IP> --show-file shows/myshow.json
+cargo run --release -- path/to/track.mp3
 ```
 
-### Multi-Destination Setup
-
-Route lighting and pixel fixtures to separate Art-Net nodes:
-
-```bash
-cargo run --release -- --source-ip 192.168.1.100 \
-  --lighting-dest-ip 192.168.1.200 \
-  --pixel-dest-ip 192.168.1.201 \
-  --enable-midi
-```
-
-See [docs/multi-destination-artnet.md](docs/multi-destination-artnet.md) for detailed multi-destination configuration.
-
-### Command Line Options
-
-```bash
-USAGE:
-    halo [OPTIONS]
-
-OPTIONS:
-    --source-ip <IP>                Art-Net source IP address (required)
-    --dest-ip <IP>                  Single destination IP (legacy, optional)
-    --lighting-dest-ip <IP>         Lighting fixtures destination IP
-    --pixel-dest-ip <IP>            Pixel fixtures destination IP
-    --lighting-universe <NUM>       Universe for lighting fixtures (default: 1)
-    --pixel-start-universe <NUM>    Starting universe for pixel fixtures (default: 2)
-    --artnet-port <PORT>            Art-Net port (default: 6454)
-    --broadcast                     Force broadcast mode
-    -m, --enable-midi               Enable MIDI support
-    --show-file <PATH>              Path to show JSON file
-```
+* **Prepare view** — import folders into the library, build playlists, audition tracks, and edit per-track
+  lighting cues.
+* **Perform view** — two decks, mixer, and the lighting programmer.
+* **Art-Net** — configure broadcast or unicast-to-node output in the in-app settings window; the choice is
+  persisted with the library.
+* **Logs** — set `RUST_LOG=debug` (or another filter) when launching from a terminal.
 
 ## Documentation
 
-For detailed documentation, see the [docs/](docs/) directory:
-
-* [Architecture Overview](docs/architecture.md) - System design and component structure
-* [CLI Reference](docs/cli-reference.md) - Complete command-line interface documentation
-* [Multi-Destination Art-Net](docs/multi-destination-artnet.md) - Setting up multiple Art-Net destinations
-* [Troubleshooting Guide](docs/troubleshooting.md) - Common issues and solutions
+* [ROADMAP.md](ROADMAP.md) — architecture overview, phased feature plan, and current status.
 
 ## License
 

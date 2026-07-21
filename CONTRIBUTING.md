@@ -7,13 +7,18 @@
 ## ⏩ Quick‑Start
 
 ### 1. Fork, clone & branch
+
+Halo depends on the [`timestretch`](https://github.com/robmorgan/timestretch-rs) crate by local path, so clone
+`timestretch-rs` alongside your halo clone:
+
 ```bash
 git clone https://github.com/<your-username>/halo.git
+git clone https://github.com/robmorgan/timestretch-rs.git
 cd halo
 git checkout -b feat/<topic>
 ```
 
-### 2. Compile fast (uses stable toolchain from rust-toolchain.toml)
+### 2. Compile fast (uses stable toolchain)
 ```bash
 cargo check --workspace --all-targets
 ```
@@ -49,21 +54,21 @@ git push origin feat/<topic>
 
 ## Project Layout
 
-| Crate               | Role                                                     |
-| ------------------- | -------------------------------------------------------- |
-| **`halo-core`**     | Core lighting engine.                                    |
-| **`halo-fixtures`** | Fixture library and management.                          |
-| **`halo`**          | CLI and main entrypoint                                  |
-| **`halo-ui`**       | UI Components and Interface.                             |
+| Crate             | Role                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| **`halo`**        | The application: UI, decks, audio engine, mixer DSP, track library, DMX engine thread.    |
+| **`halo-light`**  | UI-free lighting domain library: fixtures, cues, programmer resolution, Art-Net output.   |
 
-All crates live in one Cargo **workspace**, so `cargo <cmd>` from the repo root affects everything.
+All crates live in one Cargo **workspace**, so `cargo <cmd>` from the repo root affects everything. The
+[`timestretch`](https://github.com/robmorgan/timestretch-rs) engine is a path dependency expected at
+`../timestretch-rs`, next to this repository.
 
 -----
 
 ## Dev Environment
 
   * **Platform**: Development and execution require **macOS**.
-  * **Rust (Build/Test)**: **Stable** toolchain, MSRV pinned in `rust-toolchain.toml` (currently *1.90.0*). Install via [rustup.rs][rustup.rs]. This is used by default for `cargo build`, `cargo check`, `cargo test`, etc.
+  * **Rust (Build/Test)**: **Stable** toolchain (CI runs *1.90.0*). Install via [rustup.rs][rustup.rs]. This is used by default for `cargo build`, `cargo check`, `cargo test`, etc.
   * **Rust (Format)**: **Nightly** toolchain is required *only* for formatting (`cargo fmt`) due to unstable options used in our `rustfmt.toml` configuration.
       * Install via: `rustup toolchain install nightly`
   * **Rust Components**: `rustfmt`, `clippy` – install via `rustup component add rustfmt clippy`. Make sure these components are available for *both* your default stable toolchain and the nightly toolchain.
@@ -107,7 +112,7 @@ All crates live in one Cargo **workspace**, so `cargo <cmd>` from the repo root 
 
 1.  Sync with `main`; rebase preferred.
 2.  Ensure your code is formatted correctly with `cargo +nightly fmt --all`.
-3.  Ensure CI is green (build, fmt check, clippy, tests on macOS using appropriate toolchains).
+3.  Ensure CI is green (fmt check, build, and tests on macOS arm64 and Linux x86_64).
 4.  Fill out the PR template; explain *why* + *how*.
 5.  Respond to review comments promptly – we’re friendly, promise!
 6.  Maintainers will *Squash & Merge* (unless history is already clean).

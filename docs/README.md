@@ -1,32 +1,8 @@
 # Halo Documentation
 
-This directory contains comprehensive documentation for the Halo lighting console.
+Current documentation lives in [ROADMAP.md](../ROADMAP.md) at the repository root — it covers the architecture,
+the phased feature plan, and current status. See the top-level [README](../README.md) for build and usage
+instructions.
 
-## Table of Contents
-
-- [Multi-Destination Art-Net Setup](multi-destination-artnet.md) - Configure separate outputs for lighting and pixel fixtures
-- [CLI Reference](cli-reference.md) - Complete command-line interface documentation
-- [Architecture](architecture.md) - Technical architecture and implementation details
-- [Examples](examples.md) - Common usage scenarios and configurations
-- [Troubleshooting](troubleshooting.md) - Common issues and solutions
-
-## Quick Start
-
-For the most common use case of separating lighting and pixel outputs:
-
-```bash
-cargo run --release -- \
-  --source-ip 192.168.1.100 \
-  --lighting-dest-ip 192.168.1.200 \
-  --pixel-dest-ip 192.168.1.201
-```
-
-This sends:
-- **Lighting fixtures** (universe 1) → `192.168.1.200` (e.g., Enttec Ode MK2)
-- **Pixel fixtures** (universes 2+) → `192.168.1.201` (e.g., Enttec Octo MK2)
-
-## Getting Help
-
-- Run `halo --help` for CLI usage
-- Check [troubleshooting.md](troubleshooting.md) for common issues
-- See [CLAUDE.md](../CLAUDE.md) for development commands and architecture overview
+The [legacy/](legacy/) directory contains documentation for the pre-pivot Halo lighting console (the old
+tokio-based Art-Net console). It no longer describes this codebase and is kept for reference only.
