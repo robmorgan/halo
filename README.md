@@ -6,7 +6,7 @@
 </h1>
 </p>
 <p align="center">
-  <strong>A two-deck DJ app with a built-in lighting console.</strong>
+  <strong>A DJ app with a built-in lighting console.</strong>
 </p>
 
 ## About
