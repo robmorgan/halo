@@ -238,6 +238,55 @@ persistence shell don't change; bump `CueFile.version` as fields grow):
 **Milestone:** draw two overlapping cues targeting different fixtures and
 both play; same-fixture overlaps merge HTP/LTP with clean fades.
 
+### Phase L3 — Shows
+
+**Goal:** a playlist becomes a show. Per-track cues authored once in
+Prepare carry a set-level narrative (soft intro → drop → mid-set
+cooldown), cues fire real pre-programmed looks instead of bare intensity,
+and there's live control to pull the energy back or skip a sequence
+without editing anything.
+
+Today three gaps block this: cues carry only intensity (color / position
+/ effects live in `ProgrammerParams`, rig-wide and live-only, so a
+mid-set palette change repaints every later track's cues); the only live
+override *replaces* a lane with a flat level rather than attenuating the
+authored shape; and cues attach to tracks globally, so a track lights
+identically in every set and "skip" has no non-destructive gesture.
+
+Build order is smallest-first; every step keeps `resolve()` as the single
+merge point and `render()` pure:
+
+1. **Energy master** — a global 0–100% fader scaling resolved track-cue
+   levels multiplicatively inside `resolve()`; the priority stack becomes
+   Programmer (replace) > energy (scale) > track cues > off. Authored
+   shape is preserved — builds and chases just sit lower — and
+   programmer overrides are unaffected. Optionally damp strobe and
+   effect rate when energy drops below a threshold. Small, and
+   immediately useful live.
+2. **Looks in cues** — a `Look` is a stored snapshot of programmer
+   params (STORE-from-live already captures one), persisted by id in the
+   library. `Cue` gains an optional `look_id`; `resolve()` yields level
+   + look per lane and `render()` uses the cue's look instead of the
+   global live params, falling back to today's behavior for look-less
+   cues. Bump `CueFile.version`. Dovetails with Phase L2's fades:
+   crossfade between looks, not just levels.
+3. **Show entity** — a `Show` is a playlist plus per-entry deltas:
+   non-destructive per-cue arm/disarm (click a cue bar hollow to skip it
+   tonight), and an optional per-entry energy/theme override so the same
+   track can sit differently in different sets. Track cues stay the
+   authored default; the show stores only deltas (new tables alongside
+   `playlists`).
+
+Open question to resolve here: lighting follows a single deck's
+playhead, so during a two-deck blend the look hard-switches when the
+lighting deck changes — decide whether lighting should follow the audio
+crossfader once shows span transitions.
+
+**Milestone:** run a playlist as a show — looks fire from track cues
+through the arc, one fader pulls the whole rig to 60% when the room
+isn't there, and tonight's skipped sequence never touches the authored
+cues.
+
 ---
 
 ## Backlog (post-1.0)
