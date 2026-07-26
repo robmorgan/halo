@@ -225,7 +225,9 @@ persistence shell don't change; bump `CueFile.version` as fields grow):
 1. **Per-cue fade in/out** — crossfade the outgoing cue into the incoming
    one inside `resolve()`. Cues stay non-overlapping in the data; this
    covers the common "new look starts while the old is still visible"
-   case with minimal machinery.
+   case with minimal machinery. (Phase L3's look lane makes same-lane
+   overlap inexpressible by construction — if L3 lands first, this step
+   reduces to fades at look-event boundaries.)
 2. **Per-fixture cue targets** — cues carry a fixture selection; relax
    the invariant from "no time overlap per lane" to "no overlap per
    fixture", so cues that touch disjoint fixtures may overlap freely
@@ -253,39 +255,71 @@ override *replaces* a lane with a flat level rather than attenuating the
 authored shape; and cues attach to tracks globally, so a track lights
 identically in every set and "skip" has no non-destructive gesture.
 
-Build order is smallest-first; every step keeps `resolve()` as the single
-merge point and `render()` pure:
+**Re-base the lanes from fixture taxonomy to roles.** Today's
+Lighting / Pixels / FX lanes are keyed by `FixtureKind` — a hardware
+axis, when authoring thinks in intent ("the drop hits: everything red,
+strobe chase"). One musical moment smears across three lanes kept in
+sync by hand, and an intensity bar conflates *that* something happens
+with *what* happens. The show model decomposes into what / how much /
+when, so the lanes become:
 
-1. **Energy master** — a global 0–100% fader scaling resolved track-cue
-   levels multiplicatively inside `resolve()`; the priority stack becomes
-   Programmer (replace) > energy (scale) > track cues > off. Authored
-   shape is preserved — builds and chases just sit lower — and
-   programmer overrides are unaffected. Optionally damp strobe and
-   effect rate when energy drops below a threshold. Small, and
-   immediately useful live.
-2. **Looks in cues** — a `Look` is a stored snapshot of programmer
-   params (STORE-from-live already captures one), persisted by id in the
-   library. `Cue` gains an optional `look_id`; `resolve()` yields level
-   + look per lane and `render()` uses the cue's look instead of the
-   global live params, falling back to today's behavior for look-less
-   cues. Bump `CueFile.version`. Dovetails with Phase L2's fades:
-   crossfade between looks, not just levels.
+- **Look lane** — sparse, beat-snapped *events*: each switches the rig
+  to a stored look and holds until the next event (blocks tinted by the
+  look's color — the strip reads as the track's color script). A look
+  contains palette, position, and effects, so one event replaces three
+  coordinated bars; per-fixture-kind intensity moves *inside* looks,
+  where a console would put it anyway.
+- **Energy lane** — a drawn envelope (automation-style breakpoints, not
+  bars): the narrative arc made directly editable, multiplying whatever
+  the look outputs.
+- **Accent lane** — momentary one-shots (strobe hit, blinder, pyro):
+  the only items needing bar-precise start *and* end, and exactly the
+  set to arm/disarm live. Today's lane semantics survive here intact.
+
+The `CueSet` machinery (windowed queries, sorted-lane invariants,
+painters, drag editor, JSON persistence) is semantics-agnostic — this
+re-labels the axis rather than rebuilding the editor. Look events are
+cues with implicit duration; only the energy curve is a new item type.
+Duration-until-next removes same-lane overlap by construction, which
+supersedes Phase L2 step 1 for the look lane; HTP/LTP (L2 step 3) still
+governs accents firing over the active look.
+
+Build order is smallest-first; every step keeps `resolve()` as the
+single merge point and `render()` pure:
+
+1. **Energy** — the authored curve, plus a live master fader that
+   scales/offsets it; both multiply resolved output inside `resolve()`.
+   The priority stack becomes Programmer (replace) > energy (scale) >
+   track cues > off. Authored shape is preserved — builds and chases
+   just sit lower. Optionally damp strobe and effect rate when energy
+   drops below a threshold. The fader alone is small and immediately
+   useful live; the curve lands with the lane re-base.
+2. **Look lane** — a `Look` is a stored snapshot of programmer params
+   (STORE-from-live already captures one), persisted by id in the
+   library. `resolve()` yields (active look, energy, accents) instead
+   of three levels; `render()` renders the cue's look instead of the
+   global live params. Bump `CueFile.version` with a migration from
+   the three intensity lanes. Crossfade between looks at event
+   boundaries (Phase L2 step 1's fade machinery, applied here).
 3. **Show entity** — a `Show` is a playlist plus per-entry deltas:
-   non-destructive per-cue arm/disarm (click a cue bar hollow to skip it
-   tonight), and an optional per-entry energy/theme override so the same
-   track can sit differently in different sets. Track cues stay the
-   authored default; the show stores only deltas (new tables alongside
-   `playlists`).
+   non-destructive arm/disarm on look events and accents (click a bar
+   hollow to skip it tonight), and an optional per-entry energy/theme
+   override so the same track can sit differently in different sets.
+   Track cues stay the authored default; the show stores only deltas
+   (new tables alongside `playlists`).
+
+Live UX falls out directly: tap a look event to jump or skip, one fader
+pulls the arc down, disarm an accent — nothing destructive.
 
 Open question to resolve here: lighting follows a single deck's
 playhead, so during a two-deck blend the look hard-switches when the
 lighting deck changes — decide whether lighting should follow the audio
 crossfader once shows span transitions.
 
-**Milestone:** run a playlist as a show — looks fire from track cues
-through the arc, one fader pulls the whole rig to 60% when the room
-isn't there, and tonight's skipped sequence never touches the authored
-cues.
+**Milestone:** run a playlist as a show — the look lane plays the
+track's color script, the energy curve draws the arc, one fader pulls
+the whole rig to 60% when the room isn't there, and tonight's skipped
+accent never touches the authored cues.
 
 ---
 

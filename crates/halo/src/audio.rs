@@ -201,6 +201,7 @@ impl AudioOutput {
                         let phase = deck.shared.scrub.phase();
                         if prev_phase[i] == ScrubPhase::Idle && phase != ScrubPhase::Idle {
                             voices[i].seed(deck.shared.scrub.target());
+                            voices[i].set_lead_in(deck.shared.scrub.lead_in());
                             scr_strips[i].reset();
                         }
                         if prev_phase[i] != ScrubPhase::Settling && phase == ScrubPhase::Settling {

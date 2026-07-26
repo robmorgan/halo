@@ -6,12 +6,12 @@
 use eframe::egui;
 
 use super::peaks::{BandPeaks, PeakLevel};
-use super::{paint_placeholder, palette};
+use super::{GridMarks, paint_placeholder, palette};
 
 /// Strip height in points.
-const STRIP_HEIGHT: f32 = 48.0;
+const STRIP_HEIGHT: f32 = 56.0;
 /// Texture height in pixels (2x the strip for retina crispness).
-const TEX_HEIGHT: usize = 96;
+const TEX_HEIGHT: usize = 112;
 /// Perceptual lift applied to column heights (amp^gamma): keeps quiet
 /// intros/breakdowns visible in the silhouette. 1.0 = linear.
 const OVERVIEW_GAMMA: f32 = 0.85;
@@ -85,6 +85,8 @@ pub struct OverviewParams<'a> {
     /// Hot cue slots (source frames); markers draw above the wave for each
     /// defined slot. Pass `&[]` for players without hot cues.
     pub hot_cues: &'a [Option<usize>],
+    /// Beat grid, for the bar numbers along the top edge.
+    pub marks: &'a GridMarks,
 }
 
 /// Paint the overview strip. Returns the click-to-seek target as a track
@@ -132,6 +134,33 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
     let frac_x = |frame: usize| {
         rect.left() + rect.width() * (frame as f32 / params.total_frames.max(1) as f32)
     };
+    let frac_x_f = |frame: f64| {
+        rect.left() + rect.width() * (frame / params.total_frames.max(1) as f64) as f32
+    };
+
+    // Bar numbers along the top edge, thinned to keep labels ≥ ~40 px apart.
+    if params.marks.is_usable() {
+        let bars = params.marks.downbeat_count();
+        if bars > 0 {
+            let mut stride = 1u32;
+            while rect.width() * stride as f32 / (bars as f32) < 40.0 && stride < (1 << 16) {
+                stride *= 2;
+            }
+            for i in (0..params.marks.len()).filter(|&i| params.marks.is_downbeat(i)) {
+                let bar = params.marks.bar_number(i);
+                if bar == 0 || !(bar - 1).is_multiple_of(stride) {
+                    continue;
+                }
+                painter.text(
+                    egui::pos2(frac_x_f(params.marks.frame(i)) + 2.0, rect.top() + 1.0),
+                    egui::Align2::LEFT_TOP,
+                    bar,
+                    egui::FontId::monospace(8.0),
+                    palette::TEXT_DIM,
+                );
+            }
+        }
+    }
 
     // Loop region / staged loop-in.
     if let Some((start, end)) = params.loop_region {

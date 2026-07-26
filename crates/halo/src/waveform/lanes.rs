@@ -19,6 +19,8 @@ const BAR_INSET_Y: f32 = 2.5;
 const MIN_BAR_W: f32 = 2.0;
 /// Extra dim applied to every lane when the deck isn't driving lighting.
 const INACTIVE_DIM: f32 = 0.30;
+/// Width of the left label gutter in points.
+const LABEL_GUTTER_W: f32 = 30.0;
 
 pub struct LanesParams<'a> {
     pub cues: &'a CueSet,
@@ -108,20 +110,44 @@ pub fn paint_lanes(ui: &mut egui::Ui, params: LanesParams<'_>, span: &ZoomSpan) 
         }
     }
 
-    // Labels over the bars (no reserved gutter, so the mapping stays
-    // full-width and pixel-identical to the zoomed view above), with a
-    // backing wash for legibility.
-    for (row, &(_, label, color)) in LANES.iter().enumerate() {
-        let rr = row_rect(row);
-        let galley = painter.layout_no_wrap(
-            label.to_owned(),
-            egui::FontId::monospace(8.0),
-            dim(color, 0.5),
+    // Left label gutter, painted over the bars so the frame→x mapping stays
+    // full-width and pixel-identical to the zoomed view above.
+    let gutter = egui::Rect::from_min_max(
+        rect.left_top(),
+        egui::pos2(rect.left() + LABEL_GUTTER_W, rect.bottom()),
+    );
+    painter.rect_filled(
+        gutter,
+        egui::CornerRadius {
+            nw: 4,
+            ne: 0,
+            sw: 4,
+            se: 0,
+        },
+        palette::LANE_BG,
+    );
+    for row in 1..LANES.len() {
+        let y = row_rect(row).top() - 0.5;
+        painter.line_segment(
+            [egui::pos2(gutter.left(), y), egui::pos2(gutter.right(), y)],
+            egui::Stroke::new(1.0_f32, palette::LANE_SEPARATOR),
         );
-        let pos = egui::pos2(rr.left() + 4.0, rr.center().y - galley.size().y / 2.0);
-        let backing = egui::Rect::from_min_size(pos, galley.size()).expand2(egui::vec2(2.0, 0.0));
-        painter.rect_filled(backing, 2.0, palette::LANE_BG.gamma_multiply(0.8));
-        painter.galley(pos, galley, color);
+    }
+    painter.line_segment(
+        [
+            egui::pos2(gutter.right() + 0.5, rect.top()),
+            egui::pos2(gutter.right() + 0.5, rect.bottom()),
+        ],
+        egui::Stroke::new(1.0_f32, palette::LANE_SEPARATOR),
+    );
+    for (row, &(_, label, color)) in LANES.iter().enumerate() {
+        painter.text(
+            egui::pos2(gutter.center().x, row_rect(row).center().y),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::monospace(8.0),
+            dim(color, 0.9),
+        );
     }
 
     // Continue the zoomed view's centered playhead through the strip.

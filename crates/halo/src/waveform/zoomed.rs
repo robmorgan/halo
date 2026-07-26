@@ -17,6 +17,9 @@ const TICK_BEAT_PX: f32 = 8.0;
 const TICK_DOWNBEAT_PX: f32 = 14.0;
 /// Scroll distance (points) per zoom step on wheel/trackpad zoom.
 const SCROLL_PER_ZOOM_STEP: f32 = 40.0;
+/// Cue marker triangle size in points.
+const CUE_TRI_W: f32 = 9.0;
+const CUE_TRI_H: f32 = 7.0;
 
 /// Zoom presets: bars when a grid exists, seconds otherwise. Same index
 /// into both tables so toggling grids keeps a comparable span.
@@ -101,6 +104,13 @@ pub enum ScrubGesture {
     Release,
 }
 
+/// Translucent ghost playhead for the sync-align slide-in: drawn
+/// `offset_frames` from the centered playhead, fading with `alpha`.
+pub struct GhostPlayhead {
+    pub offset_frames: f64,
+    pub alpha: f32,
+}
+
 pub struct ZoomedParams<'a> {
     pub peaks: Option<&'a BandPeaks>,
     pub marks: &'a GridMarks,
@@ -109,6 +119,13 @@ pub struct ZoomedParams<'a> {
     pub sample_rate: u32,
     pub loop_region: Option<(usize, usize)>,
     pub loop_in: Option<usize>,
+    /// Hot cue slots (source frames); markers draw at the top edge for each
+    /// defined slot. Pass `&[]` for views without hot cues.
+    pub hot_cues: &'a [Option<usize>],
+    /// CDJ cue point (source frames), drawn as an unnumbered marker.
+    pub cue_point: Option<usize>,
+    /// Sync-align slide-in animation, if one is running.
+    pub ghost: Option<GhostPlayhead>,
 }
 
 /// Paint the zoomed view. Reports the drag lifecycle while the user
@@ -213,12 +230,30 @@ pub fn paint_zoomed(
             .count();
         let plan = overlay_plan(rect.width(), visible.len(), downbeats);
         let stride = plan.downbeat_stride as u32;
+        // Bar-number labels need more room than ticks (~34 px vs 6), so they
+        // thin on their own power-of-two stride on top of the tick stride.
+        let bar_px = (params.marks.median_beat_frames() * 4.0 * map.px_per_frame()) as f32;
+        let mut label_stride = stride;
+        if bar_px > 0.0 {
+            while bar_px * (label_stride as f32) < 34.0 && label_stride < (1 << 16) {
+                label_stride *= 2;
+            }
+        }
         for i in visible {
             let is_downbeat = params.marks.is_downbeat(i);
             let (height, stroke) = if is_downbeat {
                 let bar = params.marks.bar_number(i);
                 if bar == 0 || !(bar - 1).is_multiple_of(stride) {
                     continue;
+                }
+                if (bar - 1).is_multiple_of(label_stride) {
+                    painter.text(
+                        egui::pos2(map.x(params.marks.frame(i)) + 3.0, rect.top() + 1.0),
+                        egui::Align2::LEFT_TOP,
+                        bar,
+                        egui::FontId::monospace(9.0),
+                        palette::TEXT_DIM,
+                    );
                 }
                 (
                     TICK_DOWNBEAT_PX,
@@ -248,6 +283,49 @@ pub fn paint_zoomed(
         }
     }
 
+    // Elastic lead-in: mark where the track actually starts. Gated on a
+    // negative position so ordinary near-head playback (where the viewport
+    // routinely straddles frame 0) stays unadorned.
+    if params.position_frames < 0.0 {
+        let x = map.x(0.0);
+        if x >= rect.left() && x <= rect.right() {
+            painter.line_segment(
+                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                egui::Stroke::new(1.0_f32, palette::TEXT_DIM),
+            );
+        }
+    }
+
+    // Cue markers: the CDJ cue point (unnumbered) plus the hot cue slots,
+    // drawn over the ticks but under the playhead.
+    let draw_marker = |frame: usize, label: Option<usize>| {
+        let x = map.x(frame as f64);
+        if x >= rect.left() && x <= rect.right() {
+            cue_marker(&painter, rect, x, label);
+        }
+    };
+    if let Some(frame) = params.cue_point {
+        draw_marker(frame, None);
+    }
+    for (slot, cue) in params.hot_cues.iter().enumerate() {
+        if let Some(frame) = cue {
+            draw_marker(*frame, Some(slot + 1));
+        }
+    }
+
+    // Ghost playhead: the pre-align position gliding into the centered
+    // playhead after a sync-aligned start. Drawn center-relative so it
+    // converges exactly, and under the real playhead so it merges into it.
+    if let Some(g) = &params.ghost {
+        let x = rect.center().x + (g.offset_frames * map.px_per_frame()) as f32;
+        if x >= rect.left() && x <= rect.right() {
+            painter.line_segment(
+                [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                egui::Stroke::new(2.0_f32, palette::PLAYHEAD.gamma_multiply(g.alpha)),
+            );
+        }
+    }
+
     // Fixed centered playhead — the one full-height line in this view.
     let center_x = rect.center().x;
     painter.line_segment(
@@ -272,4 +350,34 @@ pub fn paint_zoomed(
         return Some(ScrubGesture::Drag(-(dx as f64) / map.px_per_frame()));
     }
     None
+}
+
+/// CDJ-style cue marker: a down-pointing triangle hanging from the top
+/// edge, a small square foot on the bottom edge at the same x, and an
+/// optional hot-cue slot number beside the triangle.
+fn cue_marker(painter: &egui::Painter, rect: egui::Rect, x: f32, label: Option<usize>) {
+    let color = palette::CUE_MARKER;
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(x - CUE_TRI_W / 2.0, rect.top()),
+            egui::pos2(x + CUE_TRI_W / 2.0, rect.top()),
+            egui::pos2(x, rect.top() + CUE_TRI_H),
+        ],
+        color,
+        egui::Stroke::NONE,
+    ));
+    painter.rect_filled(
+        egui::Rect::from_center_size(egui::pos2(x, rect.bottom() - 2.0), egui::vec2(4.0, 4.0)),
+        0.0,
+        color,
+    );
+    if let Some(n) = label {
+        painter.text(
+            egui::pos2(x + CUE_TRI_W / 2.0 + 2.0, rect.top()),
+            egui::Align2::LEFT_TOP,
+            n,
+            egui::FontId::proportional(8.0),
+            color,
+        );
+    }
 }
