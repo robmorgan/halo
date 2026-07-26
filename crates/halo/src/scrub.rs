@@ -27,15 +27,21 @@ const GATE_SMOOTH_SECS: f64 = 0.005;
 const SETTLE_TAU_SECS: f64 = 0.15;
 /// The glide is over once the rate is within this of its target.
 const SETTLE_EPS_RATE: f64 = 0.02;
-/// Trajectory length cap in frames (safety; ~1.1 s suffices from ±32x).
-const MAX_SETTLE_FRAMES: u64 = 48_000 * 5;
+/// Trajectory length cap in seconds (safety): must cover a full lead-in on
+/// a slow track traversed at half tempo, not just the rate convergence.
+const MAX_SETTLE_SECS: f64 = 20.0;
+/// Silent spring-back speed (source frames per output frame) returning a
+/// paused release from the elastic lead-in to frame 0.
+const SNAP_BACK_RATE: f64 = 16.0;
 
 /// Release-glide trajectory: the rate eases toward `rate_target` for
 /// exactly `frames_left` more frames (pre-counted at release so the landing
-/// position is known in advance).
+/// position is known in advance), then an optional silent spring-back rolls
+/// a paused release out of the lead-in onto frame 0.
 struct SettleTraj {
     rate_target: f64,
     frames_left: u64,
+    snap_frames: u64,
 }
 
 /// Variable-rate scrub reader over an interleaved stereo source.
@@ -46,10 +52,14 @@ pub struct ScrubVoice {
     rate: f64,
     /// Smoothed audibility gate, 0..1.
     gate: f64,
+    /// Position floor: 0.0, or `-lead_in` while an elastic lead-in gesture
+    /// is engaged. Positions below 0 read as silence.
+    min_pos: f64,
     catchup_frames: f64,
     rate_alpha: f64,
     gate_alpha: f64,
     settle_alpha: f64,
+    settle_cap_frames: u64,
     settle: Option<SettleTraj>,
 }
 
@@ -60,12 +70,20 @@ impl ScrubVoice {
             pos: 0.0,
             rate: 0.0,
             gate: 0.0,
+            min_pos: 0.0,
             catchup_frames: (CATCHUP_SECS * sr).max(1.0),
             rate_alpha: 1.0 - (-1.0 / (RATE_SMOOTH_SECS * sr)).exp(),
             gate_alpha: 1.0 - (-1.0 / (GATE_SMOOTH_SECS * sr)).exp(),
             settle_alpha: 1.0 - (-1.0 / (SETTLE_TAU_SECS * sr)).exp(),
+            settle_cap_frames: (MAX_SETTLE_SECS * sr) as u64,
             settle: None,
         }
+    }
+
+    /// Elastic lead-in depth for the current gesture; positions in
+    /// `[-frames, 0)` are draggable silence before the track start.
+    pub fn set_lead_in(&mut self, frames: f64) {
+        self.min_pos = -frames.max(0.0);
     }
 
     /// Re-anchor the reader at `frame` on scrub engage: no residual motion
@@ -91,23 +109,43 @@ impl ScrubVoice {
         let total_frames = source.len() / CHANNELS;
         let max_pos = (total_frames.saturating_sub(1)) as f64;
         let mut rate = self.rate;
-        let mut pos = self.pos.clamp(0.0, max_pos);
+        let mut pos = self.pos.clamp(self.min_pos, max_pos);
         let mut n: u64 = 0;
-        while (rate - rate_target).abs() >= SETTLE_EPS_RATE && n < MAX_SETTLE_FRAMES {
+        // A playing release keeps simulating past rate convergence while
+        // still inside the silent lead-in, so the landing (= the engine
+        // handoff frame) is a real track frame and the voice audibly plays
+        // through frame 0.
+        while ((rate - rate_target).abs() >= SETTLE_EPS_RATE || (rate_target > 0.0 && pos < 0.0))
+            && n < self.settle_cap_frames
+        {
             rate += (rate_target - rate) * self.settle_alpha;
-            pos = (pos + rate).clamp(0.0, max_pos);
+            pos = (pos + rate).clamp(self.min_pos, max_pos);
             n += 1;
             // A boundary ends the glide early — but only when still moving
-            // into it, so a clamped start can ease back off the rail.
-            if (pos == 0.0 && rate < 0.0) || (pos == max_pos && rate > 0.0) {
+            // into it, so a clamped start can ease back off the rail. The
+            // lead-in floor doesn't end a playing release: the spin-up
+            // pulls it back off.
+            if (pos == self.min_pos && rate < 0.0 && rate_target <= 0.0)
+                || (pos == max_pos && rate > 0.0)
+            {
                 break;
             }
         }
+        // A paused release stranded in the lead-in gets a silent constant-
+        // rate spring-back that lands exactly on frame 0.
+        let snap_frames = if rate_target == 0.0 && pos < 0.0 {
+            (-pos / SNAP_BACK_RATE).ceil() as u64
+        } else {
+            0
+        };
         self.settle = Some(SettleTraj {
             rate_target,
             frames_left: n,
+            snap_frames,
         });
-        pos
+        // `.max(0.0)`: if the cap ever truncates a glide inside the lead-in,
+        // report a real track frame anyway — the voice there is silent.
+        if snap_frames > 0 { 0.0 } else { pos.max(0.0) }
     }
 
     /// Render one glide block into `out` (interleaved stereo, overwritten).
@@ -119,6 +157,7 @@ impl ScrubVoice {
         let Some(SettleTraj {
             rate_target,
             ref mut frames_left,
+            ref mut snap_frames,
         }) = self.settle
         else {
             out.fill(0.0);
@@ -129,29 +168,39 @@ impl ScrubVoice {
             return true;
         }
         let max_pos = (total_frames - 1) as f64;
+        let min_pos = self.min_pos;
+        // Same guard as `render`: keep a stale position in this source's
+        // range (matches the clamped start `begin_settle` simulated from).
+        self.pos = self.pos.clamp(min_pos, max_pos);
 
         for frame in out.chunks_exact_mut(CHANNELS) {
+            if *frames_left == 0 && *snap_frames > 0 {
+                // Silent spring-back out of the lead-in: the gate stays
+                // shut while the position rolls onto the 0 rail — the
+                // `.min(0.0)` lands bit-exact on the reported landing.
+                self.rate += (rate_target - self.rate) * self.settle_alpha;
+                self.gate += (0.0 - self.gate) * self.gate_alpha;
+                frame.fill(0.0);
+                self.pos = (self.pos + SNAP_BACK_RATE).min(0.0);
+                *snap_frames -= 1;
+                continue;
+            }
+
             // Same op order as the begin_settle simulation: rate, then
             // read at the pre-advance position, then advance + clamp.
             self.rate += (rate_target - self.rate) * self.settle_alpha;
             let gate_target = (self.rate.abs() / AUDIBLE_RATE).min(1.0);
             self.gate += (gate_target - self.gate) * self.gate_alpha;
 
-            let base = self.pos.floor() as usize;
-            let frac = (self.pos - base as f64) as f32;
-            let next = (base + 1).min(total_frames - 1);
-            let gain = self.gate as f32;
-            for (ch, sample) in frame.iter_mut().enumerate() {
-                let a = source[base * CHANNELS + ch];
-                let b = source[next * CHANNELS + ch];
-                *sample = (a + (b - a) * frac) * gain;
-            }
+            write_frame(self.pos, self.gate, source, total_frames, frame);
 
-            self.pos = (self.pos + self.rate).clamp(0.0, max_pos);
+            self.pos = (self.pos + self.rate).clamp(min_pos, max_pos);
             *frames_left = frames_left.saturating_sub(1);
         }
 
-        self.settle.as_ref().is_none_or(|s| s.frames_left == 0)
+        self.settle
+            .as_ref()
+            .is_none_or(|s| s.frames_left == 0 && s.snap_frames == 0)
     }
 
     /// Render one block into `out` (interleaved stereo, overwritten),
@@ -163,7 +212,11 @@ impl ScrubVoice {
             return;
         }
         let max_pos = (total_frames - 1) as f64;
-        let target = target_frame.clamp(0.0, max_pos);
+        // The seeded position can sit outside this source's range (EOF
+        // playhead, or the snapshot swapped mid-gesture); re-enter range
+        // before the first read.
+        self.pos = self.pos.clamp(self.min_pos, max_pos);
+        let target = target_frame.clamp(self.min_pos, max_pos);
         let target_rate = ((target - self.pos) / self.catchup_frames).clamp(-MAX_RATE, MAX_RATE);
 
         for frame in out.chunks_exact_mut(CHANNELS) {
@@ -171,18 +224,33 @@ impl ScrubVoice {
             let gate_target = (self.rate.abs() / AUDIBLE_RATE).min(1.0);
             self.gate += (gate_target - self.gate) * self.gate_alpha;
 
-            let base = self.pos.floor() as usize;
-            let frac = (self.pos - base as f64) as f32;
-            let next = (base + 1).min(total_frames - 1);
-            let gain = self.gate as f32;
-            for (ch, sample) in frame.iter_mut().enumerate() {
-                let a = source[base * CHANNELS + ch];
-                let b = source[next * CHANNELS + ch];
-                *sample = (a + (b - a) * frac) * gain;
-            }
+            write_frame(self.pos, self.gate, source, total_frames, frame);
 
-            self.pos = (self.pos + self.rate).clamp(0.0, max_pos);
+            self.pos = (self.pos + self.rate).clamp(self.min_pos, max_pos);
         }
+    }
+}
+
+/// Gated linear-interpolated read of `source` at `pos` into one output
+/// frame. Positions before the track start (the elastic lead-in) read as
+/// silence — never indexed.
+#[inline]
+fn write_frame(pos: f64, gate: f64, source: &[f32], total_frames: usize, frame: &mut [f32]) {
+    if pos < 0.0 {
+        frame.fill(0.0);
+        return;
+    }
+    // A position at or past the last frame holds the final sample: the
+    // published playhead is `total_frames` at EOF, so a scrub seeded there
+    // starts one whole frame beyond the last valid index.
+    let base = (pos.floor() as usize).min(total_frames - 1);
+    let frac = (pos - base as f64) as f32;
+    let next = (base + 1).min(total_frames - 1);
+    let gain = gate as f32;
+    for (ch, sample) in frame.iter_mut().enumerate() {
+        let a = source[base * CHANNELS + ch];
+        let b = source[next * CHANNELS + ch];
+        *sample = (a + (b - a) * frac) * gain;
     }
 }
 
@@ -249,6 +317,27 @@ mod tests {
         voice.render((frames - 1) as f64, &source, &mut out);
         assert!(voice.rate.abs() <= MAX_RATE + 1e-9);
         assert!(voice.pos <= 512.0 * MAX_RATE);
+    }
+
+    /// Regression: the EOF playhead publishes `total_frames` — one past the
+    /// last valid frame — and a scrub engaged there used to index out of
+    /// bounds on the first read (crash observed live at scrub.rs:241).
+    #[test]
+    fn seed_at_eof_reads_safely() {
+        let frames = 1_000;
+        let source = ramp_source(frames);
+        let mut voice = ScrubVoice::new(SR);
+        voice.seed(frames as f64);
+        let mut out = vec![0.0f32; 64 * CHANNELS];
+        voice.render(frames as f64, &source, &mut out);
+        assert!(voice.pos <= (frames - 1) as f64);
+
+        // Same engage point, released while paused: the settle path must
+        // hold the clamp too.
+        voice.seed(frames as f64);
+        voice.begin_settle(0.0, &source);
+        voice.render_settle(&source, &mut out);
+        assert!(voice.pos <= (frames - 1) as f64);
     }
 
     #[test]
@@ -414,6 +503,120 @@ mod tests {
         );
         settle_to_done(&mut voice, &source);
         assert_eq!(voice.pos, landing);
+    }
+
+    #[test]
+    fn lead_in_floors_at_configured_depth() {
+        let source = ramp_source(1_000);
+        let mut voice = ScrubVoice::new(SR);
+        voice.seed(500.0);
+        voice.set_lead_in(4_800.0);
+        render_blocks(&mut voice, -100_000.0, &source, 200);
+        assert!(
+            (voice.pos + 4_800.0).abs() < 1.0,
+            "pos {} should floor at -4800",
+            voice.pos
+        );
+    }
+
+    #[test]
+    fn lead_in_renders_silence_while_moving() {
+        let source = vec![1.0f32; 10_000 * CHANNELS]; // constant full-scale
+        let mut voice = ScrubVoice::new(SR);
+        voice.seed(2_000.0);
+        voice.set_lead_in(48_000.0);
+        // Chase deep into the lead-in but stop while still moving fast, so
+        // the gate is open and only the pos < 0 read keeps the output silent.
+        render_blocks(&mut voice, -40_000.0, &source, 3);
+        assert!(
+            voice.pos < -1_000.0,
+            "pos {} should be in lead-in",
+            voice.pos
+        );
+        assert!(voice.rate.abs() > AUDIBLE_RATE, "gate must be open");
+        let mut out = vec![1.0f32; 256 * CHANNELS];
+        voice.render(-40_000.0, &source, &mut out);
+        assert!(
+            out.iter().all(|&s| s == 0.0),
+            "lead-in must read as silence"
+        );
+    }
+
+    #[test]
+    fn release_playing_from_lead_in_lands_in_track() {
+        let source = ramp_source(SR as usize * 30);
+        let mut voice = ScrubVoice::new(SR);
+        voice.set_lead_in(48_000.0);
+        voice.seed(-30_000.0); // held in the lead-in, rate 0
+        let landing = voice.begin_settle(1.0, &source);
+        assert!(
+            landing >= 0.0,
+            "playing release must land in the track, got {landing}"
+        );
+        // Render exactly the trajectory length in odd-sized blocks; track
+        // that the spin-up rolls monotonically forward through frame 0.
+        let traj_frames = voice.settle.as_ref().unwrap().frames_left;
+        let mut remaining = traj_frames as usize;
+        let mut out = vec![0.0f32; 173 * CHANNELS];
+        let mut prev_pos = voice.pos;
+        while remaining >= 173 {
+            voice.render_settle(&source, &mut out);
+            assert!(voice.pos >= prev_pos, "spin-up must not roll backward");
+            prev_pos = voice.pos;
+            remaining -= 173;
+        }
+        let mut tail = vec![0.0f32; remaining * CHANNELS];
+        if remaining > 0 {
+            voice.render_settle(&source, &mut tail);
+        }
+        assert_eq!(
+            voice.pos, landing,
+            "must land bit-exactly on the prediction"
+        );
+        assert!((voice.rate - 1.0).abs() < SETTLE_EPS_RATE + 1e-9);
+    }
+
+    #[test]
+    fn release_paused_from_lead_in_springs_back_to_zero() {
+        let source = vec![1.0f32; 10_000 * CHANNELS];
+        let mut voice = ScrubVoice::new(SR);
+        voice.set_lead_in(48_000.0);
+        voice.seed(-20_000.0); // held in the lead-in, rate 0
+        let landing = voice.begin_settle(0.0, &source);
+        assert_eq!(landing, 0.0, "paused release springs back to the start");
+        let mut out = vec![1.0f32; 512 * CHANNELS];
+        for _ in 0..2_000 {
+            let done = voice.render_settle(&source, &mut out);
+            assert!(
+                out.iter().all(|&s| s == 0.0),
+                "spring-back must stay silent"
+            );
+            if done {
+                assert_eq!(voice.pos, 0.0, "spring-back lands exactly on frame 0");
+                return;
+            }
+        }
+        panic!("spring-back never completed");
+    }
+
+    #[test]
+    fn settle_cap_covers_full_bar_lead_in() {
+        let source = ramp_source(SR as usize * 30);
+        let mut voice = ScrubVoice::new(SR);
+        let lead_in = 4.0 * SR as f64; // far deeper than any real lead-in
+        voice.set_lead_in(lead_in);
+        voice.seed(-lead_in);
+        // Half tempo: the slowest realistic traversal of the full lead-in.
+        let landing = voice.begin_settle(0.5, &source);
+        let traj = voice.settle.as_ref().unwrap().frames_left;
+        assert!(
+            landing >= 0.0,
+            "cap must not strand the landing, got {landing}"
+        );
+        assert!(
+            traj < voice.settle_cap_frames,
+            "trajectory {traj} hit the cap"
+        );
     }
 
     #[test]
