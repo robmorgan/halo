@@ -3521,12 +3521,16 @@ fn deck_panel(
                 let play_label = if playing { "⏸" } else { "▶" };
                 if ui
                     .add_sized(
-                        [50.0, 36.0],
+                        [70.0, 30.0],
                         egui::Button::new(
                             egui::RichText::new(play_label)
                                 .size(18.0)
                                 .color(egui::Color32::from_rgb(90, 220, 120)),
                         )
+                        .stroke(egui::Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgb(90, 220, 120),
+                        ))
                         .fill(egui::Color32::from_rgb(32, 56, 40)),
                     )
                     .clicked()
@@ -3536,7 +3540,7 @@ fn deck_panel(
 
                 // CUE — CDJ semantics on press/release edges; amber outline.
                 let cue_resp = ui.add_sized(
-                    [50.0, 36.0],
+                    [70.0, 30.0],
                     egui::Button::new(egui::RichText::new("CUE").size(15.0).color(ACCENT))
                         .stroke(egui::Stroke::new(1.0, ACCENT))
                         .fill(ACCENT_FILL),
@@ -3559,10 +3563,10 @@ fn deck_panel(
             control_group(ui, "NUDGE", |ui| {
                 // Pitch bend: momentary ±4% while held.
                 let bend_minus = ui
-                    .add_sized([28.0, 36.0], egui::Button::new("−"))
+                    .add_sized([28.0, 30.0], egui::Button::new("−"))
                     .is_pointer_button_down_on();
                 let bend_plus = ui
-                    .add_sized([28.0, 36.0], egui::Button::new("+"))
+                    .add_sized([28.0, 30.0], egui::Button::new("+"))
                     .is_pointer_button_down_on();
                 deck_ui.bend = if bend_minus {
                     0.96
@@ -3581,18 +3585,22 @@ fn deck_panel(
             control_group(ui, "LOOP", |ui| {
                 // Loops: manual in/out, quantized autoloop at the shown
                 // length, halve/double between 1/16 and 16 beats (gapless
-                // feed-thread re-anchor). Fixed height, text-tight width so
-                // the row stays compact.
+                // feed-thread re-anchor). Every button is a fixed 45×30 to
+                // match the play/cue height; only the 4 BEATS chip is wider.
                 let has_loop = loop_region.is_some();
                 let grid_ok = deck_ui.marks.is_usable();
-                let btn =
-                    |txt: &str| egui::Button::new(txt.to_string()).min_size(egui::vec2(0.0, 36.0));
+                let btn = |ui: &mut egui::Ui, txt: &str, enabled: bool| {
+                    ui.add_enabled_ui(enabled, |ui| {
+                        ui.add_sized([45.0, 30.0], egui::Button::new(txt.to_string()))
+                    })
+                    .inner
+                };
 
-                if ui.add(btn("IN")).clicked() && has_track {
+                if btn(ui, "IN", true).clicked() && has_track {
                     deck_ui.loop_in_staged =
                         Some(quantize_frame(&deck_ui.marks, deck_ui.quantize, playhead));
                 }
-                if ui.add(btn("OUT")).clicked()
+                if btn(ui, "OUT", true).clicked()
                     && has_track
                     && let Some(start) = deck_ui.loop_in_staged
                 {
@@ -3609,33 +3617,34 @@ fn deck_panel(
                     }
                 }
 
-                // Length chip: autoloop at the shown length; lit while a
-                // loop is active.
-                let chip = ui
-                    .add_enabled_ui(grid_ok && has_track, |ui| {
-                        let label = format!("{} BEATS", format_beats(deck_ui.loop_beats));
-                        outlined_toggle(ui, has_loop, &label, [72.0, 36.0])
-                    })
-                    .inner;
-                if chip.on_hover_text("Autoloop at this length").clicked() {
-                    deck_ui.autoloop(deck_ui.loop_beats);
-                }
-
-                if ui.add_enabled(has_loop, btn("÷2")).clicked()
+                if btn(ui, "÷2", has_loop).clicked()
                     && let Some((start, _)) = loop_region
                 {
                     deck_ui.loop_beats = (deck_ui.loop_beats / 2.0).max(0.0625);
                     let end = loop_end_for(&deck_ui.marks, start, deck_ui.loop_beats);
                     shared.set_loop(Some((start, end.max(start + 1))));
                 }
-                if ui.add_enabled(has_loop, btn("×2")).clicked()
+
+                // Length chip: autoloop at the shown length; lit while a
+                // loop is active. Sits in the middle, between ÷2 and ×2.
+                let chip = ui
+                    .add_enabled_ui(grid_ok && has_track, |ui| {
+                        let label = format!("{} BEATS", format_beats(deck_ui.loop_beats));
+                        outlined_toggle(ui, has_loop, &label, [72.0, 30.0])
+                    })
+                    .inner;
+                if chip.on_hover_text("Autoloop at this length").clicked() {
+                    deck_ui.autoloop(deck_ui.loop_beats);
+                }
+
+                if btn(ui, "×2", has_loop).clicked()
                     && let Some((start, _)) = loop_region
                 {
                     deck_ui.loop_beats = (deck_ui.loop_beats * 2.0).min(16.0);
                     let end = loop_end_for(&deck_ui.marks, start, deck_ui.loop_beats);
                     shared.set_loop(Some((start, end.max(start + 1))));
                 }
-                if ui.add_enabled(has_loop, btn("EXIT")).clicked() {
+                if btn(ui, "EXIT", has_loop).clicked() {
                     shared.set_loop(None);
                 }
             });
