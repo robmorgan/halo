@@ -4113,7 +4113,15 @@ fn process_cpu_secs() -> f64 {
 
 /// Small uppercase weak caption above a control group ("TRANSPORT", …).
 fn section_caption(ui: &mut egui::Ui, text: &str) {
-    ui.label(egui::RichText::new(text).size(9.0).weak());
+    // Lighter grey when the deck is live; falls back to the dim weak color
+    // when the enclosing scope is disabled (no track loaded).
+    let text = egui::RichText::new(text).size(9.0);
+    let text = if ui.is_enabled() {
+        text.color(egui::Color32::from_gray(170))
+    } else {
+        text.weak()
+    };
+    ui.label(text);
 }
 
 /// Caption above a horizontal control row; returns the row's inner value.
