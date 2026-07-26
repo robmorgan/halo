@@ -3316,20 +3316,24 @@ fn deck_panel(
             }
         }
         ui.add_space(4.0);
-        // Time-column width, sized to the widest value ("-" prefix included)
-        // so the digits don't jitter the layout.
-        let time_value_w = ui.fonts(|f| {
-            f.layout_no_wrap(
-                "-88:88.8".to_owned(),
-                egui::FontId::monospace(20.0),
-                egui::Color32::WHITE,
-            )
-            .size()
-            .x
-        });
+        // Fixed value-column widths, sized to the widest values so the digits
+        // don't jitter the layout (the "-" prefix only shows on REMAINING).
+        let value_w = |text: &str| {
+            ui.fonts(|f| {
+                f.layout_no_wrap(
+                    text.to_owned(),
+                    egui::FontId::monospace(20.0),
+                    egui::Color32::WHITE,
+                )
+                .size()
+                .x
+            })
+        };
+        let time_value_w = value_w("-88:88.8");
+        let bpm_value_w = value_w("888.8");
         // Title/artist, width-constrained and truncated so a long name can't
-        // grow into (and overlap) the right-aligned time readout + toggle.
-        let title_w = (ui.available_width() - time_value_w - 60.0).max(60.0);
+        // grow into (and overlap) the right-aligned time + BPM readouts.
+        let title_w = (ui.available_width() - time_value_w - bpm_value_w - 72.0).max(60.0);
         ui.allocate_ui_with_layout(
             egui::vec2(title_w, ARTWORK_SIZE),
             egui::Layout::top_down(egui::Align::Min),
@@ -3352,11 +3356,43 @@ fn deck_panel(
                 }
             },
         );
-        // Right side: one time readout — a small caption naming the mode over
-        // a big white monospace value — with the ⏱ button toggling between
-        // elapsed and remaining.
+        // Right side (right-to-left): BPM readout rightmost, then the time
+        // readout with the ⏱ button toggling elapsed/remaining. Each value is
+        // a small caption over a big monospace number. BPM is amber while this
+        // deck is the master tempo reference, white otherwise.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let value_label = |ui: &mut egui::Ui, w: f32, caption: &str, value: String, color| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(w, ARTWORK_SIZE),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.add_space(10.0);
+                        section_caption(ui, caption);
+                        ui.label(
+                            egui::RichText::new(value)
+                                .color(color)
+                                .strong()
+                                .monospace()
+                                .size(20.0),
+                        );
+                    },
+                );
+            };
+
             ui.add_space(8.0);
+            let bpm_text = if deck_ui.bpm > 0.0 && has_track {
+                format!("{:.1}", deck_ui.bpm * tempo_rate)
+            } else {
+                "0.0".to_string()
+            };
+            let bpm_color = if is_master {
+                ACCENT
+            } else {
+                egui::Color32::WHITE
+            };
+            value_label(ui, bpm_value_w, "BPM", bpm_text, bpm_color);
+
+            ui.add_space(12.0);
             if ui
                 .small_button("⏱")
                 .on_hover_text("Toggle elapsed / remaining")
@@ -3376,21 +3412,7 @@ fn deck_panel(
             } else {
                 ("ELAPSED", format_time(playhead, sample_rate))
             };
-            ui.allocate_ui_with_layout(
-                egui::vec2(time_value_w, ARTWORK_SIZE),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.add_space(10.0);
-                    section_caption(ui, caption);
-                    ui.label(
-                        egui::RichText::new(value)
-                            .color(egui::Color32::WHITE)
-                            .strong()
-                            .monospace()
-                            .size(20.0),
-                    );
-                },
-            );
+            value_label(ui, time_value_w, caption, value, egui::Color32::WHITE);
         });
     });
     ui.add_space(6.0);
@@ -3503,7 +3525,6 @@ fn deck_panel(
                 idx,
                 is_master,
                 has_track,
-                tempo_rate,
                 wave_h,
                 &mut response,
             );
@@ -3749,7 +3770,6 @@ fn deck_sidebar(
     deck_idx: usize,
     is_master: bool,
     has_track: bool,
-    tempo_rate: f64,
     height: f32,
     response: &mut DeckPanelResponse,
 ) {
@@ -3765,23 +3785,6 @@ fn deck_sidebar(
     );
 
     let full = ui.available_width();
-
-    // BPM stays readable even with no track loaded, so it sits outside the
-    // disabled scope below.
-    ui.vertical_centered(|ui| {
-        section_caption(ui, "BPM");
-        let bpm_text = if deck_ui.bpm > 0.0 && has_track {
-            format!("{:.1}", deck_ui.bpm * tempo_rate)
-        } else {
-            "0.0".to_string()
-        };
-        ui.label(
-            egui::RichText::new(bpm_text)
-                .monospace()
-                .size(16.0)
-                .color(ACCENT),
-        );
-    });
 
     ui.add_enabled_ui(has_track, |ui| {
         ui.add_space(4.0);
