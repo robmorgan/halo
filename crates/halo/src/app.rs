@@ -20,12 +20,13 @@ use crate::fader::{Fader, Notches};
 use crate::knob::{Knob, KnobArc};
 use crate::library::{Library, PlaylistRow, SortColumn, TrackRow};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
-use crate::show::simulate_show;
+use crate::show::simulate_show_l3;
+use crate::show_preview::{LOOK_PALETTE, LookId, ShowPreview, ShowSel};
 use crate::state::{MixerShared, ScrubPhase, Transport};
 use crate::waveform::{
-    BandPeaks, EditorInteraction, GhostPlayhead, GridMarks, LanesEditorParams, LanesParams,
-    OverviewParams, OverviewTexture, ScrubGesture, ZoomSpan, ZoomedParams, lanes_editor,
-    paint_beat_counter, paint_lanes, paint_overview, paint_zoomed,
+    BandPeaks, GhostPlayhead, GridMarks, OverviewParams, OverviewTexture, ScrubGesture,
+    ShowEditorInteraction, ShowEditorParams, ShowStripParams, ZoomSpan, ZoomedParams,
+    paint_beat_counter, paint_overview, paint_show_strip, paint_zoomed, show_editor,
 };
 use crate::worker::{WorkerEvent, spawn_analysis_worker, spawn_folder_import};
 
@@ -103,9 +104,13 @@ struct DeckUi {
     pending_artifact: Option<Arc<PreAnalysisArtifact>>,
     peaks: Option<BandPeaks>,
     marks: GridMarks,
-    /// Lighting/pixels/FX cues for the lane strip, loaded from the
-    /// library on track load (empty until authored in Prepare).
+    /// Lighting/pixels/FX cues, loaded from the library on track load.
+    /// No longer painted (the L3 strip replaced the classic lanes) but
+    /// still the layer that feeds the DMX engine and STORE-from-live.
     cues: CueSet,
+    /// Session-only L3 show preview (look / energy / accent lanes),
+    /// seeded on track load, edited in Prepare, never persisted.
+    show: ShowPreview,
     bpm: f64,
     overview: Option<OverviewTexture>,
     artwork: Option<egui::TextureHandle>,
@@ -179,6 +184,7 @@ impl DeckUi {
             peaks: None,
             marks: GridMarks::empty(),
             cues: CueSet::empty(),
+            show: ShowPreview::default(),
             bpm: 0.0,
             overview: None,
             artwork: None,
@@ -430,10 +436,12 @@ const AUDITION_VOLUME_DEFAULT: f32 = 0.85;
 /// plus the lane editor's selection and drag state.
 struct PrepareState {
     audition: DeckUi,
-    selection: std::collections::HashSet<u64>,
-    interaction: EditorInteraction,
+    selection: std::collections::HashSet<ShowSel>,
+    interaction: ShowEditorInteraction,
     /// Snap editor gestures to the beat grid.
     snap: bool,
+    /// Palette look new look events are created with.
+    armed_look: LookId,
 }
 
 impl PrepareState {
@@ -446,19 +454,11 @@ impl PrepareState {
         Self {
             audition,
             selection: std::collections::HashSet::new(),
-            interaction: EditorInteraction::default(),
+            interaction: ShowEditorInteraction::default(),
             snap: true,
+            armed_look: LookId(0),
         }
     }
-}
-
-/// One clipboard cue; offsets are relative to the earliest copied cue and
-/// in seconds, so pastes land correctly on any track at any device rate.
-struct ClipCue {
-    lane: Lane,
-    offset_secs: f64,
-    dur_secs: f64,
-    intensity: f32,
 }
 
 const PERSIST_KEY: &str = "halo";
@@ -473,8 +473,6 @@ pub struct HaloApp {
     lighting_deck: usize,
     view: View,
     prepare: PrepareState,
-    /// Cue clipboard (survives track switches → cross-track paste).
-    cue_clipboard: Vec<ClipCue>,
     /// Live manual-override layer; beats the active deck's track cues.
     programmer: Programmer,
     /// Which pane the footer shows (library browser or programmer).
@@ -647,7 +645,6 @@ impl HaloApp {
             lighting_deck: 0,
             view: persisted.view,
             prepare,
-            cue_clipboard: Vec::new(),
             programmer: Programmer::default(),
             footer_tab: persisted.footer_tab,
             rig,
@@ -824,9 +821,9 @@ impl HaloApp {
     /// or the Prepare audition player) and kick off background pre-analysis.
     fn poll_decodes(&mut self, ctx: &egui::Context) {
         let device_rate = self.device_rate();
-        for (i, deck_ui) in self.decks.iter_mut().enumerate() {
+        for i in 0..self.decks.len() {
             if let Some(status) = Self::poll_deck_decode(
-                deck_ui,
+                &mut self.decks[i],
                 DECK_NAMES[i],
                 ctx,
                 device_rate,
@@ -834,6 +831,14 @@ impl HaloApp {
                 &self.wake_tx,
             ) {
                 self.status = status;
+                // The show preview is session-only: a fresh load adopts
+                // any edits a sibling player holds for the same track,
+                // instead of keeping its own fresh seed.
+                if self.decks[i].track_id.is_some()
+                    && self.decks[i].track_id == self.prepare.audition.track_id
+                {
+                    self.decks[i].show = self.prepare.audition.show.clone();
+                }
             }
         }
         if let Some(status) = Self::poll_deck_decode(
@@ -845,6 +850,13 @@ impl HaloApp {
             &self.wake_tx,
         ) {
             self.status = status;
+            if let Some(deck) = self
+                .decks
+                .iter()
+                .find(|d| d.track_id.is_some() && d.track_id == self.prepare.audition.track_id)
+            {
+                self.prepare.audition.show = deck.show.clone();
+            }
         }
     }
 
@@ -891,6 +903,16 @@ impl HaloApp {
                             .and_then(|id| library?.cues(id).ok().flatten())
                             .map(|f| CueSet::from_file(&f, device_rate))
                             .unwrap_or_else(CueSet::empty);
+                        // Session-only L3 preview: seed the role lanes
+                        // deterministically per track so both views show
+                        // content immediately (poll_decodes adopts edits
+                        // from a sibling player holding the same track).
+                        deck_ui.show = simulate_show_l3(
+                            &deck_ui.marks,
+                            deck_ui.deck.shared.total(),
+                            device_rate,
+                            data.track_id.unwrap_or(1) as u64,
+                        );
                         deck_ui.bpm = data.grid.bpm;
                         deck_ui.title = data.title;
                         deck_ui.artist = data.artist;
@@ -1251,83 +1273,36 @@ impl HaloApp {
         }
     }
 
-    /// Prepare-view editor keys: Delete removes the selection, ⌘C/⌘V copy
-    /// and paste (across tracks — the clipboard is app-level). Esc is
-    /// handled by the caller, layered with programmer CLEAR.
+    /// Prepare-view editor keys: Delete removes the typed selection
+    /// (look events, energy breakpoints, accents). Esc is handled by the
+    /// caller, layered with programmer CLEAR. Cue copy/paste was dropped
+    /// with the classic lanes; it returns with the full L3 landing.
     fn prepare_editor_keys(&mut self, ctx: &egui::Context) {
         use egui::Key;
-        let (del, copy, paste) = ctx.input(|i| {
-            (
-                i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace),
-                i.modifiers.command && i.key_pressed(Key::C),
-                i.modifiers.command && i.key_pressed(Key::V),
-            )
-        });
-        if !(del || copy || paste) {
-            return;
-        }
-        let sr = self.device_rate().max(1) as f64;
-        let mut mutated = false;
+        let del = ctx.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace));
         let PrepareState {
             audition,
             selection,
-            snap,
             ..
         } = &mut self.prepare;
-        let track_id = audition.track_id;
-
-        if copy && !selection.is_empty() {
-            let mut items: Vec<(Lane, f64, f64, f32)> = selection
-                .iter()
-                .filter_map(|&id| {
-                    audition
-                        .cues
-                        .find(id)
-                        .map(|(l, c)| (l, c.start_frame, c.duration_frames, c.intensity))
-                })
-                .collect();
-            items.sort_by(|a, b| a.1.total_cmp(&b.1));
-            if let Some(&(_, first, _, _)) = items.first() {
-                self.cue_clipboard = items
-                    .iter()
-                    .map(|&(lane, start, dur, intensity)| ClipCue {
-                        lane,
-                        offset_secs: (start - first) / sr,
-                        dur_secs: dur / sr,
-                        intensity,
-                    })
-                    .collect();
-            }
+        if !del || selection.is_empty() {
+            return;
         }
-        if paste && !self.cue_clipboard.is_empty() && audition.deck.track.is_some() {
-            let playhead = audition.deck.shared.playhead_frames() as f64;
-            let base = crate::waveform::snap_frame(&audition.marks, *snap, playhead);
-            selection.clear();
-            for clip in &self.cue_clipboard {
-                if let Some(id) = audition.cues.insert(
-                    clip.lane,
-                    base + clip.offset_secs * sr,
-                    clip.dur_secs * sr,
-                    clip.intensity,
-                ) {
-                    selection.insert(id);
+        let mut accents = std::collections::HashSet::new();
+        for &sel in selection.iter() {
+            match sel {
+                ShowSel::Look(id) => audition.show.looks.remove(id),
+                ShowSel::Energy(id) => audition.show.energy.remove(id),
+                ShowSel::Accent(id) => {
+                    accents.insert(id);
                 }
             }
-            mutated = true;
         }
-        if del && !selection.is_empty() {
-            audition.cues.remove(selection);
-            selection.clear();
-            mutated = true;
-        }
-
-        let dirty = if mutated {
-            Some(audition.cues.clone())
-        } else {
-            None
-        };
-        if let (Some(cues), Some(id)) = (dirty, track_id) {
-            self.commit_cues(id, &cues);
+        audition.show.accents.remove(&accents);
+        selection.clear();
+        let (show, track_id) = (audition.show.clone(), audition.track_id);
+        if let Some(id) = track_id {
+            self.sync_show(id, &show);
         }
     }
 
@@ -1910,6 +1885,20 @@ impl HaloApp {
         }
     }
 
+    /// Session-only analogue of [`commit_cues`](Self::commit_cues) for the
+    /// L3 show preview: propagate an edited show to every player holding
+    /// the same track. No persistence — the preview dies with the session.
+    fn sync_show(&mut self, track_id: i64, show: &ShowPreview) {
+        for d in &mut self.decks {
+            if d.track_id == Some(track_id) {
+                d.show = show.clone();
+            }
+        }
+        if self.prepare.audition.track_id == Some(track_id) {
+            self.prepare.audition.show = show.clone();
+        }
+    }
+
     /// The Prepare view's central panel: audition transport plus the same
     /// waveform stack as a deck, with the direct-manipulation cue-lane
     /// editor in the middle.
@@ -1921,6 +1910,7 @@ impl HaloApp {
             selection,
             interaction,
             snap,
+            armed_look,
         } = &mut self.prepare;
         let shared = audition.deck.shared.clone();
         let has_track = audition.deck.track.is_some();
@@ -2056,22 +2046,23 @@ impl HaloApp {
         );
 
         ui.add_space(2.0);
-        let mut mutated = lanes_editor(
+        let mut mutated = show_editor(
             ui,
-            LanesEditorParams {
+            ShowEditorParams {
                 marks: &audition.marks,
                 position_frames: display_pos,
                 total_frames: total,
                 sample_rate,
                 snap: *snap,
+                armed_look: *armed_look,
             },
             &audition.zoom,
-            &mut audition.cues,
+            &mut audition.show,
             selection,
             interaction,
         );
 
-        // Inspector row: snap, selection tools, generate/clear.
+        // Inspector row: snap, look palette, selection tools, reset/clear.
         ui.add_space(4.0);
         ui.add_enabled_ui(has_track, |ui| {
             ui.horizontal(|ui| {
@@ -2083,75 +2074,137 @@ impl HaloApp {
                     *snap = !*snap;
                 }
                 ui.separator();
-                let count = selection.len();
-                if count == 0 {
+                // Look palette: click arms the look for new events and
+                // reassigns any selected look events.
+                let selected_looks: Vec<u64> = selection
+                    .iter()
+                    .filter_map(|&s| match s {
+                        ShowSel::Look(id) => Some(id),
+                        _ => None,
+                    })
+                    .collect();
+                for (i, look) in LOOK_PALETTE.iter().enumerate() {
+                    let armed = armed_look.0 == i;
+                    let mut swatch = egui::Button::new("")
+                        .fill(look.color.gamma_multiply(0.85))
+                        .min_size(egui::vec2(18.0, 18.0));
+                    if armed {
+                        swatch = swatch.stroke(egui::Stroke::new(2.0_f32, egui::Color32::WHITE));
+                    }
+                    let resp = ui.add(swatch).on_hover_text(look.name);
+                    if resp.clicked() {
+                        *armed_look = LookId(i);
+                        if !selected_looks.is_empty() {
+                            for &id in &selected_looks {
+                                audition.show.looks.set_look(id, LookId(i));
+                            }
+                            mutated = true;
+                        }
+                    }
+                }
+                ui.separator();
+                let selected_accents: std::collections::HashSet<u64> = selection
+                    .iter()
+                    .filter_map(|&s| match s {
+                        ShowSel::Accent(id) => Some(id),
+                        _ => None,
+                    })
+                    .collect();
+                if selection.is_empty() {
                     ui.label(
                         egui::RichText::new(
-                            "Drag in a lane to draw a cue · drag edges to resize · ⌘-drag to \
-                             rubber-band select",
+                            "Drag in LOOK to place the armed look · drag in ENERGY to shape \
+                             the arc · draw one-shots in ACCENT",
                         )
                         .weak()
                         .size(11.0),
                     );
                 } else {
-                    ui.label(
-                        egui::RichText::new(format!("{count} selected"))
-                            .size(11.0)
-                            .strong(),
-                    );
-                    let mut intensity = selection
-                        .iter()
-                        .next()
-                        .and_then(|&id| audition.cues.find(id))
-                        .map(|(_, c)| c.intensity)
-                        .unwrap_or(1.0);
-                    let resp = ui
-                        .add(
-                            egui::Slider::new(&mut intensity, 0.0..=1.0)
-                                .show_value(false)
-                                .text("INT"),
-                        )
-                        .on_hover_text("Intensity of the selected cue(s)");
-                    if resp.changed() {
-                        for &id in selection.iter() {
-                            audition.cues.set_intensity(id, intensity);
+                    if let [id] = selected_looks[..]
+                        && let Some(ev) = audition.show.looks.find(id)
+                    {
+                        ui.label(
+                            egui::RichText::new(ev.look.def().name)
+                                .size(11.0)
+                                .color(ev.look.def().color)
+                                .strong(),
+                        );
+                    } else {
+                        ui.label(
+                            egui::RichText::new(format!("{} selected", selection.len()))
+                                .size(11.0)
+                                .strong(),
+                        );
+                    }
+                    if !selected_accents.is_empty() {
+                        let mut intensity = selected_accents
+                            .iter()
+                            .next()
+                            .and_then(|&id| audition.show.accents.find(id))
+                            .map(|(_, c)| c.intensity)
+                            .unwrap_or(1.0);
+                        let resp = ui
+                            .add(
+                                egui::Slider::new(&mut intensity, 0.0..=1.0)
+                                    .show_value(false)
+                                    .text("INT"),
+                            )
+                            .on_hover_text("Intensity of the selected accent(s)");
+                        if resp.changed() {
+                            for &id in &selected_accents {
+                                audition.show.accents.set_intensity(id, intensity);
+                            }
+                        }
+                        if resp.drag_stopped() {
+                            mutated = true;
                         }
                     }
-                    if resp.drag_stopped() {
-                        mutated = true;
-                    }
                     if ui.button("Delete").clicked() {
-                        audition.cues.remove(selection);
+                        for &s in selection.iter() {
+                            match s {
+                                ShowSel::Look(id) => audition.show.looks.remove(id),
+                                ShowSel::Energy(id) => audition.show.energy.remove(id),
+                                ShowSel::Accent(_) => {}
+                            }
+                        }
+                        audition.show.accents.remove(&selected_accents);
                         selection.clear();
                         mutated = true;
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.menu_button("Clear ▾", |ui| {
-                        for (lane, name) in [
-                            (Lane::Lighting, "Lighting"),
-                            (Lane::Pixels, "Pixels"),
-                            (Lane::Fx, "FX"),
-                        ] {
-                            if ui.button(name).clicked() {
-                                audition.cues.clear_lane(lane);
-                                mutated = true;
-                                ui.close_menu();
-                            }
+                        if ui.button("Looks").clicked() {
+                            audition.show.looks.clear();
+                            mutated = true;
+                            ui.close_menu();
                         }
-                        if ui.button("All lanes").clicked() {
-                            audition.cues = CueSet::empty();
+                        if ui.button("Energy").clicked() {
+                            audition.show.energy.clear();
+                            mutated = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("Accents").clicked() {
+                            audition.show.accents = CueSet::empty();
+                            mutated = true;
+                            ui.close_menu();
+                        }
+                        if ui.button("All").clicked() {
+                            audition.show = ShowPreview::default();
                             selection.clear();
                             mutated = true;
                             ui.close_menu();
                         }
                     });
                     if ui
-                        .button("Generate demo cues")
-                        .on_hover_text("Seed the track with simulated beat-aligned cues, then edit")
+                        .button("Reset demo show")
+                        .on_hover_text(
+                            "Re-seed the look / energy / accent lanes with the simulated \
+                             show, then edit",
+                        )
                         .clicked()
                     {
-                        audition.cues = simulate_show(
+                        audition.show = simulate_show_l3(
                             &audition.marks,
                             total,
                             sample_rate,
@@ -2223,16 +2276,17 @@ impl HaloApp {
             }
         }
 
-        // Autosave: every completed mutation lands in the library and
-        // propagates to any deck holding the same track.
+        // Session sync: every completed mutation propagates to any deck
+        // holding the same track (no persistence — the L3 preview is
+        // session-only).
         let track_id = audition.track_id;
         let dirty = if mutated {
-            Some(audition.cues.clone())
+            Some(audition.show.clone())
         } else {
             None
         };
-        if let (Some(cues), Some(id)) = (dirty, track_id) {
-            self.commit_cues(id, &cues);
+        if let (Some(show), Some(id)) = (dirty, track_id) {
+            self.sync_show(id, &show);
         }
         if let Some(id) = dropped {
             self.load_audition(id);
@@ -3458,19 +3512,20 @@ fn deck_panel(
                 sample_rate,
             );
 
-            // Lighting / Pixels / FX trigger lanes, scrolling in lockstep
-            // with the zoomed view above.
+            // L3 show lanes (look / energy / accent), scrolling in
+            // lockstep with the zoomed view above.
             ui.add_space(2.0);
-            paint_lanes(
+            paint_show_strip(
                 ui,
-                LanesParams {
-                    cues: &deck_ui.cues,
+                ShowStripParams {
+                    show: &deck_ui.show,
                     marks: &deck_ui.marks,
                     position_frames: display_pos,
                     total_frames: total,
                     sample_rate,
                     lighting_active: is_lighting,
-                    outputs: lighting_outputs,
+                    programmer_override: lighting_outputs
+                        .is_some_and(|o| o.iter().any(|l| l.source == LaneSource::Programmer)),
                 },
                 &deck_ui.zoom,
             );

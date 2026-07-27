@@ -130,9 +130,14 @@ One `timestretch::Engine` per deck. The audio callback owns both `EngineProcesso
 ## Lighting & FX
 
 Halo drives show lighting alongside the decks. Current state (branch
-`mixer-deck-ui-overhaul`): per-deck trigger lanes (Lighting / Pixels / FX)
-under the waveforms; editable per-track cues persisted in the library
-(`lighting_cues` table, seconds-based JSON); Prepare/Perform views with an
+`mixer-deck-ui-overhaul`): per-deck trigger lanes under the waveforms —
+now the **Phase L3 preview** role lanes (Look / Energy / Accent,
+`show_preview.rs` + `show_strip.rs`/`show_editor.rs`), interactive and
+session-only: seeded per track, edited in Prepare, not persisted, and
+not yet wired to the DMX path. The legacy three-lane layer remains
+underneath: editable per-track cues persisted in the library
+(`lighting_cues` table, seconds-based JSON) still feed the rig and
+STORE-from-live; Prepare/Perform views with an
 independent audition player and a direct-manipulation cue editor; a
 console-style programmer override layer resolved per lane
 (Programmer > track cues > off, `programmer::resolve()` as the single

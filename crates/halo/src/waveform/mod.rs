@@ -4,17 +4,17 @@
 //! live in the submodules.
 
 mod counter;
-mod lanes;
-mod lanes_editor;
 mod overview;
 mod peaks;
+mod show_editor;
+mod show_strip;
 mod zoomed;
 
 pub use counter::paint_beat_counter;
-pub use lanes::{LanesParams, paint_lanes};
-pub use lanes_editor::{EditorInteraction, LanesEditorParams, lanes_editor, snap_frame};
 pub use overview::{OverviewParams, OverviewTexture, paint_overview};
 pub use peaks::BandPeaks;
+pub use show_editor::{ShowEditorInteraction, ShowEditorParams, show_editor};
+pub use show_strip::{ShowStripParams, paint_show_strip};
 pub use zoomed::{GhostPlayhead, ScrubGesture, ZoomSpan, ZoomedParams, paint_zoomed};
 
 /// Label + color per lane, shared by the perform strip, the Prepare
@@ -75,6 +75,10 @@ pub(crate) mod palette {
     pub const LANE_PIXELS: Color32 = Color32::from_rgb(240, 95, 175);
     /// FX (smoke/pyro) lane: green — amber is the accent, red the playhead.
     pub const LANE_FX: Color32 = Color32::from_rgb(70, 210, 130);
+    /// L3 energy envelope: amber, matching the loop/accent family.
+    pub const ENERGY: Color32 = Color32::from_rgb(235, 175, 50);
+    /// L3 accent one-shots: near-white so they read as hits, not a hue.
+    pub const ACCENT: Color32 = Color32::from_rgb(238, 238, 244);
 }
 
 /// Center-playhead frame→x mapping shared by the zoomed view and the
@@ -112,6 +116,48 @@ impl FrameMap {
     pub fn px_per_frame(&self) -> f64 {
         self.px_per_frame
     }
+}
+
+/// Nearest beat when snapping is on (and a grid exists); the raw frame
+/// otherwise. Always non-negative.
+pub fn snap_frame(marks: &GridMarks, snap: bool, frame: f64) -> f64 {
+    let frame = frame.max(0.0);
+    if !snap || !marks.is_usable() {
+        return frame;
+    }
+    match marks.beat_at_or_before(frame) {
+        Some(i) => {
+            let a = marks.frame(i);
+            let b = if i + 1 < marks.len() {
+                marks.frame(i + 1)
+            } else {
+                a
+            };
+            if frame - a <= b - frame { a } else { b }
+        }
+        // Before the first beat: the first beat is the only grid point.
+        None => marks.frame(0).min(frame).max(0.0),
+    }
+}
+
+/// Uneven lane rows for the L3 strip/editor: `heights` per row with 1 pt
+/// separators between. Painters and hit-testing share this so the bands
+/// never disagree.
+pub(crate) fn lane_rows<const N: usize>(rect: egui::Rect, heights: [f32; N]) -> [egui::Rect; N] {
+    let mut top = rect.top();
+    heights.map(|h| {
+        let row =
+            egui::Rect::from_min_size(egui::pos2(rect.left(), top), egui::vec2(rect.width(), h));
+        top += h + 1.0;
+        row
+    })
+}
+
+/// Which of `rows` contains `y` (clamped to the last row).
+pub(crate) fn lane_row_at<const N: usize>(rows: &[egui::Rect; N], y: f32) -> usize {
+    rows.iter()
+        .position(|r| y < r.bottom() + 0.5)
+        .unwrap_or(N - 1)
 }
 
 /// Beats in a bar for the counter/phrase math. The Stage 10 grid carries a
