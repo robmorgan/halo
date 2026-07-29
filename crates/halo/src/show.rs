@@ -6,6 +6,7 @@
 
 use halo_light::cues::{CueSet, Lane};
 
+use crate::show_preview::{ACCENT_LANE, LookId, ShowPreview};
 use crate::waveform::GridMarks;
 
 /// splitmix64: a tiny deterministic PRNG so the simulation needs no `rand`
@@ -59,6 +60,9 @@ impl BeatSeq {
 
 /// SIMULATED show generator: deterministic per `(grid, seed)`, aligned to
 /// phrases and bars so the bars land musically.
+// Legacy three-lane generator, kept (unit-tested) for the full L3
+// landing; the preview seeds `simulate_show_l3` instead.
+#[allow(dead_code)]
 pub fn simulate_show(
     marks: &GridMarks,
     total_frames: usize,
@@ -119,6 +123,116 @@ pub fn simulate_show(
             show.insert(Lane::Pixels, frame, 0.5 * bar, intensity);
         }
     }
+    show
+}
+
+/// Linear interpolation for the energy arc segments.
+fn lerp(a: f32, b: f32, t: f64) -> f32 {
+    a + (b - a) * t.clamp(0.0, 1.0) as f32
+}
+
+/// Target energy for a section at normalized set position `t` (0..1):
+/// intro → build → drop → breakdown → second build → outro.
+fn arc_target(t: f64) -> f32 {
+    if t < 0.15 {
+        0.35
+    } else if t < 0.35 {
+        lerp(0.4, 0.8, (t - 0.15) / 0.20)
+    } else if t < 0.55 {
+        1.0
+    } else if t < 0.70 {
+        0.45
+    } else if t < 0.85 {
+        lerp(0.6, 0.95, (t - 0.70) / 0.15)
+    } else {
+        0.30
+    }
+}
+
+/// SIMULATED L3 show: deterministic per `(grid, seed)`. Look events at
+/// phrase boundaries following a cool/hot palette split, an energy arc
+/// (intro → build → drop → breakdown → outro), and sparse accents.
+/// Session-only seed content for the role-lane preview.
+pub fn simulate_show_l3(
+    marks: &GridMarks,
+    total_frames: usize,
+    sample_rate: u32,
+    seed: u64,
+) -> ShowPreview {
+    if total_frames == 0 {
+        return ShowPreview::default();
+    }
+    let seq = if marks.is_usable() && marks.median_beat_frames() > 0.0 {
+        BeatSeq::from_marks(marks)
+    } else {
+        BeatSeq::synthetic(total_frames, sample_rate)
+    };
+    if seq.frames.len() < 2 {
+        return ShowPreview::default();
+    }
+
+    let beat = seq.beat_frames;
+    let bar = 4.0 * beat;
+    let total = total_frames as f64;
+
+    // Section boundaries: phrase starts, falling back to every 8th
+    // downbeat, then every 32nd beat, so short/gridless tracks still
+    // get an arc.
+    let mut sections: Vec<f64> = (0..seq.frames.len())
+        .filter(|&i| seq.phrase_start[i])
+        .map(|i| seq.frames[i])
+        .collect();
+    if sections.len() < 2 {
+        sections = (0..seq.frames.len())
+            .filter(|&i| seq.downbeat[i])
+            .step_by(8)
+            .map(|i| seq.frames[i])
+            .collect();
+    }
+    if sections.len() < 2 {
+        sections = seq.frames.iter().copied().step_by(32).collect();
+    }
+    if sections.is_empty() {
+        sections = vec![seq.frames[0]];
+    }
+
+    // Palette pools by temperature; indices into LOOK_PALETTE.
+    const COOL: [usize; 4] = [1, 7, 0, 5]; // Deep Blue, UV Violet, Warm Open, Magenta Chase
+    const HOT: [usize; 4] = [2, 3, 4, 6]; // Red Drop, Strobe White, Acid Green, Amber Sweep
+
+    let mut show = ShowPreview::default();
+    let mut rng = seed;
+    let mut prev_energy: f32 = 0.0;
+    let mut prev_look: Option<usize> = None;
+
+    for (i, &frame) in sections.iter().enumerate() {
+        let t = i as f64 / sections.len() as f64;
+        let target = arc_target(t);
+        let energy = (target + (rand_f32(&mut rng) - 0.5) * 0.1).clamp(0.0, 1.0);
+        show.energy.insert(frame, energy);
+
+        let pool = if target < 0.6 { &COOL } else { &HOT };
+        let mut look = pool[(rand_f32(&mut rng) * pool.len() as f32) as usize % pool.len()];
+        if prev_look == Some(look) {
+            look = pool[(rand_f32(&mut rng) * pool.len() as f32) as usize % pool.len()];
+        }
+        show.looks.insert(frame, LookId(look), bar);
+        prev_look = Some(look);
+
+        // Accents: a full hit on the drop (energy stepping up past 0.9);
+        // otherwise ~25% of sections hit the downbeat of their last bar.
+        if prev_energy < 0.9 && energy >= 0.9 {
+            show.accents.insert(ACCENT_LANE, frame, beat, 1.0);
+        } else if rand_f32(&mut rng) < 0.25 {
+            let next = sections.get(i + 1).copied().unwrap_or(total);
+            let hit = (next - bar).max(frame);
+            show.accents
+                .insert(ACCENT_LANE, hit, beat, 0.6 + 0.4 * rand_f32(&mut rng));
+        }
+        prev_energy = energy;
+    }
+    // Closing breakpoint so the outro level holds visibly to the end.
+    show.energy.insert(total, arc_target(1.0));
     show
 }
 
@@ -185,6 +299,80 @@ mod tests {
         // 60 s at 44.1 kHz, no grid: still produces lighting cues.
         let show = simulate_show(&GridMarks::empty(), 60 * 44100, 44100, 1);
         assert!(!collect(&show, Lane::Lighting).is_empty());
+    }
+
+    #[test]
+    fn l3_deterministic_per_seed() {
+        let marks = test_marks();
+        let a = simulate_show_l3(&marks, 256 * 22050, 44100, 7);
+        let b = simulate_show_l3(&marks, 256 * 22050, 44100, 7);
+        let looks = |s: &ShowPreview| -> Vec<(f64, usize)> {
+            s.looks
+                .events()
+                .iter()
+                .map(|e| (e.frame, e.look.0))
+                .collect()
+        };
+        let energy = |s: &ShowPreview| -> Vec<(f64, f32)> {
+            s.energy
+                .points()
+                .iter()
+                .map(|p| (p.frame, p.value))
+                .collect()
+        };
+        assert_eq!(looks(&a), looks(&b));
+        assert_eq!(energy(&a), energy(&b));
+        assert_eq!(
+            collect(&a.accents, ACCENT_LANE),
+            collect(&b.accents, ACCENT_LANE)
+        );
+    }
+
+    #[test]
+    fn l3_looks_sorted_with_bar_separation() {
+        let marks = test_marks();
+        let show = simulate_show_l3(&marks, 256 * 22050, 44100, 42);
+        let bar = 4.0 * 22050.0;
+        let ev = show.looks.events();
+        assert!(!ev.is_empty());
+        for w in ev.windows(2) {
+            assert!(w[1].frame - w[0].frame >= bar - 1e-6);
+        }
+    }
+
+    #[test]
+    fn l3_energy_in_unit_range_and_strictly_increasing() {
+        let marks = test_marks();
+        let show = simulate_show_l3(&marks, 256 * 22050, 44100, 42);
+        let pts = show.energy.points();
+        assert!(pts.len() >= 2);
+        for p in pts {
+            assert!((0.0..=1.0).contains(&p.value));
+        }
+        for w in pts.windows(2) {
+            assert!(w[1].frame > w[0].frame);
+        }
+    }
+
+    #[test]
+    fn l3_accents_sorted_non_overlapping() {
+        let marks = test_marks();
+        let show = simulate_show_l3(&marks, 256 * 22050, 44100, 42);
+        let v = collect(&show.accents, ACCENT_LANE);
+        for w in v.windows(2) {
+            assert!(w[0].0 + w[0].1 <= w[1].0 + 1e-6, "{w:?}");
+        }
+    }
+
+    #[test]
+    fn l3_empty_track_is_empty_and_no_grid_falls_back() {
+        let empty = simulate_show_l3(&GridMarks::empty(), 0, 44100, 1);
+        assert!(empty.looks.events().is_empty());
+        assert!(empty.energy.points().is_empty());
+        // 60 s without a grid: synthetic fallback still seeds a show.
+        let show = simulate_show_l3(&GridMarks::empty(), 60 * 44100, 44100, 1);
+        assert!(!show.looks.events().is_empty());
+        assert!(show.energy.points().len() >= 2);
     }
 
     #[test]

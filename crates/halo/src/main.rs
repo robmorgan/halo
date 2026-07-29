@@ -10,6 +10,7 @@ mod library;
 mod programmer_ui;
 mod scrub;
 mod show;
+mod show_preview;
 mod state;
 mod waveform;
 mod worker;

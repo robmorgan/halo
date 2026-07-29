@@ -196,6 +196,10 @@ pub struct ScrubState {
     phase: AtomicU8,
     /// Pointer-target source frame (valid while `Active`).
     target_frame: AtomicF64,
+    /// Elastic lead-in depth for the current gesture (source frames):
+    /// positions in `[-lead_in, 0)` are draggable silence before the track
+    /// start. Published by the UI at engage, copied into the voice's floor.
+    lead_in_frames: AtomicF64,
     /// Rate the release glide eases toward: the deck's tempo rate resumes
     /// playback speed, 0.0 spins down to rest.
     settle_rate_target: AtomicF64,
@@ -216,6 +220,7 @@ impl ScrubState {
         Self {
             phase: AtomicU8::new(ScrubPhase::Idle as u8),
             target_frame: AtomicF64::new(0.0),
+            lead_in_frames: AtomicF64::new(0.0),
             settle_rate_target: AtomicF64::new(0.0),
             voice_frame: AtomicF64::new(0.0),
             landing: AtomicF64::new(0.0),
@@ -232,14 +237,20 @@ impl ScrubState {
     }
 
     /// Engage the scrub at `frame` (the playhead where the drag started, or
-    /// the gliding voice position on a mid-settle re-grab). The target is
-    /// published before the phase so the audio callback never sees a stale
-    /// target on engage.
-    pub fn begin(&self, frame: f64) {
+    /// the gliding voice position on a mid-settle re-grab). The target and
+    /// lead-in are published before the phase so the audio callback never
+    /// sees stale values on engage.
+    pub fn begin(&self, frame: f64, lead_in_frames: f64) {
+        self.lead_in_frames.store(lead_in_frames);
         self.target_frame.store(frame);
         self.voice_frame.store(frame);
         self.phase
             .store(ScrubPhase::Active as u8, Ordering::Release);
+    }
+
+    /// Elastic lead-in depth for the current gesture (source frames).
+    pub fn lead_in(&self) -> f64 {
+        self.lead_in_frames.load()
     }
 
     pub fn update_target(&self, frame: f64) {

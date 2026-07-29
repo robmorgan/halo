@@ -4,18 +4,18 @@
 //! live in the submodules.
 
 mod counter;
-mod lanes;
-mod lanes_editor;
 mod overview;
 mod peaks;
+mod show_editor;
+mod show_strip;
 mod zoomed;
 
 pub use counter::paint_beat_counter;
-pub use lanes::{LanesParams, paint_lanes};
-pub use lanes_editor::{EditorInteraction, LanesEditorParams, lanes_editor, snap_frame};
 pub use overview::{OverviewParams, OverviewTexture, paint_overview};
 pub use peaks::BandPeaks;
-pub use zoomed::{ScrubGesture, ZoomSpan, ZoomedParams, paint_zoomed};
+pub use show_editor::{ShowEditorInteraction, ShowEditorParams, show_editor};
+pub use show_strip::{ShowStripParams, paint_show_strip};
+pub use zoomed::{GhostPlayhead, ScrubGesture, ZoomSpan, ZoomedParams, paint_zoomed};
 
 /// Label + color per lane, shared by the perform strip, the Prepare
 /// editor, and the programmer UI.
@@ -46,6 +46,8 @@ pub(crate) mod palette {
     pub const BAND_HIGH: Color32 = Color32::from_rgb(235, 235, 240);
     /// Zoomed-view playhead.
     pub const PLAYHEAD: Color32 = Color32::from_rgb(230, 40, 40);
+    /// Cue point / hot cue markers on the zoomed view.
+    pub const CUE_MARKER: Color32 = PLAYHEAD;
     /// Overview position cursor.
     pub const CURSOR: Color32 = Color32::WHITE;
     /// Regular beat tick.
@@ -73,6 +75,10 @@ pub(crate) mod palette {
     pub const LANE_PIXELS: Color32 = Color32::from_rgb(240, 95, 175);
     /// FX (smoke/pyro) lane: green — amber is the accent, red the playhead.
     pub const LANE_FX: Color32 = Color32::from_rgb(70, 210, 130);
+    /// L3 energy envelope: amber, matching the loop/accent family.
+    pub const ENERGY: Color32 = Color32::from_rgb(235, 175, 50);
+    /// L3 accent one-shots: near-white so they read as hits, not a hue.
+    pub const ACCENT: Color32 = Color32::from_rgb(238, 238, 244);
 }
 
 /// Center-playhead frame→x mapping shared by the zoomed view and the
@@ -110,6 +116,48 @@ impl FrameMap {
     pub fn px_per_frame(&self) -> f64 {
         self.px_per_frame
     }
+}
+
+/// Nearest beat when snapping is on (and a grid exists); the raw frame
+/// otherwise. Always non-negative.
+pub fn snap_frame(marks: &GridMarks, snap: bool, frame: f64) -> f64 {
+    let frame = frame.max(0.0);
+    if !snap || !marks.is_usable() {
+        return frame;
+    }
+    match marks.beat_at_or_before(frame) {
+        Some(i) => {
+            let a = marks.frame(i);
+            let b = if i + 1 < marks.len() {
+                marks.frame(i + 1)
+            } else {
+                a
+            };
+            if frame - a <= b - frame { a } else { b }
+        }
+        // Before the first beat: the first beat is the only grid point.
+        None => marks.frame(0).min(frame).max(0.0),
+    }
+}
+
+/// Uneven lane rows for the L3 strip/editor: `heights` per row with 1 pt
+/// separators between. Painters and hit-testing share this so the bands
+/// never disagree.
+pub(crate) fn lane_rows<const N: usize>(rect: egui::Rect, heights: [f32; N]) -> [egui::Rect; N] {
+    let mut top = rect.top();
+    heights.map(|h| {
+        let row =
+            egui::Rect::from_min_size(egui::pos2(rect.left(), top), egui::vec2(rect.width(), h));
+        top += h + 1.0;
+        row
+    })
+}
+
+/// Which of `rows` contains `y` (clamped to the last row).
+pub(crate) fn lane_row_at<const N: usize>(rows: &[egui::Rect; N], y: f32) -> usize {
+    rows.iter()
+        .position(|r| y < r.bottom() + 0.5)
+        .unwrap_or(N - 1)
 }
 
 /// Beats in a bar for the counter/phrase math. The Stage 10 grid carries a
@@ -243,6 +291,13 @@ impl GridMarks {
     /// Index of the last beat at or before `frame`.
     pub fn beat_at_or_before(&self, frame: f64) -> Option<usize> {
         self.frames.partition_point(|&f| f <= frame).checked_sub(1)
+    }
+
+    /// Frame of the first flagged downbeat; falls back to the first beat
+    /// when no downbeat was detected. None on an empty grid.
+    pub fn first_downbeat_frame(&self) -> Option<f64> {
+        let i = self.downbeat.iter().position(|&d| d).unwrap_or(0);
+        self.frames.get(i).copied()
     }
 
     /// Frame of the bar start (downbeat) at or before `frame`.
@@ -399,6 +454,26 @@ mod tests {
         assert_eq!(marks.bar_beat(0.0), Some((0, 1)));
         assert_eq!(marks.bar_beat(400.0), Some((0, 1)));
         assert_eq!(marks.bar_beat(700.0), Some((0, 4)));
+    }
+
+    #[test]
+    fn first_downbeat_frame_finds_flagged_downbeat() {
+        // test_grid's first downbeat is beat idx 2 -> frame 200.
+        assert_eq!(test_grid().first_downbeat_frame(), Some(200.0));
+    }
+
+    #[test]
+    fn first_downbeat_frame_falls_back_to_first_beat() {
+        let mut grid = timestretch::BeatGrid::empty(100);
+        grid.beats = (0..8).map(|i| i as f64 * 100.0).collect();
+        let marks = GridMarks::from_grid(&grid);
+        assert_eq!(marks.first_downbeat_frame(), Some(0.0));
+    }
+
+    #[test]
+    fn first_downbeat_frame_none_on_empty_grid() {
+        let marks = GridMarks::from_grid(&timestretch::BeatGrid::empty(100));
+        assert_eq!(marks.first_downbeat_frame(), None);
     }
 
     #[test]

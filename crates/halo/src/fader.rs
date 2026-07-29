@@ -44,6 +44,10 @@ pub struct Fader<'a> {
     /// Some(center): draw an accent fill along the groove from `center` to the
     /// cap as it moves off center (like the bipolar EQ knobs).
     center_fill: Option<f32>,
+    /// Groove thickness across the travel axis.
+    groove: f32,
+    /// Cap size as (span across the travel axis, thickness along it).
+    cap: Vec2,
 }
 
 impl<'a> Fader<'a> {
@@ -58,6 +62,8 @@ impl<'a> Fader<'a> {
             default,
             accent,
             center_fill: None,
+            groove: GROOVE,
+            cap: Vec2::new(CAP_HALF_SPAN * 2.0, CAP_THICKNESS),
         }
     }
 
@@ -86,6 +92,19 @@ impl<'a> Fader<'a> {
         self
     }
 
+    /// Groove thickness across the travel axis (default 4.0).
+    pub fn groove_width(mut self, width: f32) -> Self {
+        self.groove = width;
+        self
+    }
+
+    /// Cap size: span across the travel axis × thickness along it
+    /// (default 20×9, the mixer look).
+    pub fn cap_size(mut self, span: f32, thickness: f32) -> Self {
+        self.cap = Vec2::new(span, thickness);
+        self
+    }
+
     fn span(&self) -> f32 {
         *self.range.end() - *self.range.start()
     }
@@ -102,7 +121,7 @@ impl Widget for Fader<'_> {
 
         // The cap center travels between these two points; inset from the
         // ends by half the cap so it never spills past the track.
-        let inset = CAP_THICKNESS / 2.0;
+        let inset = self.cap.y / 2.0;
         let (lo, hi) = if self.vertical {
             (rect.bottom() - inset, rect.top() + inset) // norm 0 = bottom
         } else {
@@ -136,28 +155,29 @@ impl Widget for Fader<'_> {
 
             // Groove along the travel axis.
             let groove = if self.vertical {
-                Rect::from_center_size(center, Vec2::new(GROOVE, (hi - lo).abs() + CAP_THICKNESS))
+                Rect::from_center_size(center, Vec2::new(self.groove, (hi - lo).abs() + self.cap.y))
             } else {
-                Rect::from_center_size(center, Vec2::new((hi - lo).abs() + CAP_THICKNESS, GROOVE))
+                Rect::from_center_size(center, Vec2::new((hi - lo).abs() + self.cap.y, self.groove))
             };
             painter.rect_filled(groove, 2.0, visuals.extreme_bg_color);
 
             // Notches: short ticks perpendicular to the groove.
+            let half_groove = self.groove / 2.0;
             let tick = |painter: &egui::Painter, t: f32| {
                 let p = lo + (hi - lo) * t;
                 let (a, b, c, d) = if self.vertical {
                     (
-                        egui::pos2(center.x - GROOVE / 2.0 - NOTCH_GAP - NOTCH_LEN, p),
-                        egui::pos2(center.x - GROOVE / 2.0 - NOTCH_GAP, p),
-                        egui::pos2(center.x + GROOVE / 2.0 + NOTCH_GAP, p),
-                        egui::pos2(center.x + GROOVE / 2.0 + NOTCH_GAP + NOTCH_LEN, p),
+                        egui::pos2(center.x - half_groove - NOTCH_GAP - NOTCH_LEN, p),
+                        egui::pos2(center.x - half_groove - NOTCH_GAP, p),
+                        egui::pos2(center.x + half_groove + NOTCH_GAP, p),
+                        egui::pos2(center.x + half_groove + NOTCH_GAP + NOTCH_LEN, p),
                     )
                 } else {
                     (
-                        egui::pos2(p, center.y - GROOVE / 2.0 - NOTCH_GAP - NOTCH_LEN),
-                        egui::pos2(p, center.y - GROOVE / 2.0 - NOTCH_GAP),
-                        egui::pos2(p, center.y + GROOVE / 2.0 + NOTCH_GAP),
-                        egui::pos2(p, center.y + GROOVE / 2.0 + NOTCH_GAP + NOTCH_LEN),
+                        egui::pos2(p, center.y - half_groove - NOTCH_GAP - NOTCH_LEN),
+                        egui::pos2(p, center.y - half_groove - NOTCH_GAP),
+                        egui::pos2(p, center.y + half_groove + NOTCH_GAP),
+                        egui::pos2(p, center.y + half_groove + NOTCH_GAP + NOTCH_LEN),
                     )
                 };
                 let stroke = egui::Stroke::new(1.0, track_col);
@@ -185,13 +205,13 @@ impl Widget for Fader<'_> {
                 if (p - pc).abs() > 0.5 {
                     let fill = if self.vertical {
                         Rect::from_two_pos(
-                            egui::pos2(center.x - GROOVE / 2.0, pc),
-                            egui::pos2(center.x + GROOVE / 2.0, p),
+                            egui::pos2(center.x - half_groove, pc),
+                            egui::pos2(center.x + half_groove, p),
                         )
                     } else {
                         Rect::from_two_pos(
-                            egui::pos2(pc, center.y - GROOVE / 2.0),
-                            egui::pos2(p, center.y + GROOVE / 2.0),
+                            egui::pos2(pc, center.y - half_groove),
+                            egui::pos2(p, center.y + half_groove),
                         )
                     };
                     let fill_col = if active {
@@ -205,15 +225,9 @@ impl Widget for Fader<'_> {
 
             // Cap at the current value (always accent).
             let cap = if self.vertical {
-                Rect::from_center_size(
-                    egui::pos2(center.x, p),
-                    Vec2::new(CAP_HALF_SPAN * 2.0, CAP_THICKNESS),
-                )
+                Rect::from_center_size(egui::pos2(center.x, p), self.cap)
             } else {
-                Rect::from_center_size(
-                    egui::pos2(p, center.y),
-                    Vec2::new(CAP_THICKNESS, CAP_HALF_SPAN * 2.0),
-                )
+                Rect::from_center_size(egui::pos2(p, center.y), Vec2::new(self.cap.y, self.cap.x))
             };
             let cap_col = if active {
                 self.accent
