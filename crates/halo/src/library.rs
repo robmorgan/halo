@@ -322,6 +322,19 @@ impl Library {
         Ok(())
     }
 
+    /// Queue a track for re-analysis: clearing the stored analysis re-arms
+    /// `next_unanalyzed`. Keeps the `bpm` column so the browser readout
+    /// doesn't blink to "—" while the worker runs.
+    pub fn clear_analysis(&self, track_id: i64) -> Result<(), String> {
+        self.conn
+            .execute(
+                "UPDATE tracks SET analysis_json = NULL WHERE id = ?1",
+                params![track_id],
+            )
+            .map_err(|e| format!("clear analysis: {e}"))?;
+        Ok(())
+    }
+
     /// Tracks still waiting for analysis (for the status readout).
     pub fn unanalyzed_count(&self) -> Result<i64, String> {
         self.conn
@@ -471,6 +484,15 @@ impl Library {
                 params![playlist, track],
             )
             .map_err(|e| format!("remove from playlist: {e}"))?;
+        Ok(())
+    }
+
+    /// Remove a track row; foreign keys cascade playlist membership and
+    /// lighting cues. The audio file on disk is untouched.
+    pub fn delete_track(&self, track_id: i64) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM tracks WHERE id = ?1", params![track_id])
+            .map_err(|e| format!("delete track: {e}"))?;
         Ok(())
     }
 }
@@ -687,6 +709,45 @@ mod tests {
         assert_eq!(loaded.beat_positions, vec![0, 22_050]);
         // BPM column filled for the browser.
         assert_eq!(lib.track(id).unwrap().unwrap().bpm, Some(128.0));
+    }
+
+    #[test]
+    fn clear_analysis_rearms_the_queue() {
+        let lib = mem_library();
+        let id = insert(&lib, "/x/a.mp3", "Alpha", "A", None);
+        lib.store_analysis(id, &PreAnalysisArtifact::default())
+            .unwrap();
+        assert!(lib.next_unanalyzed().unwrap().is_none());
+
+        lib.clear_analysis(id).unwrap();
+        assert_eq!(lib.next_unanalyzed().unwrap().unwrap().0, id);
+        // A failed analysis ('' marker) can be re-armed the same way.
+        lib.store_analysis_failure(id).unwrap();
+        assert!(lib.next_unanalyzed().unwrap().is_none());
+        lib.clear_analysis(id).unwrap();
+        assert_eq!(lib.next_unanalyzed().unwrap().unwrap().0, id);
+    }
+
+    #[test]
+    fn delete_track_cascades_playlists_and_cues() {
+        let lib = mem_library();
+        let id = insert(&lib, "/x/a.mp3", "Alpha", "A", None);
+        let pl = lib.create_playlist("Set", None, false).unwrap();
+        lib.add_to_playlist(pl, id).unwrap();
+        lib.store_cues(id, &halo_light::cues::CueSet::empty().to_file(44_100))
+            .unwrap();
+
+        lib.delete_track(id).unwrap();
+        assert!(lib.track(id).unwrap().is_none());
+        assert!(
+            lib.tracks(Some(pl), "", SortColumn::Title, true)
+                .unwrap()
+                .is_empty(),
+            "playlist membership cascades"
+        );
+        assert!(lib.cues(id).unwrap().is_none(), "lighting cues cascade");
+        // The playlist itself survives.
+        assert_eq!(lib.playlists().unwrap().len(), 1);
     }
 
     #[test]

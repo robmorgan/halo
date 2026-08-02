@@ -510,6 +510,8 @@ pub struct HaloApp {
     event_tx: mpsc::Sender<WorkerEvent>,
     audio_settings: AudioSettings,
     settings_open: bool,
+    /// Track pending "Remove from library" confirmation: (id, title).
+    pending_remove: Option<(i64, String)>,
     available_devices: Vec<String>,
     /// Per-deck previous key-down states for shortcut edge detection.
     kb_prev: [[bool; 8]; 2],
@@ -664,6 +666,7 @@ impl HaloApp {
             event_tx,
             audio_settings,
             settings_open: false,
+            pending_remove: None,
             available_devices: Vec::new(),
             kb_prev: [[false; 8]; 2],
             cpu_sample: (std::time::Instant::now(), process_cpu_secs(), 0.0),
@@ -991,9 +994,12 @@ impl HaloApp {
             match event {
                 WorkerEvent::Analyzed(id) => {
                     self.browser.dirty = true;
+                    // No `pre_analysis.is_none()` guard: a reanalyzed track
+                    // already on a deck must refresh too. The engine-side
+                    // apply still waits for a non-playing moment via
+                    // `pending_artifact`.
                     for deck_ui in self.decks.iter_mut() {
                         if deck_ui.track_id == Some(id)
-                            && deck_ui.deck.pre_analysis.is_none()
                             && let Some(lib) = &self.library
                             && let Ok(Some(native)) = lib.analysis(id)
                         {
@@ -2293,6 +2299,69 @@ impl HaloApp {
         }
     }
 
+    /// Confirmation dialog for "Remove from library" — the FK cascade also
+    /// deletes authored lighting cues, so this is not a one-click action.
+    fn remove_confirm_window(&mut self, ctx: &egui::Context) {
+        let Some((id, title)) = self.pending_remove.clone() else {
+            return;
+        };
+        let mut open = true;
+        let mut decided = false;
+        let mut remove = false;
+        egui::Window::new("Remove from library")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.label(format!("Remove “{title}” from the library?"));
+                ui.label(
+                    egui::RichText::new(
+                        "Authored lighting cues will be deleted.\n\
+                         The audio file on disk is not touched.",
+                    )
+                    .weak(),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Remove").clicked() {
+                        decided = true;
+                        remove = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        decided = true;
+                    }
+                });
+            });
+        if !open || decided {
+            self.pending_remove = None;
+        }
+        if remove {
+            self.remove_track_from_library(id, &title);
+        }
+    }
+
+    fn remove_track_from_library(&mut self, id: i64, title: &str) {
+        let Some(lib) = &self.library else { return };
+        if let Err(e) = lib.delete_track(id) {
+            log::error!("{e}");
+            return;
+        }
+        // Detach any deck still holding the row: audio keeps playing, it
+        // is just no longer DB-backed (cue edits would otherwise hit the
+        // dropped foreign key).
+        for deck_ui in self.decks.iter_mut() {
+            if deck_ui.track_id == Some(id) {
+                deck_ui.track_id = None;
+            }
+        }
+        if self.prepare.audition.track_id == Some(id) {
+            self.prepare.audition.track_id = None;
+        }
+        self.status = format!("Removed {title} from library");
+        self.browser.dirty = true;
+    }
+
     fn apply_browser_action(&mut self, action: BrowserAction) {
         let Some(lib) = &self.library else { return };
         match action {
@@ -2354,6 +2423,21 @@ impl HaloApp {
                 if let Err(e) = lib.remove_from_playlist(playlist, track) {
                     log::error!("{e}");
                 }
+            }
+            BrowserAction::Reanalyze(track) => {
+                if let Err(e) = lib.clear_analysis(track) {
+                    log::error!("{e}");
+                    return;
+                }
+                // The worker also polls every 5 s; the wake just makes it
+                // immediate.
+                let _ = self.wake_tx.send(());
+                self.status = "Reanalyzing…".to_string();
+            }
+            BrowserAction::RemoveFromLibrary(track, title) => {
+                // No DB change yet — the confirm dialog commits it.
+                self.pending_remove = Some((track, title));
+                return;
             }
             BrowserAction::ImportFolder(dir) => {
                 self.import_folder(dir);
@@ -2643,6 +2727,7 @@ impl eframe::App for HaloApp {
         });
 
         self.settings_window(ctx);
+        self.remove_confirm_window(ctx);
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.add_space(4.0);
@@ -2900,6 +2985,11 @@ enum BrowserAction {
     DeletePlaylist(i64),
     AddToPlaylist(i64, i64),
     RemoveFromPlaylist(i64, i64),
+    /// Clear the stored analysis and wake the worker to redo it.
+    Reanalyze(i64),
+    /// Ask to delete a track row (id, title) — confirmed via a dialog
+    /// because the cascade also drops authored lighting cues.
+    RemoveFromLibrary(i64, String),
     ImportFolder(PathBuf),
 }
 
@@ -3119,25 +3209,7 @@ fn track_table(
                     });
                 });
                 row.col(|ui| {
-                    ui.label(&track.title).context_menu(|ui| {
-                        ui.menu_button("Add to playlist", |ui| {
-                            for (id, name) in &playlists {
-                                if ui.button(name).clicked() {
-                                    actions.push(BrowserAction::AddToPlaylist(*id, track.id));
-                                    ui.close_menu();
-                                }
-                            }
-                            if playlists.is_empty() {
-                                ui.label(egui::RichText::new("No playlists").weak());
-                            }
-                        });
-                        if let Some(pl) = selected_playlist
-                            && ui.button("Remove from this playlist").clicked()
-                        {
-                            actions.push(BrowserAction::RemoveFromPlaylist(pl, track.id));
-                            ui.close_menu();
-                        }
-                    });
+                    ui.label(&track.title);
                 });
                 row.col(|ui| {
                     ui.label(track.artist.as_deref().unwrap_or("—"));
@@ -3171,6 +3243,39 @@ fn track_table(
                     );
                 });
                 let row_resp = row.response();
+                // Right-click anywhere on the row (the menu used to live on
+                // the Title cell only).
+                row_resp.context_menu(|ui| {
+                    ui.menu_button("Add to playlist", |ui| {
+                        for (id, name) in &playlists {
+                            if ui.button(name).clicked() {
+                                actions.push(BrowserAction::AddToPlaylist(*id, track.id));
+                                ui.close_menu();
+                            }
+                        }
+                        if playlists.is_empty() {
+                            ui.label(egui::RichText::new("No playlists").weak());
+                        }
+                    });
+                    if let Some(pl) = selected_playlist
+                        && ui.button("Remove from this playlist").clicked()
+                    {
+                        actions.push(BrowserAction::RemoveFromPlaylist(pl, track.id));
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Reanalyze").clicked() {
+                        actions.push(BrowserAction::Reanalyze(track.id));
+                        ui.close_menu();
+                    }
+                    if ui.button("Remove from library…").clicked() {
+                        actions.push(BrowserAction::RemoveFromLibrary(
+                            track.id,
+                            track.title.clone(),
+                        ));
+                        ui.close_menu();
+                    }
+                });
                 if view == View::Prepare && row_resp.double_clicked() {
                     actions.push(BrowserAction::LoadAudition(track.id));
                 }
