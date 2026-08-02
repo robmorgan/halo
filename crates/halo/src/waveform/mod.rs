@@ -54,8 +54,6 @@ pub(crate) mod palette {
     pub const TICK_BEAT: Color32 = Color32::from_rgba_premultiplied(200, 200, 205, 200);
     /// Downbeat (bar start) tick.
     pub const TICK_DOWNBEAT: Color32 = Color32::from_rgb(230, 40, 40);
-    /// Phrase-start tick on the overview (every 16 bars).
-    pub const TICK_PHRASE: Color32 = Color32::WHITE;
     /// Loop region fill.
     pub const LOOP_FILL: Color32 = Color32::from_rgba_premultiplied(60, 40, 8, 60);
     /// Loop in/out boundary lines and staged loop-in marker.

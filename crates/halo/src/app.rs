@@ -828,10 +828,10 @@ impl HaloApp {
     /// or the Prepare audition player) and kick off background pre-analysis.
     fn poll_decodes(&mut self, ctx: &egui::Context) {
         let device_rate = self.device_rate();
-        for i in 0..self.decks.len() {
+        for (i, name) in DECK_NAMES.iter().enumerate().take(self.decks.len()) {
             if let Some(status) = Self::poll_deck_decode(
                 &mut self.decks[i],
-                DECK_NAMES[i],
+                name,
                 ctx,
                 device_rate,
                 self.library.as_ref(),
@@ -1255,9 +1255,8 @@ impl HaloApp {
             ],
         ];
         let down = ctx.input(|i| KEYS.map(|deck| deck.map(|k| i.key_down(k))));
-        for d in 0..2 {
+        for (d, &now) in down.iter().enumerate() {
             let prev = self.kb_prev[d];
-            let now = down[d];
             if now[0] && !prev[0] {
                 self.toggle_play_synced(d);
             }

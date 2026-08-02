@@ -189,20 +189,8 @@ fn render_conventional(
                 "Smoke" => u8_of(dim),
                 // Igniter convention: Safety arms with any level, Fire
                 // needs the lane driven hard (a deliberate cue at ≥ 0.9).
-                "Safety" => {
-                    if level > 0.0 {
-                        255
-                    } else {
-                        0
-                    }
-                }
-                "Fire" => {
-                    if level >= 0.9 {
-                        255
-                    } else {
-                        0
-                    }
-                }
+                "Safety" if level > 0.0 => 255,
+                "Fire" if level >= 0.9 => 255,
                 _ => 0,
             },
             _ => 0,
@@ -435,8 +423,10 @@ mod tests {
     #[test]
     fn highlight_snaps_selection_to_open_white() {
         let (rig, library) = setup();
-        let mut params = ProgrammerParams::default();
-        params.highlight = true;
+        let params = ProgrammerParams {
+            highlight: true,
+            ..Default::default()
+        };
         let p1 = rig.iter().find(|f| f.label == "P1").unwrap().id;
         let selection = HashSet::from([p1]);
         let frames = render(
