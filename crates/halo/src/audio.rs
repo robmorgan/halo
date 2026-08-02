@@ -16,6 +16,7 @@ use std::time::Instant;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleRate, Stream, StreamConfig};
+use timestretch::MomentaryLoudness;
 use timestretch::engine::EngineProcessor;
 
 use crate::deck::{ProcessorSlot, SampleSlot};
@@ -116,6 +117,11 @@ impl AudioOutput {
         let mut pre_gains: [f32; 3] = [0.0; 3];
         let mut gains: [f32; 3] = [0.0; 3];
         let mut meters: [f32; 3] = [0.0; 3];
+        // Streaming momentary LUFS per deck, fed the same post-trim
+        // pre-fader signal as the peak meter. Option so an exotic device
+        // rate degrades to "no LUFS readout" instead of failing the stream.
+        let mut lufs: [Option<MomentaryLoudness>; 3] =
+            std::array::from_fn(|_| MomentaryLoudness::new(sample_rate, 2));
         let mut master_meter = 0.0f32;
         let mut scratch: Vec<f32> = vec![0.0; 16_384];
         // Scrub state: per-deck varispeed voice (raw-sample snapshot, its
@@ -167,6 +173,9 @@ impl AudioOutput {
                             && let Ok(mut retired) = deck.retired.try_lock()
                         {
                             *retired = std::mem::replace(&mut procs[i], slot.take());
+                            if let Some(m) = &mut lufs[i] {
+                                m.reset();
+                            }
                         }
 
                         // Acknowledge a pending warm-start reset before
@@ -174,6 +183,9 @@ impl AudioOutput {
                         if deck.reset_request.load(Ordering::Acquire) {
                             if let Some(p) = &mut procs[i] {
                                 p.reset();
+                            }
+                            if let Some(m) = &mut lufs[i] {
+                                m.reset();
                             }
                             deck.reset_request.store(false, Ordering::Release);
                         }
@@ -318,6 +330,9 @@ impl AudioOutput {
                             out[0] += pl * g;
                             out[1] += pr * g;
                             peak = peak.max(pl.abs()).max(pr.abs());
+                            if let Some(m) = &mut lufs[i] {
+                                m.push_stereo(pl, pr);
+                            }
                         }
                         pre_gains[i] = g_pre;
                         gains[i] = if !live && !scrubbing && g < 1e-4 {
@@ -344,6 +359,13 @@ impl AudioOutput {
                             *m + (peak - *m) * meter_release
                         };
                         deck.shared.meter.store(*m);
+                        // Momentary LUFS needs no extra ballistics — the
+                        // 400 ms window is its own integration.
+                        deck.shared.meter_lufs.store(
+                            lufs[i]
+                                .as_mut()
+                                .map_or(MomentaryLoudness::SILENCE_LUFS, |m| m.momentary_lufs()),
+                        );
                     }
 
                     for s in data.iter_mut() {

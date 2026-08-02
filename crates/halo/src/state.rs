@@ -71,6 +71,9 @@ pub struct DeckShared {
     /// the audio callback for the channel meter — shows the track's level
     /// regardless of fader/crossfader. Fast attack, slow release.
     pub meter: AtomicF32,
+    /// Pre-fader (post-trim) momentary loudness in LUFS (BS.1770 400 ms
+    /// window), published by the audio callback. Floor -100.0 (silence).
+    pub meter_lufs: AtomicF32,
     /// Isolator EQ band gains, linear 0..2 (0 = kill, 1 = unity).
     pub eq_low: AtomicF32,
     pub eq_mid: AtomicF32,
@@ -106,6 +109,7 @@ impl DeckShared {
             trim: AtomicF32::new(1.0),
             fader: AtomicF32::new(1.0),
             meter: AtomicF32::new(0.0),
+            meter_lufs: AtomicF32::new(-100.0),
             eq_low: AtomicF32::new(1.0),
             eq_mid: AtomicF32::new(1.0),
             eq_high: AtomicF32::new(1.0),

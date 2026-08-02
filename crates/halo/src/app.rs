@@ -2672,9 +2672,9 @@ impl eframe::App for HaloApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let full_width = ui.available_width();
-            // Sized to just fit the mixer content (119 px strip cluster) with
-            // ~5 px breathing room each side, rather than a wide centered panel.
-            let mixer_width = 130.0;
+            // Sized to just fit the mixer content (131 px strip cluster) with
+            // ~6 px breathing room each side, rather than a wide centered panel.
+            let mixer_width = 144.0;
             // The row holds 5 children (deck | sep | mixer | sep | deck):
             // 4 item-spacing gaps plus 2 separators (6 pt each in egui).
             let spacing = ui.spacing().item_spacing.x;
@@ -4009,17 +4009,33 @@ fn mixer_panel(ui: &mut egui::Ui, mixer: &MixerShared, decks: &[DeckUi; 2]) {
     // center a multi-widget horizontal row (egui seeds it at full width), so
     // pad-center it to the panel mid-line — the same axis the crossfader uses.
     const STRIP_W: f32 = 44.0;
-    // 44 + 8 + 6 + 3 + 6 + 8 + 44
-    const CLUSTER_W: f32 = STRIP_W + 8.0 + 6.0 + 3.0 + 6.0 + 8.0 + STRIP_W;
+    // 44 + 8 + 12 + 3 + 12 + 8 + 44
+    const CLUSTER_W: f32 = STRIP_W + 8.0 + 12.0 + 3.0 + 12.0 + 8.0 + STRIP_W;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(((ui.available_width() - CLUSTER_W) * 0.5).max(0.0));
         let a = deck_channel_strip(ui, &decks[0].deck.shared);
         ui.add_space(8.0);
-        deck_level_meter(ui, decks[0].deck.shared.meter.load(), a.height());
-        ui.add_space(3.0);
-        deck_level_meter(ui, decks[1].deck.shared.meter.load(), a.height());
-        ui.add_space(8.0);
+        for (i, gap) in [(0, 3.0), (1, 8.0)] {
+            let shared = &decks[i].deck.shared;
+            // Prefer the freshest analysis: `pending_artifact` holds a
+            // completed analysis waiting for a non-playing moment to reach
+            // the engine, but the loudness marker is display-only.
+            let artifact = decks[i]
+                .pending_artifact
+                .as_ref()
+                .or(decks[i].deck.pre_analysis.as_ref());
+            deck_lufs_meter(
+                ui,
+                shared.meter_lufs.load(),
+                shared.meter.load(),
+                artifact
+                    .and_then(|a| a.loudness)
+                    .map(|l| l.integrated_lufs as f32),
+                a.height(),
+            );
+            ui.add_space(gap);
+        }
         deck_channel_strip(ui, &decks[1].deck.shared);
     });
 
@@ -4076,23 +4092,84 @@ fn filter_hint(t: f32) -> String {
     }
 }
 
-/// Thin vertical channel meter: a dim track with a green bar rising from the
-/// bottom to `level` (0..1, linear pre-fader / post-trim peak published by
-/// the audio callback — the track's level regardless of fader position).
-fn deck_level_meter(ui: &mut egui::Ui, level: f32, height: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, height), egui::Sense::hover());
+/// Vertical channel meter on a LUFS scale (−40..0 mapped linearly to the
+/// bar — LUFS is already logarithmic). A segmented LED ladder rises to the
+/// momentary (400 ms) loudness, each segment colored by the zone its own
+/// position occupies; a light marker sits at the track's analyzed
+/// integrated loudness (gain-match decks by aligning bars to markers), and
+/// a red strip at the top flags peaks at the ceiling. All inputs are
+/// pre-fader / post-trim, so the meter shows the track's level regardless
+/// of fader position.
+fn deck_lufs_meter(
+    ui: &mut egui::Ui,
+    momentary_lufs: f32,
+    peak_linear: f32,
+    integrated_lufs: Option<f32>,
+    height: f32,
+) {
+    /// LUFS at the bar bottom (top is 0).
+    const RANGE_LO: f32 = -40.0;
+    /// Healthy up to here (common normalization target)…
+    const GREEN_TO: f32 = -14.0;
+    /// …amber to here (hot but normal for club masters at unity trim),
+    /// red above: trim too high, headed into the limiter.
+    const AMBER_TO: f32 = -9.0;
+    let norm = |lufs: f32| ((lufs - RANGE_LO) / -RANGE_LO).clamp(0.0, 1.0);
+
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(12.0, height), egui::Sense::hover());
     if !ui.is_rect_visible(rect) {
         return;
     }
+    response.on_hover_text(match integrated_lufs {
+        Some(i) => format!("Momentary {momentary_lufs:.1} LUFS\nTrack {i:.1} LUFS integrated"),
+        None => format!("Momentary {momentary_lufs:.1} LUFS\nTrack: not analyzed"),
+    });
+
     let painter = ui.painter();
-    painter.rect_filled(rect, 1.0, ui.visuals().extreme_bg_color);
-    let h = level.clamp(0.0, 1.0) * height;
-    if h > 0.0 {
-        let fill = egui::Rect::from_min_max(
-            egui::pos2(rect.left(), rect.bottom() - h),
-            rect.right_bottom(),
+    painter.rect_filled(rect, 1.0, egui::Color32::from_rgb(30, 30, 34));
+
+    // 3 px segments with 1 px gaps, lit bottom-up to the momentary level.
+    let fill_h = norm(momentary_lufs) * height;
+    let mut y = 0.0;
+    while y < fill_h {
+        let seg_top = (y + 3.0).min(fill_h);
+        let lufs_here = RANGE_LO * (1.0 - (y + seg_top) * 0.5 / height);
+        let color = if lufs_here < GREEN_TO {
+            egui::Color32::from_rgb(110, 200, 110)
+        } else if lufs_here < AMBER_TO {
+            ACCENT
+        } else {
+            egui::Color32::from_rgb(230, 80, 80)
+        };
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(rect.left() + 1.0, rect.bottom() - seg_top),
+                egui::pos2(rect.right() - 1.0, rect.bottom() - y),
+            ),
+            0.0,
+            color,
         );
-        painter.rect_filled(fill, 1.0, egui::Color32::from_rgb(64, 210, 96));
+        y += 4.0;
+    }
+
+    if let Some(i) = integrated_lufs {
+        let marker_y = rect.bottom() - norm(i) * height;
+        painter.rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(rect.left(), marker_y - 1.0),
+                egui::pos2(rect.right(), marker_y + 1.0),
+            ),
+            0.0,
+            egui::Color32::from_gray(200),
+        );
+    }
+
+    if peak_linear >= 0.99 {
+        painter.rect_filled(
+            egui::Rect::from_min_max(rect.left_top(), egui::pos2(rect.right(), rect.top() + 2.0)),
+            1.0,
+            egui::Color32::from_rgb(230, 80, 80),
+        );
     }
 }
 
