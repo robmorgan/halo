@@ -67,9 +67,20 @@ fn analyze_one(lib: &Library, id: i64, path: &std::path::Path) -> Result<(), Str
     let decoded = decode_file(path)?;
     let signal = timestretch::downmix_to_mid(&decoded.samples, 2);
     let start = std::time::Instant::now();
-    let artifact = timestretch::analyze_for_dj(&signal, decoded.sample_rate);
+    let mut artifact = timestretch::analyze_for_dj(&signal, decoded.sample_rate);
+    // BS.1770 sums per-channel energies, so loudness is measured on the
+    // original interleaved signal — the mono analysis downmix would read
+    // up to ~3 dB low. `analyze_for_dj` deliberately leaves this None.
+    artifact.loudness = timestretch::measure_loudness(
+        &decoded.samples,
+        decoded.channels as usize,
+        decoded.sample_rate,
+    );
+    let lufs = artifact
+        .loudness
+        .map_or("n/a".to_string(), |l| format!("{:.1}", l.integrated_lufs));
     log::info!(
-        "Analyzed {}: {:.1} BPM, confidence {:.2} ({:.2}s)",
+        "Analyzed {}: {:.1} BPM, confidence {:.2}, {lufs} LUFS ({:.2}s)",
         path.display(),
         artifact.bpm,
         artifact.confidence,
