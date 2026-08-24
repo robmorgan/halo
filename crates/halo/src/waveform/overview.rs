@@ -140,6 +140,12 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
 
     // Bar numbers along the top edge, thinned to keep labels ≥ ~40 px apart.
     if params.marks.is_usable() {
+        // Honest display: a low-confidence grid draws dimmed.
+        let label_color = if params.marks.low_confidence() {
+            palette::TEXT_DIM.gamma_multiply(super::LOW_CONFIDENCE_TICK_DIM)
+        } else {
+            palette::TEXT_DIM
+        };
         let bars = params.marks.downbeat_count();
         if bars > 0 {
             let mut stride = 1u32;
@@ -156,7 +162,7 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
                     egui::Align2::LEFT_TOP,
                     bar,
                     egui::FontId::monospace(8.0),
-                    palette::TEXT_DIM,
+                    label_color,
                 );
             }
         }

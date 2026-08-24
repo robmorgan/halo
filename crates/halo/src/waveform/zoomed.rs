@@ -231,6 +231,16 @@ pub fn paint_zoomed(
             .count();
         let plan = overlay_plan(rect.width(), visible.len(), downbeats);
         let stride = plan.downbeat_stride as u32;
+        // Honest display: a low-confidence grid draws dimmed, and the
+        // counter row says why.
+        let (beat_color, downbeat_color) = if params.marks.low_confidence() {
+            (
+                palette::TICK_BEAT.gamma_multiply(super::LOW_CONFIDENCE_TICK_DIM),
+                palette::TICK_DOWNBEAT.gamma_multiply(super::LOW_CONFIDENCE_TICK_DIM),
+            )
+        } else {
+            (palette::TICK_BEAT, palette::TICK_DOWNBEAT)
+        };
         // Bar-number labels need more room than ticks (~34 px vs 6), so they
         // thin on their own power-of-two stride on top of the tick stride.
         let bar_px = (params.marks.median_beat_frames() * 4.0 * map.px_per_frame()) as f32;
@@ -256,15 +266,12 @@ pub fn paint_zoomed(
                         palette::TEXT_DIM,
                     );
                 }
-                (
-                    TICK_DOWNBEAT_PX,
-                    egui::Stroke::new(2.0_f32, palette::TICK_DOWNBEAT),
-                )
+                (TICK_DOWNBEAT_PX, egui::Stroke::new(2.0_f32, downbeat_color))
             } else {
                 if !plan.draw_beats {
                     continue;
                 }
-                (TICK_BEAT_PX, egui::Stroke::new(1.0_f32, palette::TICK_BEAT))
+                (TICK_BEAT_PX, egui::Stroke::new(1.0_f32, beat_color))
             };
             let x = map.x(params.marks.frame(i));
             painter.line_segment(
