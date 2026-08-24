@@ -1,5 +1,6 @@
 mod app;
 mod audio;
+mod brake;
 mod deck;
 mod decoder;
 mod dmx;

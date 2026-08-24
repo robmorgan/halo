@@ -1162,13 +1162,13 @@ impl HaloApp {
                 manual
             };
             rate *= d.bend as f64;
-            let engine_rate = if d.wide {
-                let (engine_rate, _brake) = wide_tempo_split(rate);
-                engine_rate
+            let (engine_rate, brake) = if d.wide {
+                wide_tempo_split(rate)
             } else {
-                rate.clamp(0.25, 4.0)
+                (rate.clamp(0.25, 4.0), 1.0)
             };
             d.deck.shared.tempo_rate.store(engine_rate as f32);
+            d.deck.shared.brake.store(brake as f32);
             d.deck.shared.keylock.store(d.keylock, Ordering::Relaxed);
         }
     }
@@ -3469,8 +3469,12 @@ fn handle_scrub_gesture(
                     // toward play speed (or rest), predicts the landing,
                     // and the landing consumer in `update` warm-starts the
                     // engine there in parallel.
+                    // The glide must land at the *braked* speed (engine
+                    // rate × brake factor), or the crossfade back to the
+                    // engine lurches while WIDE holds the fader below the
+                    // -50% floor.
                     let rate = if playing {
-                        shared.tempo_rate.load() as f64
+                        shared.tempo_rate.load() as f64 * shared.brake.load() as f64
                     } else {
                         0.0
                     };
