@@ -5,16 +5,18 @@
 
 mod counter;
 mod overview;
-mod peaks;
 mod show_editor;
 mod show_strip;
 mod zoomed;
 
 pub use counter::paint_beat_counter;
 pub use overview::{OverviewParams, OverviewTexture, paint_overview};
-pub use peaks::BandPeaks;
 pub use show_editor::{ShowEditorInteraction, ShowEditorParams, show_editor};
 pub use show_strip::{ShowStripParams, paint_show_strip};
+// The 3-band peaks pyramid moved into the timestretch library (it also
+// serializes them into `.tsa` sidecars); re-exported so the painters and
+// app keep one import path.
+pub use timestretch::BandPeaks;
 pub use zoomed::{GhostPlayhead, ScrubGesture, ZoomSpan, ZoomedParams, paint_zoomed};
 
 /// Label + color per lane, shared by the perform strip, the Prepare

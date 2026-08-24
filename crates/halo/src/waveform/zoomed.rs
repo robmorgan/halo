@@ -6,8 +6,8 @@
 //! loop overlay, and drag-to-scrub.
 
 use eframe::egui;
+use timestretch::BandPeaks;
 
-use super::peaks::BandPeaks;
 use super::{FrameMap, GridMarks, overlay_plan, paint_placeholder, palette};
 
 /// View height in points.
@@ -155,7 +155,8 @@ pub fn paint_zoomed(
     let map = FrameMap::new(rect, params.position_frames, span_frames);
 
     // 3-band bars from the pyramid level nearest one bucket per pixel.
-    let level = peaks.level_for((map.px_per_frame() * params.sample_rate as f64) as f32);
+    let px_per_sec = (map.px_per_frame() * params.sample_rate as f64) as f32;
+    let level = peaks.level(peaks.level_index_for(px_per_sec));
     let frames_per_bucket = params.sample_rate as f64 / level.buckets_per_sec;
     let first_bucket = (map.start_frame() / frames_per_bucket).floor().max(0.0) as usize;
     let last_bucket =

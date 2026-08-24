@@ -4,8 +4,8 @@
 //! and click-to-seek.
 
 use eframe::egui;
+use timestretch::{BandPeaks, PeakLevel};
 
-use super::peaks::{BandPeaks, PeakLevel};
 use super::{GridMarks, paint_placeholder, palette};
 
 /// Strip height in points.

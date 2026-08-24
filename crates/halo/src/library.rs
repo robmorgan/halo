@@ -128,6 +128,17 @@ impl Library {
              );",
         )
         .map_err(|e| format!("schema: {e}"))?;
+        let stale = conn
+            .execute(
+                "UPDATE tracks SET analysis_json = NULL
+                 WHERE analysis_json IS NOT NULL AND analysis_json != ''
+                   AND json_extract(analysis_json, '$.version') < ?1",
+                params![min_compatible_preanalysis_version()],
+            )
+            .map_err(|e| format!("stale analysis sweep: {e}"))?;
+        if stale > 0 {
+            log::info!("Queued {stale} track(s) for re-analysis (incompatible artifact version)");
+        }
         Ok(Self { conn })
     }
 
@@ -173,19 +184,17 @@ impl Library {
             .map_err(|e| format!("track id: {e}"))
     }
 
-    /// Import one audio file: read tags, upsert, and adopt a Phase-2 sidecar
-    /// as the analysis if the track has none yet (one-time migration; no new
-    /// sidecars are ever written).
+    /// Import one audio file: read tags, upsert, and adopt an existing
+    /// sidecar as the analysis if the track has none yet (one-time
+    /// migration; no new sidecars are ever written). Prefers the `.tsa`
+    /// container, falling back to the legacy Phase-2 JSON sidecar.
     pub fn import_file(&self, path: &Path) -> Result<i64, String> {
         let id = self.upsert_track(path, &read_meta(path))?;
-        if self.analysis_json(id)?.is_none() {
-            let sidecar = sidecar_path(path);
-            if sidecar.exists()
-                && let Ok(artifact) = timestretch::read_preanalysis_json(&sidecar)
-            {
-                log::info!("Importing sidecar {}", sidecar.display());
-                self.store_analysis(id, &artifact)?;
-            }
+        if self.analysis_json(id)?.is_none()
+            && let Some((sidecar, artifact)) = read_sidecar_artifact(path)
+        {
+            log::info!("Importing sidecar {}", sidecar.display());
+            self.store_analysis(id, &artifact)?;
         }
         Ok(id)
     }
@@ -543,6 +552,51 @@ fn sidecar_path(audio_path: &Path) -> PathBuf {
     PathBuf::from(os)
 }
 
+/// Smallest artifact schema version the timestretch analyzer still
+/// accepts, probed through its public identity gate (`matches_identity`
+/// with the artifact's own identity fails only on the version check).
+/// Stored artifacts below this carry materially different beat grids and
+/// must be re-analyzed, not reused.
+fn min_compatible_preanalysis_version() -> u32 {
+    let compatible = |version: u32| {
+        let probe = PreAnalysisArtifact {
+            version,
+            ..Default::default()
+        };
+        probe.matches_identity(
+            probe.sample_rate,
+            probe.source_len_samples,
+            probe.content_hash,
+        )
+    };
+    (1..=timestretch::PREANALYSIS_VERSION)
+        .find(|&v| compatible(v))
+        .unwrap_or(timestretch::PREANALYSIS_VERSION)
+}
+
+/// Adopt an existing analysis sidecar for a track: the `.tsa` container
+/// first (its artifact chunk, when present), then the legacy Phase-2
+/// JSON cache. Returns the sidecar path alongside the artifact for
+/// logging. Read-only — no identity re-validation here; the analyzer
+/// re-checks against the decoded audio on load.
+fn read_sidecar_artifact(audio_path: &Path) -> Option<(PathBuf, PreAnalysisArtifact)> {
+    let tsa = timestretch::analysis_file_path(audio_path);
+    if tsa.exists()
+        && let Ok(file) = timestretch::read_analysis_file(&tsa)
+        && let Some(artifact) = file.artifact
+    {
+        return Some((tsa, artifact));
+    }
+    let legacy = sidecar_path(audio_path);
+    #[allow(deprecated)]
+    if legacy.exists()
+        && let Ok(artifact) = timestretch::read_preanalysis_json(&legacy)
+    {
+        return Some((legacy, artifact));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -726,6 +780,45 @@ mod tests {
         assert!(lib.next_unanalyzed().unwrap().is_none());
         lib.clear_analysis(id).unwrap();
         assert_eq!(lib.next_unanalyzed().unwrap().unwrap().0, id);
+    }
+
+    #[test]
+    fn open_requeues_version_incompatible_analysis() {
+        let dir = std::env::temp_dir().join(format!("halo_lib_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("halo.db");
+        {
+            let lib = Library::open(&path).unwrap();
+            let stale = insert(&lib, "/x/a.mp3", "Alpha", "A", None);
+            let fresh = insert(&lib, "/x/b.mp3", "Beta", "B", None);
+            let failed = insert(&lib, "/x/c.mp3", "Gamma", "C", None);
+            lib.store_analysis(
+                stale,
+                &PreAnalysisArtifact {
+                    version: min_compatible_preanalysis_version() - 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            lib.store_analysis(
+                fresh,
+                &PreAnalysisArtifact {
+                    version: timestretch::PREANALYSIS_VERSION,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            lib.store_analysis_failure(failed).unwrap();
+        }
+        let lib = Library::open(&path).unwrap();
+        // Only the stale artifact re-arms the queue; the current one and
+        // the failure marker survive the sweep.
+        assert_eq!(
+            lib.next_unanalyzed().unwrap().unwrap().1,
+            Path::new("/x/a.mp3")
+        );
+        assert_eq!(lib.unanalyzed_count().unwrap(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
