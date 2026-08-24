@@ -55,6 +55,15 @@ struct LoadedData {
 
 type DecodeResult = Result<LoadedData, String>;
 
+/// The wide chain's true tempo-rate floor: its PV head clamps the
+/// stretch ratio to [0.5, 2.0] (`wide_pv_head.rs`, private to the
+/// library), so requests below rate 0.5 pin silently at -50%. Mirrored
+/// here because there is no public accessor. In WIDE the engine rate is
+/// clamped to this floor; the brake factor carries the fader on down.
+const WIDE_MIN_TEMPO_RATE: f64 = 0.5;
+/// The wide chain's rate ceiling (same PV-head clamp, upper end): +100%.
+const WIDE_MAX_TEMPO_RATE: f64 = 2.0;
+
 /// Ghost-playhead slide-in duration after a sync-aligned play start.
 const GHOST_ANIM_SECS: f32 = 0.4;
 /// Skip the ghost when the align jump is smaller than this (source frames);
@@ -135,8 +144,12 @@ struct DeckUi {
     cue_previewing: bool,
     /// Tempo slider value in percent, within ±`pitch_range`.
     pitch_percent: f32,
-    /// Tempo slider range in percent (8 / 16 / 50).
+    /// Tempo slider range in percent (8 / 16 / 50, or 100 in WIDE).
     pitch_range: f32,
+    /// Wide-range Master Tempo (CDJ WIDE): full-spectrum keylock on the
+    /// WideKeylock engine profile, fader spanning ±100%. Mirrored into
+    /// `Deck::wide`; toggling is a seek-priced engine rebuild.
+    wide: bool,
     keylock: bool,
     /// Following the master deck's tempo + beat phase.
     synced: bool,
@@ -198,6 +211,7 @@ impl DeckUi {
             cue_previewing: false,
             pitch_percent: 0.0,
             pitch_range: 8.0,
+            wide: false,
             keylock: true,
             synced: false,
             bend: 1.0,
@@ -374,6 +388,9 @@ struct Persisted {
     auto_cue_off: [bool; 2],
     #[serde(default)]
     footer_tab: FooterTab,
+    /// Wide-range Master Tempo (WIDE) per deck.
+    #[serde(default)]
+    wides: [bool; 2],
 }
 
 /// Which pane the bottom slide-up footer shows.
@@ -559,6 +576,13 @@ impl HaloApp {
                 deck_ui.deck.shared.trim.store(persisted.trims[i]);
                 deck_ui.keylock = persisted.keylocks[i];
                 deck_ui.pitch_range = persisted.pitch_ranges[i].max(8.0);
+                deck_ui.wide = persisted.wides[i];
+                if deck_ui.wide {
+                    deck_ui.pitch_range = 100.0;
+                    // No track loaded yet, so this just arms the profile
+                    // for the first engine build.
+                    deck_ui.deck.wide = true;
+                }
                 deck_ui.quantize = persisted.quantize[i];
                 deck_ui.auto_cue = !persisted.auto_cue_off[i];
                 deck_ui.gated = persisted.gated[i];
@@ -1139,7 +1163,13 @@ impl HaloApp {
                 manual
             };
             rate *= d.bend as f64;
-            d.deck.shared.tempo_rate.store(rate.clamp(0.25, 4.0) as f32);
+            let engine_rate = if d.wide {
+                let (engine_rate, _brake) = wide_tempo_split(rate);
+                engine_rate
+            } else {
+                rate.clamp(0.25, 4.0)
+            };
+            d.deck.shared.tempo_rate.store(engine_rate as f32);
             d.deck.shared.keylock.store(d.keylock, Ordering::Relaxed);
         }
     }
@@ -2531,6 +2561,7 @@ impl eframe::App for HaloApp {
                 pitch_ranges: [self.decks[0].pitch_range, self.decks[1].pitch_range],
                 quantize: [self.decks[0].quantize, self.decks[1].quantize],
                 gated: [self.decks[0].gated, self.decks[1].gated],
+                wides: [self.decks[0].wide, self.decks[1].wide],
                 sort: Some(self.browser.sort),
                 ascending: self.browser.ascending,
                 device_name: self.audio_settings.device_name.clone(),
@@ -2830,6 +2861,15 @@ impl eframe::App for HaloApp {
                 }
                 if resp.play_toggled {
                     self.toggle_play_synced(i);
+                }
+                if resp.wide_toggled {
+                    // Seek-priced profile swap; set_wide restores the
+                    // playhead via warm-start seek.
+                    let device_rate = self.device_rate();
+                    let d = &mut self.decks[i];
+                    if let Err(e) = d.deck.set_wide(d.wide, device_rate) {
+                        log::error!("set_wide: {e}");
+                    }
                 }
                 // Engaging sync jumps straight onto the master's beat (at
                 // most half a beat, the short way); the PLL holds the lock
@@ -3354,6 +3394,10 @@ struct DeckPanelResponse {
     /// Play/pause was pressed; handled at app level so a synced start can
     /// beat-align against the master deck first.
     play_toggled: bool,
+    /// The RANGE combo crossed into or out of WIDE; the engine profile
+    /// swap (a seek-priced rebuild) is handled at app level where the
+    /// device rate lives.
+    wide_toggled: bool,
 }
 
 /// Three always-visible dots answering "what is the rig doing right now":
@@ -4050,19 +4094,68 @@ fn deck_sidebar(
         ui.vertical_centered(|ui| {
             ui.add_space(6.0);
             section_caption(ui, "RANGE");
-            let prev = deck_ui.pitch_range;
+            let prev_range = deck_ui.pitch_range;
+            let prev_wide = deck_ui.wide;
+            let selected = if deck_ui.wide {
+                "WIDE".to_string()
+            } else {
+                format!("±{prev_range:.0}%")
+            };
             egui::ComboBox::from_id_salt(("pitch-range", deck_idx))
-                .selected_text(format!("±{prev:.0}%"))
+                .selected_text(selected)
                 .width(full)
                 .show_ui(ui, |ui| {
                     for r in [8.0_f32, 16.0, 50.0] {
-                        ui.selectable_value(&mut deck_ui.pitch_range, r, format!("±{r:.0}%"));
+                        if ui
+                            .selectable_label(
+                                !deck_ui.wide && deck_ui.pitch_range == r,
+                                format!("±{r:.0}%"),
+                            )
+                            .clicked()
+                        {
+                            deck_ui.wide = false;
+                            deck_ui.pitch_range = r;
+                        }
+                    }
+                    if ui
+                        .selectable_label(deck_ui.wide, "WIDE")
+                        .on_hover_text(
+                            "Wide-range Master Tempo: the full spectrum is \
+                             pitch-corrected across ±100% (0 ms pipeline delay — \
+                             the analysis window is source-side lookahead). \
+                             Switching ranges rebuilds the engine and restores \
+                             the playhead via warm-start seek.",
+                        )
+                        .clicked()
+                    {
+                        deck_ui.wide = true;
+                        deck_ui.pitch_range = 100.0;
                     }
                 });
-            if deck_ui.pitch_range != prev {
+            if deck_ui.pitch_range != prev_range || deck_ui.wide != prev_wide {
                 deck_ui.pitch_percent = deck_ui
                     .pitch_percent
                     .clamp(-deck_ui.pitch_range, deck_ui.pitch_range);
+                if deck_ui.wide != prev_wide {
+                    // Entering/leaving WIDE swaps the engine profile — a
+                    // seek-priced rebuild, handled at app level where the
+                    // device rate lives.
+                    response.wide_toggled = true;
+                }
+            }
+            // Latency chip: whatever the engine has reported — 0.0 ms is
+            // the WIDE range's honest number (source-side lookahead), not
+            // "no info"; before the first build there is no figure to show.
+            if let Some(secs) = deck_ui.deck.pipeline_latency_secs() {
+                ui.label(
+                    egui::RichText::new(format!("{:.1} ms", secs * 1_000.0))
+                        .weak()
+                        .size(10.0),
+                )
+                .on_hover_text(
+                    "Constant pipeline delay reported by the active engine — \
+                     each range has its own honest figure.",
+                );
             }
         });
     });
@@ -4581,6 +4674,18 @@ fn beat_phase(marks: &GridMarks, frame: f64) -> Option<f64> {
     Some(((frame - a) / (b - a)).clamp(0.0, 1.0))
 }
 
+/// Split a WIDE deck's desired playback rate into the engine tempo rate
+/// and the brake factor `b`. Down to the wide chain's floor the engine
+/// follows the fader and `b` stays 1.0; below it the engine pins at the
+/// floor and only `b` moves. At exactly the floor `b == 1.0`, so the brake
+/// engages with zero effect — a continuous handoff, no pitch jump.
+fn wide_tempo_split(rate: f64) -> (f64, f64) {
+    (
+        rate.clamp(WIDE_MIN_TEMPO_RATE, WIDE_MAX_TEMPO_RATE),
+        (rate / WIDE_MIN_TEMPO_RATE).clamp(0.0, 1.0),
+    )
+}
+
 /// Smallest standard pitch range (8/16/50) that fits `pct`; saturates at 50.
 fn range_for_pitch(pct: f32) -> f32 {
     let a = pct.abs();
@@ -4732,6 +4837,21 @@ mod tests {
         }
         assert_eq!(beats, 0.0625);
         assert_eq!(format_beats(beats), "1/16");
+    }
+
+    #[test]
+    fn wide_tempo_split_pins_engine_at_floor() {
+        // Above the floor: engine follows, no brake.
+        assert_eq!(wide_tempo_split(1.0), (1.0, 1.0));
+        assert_eq!(wide_tempo_split(0.75), (0.75, 1.0));
+        // Exactly at the floor: brake engages with zero effect —
+        // continuous handoff, no pitch jump.
+        assert_eq!(wide_tempo_split(0.5), (0.5, 1.0));
+        // Below the floor: engine pinned, only the brake moves.
+        assert_eq!(wide_tempo_split(0.25), (0.5, 0.5));
+        assert_eq!(wide_tempo_split(0.0), (0.5, 0.0));
+        // Ceiling: the wide PV head tops out at rate 2.0 (+100%).
+        assert_eq!(wide_tempo_split(2.5), (2.0, 1.0));
     }
 
     #[test]

@@ -117,6 +117,16 @@ pub struct Deck {
     /// Offline analysis artifact for the loaded track, once it has landed
     /// (steers the engine's transient handling at non-unity tempo).
     pub pre_analysis: Option<Arc<PreAnalysisArtifact>>,
+    /// Wide-range Master Tempo: build the engine with the WideKeylock
+    /// profile (full-spectrum keylock across rate 0.5–2.0) instead of the
+    /// Standard keylock chain. Takes effect at the next engine (re)build;
+    /// use [`Deck::set_wide`] to switch live.
+    pub wide: bool,
+    /// Constant pipeline (content) delay reported by the active engine, in
+    /// seconds. `None` until an engine has been built — 0.0 is the wide
+    /// chain's honest figure (source-side lookahead), so absence must be
+    /// distinguishable from zero.
+    pipeline_latency_secs: Option<f64>,
     feed_stop: Option<Arc<StopFlag>>,
     feed_handle: Option<thread::JoinHandle<()>>,
 }
@@ -132,9 +142,38 @@ impl Deck {
             reset_request: Arc::new(AtomicBool::new(false)),
             track: None,
             pre_analysis: None,
+            wide: false,
+            pipeline_latency_secs: None,
             feed_stop: None,
             feed_handle: None,
         }
+    }
+
+    /// Constant pipeline delay of the active engine in seconds; `None`
+    /// before the first build. Feeds the UI latency chip.
+    pub fn pipeline_latency_secs(&self) -> Option<f64> {
+        self.pipeline_latency_secs
+    }
+
+    /// Switch between the Standard keylock chain and the wide-range Master
+    /// Tempo chain. A profile change is seek-priced, never a live morph:
+    /// with a track loaded the engine rebuilds and the playhead is restored
+    /// via warm-start seek (same mechanics as [`Deck::apply_pre_analysis`]).
+    pub fn set_wide(&mut self, wide: bool, device_sample_rate: u32) -> Result<(), String> {
+        if self.wide == wide {
+            return Ok(());
+        }
+        self.wide = wide;
+        let Some(track) = &self.track else {
+            return Ok(());
+        };
+        let samples = track.samples.clone();
+        let playhead = self.shared.playhead_frames();
+        self.start_engine(samples, device_sample_rate)?;
+        if playhead > 0 {
+            self.shared.request_seek(playhead);
+        }
+        Ok(())
     }
 
     /// Load a track (already decoded and resampled to the device rate),
@@ -211,7 +250,11 @@ impl Deck {
         let config = EngineConfig {
             sample_rate: device_sample_rate,
             channels: 2,
-            profile: EngineProfile::Keylock,
+            profile: if self.wide {
+                EngineProfile::WideKeylock
+            } else {
+                EngineProfile::Keylock
+            },
             initial_tempo_rate: 1.0,
             max_block_frames: 2048,
             source_capacity_frames: 65_536,
@@ -219,6 +262,11 @@ impl Deck {
         };
         let handles = Engine::build(config).map_err(|e| format!("Engine error: {e}"))?;
         let warm_start_preroll = handles.processor.warm_start_preroll_frames();
+        // Publish the chain's constant pipeline delay for the UI latency
+        // chip (per profile: ~12.7 ms Standard, 0 ms Wide — source-side
+        // lookahead).
+        self.pipeline_latency_secs =
+            Some(handles.processor.pipeline_latency_frames() as f64 / device_sample_rate as f64);
 
         self.reset_request.store(false, Ordering::Relaxed);
         *self.processor_slot.lock().unwrap() = Some(handles.processor);
