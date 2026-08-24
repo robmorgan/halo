@@ -2876,10 +2876,11 @@ fn load_track_data(
     stored: Option<PreAnalysisArtifact>,
 ) -> DecodeResult {
     let decoded = decode_file(path)?;
+    let cached_peaks = cached_tsa_peaks(path, &decoded);
     let buffer = AudioBuffer::new(decoded.samples, decoded.sample_rate, Channels::Stereo)
         .resample(device_rate);
 
-    let peaks = BandPeaks::compute(&buffer.data, 2, device_rate);
+    let peaks = cached_peaks.unwrap_or_else(|| BandPeaks::compute(&buffer.data, 2, device_rate));
     let (grid, artifact) = match stored {
         Some(native) => {
             let resampled = native.resample_to(device_rate);
@@ -2915,6 +2916,27 @@ fn load_track_data(
         grid,
         artifact,
     })
+}
+
+/// Precomputed waveform peaks from a `.tsa` sidecar (e.g. written by
+/// `timestretch-cli analyze`), accepted only when the container's identity
+/// matches the decoded native signal — sample rate, mono length, content
+/// hash — so a re-encoded file can't paint a stale waveform. Peak buckets
+/// are per-second of audio, so native-rate peaks paint correctly at any
+/// device rate.
+fn cached_tsa_peaks(path: &Path, decoded: &crate::decoder::DecodedAudio) -> Option<BandPeaks> {
+    let sidecar = timestretch::analysis_file_path(path);
+    if !sidecar.exists() {
+        return None;
+    }
+    let mono = timestretch::downmix_to_mid(&decoded.samples, decoded.channels as usize);
+    timestretch::read_analysis_file_validated(
+        &sidecar,
+        decoded.sample_rate,
+        mono.len(),
+        timestretch::hash_samples(&mono),
+    )?
+    .peaks
 }
 
 /// Display beat grid from a stored analysis artifact (same rate domain).
