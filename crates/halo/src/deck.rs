@@ -195,6 +195,8 @@ impl Deck {
         self.shared
             .total_frames
             .store(num_frames as u64, Ordering::Relaxed);
+        // A braked previous track must not freeze the new one.
+        self.shared.brake.store(1.0);
         // End any in-flight scrub and hand the new samples to the
         // callback; drain retired Arcs here on the UI thread.
         self.shared.scrub.cancel();
@@ -410,8 +412,12 @@ fn start_feed_thread(
             }
 
             // End of stream: flush the resampler lookahead once, then stop
-            // the transport when the buffered tail has drained.
-            if cursor >= source_audio.len() && loop_region.is_none() {
+            // the transport when the buffered tail has drained. While the
+            // wide-fader brake is engaged the callback consumes the ring at
+            // a fraction of normal speed (or not at all when frozen) — a
+            // drained ring then means "braked on the tail", not "track
+            // over", so hold the transport.
+            if cursor >= source_audio.len() && loop_region.is_none() && shared.brake.load() >= 1.0 {
                 if !finished {
                     finished = source.finish();
                 } else if source.occupied_frames() == 0 {

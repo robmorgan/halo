@@ -85,6 +85,12 @@ pub struct DeckShared {
     /// Engine tempo rate (playback speed; 1.0 = original). Written by the
     /// UI's tempo logic, forwarded to the engine by the feed thread.
     pub tempo_rate: AtomicF32,
+    /// Wide-fader brake factor `b` in `[0, 1]`: 1.0 = no brake, 0.0 = full
+    /// stop. Below the wide chain's -50% floor the engine pins at
+    /// `tempo_rate` 0.5 and the audio callback consumes its output at `b`
+    /// via the brake resampler. Written by the UI's tempo logic, read by
+    /// the audio callback every block and by the feed thread's EOF gate.
+    pub brake: AtomicF32,
     /// Keylock: pitch stays constant while tempo changes (Tape mode when
     /// off — pitch follows tempo).
     pub keylock: AtomicBool,
@@ -116,6 +122,7 @@ impl DeckShared {
             filter_mode: AtomicU8::new(0),
             filter_cutoff: AtomicF32::new(1.0),
             tempo_rate: AtomicF32::new(1.0),
+            brake: AtomicF32::new(1.0),
             keylock: AtomicBool::new(true),
             loop_region: AtomicU64::new(u64::MAX),
             scrub: ScrubState::new(),
