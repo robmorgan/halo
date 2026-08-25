@@ -12,6 +12,9 @@ use super::{GridMarks, paint_placeholder, palette};
 const STRIP_HEIGHT: f32 = 56.0;
 /// Texture height in pixels (2x the strip for retina crispness).
 const TEX_HEIGHT: usize = 112;
+/// Texture columns per coarsest-level bucket, so the interpolated
+/// envelope — not per-bucket columns — defines the silhouette's shape.
+const TEX_SUPERSAMPLE: usize = 2;
 /// Perceptual lift applied to column heights (amp^gamma): keeps quiet
 /// intros/breakdowns visible in the silhouette. 1.0 = linear.
 const OVERVIEW_GAMMA: f32 = 0.85;
@@ -43,21 +46,32 @@ impl OverviewTexture {
     }
 }
 
-/// Rasterizes a peak level into a transparent-background image, one
-/// bottom-anchored column per bucket (CDJ-3000 "side-on" silhouette:
-/// height = band peak, everything rises from the baseline). Bands paint
-/// in high → mid → low order — low on top — so kick-heavy passages read
-/// blue and highs surface only where the lows drop out (CDJ RGB
-/// semantics; in a dense master the high band's *peak* is near full scale
-/// everywhere and would bury the image if on top).
+/// Rasterizes a peak level into a transparent-background image as a
+/// bottom-anchored silhouette (CDJ-3000 "side-on" view: height = band
+/// peak, everything rises from the baseline), the envelope linearly
+/// interpolated between bucket centers at [`TEX_SUPERSAMPLE`] columns per
+/// bucket. Bands paint in high → mid → low order — low on top — so
+/// kick-heavy passages read blue and highs surface only where the lows
+/// drop out (CDJ RGB semantics; in a dense master the high band's *peak*
+/// is near full scale everywhere and would bury the image if on top).
 fn render_level(level: &PeakLevel) -> egui::ColorImage {
-    let width = level.num_buckets().max(1);
+    let n = level.num_buckets().max(1);
+    let width = n * TEX_SUPERSAMPLE;
     let mut image = egui::ColorImage::new([width, TEX_HEIGHT], egui::Color32::TRANSPARENT);
     let band_colors = [palette::BAND_LOW, palette::BAND_MID, palette::BAND_HIGH];
-    for x in 0..level.num_buckets() {
+    let inv_ss = 1.0 / TEX_SUPERSAMPLE as f32;
+    for x in 0..width {
+        // Bucket-space position of this column's center; the outer
+        // half-bucket at the track edges clamps flat.
+        let u = (x as f32 + 0.5) * inv_ss - 0.5;
+        let uf = u.floor();
+        let t = u - uf;
+        let i0 = (uf.max(0.0) as usize).min(n - 1);
+        let i1 = (i0 + 1).min(n - 1);
         for (band, &color) in band_colors.iter().enumerate().rev() {
-            let pos = level.pos[band][x].clamp(0.0, 1.0);
-            let neg = level.neg[band][x].clamp(-1.0, 0.0);
+            let lerp = |v: &[f32]| v[i0] * (1.0 - t) + v[i1] * t;
+            let pos = lerp(&level.pos[band]).clamp(0.0, 1.0);
+            let neg = lerp(&level.neg[band]).clamp(-1.0, 0.0);
             let amp = pos.max(-neg).powf(OVERVIEW_GAMMA);
             let top_f = (1.0 - amp * WAVE_HEIGHT_FRAC) * TEX_HEIGHT as f32;
             let top = top_f.ceil().clamp(0.0, TEX_HEIGHT as f32) as usize;
@@ -65,10 +79,18 @@ fn render_level(level: &PeakLevel) -> egui::ColorImage {
                 image.pixels[y * width + x] = color;
             }
             // Anti-aliased top edge: the partial pixel above the solid run
-            // gets coverage-scaled alpha instead of a hard step.
+            // is composited over what's already there at its coverage,
+            // instead of a hard step.
             let coverage = top as f32 - top_f;
             if coverage > 0.0 && top > 0 {
-                image.pixels[(top - 1) * width + x] = color.linear_multiply(coverage);
+                let dst = &mut image.pixels[(top - 1) * width + x];
+                let inv = 1.0 - coverage;
+                *dst = egui::Color32::from_rgba_premultiplied(
+                    (color.r() as f32 * coverage + dst.r() as f32 * inv).round() as u8,
+                    (color.g() as f32 * coverage + dst.g() as f32 * inv).round() as u8,
+                    (color.b() as f32 * coverage + dst.b() as f32 * inv).round() as u8,
+                    (255.0 * coverage + dst.a() as f32 * inv).round() as u8,
+                );
             }
         }
     }
