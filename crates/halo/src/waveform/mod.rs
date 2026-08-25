@@ -160,6 +160,34 @@ pub(crate) fn lane_row_at<const N: usize>(rows: &[egui::Rect; N], y: f32) -> usi
         .unwrap_or(N - 1)
 }
 
+/// Grid-confidence threshold below which the deck presents the grid as
+/// tentative: beat/downbeat ticks draw dimmed and the counter row shows a
+/// "grid: low confidence" hint.
+///
+/// What `timestretch::BeatGrid::confidence` means:
+/// - Tracked (DP) grids score 0.4 * tempogram path salience + 0.3 * beat-level onset support + 0.3
+///   * interval regularity.
+/// - Rigid-adopted grids keep at least that: confidence = `grid.confidence.max(fit.phase_lock)`, so
+///   rigid adoption never lowers the reading.
+///
+/// Corpus evidence (timestretch's bpm_accuracy baseline): every real-music
+/// grid across the 16-track corpus — rigid-adopted or tracked — reports
+/// confidence 0.79-0.94. 0.6 sits with clear margin below that cluster, so
+/// a healthy grid never dims, while grids whose own evidence collapses
+/// (weak periodicity or poor beat-level onset support: ambient, rubato,
+/// speech-heavy material) fall through the salience and support terms of
+/// the formula and flag.
+///
+/// Honest limit: this flag cannot catch a wandering DP grid on quantized
+/// material — the metric scores internal consistency, not ground truth.
+/// That failure class is handled upstream by rigid-grid adoption and
+/// tracked-beat corroboration, not by this display threshold.
+pub(crate) const LOW_CONFIDENCE_THRESHOLD: f32 = 0.6;
+
+/// Gamma-space multiplier applied to tick colors on a low-confidence grid
+/// (~40% alpha versions of the palette colors).
+pub(crate) const LOW_CONFIDENCE_TICK_DIM: f32 = 0.4;
+
 /// Beats in a bar for the counter/phrase math. The Stage 10 grid carries a
 /// 4/4 prior; bars with other beat counts wrap modulo 4 for display.
 const BEATS_PER_BAR: usize = 4;
@@ -181,6 +209,10 @@ pub struct GridMarks {
     beat_in_bar: Vec<u8>,
     /// Median beat interval in frames (0.0 when fewer than 2 beats).
     median_beat_frames: f64,
+    /// Whether the detector's grid confidence fell below
+    /// [`LOW_CONFIDENCE_THRESHOLD`]; painters dim their ticks and the
+    /// counter row shows a hint.
+    low_confidence: bool,
 }
 
 impl GridMarks {
@@ -191,6 +223,7 @@ impl GridMarks {
             bar_of: Vec::new(),
             beat_in_bar: Vec::new(),
             median_beat_frames: 0.0,
+            low_confidence: false,
         }
     }
 
@@ -241,6 +274,7 @@ impl GridMarks {
             bar_of,
             beat_in_bar,
             median_beat_frames,
+            low_confidence: grid.confidence < LOW_CONFIDENCE_THRESHOLD,
         }
     }
 
@@ -281,6 +315,12 @@ impl GridMarks {
         self.median_beat_frames
     }
 
+    /// Whether the grid's own confidence reading fell below the honest
+    /// display threshold; ticks dim and the counter row says why.
+    pub fn low_confidence(&self) -> bool {
+        self.low_confidence
+    }
+
     /// Indices of beats within `[start_frame, end_frame)`.
     pub fn visible_range(&self, start_frame: f64, end_frame: f64) -> std::ops::Range<usize> {
         let lo = self.frames.partition_point(|&f| f < start_frame);
@@ -298,6 +338,20 @@ impl GridMarks {
     pub fn first_downbeat_frame(&self) -> Option<f64> {
         let i = self.downbeat.iter().position(|&d| d).unwrap_or(0);
         self.frames.get(i).copied()
+    }
+
+    /// Frame where auto cue parks the deck: the first flagged downbeat —
+    /// unless the grid is low-confidence, where the downbeat phase is a
+    /// weak 4-way guess (timestretch caps stored confidence at 0.5 on
+    /// estimator phase disagreement precisely so hosts can distrust it).
+    /// A wrong phase parks the deck beats into the track; the first beat
+    /// is never worse than the first downbeat, so park there instead.
+    pub fn auto_cue_frame(&self) -> Option<f64> {
+        if self.low_confidence {
+            self.frames.first().copied()
+        } else {
+            self.first_downbeat_frame()
+        }
     }
 
     /// Frame of the bar start (downbeat) at or before `frame`.
@@ -477,6 +531,23 @@ mod tests {
     }
 
     #[test]
+    fn auto_cue_parks_on_first_downbeat_when_confident() {
+        let mut grid = timestretch::BeatGrid::empty(100);
+        grid.beats = (0..16).map(|i| i as f64 * 100.0).collect();
+        grid.downbeats = vec![2, 6, 10, 14];
+        grid.confidence = 0.9;
+        let marks = GridMarks::from_grid(&grid);
+        assert_eq!(marks.auto_cue_frame(), Some(200.0));
+    }
+
+    #[test]
+    fn auto_cue_parks_on_first_beat_when_low_confidence() {
+        // test_grid leaves confidence at 0.0 (low): the downbeat phase is
+        // a weak guess there, so auto cue ignores it and takes beat 0.
+        assert_eq!(test_grid().auto_cue_frame(), Some(0.0));
+    }
+
+    #[test]
     fn visible_range_is_half_open() {
         let marks = test_grid();
         assert_eq!(marks.visible_range(200.0, 600.0), 2..6);
@@ -495,6 +566,31 @@ mod tests {
             .collect();
         // Bars 1 and 17 -> beat indices 0 and 64.
         assert_eq!(phrase_beats, vec![0, 64]);
+    }
+
+    #[test]
+    fn low_confidence_flag_tracks_grid_confidence() {
+        let mut grid = timestretch::BeatGrid::empty(100);
+        grid.beats = (0..16).map(|i| i as f64 * 100.0).collect();
+        grid.downbeats = vec![0, 4, 8, 12];
+        grid.bpm = 60.0;
+
+        // Corpus-healthy reading (tracked or rigid-adopted): not flagged.
+        grid.confidence = 0.85;
+        assert!(!GridMarks::from_grid(&grid).low_confidence());
+
+        // Collapsed evidence (weak periodicity / onset support): flagged.
+        grid.confidence = 0.3;
+        assert!(GridMarks::from_grid(&grid).low_confidence());
+
+        // Exactly at the threshold: not low — the gate is strict-less-than.
+        grid.confidence = LOW_CONFIDENCE_THRESHOLD;
+        assert!(!GridMarks::from_grid(&grid).low_confidence());
+    }
+
+    #[test]
+    fn empty_marks_are_not_flagged_low_confidence() {
+        assert!(!GridMarks::empty().low_confidence());
     }
 
     #[test]
