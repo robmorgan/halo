@@ -1,12 +1,13 @@
 //! Zoomed scrolling waveform: playhead fixed at horizontal center, the
-//! track scrolls underneath. 3-band bars are tessellated per frame from
-//! the pyramid level closest to one bucket per pixel (the content moves
-//! every frame, so a texture would need constant re-upload; a few thousand
-//! rects at the 30 fps repaint cap is cheaper). Beat/downbeat edge ticks,
-//! loop overlay, and drag-to-scrub.
+//! track scrolls underneath. 3-band envelopes are tessellated per frame
+//! from the pyramid level closest to one bucket per pixel (the content
+//! moves every frame, so a texture would need constant re-upload; a few
+//! thousand triangles at the 30 fps repaint cap is cheaper). The ≥1px
+//! bucket rule bounds the tessellation by the panel's pixel width.
+//! Beat/downbeat edge ticks, loop overlay, and drag-to-scrub.
 
 use eframe::egui;
-use timestretch::BandPeaks;
+use timestretch::{BandPeaks, PeakLevel};
 
 use super::{FrameMap, GridMarks, overlay_plan, paint_placeholder, palette};
 
@@ -154,38 +155,23 @@ pub fn paint_zoomed(
     let span_frames = span.span_frames(params.marks, params.sample_rate);
     let map = FrameMap::new(rect, params.position_frames, span_frames);
 
-    // 3-band bars from the pyramid level nearest one bucket per pixel.
+    // 3-band envelopes from the pyramid level nearest one bucket per pixel.
     let px_per_sec = (map.px_per_frame() * params.sample_rate as f64) as f32;
     let level = peaks.level(peaks.level_index_for(px_per_sec));
     let frames_per_bucket = params.sample_rate as f64 / level.buckets_per_sec;
     let first_bucket = (map.start_frame() / frames_per_bucket).floor().max(0.0) as usize;
     let last_bucket =
         ((map.end_frame() / frames_per_bucket).ceil() as usize).min(level.num_buckets());
-    let center_y = rect.center().y;
-    let half_height = rect.height() * 0.45;
-    let band_colors = [palette::BAND_LOW, palette::BAND_MID, palette::BAND_HIGH];
-    for b in first_bucket..last_bucket {
-        let x0 = map.x(b as f64 * frames_per_bucket).max(rect.left());
-        let x1 = map.x((b + 1) as f64 * frames_per_bucket).min(rect.right());
-        if x1 <= x0 {
-            continue;
-        }
-        // Low paints last (on top): see overview::render_level.
-        for (band, &color) in band_colors.iter().enumerate().rev() {
-            let pos = level.pos[band][b].clamp(0.0, 1.0);
-            let neg = level.neg[band][b].clamp(-1.0, 0.0);
-            if pos == 0.0 && neg == 0.0 {
-                continue;
-            }
-            painter.rect_filled(
-                egui::Rect::from_min_max(
-                    egui::pos2(x0, center_y - pos * half_height),
-                    egui::pos2(x1, center_y - neg * half_height),
-                ),
-                0.0,
-                color,
-            );
-        }
+    if first_bucket < last_bucket {
+        paint_band_envelopes(
+            &painter.with_clip_rect(rect),
+            level,
+            first_bucket..last_bucket,
+            frames_per_bucket,
+            &map,
+            rect,
+            params.total_frames,
+        );
     }
 
     // Loop overlay: fill plus full-height boundary lines where in view.
@@ -351,6 +337,108 @@ pub fn paint_zoomed(
         return Some(ScrubGesture::Drag(-(dx as f64) / map.px_per_frame()));
     }
     None
+}
+
+/// Paint the 3-band waveform as interpolated envelopes: per band, a mesh
+/// of one trapezoid per adjacent-bucket pair spanning the positive to the
+/// negative peak contour (sampled at bucket centers), plus 1px strokes
+/// along both contours whose feathering anti-aliases the edges. Meshes
+/// rather than filled paths because epaint's filled paths assume convexity,
+/// which an envelope doesn't satisfy. Bands paint high → mid → low — low
+/// on top: see overview::render_level.
+fn paint_band_envelopes(
+    painter: &egui::Painter,
+    level: &PeakLevel,
+    buckets: std::ops::Range<usize>,
+    frames_per_bucket: f64,
+    map: &FrameMap,
+    rect: egui::Rect,
+    total_frames: usize,
+) {
+    let center_y = rect.center().y;
+    let half_height = rect.height() * 0.45;
+    let band_colors = [palette::BAND_LOW, palette::BAND_MID, palette::BAND_HIGH];
+
+    // Sample x positions at bucket centers, extended flat to the panel (or
+    // track) edges so the outer half-buckets aren't extrapolated. `idx`
+    // maps each sample back to its bucket (edge points reuse the
+    // first/last bucket's values).
+    let x_of = |b: usize| map.x((b as f64 + 0.5) * frames_per_bucket);
+    let mut xs: Vec<f32> = Vec::with_capacity(buckets.len() + 2);
+    let mut idx: Vec<usize> = Vec::with_capacity(buckets.len() + 2);
+    let left_edge = rect.left().max(map.x(0.0));
+    if left_edge < x_of(buckets.start) {
+        xs.push(left_edge);
+        idx.push(buckets.start);
+    }
+    for b in buckets.clone() {
+        xs.push(x_of(b));
+        idx.push(b);
+    }
+    let right_edge = rect.right().min(map.x(total_frames as f64));
+    if right_edge > *xs.last().unwrap() {
+        xs.push(right_edge);
+        idx.push(buckets.end - 1);
+    }
+
+    for (band, &color) in band_colors.iter().enumerate().rev() {
+        let y_pos: Vec<f32> = idx
+            .iter()
+            .map(|&b| center_y - level.pos[band][b].clamp(0.0, 1.0) * half_height)
+            .collect();
+        let y_neg: Vec<f32> = idx
+            .iter()
+            .map(|&b| center_y - level.neg[band][b].clamp(-1.0, 0.0) * half_height)
+            .collect();
+        let silent = |i: usize| y_pos[i] == center_y && y_neg[i] == center_y;
+
+        // The contour strokes split at silent runs (so silence stays
+        // transparent, not a center line) and are collected to paint over
+        // the band's own mesh but under lower bands.
+        let mut mesh = egui::Mesh::default();
+        let mut strokes: Vec<egui::Shape> = Vec::new();
+        let mut pos_line: Vec<egui::Pos2> = Vec::new();
+        let mut neg_line: Vec<egui::Pos2> = Vec::new();
+        let flush = |pos_line: &mut Vec<egui::Pos2>,
+                     neg_line: &mut Vec<egui::Pos2>,
+                     strokes: &mut Vec<egui::Shape>| {
+            for line in [std::mem::take(pos_line), std::mem::take(neg_line)] {
+                if line.len() >= 2 {
+                    strokes.push(egui::Shape::line(line, egui::Stroke::new(1.0_f32, color)));
+                }
+            }
+        };
+        for i in 0..xs.len() - 1 {
+            // A segment paints when either endpoint is audible, so decays
+            // taper to nothing instead of snapping off.
+            if silent(i) && silent(i + 1) {
+                flush(&mut pos_line, &mut neg_line, &mut strokes);
+                continue;
+            }
+            let base = mesh.vertices.len() as u32;
+            for (x, y) in [
+                (xs[i], y_pos[i]),
+                (xs[i + 1], y_pos[i + 1]),
+                (xs[i + 1], y_neg[i + 1]),
+                (xs[i], y_neg[i]),
+            ] {
+                mesh.colored_vertex(egui::pos2(x, y), color);
+            }
+            mesh.add_triangle(base, base + 1, base + 2);
+            mesh.add_triangle(base, base + 2, base + 3);
+            if pos_line.is_empty() {
+                pos_line.push(egui::pos2(xs[i], y_pos[i]));
+                neg_line.push(egui::pos2(xs[i], y_neg[i]));
+            }
+            pos_line.push(egui::pos2(xs[i + 1], y_pos[i + 1]));
+            neg_line.push(egui::pos2(xs[i + 1], y_neg[i + 1]));
+        }
+        flush(&mut pos_line, &mut neg_line, &mut strokes);
+        if !mesh.is_empty() {
+            painter.add(mesh);
+        }
+        painter.extend(strokes);
+    }
 }
 
 /// CDJ-style cue marker: a down-pointing triangle hanging from the top
