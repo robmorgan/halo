@@ -936,13 +936,14 @@ impl HaloApp {
                         if data.artifact.is_none() && data.track_id.is_some() {
                             let _ = wake_tx.send(());
                         }
-                        // Auto cue: park the deck at the first downbeat.
+                        // Auto cue: park the deck at the first downbeat
+                        // (first beat on a low-confidence grid).
                         // Ceil so the parked position sits at/after the
                         // grid frame and the bar readout says 1.1, not 0.4.
                         deck_ui.last_auto_cue = None;
                         if deck_ui.auto_cue
                             && deck_ui.marks.is_usable()
-                            && let Some(frame) = deck_ui.marks.first_downbeat_frame()
+                            && let Some(frame) = deck_ui.marks.auto_cue_frame()
                         {
                             let frame = frame.ceil() as usize;
                             deck_ui
@@ -1021,7 +1022,7 @@ impl HaloApp {
                                 && deck_ui.scrub_pos.is_none()
                                 && let Some(prev) = deck_ui.last_auto_cue
                                 && shared.cue_point.load(Ordering::Relaxed) as usize == prev
-                                && let Some(frame) = deck_ui.marks.first_downbeat_frame()
+                                && let Some(frame) = deck_ui.marks.auto_cue_frame()
                             {
                                 let frame = frame.ceil() as usize;
                                 shared.cue_point.store(frame as u64, Ordering::Relaxed);
