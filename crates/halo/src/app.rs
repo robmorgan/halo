@@ -2917,26 +2917,37 @@ fn load_track_data(
 ) -> DecodeResult {
     let decoded = decode_file(path)?;
     let cached_peaks = cached_tsa_peaks(path, &decoded);
-    let buffer = AudioBuffer::new(decoded.samples, decoded.sample_rate, Channels::Stereo)
-        .resample(device_rate);
-
-    let peaks = cached_peaks.unwrap_or_else(|| BandPeaks::compute(&buffer.data, 2, device_rate));
+    // Peaks and the fallback grid analyze the NATIVE signal: peak buckets
+    // are per-second and grid positions rescale exactly, so the result is
+    // identical — but a 96 kHz device no longer pays for analyzing the
+    // 2.2x-larger resampled copy on every load.
+    let native = AudioBuffer::new(decoded.samples, decoded.sample_rate, Channels::Stereo);
+    let peaks =
+        cached_peaks.unwrap_or_else(|| BandPeaks::compute(&native.data, 2, native.sample_rate));
     let (grid, artifact) = match stored {
-        Some(native) => {
-            let resampled = native.resample_to(device_rate);
+        Some(artifact) => {
+            let resampled = artifact.resample_to(device_rate);
             (grid_from_artifact(&resampled), Some(Arc::new(resampled)))
         }
         None => {
-            let grid = timestretch::detect_beat_grid_buffer(&buffer);
+            let mut grid = timestretch::detect_beat_grid_buffer(&native);
             log::info!(
                 "Quick BPM: {:.1} ({} beats, confidence {:.2})",
                 grid.bpm,
                 grid.beats.len(),
                 grid.confidence
             );
+            // Rescale to the device rate (segments are beat-indexed and
+            // BPM is time-based; only beat positions are frame-domain).
+            let ratio = device_rate as f64 / native.sample_rate.max(1) as f64;
+            for b in &mut grid.beats {
+                *b *= ratio;
+            }
+            grid.sample_rate = device_rate;
             (grid, None)
         }
     };
+    let buffer = native.resample(device_rate);
 
     let (title, artist, tag_key, artwork) = read_tags(path);
     let title = title.unwrap_or_else(|| {
