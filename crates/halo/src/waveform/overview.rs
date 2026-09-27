@@ -73,25 +73,7 @@ fn render_level(level: &PeakLevel) -> egui::ColorImage {
             let pos = lerp(&level.pos[band]).clamp(0.0, 1.0);
             let neg = lerp(&level.neg[band]).clamp(-1.0, 0.0);
             let amp = pos.max(-neg).powf(OVERVIEW_GAMMA);
-            let top_f = (1.0 - amp * WAVE_HEIGHT_FRAC) * TEX_HEIGHT as f32;
-            let top = top_f.ceil().clamp(0.0, TEX_HEIGHT as f32) as usize;
-            for y in top..TEX_HEIGHT {
-                image.pixels[y * width + x] = color;
-            }
-            // Anti-aliased top edge: the partial pixel above the solid run
-            // is composited over what's already there at its coverage,
-            // instead of a hard step.
-            let coverage = top as f32 - top_f;
-            if coverage > 0.0 && top > 0 {
-                let dst = &mut image.pixels[(top - 1) * width + x];
-                let inv = 1.0 - coverage;
-                *dst = egui::Color32::from_rgba_premultiplied(
-                    (color.r() as f32 * coverage + dst.r() as f32 * inv).round() as u8,
-                    (color.g() as f32 * coverage + dst.g() as f32 * inv).round() as u8,
-                    (color.b() as f32 * coverage + dst.b() as f32 * inv).round() as u8,
-                    (255.0 * coverage + dst.a() as f32 * inv).round() as u8,
-                );
-            }
+            super::thumbnail::paint_silhouette_column(&mut image, x, amp, WAVE_HEIGHT_FRAC, color);
         }
     }
     image
