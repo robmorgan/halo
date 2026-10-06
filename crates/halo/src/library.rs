@@ -15,6 +15,10 @@ use timestretch::PreAnalysisArtifact;
 /// features in Cargo.toml).
 pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "wav"];
 
+/// Format version of the `track_waveforms` thumbnail blob. Bumping it
+/// re-enqueues every track through `next_missing_waveform`.
+pub const WAVEFORM_BLOB_VERSION: i64 = 1;
+
 #[derive(Debug, Clone)]
 pub struct TrackRow {
     pub id: i64,
@@ -125,6 +129,11 @@ impl Library {
              CREATE TABLE IF NOT EXISTS settings (
                  key TEXT PRIMARY KEY,
                  value TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS track_waveforms (
+                 track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                 version INTEGER NOT NULL,
+                 data BLOB NOT NULL
              );",
         )
         .map_err(|e| format!("schema: {e}"))?;
@@ -317,6 +326,58 @@ impl Library {
             )
             .map_err(|e| format!("store setting {key}: {e}"))?;
         Ok(())
+    }
+
+    /// Upsert the browser waveform thumbnail blob at the current
+    /// [`WAVEFORM_BLOB_VERSION`]: 3 bands × N columns of u8 amplitude,
+    /// band-major low/mid/high. An empty blob is the "generation failed"
+    /// marker (parks the backfill queue, reads as no thumbnail).
+    pub fn store_waveform(&self, track_id: i64, data: &[u8]) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT INTO track_waveforms (track_id, version, data) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(track_id) DO UPDATE SET
+                     version = excluded.version,
+                     data = excluded.data",
+                params![track_id, WAVEFORM_BLOB_VERSION, data],
+            )
+            .map_err(|e| format!("store waveform: {e}"))?;
+        Ok(())
+    }
+
+    /// The thumbnail blob if present at the current version; a version
+    /// mismatch, the failure marker, or a malformed length reads as `None`.
+    pub fn waveform_blob(&self, track_id: i64) -> Result<Option<Vec<u8>>, String> {
+        let data: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT data FROM track_waveforms WHERE track_id = ?1 AND version = ?2",
+                params![track_id, WAVEFORM_BLOB_VERSION],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("waveform: {e}"))?;
+        Ok(data.filter(|d| !d.is_empty() && d.len().is_multiple_of(3)))
+    }
+
+    /// Next analyzed track with no thumbnail at the current version, newest
+    /// first. Analysis-failed tracks (empty marker) are excluded — their
+    /// decode is already known broken. The version-scoped join means a
+    /// version bump automatically re-enqueues every track.
+    pub fn next_missing_waveform(&self) -> Result<Option<(i64, PathBuf)>, String> {
+        self.conn
+            .query_row(
+                "SELECT t.id, t.path FROM tracks t
+                 LEFT JOIN track_waveforms w
+                     ON w.track_id = t.id AND w.version = ?1
+                 WHERE t.analysis_json IS NOT NULL AND t.analysis_json != ''
+                   AND w.track_id IS NULL
+                 ORDER BY t.added_at DESC, t.id DESC LIMIT 1",
+                params![WAVEFORM_BLOB_VERSION],
+                |r| Ok((r.get::<_, i64>(0)?, PathBuf::from(r.get::<_, String>(1)?))),
+            )
+            .optional()
+            .map_err(|e| format!("next missing waveform: {e}"))
     }
 
     /// Mark a track as failed analysis (empty JSON) so the queue moves on
@@ -627,7 +688,10 @@ mod tests {
                      track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
                      cues_json TEXT NOT NULL);
                  CREATE TABLE settings (
-                     key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+                     key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 CREATE TABLE track_waveforms (
+                     track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                     version INTEGER NOT NULL, data BLOB NOT NULL);",
             )
             .unwrap();
         lib
@@ -858,5 +922,85 @@ mod tests {
         assert_eq!(renamed.parent_id, Some(folder));
         lib.delete_playlist(folder).unwrap();
         assert!(lib.playlists().unwrap().is_empty(), "cascade delete");
+    }
+
+    #[test]
+    fn waveform_blob_round_trips() {
+        let lib = mem_library();
+        let id = insert(&lib, "/x/a.mp3", "One", "AA", None);
+        assert!(lib.waveform_blob(id).unwrap().is_none());
+        let blob = vec![1u8, 2, 3, 4, 5, 6];
+        lib.store_waveform(id, &blob).unwrap();
+        assert_eq!(lib.waveform_blob(id).unwrap().as_deref(), Some(&blob[..]));
+        // Upsert replaces.
+        let blob2 = vec![9u8, 9, 9];
+        lib.store_waveform(id, &blob2).unwrap();
+        assert_eq!(lib.waveform_blob(id).unwrap().as_deref(), Some(&blob2[..]));
+    }
+
+    #[test]
+    fn waveform_version_mismatch_and_malformed_read_none() {
+        let lib = mem_library();
+        let id = insert(&lib, "/x/a.mp3", "One", "AA", None);
+        // Stale version reads as missing.
+        lib.conn
+            .execute(
+                "INSERT INTO track_waveforms (track_id, version, data) VALUES (?1, 0, ?2)",
+                params![id, vec![1u8, 2, 3]],
+            )
+            .unwrap();
+        assert!(lib.waveform_blob(id).unwrap().is_none());
+        // Length not divisible into 3 bands reads as missing.
+        lib.store_waveform(id, &[1, 2, 3, 4]).unwrap();
+        assert!(lib.waveform_blob(id).unwrap().is_none());
+        // The empty failure marker reads as missing.
+        lib.store_waveform(id, &[]).unwrap();
+        assert!(lib.waveform_blob(id).unwrap().is_none());
+    }
+
+    #[test]
+    fn waveform_backfill_queue() {
+        let lib = mem_library();
+        let unanalyzed = insert(&lib, "/x/a.mp3", "One", "AA", None);
+        let analyzed = insert(&lib, "/x/b.mp3", "Two", "BB", None);
+        let failed = insert(&lib, "/x/c.mp3", "Three", "CC", None);
+        lib.store_analysis(analyzed, &PreAnalysisArtifact::default())
+            .unwrap();
+        lib.store_analysis_failure(failed).unwrap();
+
+        // Only the analyzed track queues: no analysis and failed analysis
+        // are both excluded.
+        let (id, _) = lib.next_missing_waveform().unwrap().unwrap();
+        assert_eq!(id, analyzed);
+
+        // A stored blob dequeues it; the failure marker parks it too.
+        lib.store_waveform(analyzed, &[1, 2, 3]).unwrap();
+        assert!(lib.next_missing_waveform().unwrap().is_none());
+        lib.store_waveform(analyzed, &[]).unwrap();
+        assert!(lib.next_missing_waveform().unwrap().is_none());
+
+        // A stale-version blob re-queues.
+        lib.conn
+            .execute(
+                "UPDATE track_waveforms SET version = 0 WHERE track_id = ?1",
+                params![analyzed],
+            )
+            .unwrap();
+        let (id, _) = lib.next_missing_waveform().unwrap().unwrap();
+        assert_eq!(id, analyzed);
+        let _ = unanalyzed;
+    }
+
+    #[test]
+    fn waveform_blob_cascades_on_track_delete() {
+        let lib = mem_library();
+        let id = insert(&lib, "/x/a.mp3", "One", "AA", None);
+        lib.store_waveform(id, &[1, 2, 3]).unwrap();
+        lib.delete_track(id).unwrap();
+        let count: i64 = lib
+            .conn
+            .query_row("SELECT COUNT(*) FROM track_waveforms", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }

@@ -520,6 +520,11 @@ pub struct HaloApp {
     flash_key: [bool; LANE_COUNT],
     library: Option<Library>,
     browser: BrowserState,
+    /// Per-track browser waveform thumbnails, rasterized lazily for
+    /// visible rows. `None` = known-missing blob (negative cache, avoids
+    /// a DB query per frame). Keyed by stable track id, so sorts and
+    /// re-queries need no invalidation.
+    waveform_thumbs: std::collections::HashMap<i64, Option<egui::TextureHandle>>,
     /// Wakes the analysis worker after imports.
     wake_tx: mpsc::Sender<()>,
     events_rx: mpsc::Receiver<WorkerEvent>,
@@ -687,6 +692,7 @@ impl HaloApp {
             programmer_params: ProgrammerParams::default(),
             flash_key: [false; LANE_COUNT],
             library,
+            waveform_thumbs: std::collections::HashMap::new(),
             browser,
             wake_tx,
             events_rx,
@@ -1023,6 +1029,8 @@ impl HaloApp {
             match event {
                 WorkerEvent::Analyzed(id) => {
                     self.browser.dirty = true;
+                    // Analysis (first or re-) rewrote the thumbnail blob.
+                    self.waveform_thumbs.remove(&id);
                     // No `pre_analysis.is_none()` guard: a reanalyzed track
                     // already on a deck must refresh too. The engine-side
                     // apply still waits for a non-playing moment via
@@ -1066,6 +1074,11 @@ impl HaloApp {
                             "Analysis complete".to_string()
                         };
                     }
+                }
+                WorkerEvent::WaveformReady(id) => {
+                    // Backfill only touches the thumbnail: no row text
+                    // changed, so no browser re-query.
+                    self.waveform_thumbs.remove(&id);
                 }
                 WorkerEvent::Imported(n) => {
                     self.browser.dirty = true;
@@ -1892,7 +1905,14 @@ impl HaloApp {
                             });
                             ui.separator();
                             ui.vertical(|ui| {
-                                track_table(ui, &mut self.browser, &mut actions, view);
+                                track_table(
+                                    ui,
+                                    &mut self.browser,
+                                    self.library.as_ref(),
+                                    &mut self.waveform_thumbs,
+                                    &mut actions,
+                                    view,
+                                );
                             });
                         });
                     }
@@ -3181,9 +3201,17 @@ fn playlist_row(
 }
 
 /// Right side of the browser: search box + sortable track table.
+/// Library row height in points: tall enough for the waveform thumbnail
+/// while keeping the table dense.
+const TRACK_ROW_HEIGHT: f32 = 26.0;
+/// Thumbnail cell rect in points (drawn centered in its 96pt column).
+const THUMB_CELL_SIZE: egui::Vec2 = egui::vec2(92.0, 20.0);
+
 fn track_table(
     ui: &mut egui::Ui,
     browser: &mut BrowserState,
+    lib: Option<&Library>,
+    thumbs: &mut std::collections::HashMap<i64, Option<egui::TextureHandle>>,
     actions: &mut Vec<BrowserAction>,
     view: View,
 ) {
@@ -3246,7 +3274,9 @@ fn track_table(
     TableBuilder::new(ui)
         .striped(true)
         .sense(egui::Sense::click_and_drag())
+        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         .column(Column::exact(58.0)) // load buttons
+        .column(Column::exact(96.0)) // waveform thumbnail
         .column(Column::remainder().at_least(140.0)) // title
         .column(Column::initial(140.0).at_least(80.0)) // artist
         .column(Column::initial(120.0).at_least(60.0)) // album
@@ -3255,6 +3285,7 @@ fn track_table(
         .column(Column::exact(48.0)) // time
         .header(20.0, |mut h| {
             h.col(|_| {});
+            h.col(|_| {}); // thumbnail: unlabeled, not sortable
             h.col(|ui| header(ui, "Title", SortColumn::Title, browser, actions));
             h.col(|ui| header(ui, "Artist", SortColumn::Artist, browser, actions));
             h.col(|ui| header(ui, "Album", SortColumn::Album, browser, actions));
@@ -3263,7 +3294,7 @@ fn track_table(
             h.col(|ui| header(ui, "Time", SortColumn::Duration, browser, actions));
         })
         .body(|body| {
-            body.rows(20.0, browser.rows.len(), |mut row| {
+            body.rows(TRACK_ROW_HEIGHT, browser.rows.len(), |mut row| {
                 let track = &browser.rows[row.index()];
                 row.col(|ui| {
                     ui.horizontal(|ui| match view {
@@ -3293,6 +3324,50 @@ fn track_table(
                             }
                         }
                     });
+                });
+                row.col(|ui| {
+                    // Painter-only (no widget) so the cell never competes
+                    // with the table's row-level click/drag sense.
+                    let rect =
+                        egui::Rect::from_center_size(ui.max_rect().center(), THUMB_CELL_SIZE);
+                    if thumbs.len() >= 512 && !thumbs.contains_key(&track.id) {
+                        // Cap: dropping the handles frees the textures;
+                        // visible rows repopulate over the next frames.
+                        thumbs.clear();
+                    }
+                    let entry = thumbs.entry(track.id).or_insert_with(|| {
+                        lib.and_then(|l| l.waveform_blob(track.id).ok().flatten())
+                            .and_then(|data| crate::waveform::render_thumbnail(&data))
+                            .map(|img| {
+                                ui.ctx().load_texture(
+                                    format!("track_thumb_{}", track.id),
+                                    img,
+                                    egui::TextureOptions::LINEAR,
+                                )
+                            })
+                    });
+                    match entry {
+                        Some(tex) => {
+                            ui.painter().image(
+                                tex.id(),
+                                rect,
+                                egui::Rect::from_min_max(
+                                    egui::pos2(0.0, 0.0),
+                                    egui::pos2(1.0, 1.0),
+                                ),
+                                egui::Color32::WHITE,
+                            );
+                        }
+                        // No blob yet (unanalyzed / backfill pending /
+                        // failed): a quiet baseline placeholder.
+                        None => {
+                            ui.painter().hline(
+                                rect.x_range(),
+                                rect.bottom() - 1.0,
+                                egui::Stroke::new(1.0_f32, crate::waveform::palette::TEXT_DIM),
+                            );
+                        }
+                    }
                 });
                 row.col(|ui| {
                     ui.label(&track.title);

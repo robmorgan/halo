@@ -7,12 +7,14 @@ mod counter;
 mod overview;
 mod show_editor;
 mod show_strip;
+mod thumbnail;
 mod zoomed;
 
 pub use counter::paint_beat_counter;
 pub use overview::{OverviewParams, OverviewTexture, paint_overview};
 pub use show_editor::{ShowEditorInteraction, ShowEditorParams, show_editor};
 pub use show_strip::{ShowStripParams, paint_show_strip};
+pub use thumbnail::render_thumbnail;
 // The 3-band peaks pyramid moved into the timestretch library (it also
 // serializes them into `.tsa` sidecars); re-exported so the painters and
 // app keep one import path.
