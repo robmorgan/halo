@@ -19,6 +19,7 @@ use cpal::{SampleRate, Stream, StreamConfig};
 use timestretch::MomentaryLoudness;
 use timestretch::engine::EngineProcessor;
 
+use crate::brake::BrakeResampler;
 use crate::deck::{ProcessorSlot, SampleSlot};
 use crate::dsp::{ChannelStrip, FilterMode, Limiter, StripParams};
 use crate::scrub::ScrubVoice;
@@ -128,6 +129,10 @@ impl AudioOutput {
         // own channel strip) and the engine↔voice crossfade mix.
         let mix_alpha = 1.0 - (-1.0 / (SCRUB_MIX_SECS * sample_rate as f32)).exp();
         let mut voices: [ScrubVoice; 3] = std::array::from_fn(|_| ScrubVoice::new(sample_rate));
+        // Per-deck wide-fader brake resampler; FIFO preallocated so the
+        // callback stays allocation-free at steady state.
+        let mut brakes: [BrakeResampler; 3] =
+            std::array::from_fn(|_| BrakeResampler::new(sample_rate));
         let mut scr_srcs: [Option<Arc<Vec<f32>>>; 3] = [None, None, None];
         let mut scrub_mix: [f32; 3] = [0.0; 3];
         let mut prev_phase = [ScrubPhase::Idle; 3];
@@ -176,6 +181,9 @@ impl AudioOutput {
                             if let Some(m) = &mut lufs[i] {
                                 m.reset();
                             }
+                            // A fresh engine's output must not mix with
+                            // frames buffered from the retired one.
+                            brakes[i].reset();
                         }
 
                         // Acknowledge a pending warm-start reset before
@@ -187,6 +195,9 @@ impl AudioOutput {
                             if let Some(m) = &mut lufs[i] {
                                 m.reset();
                             }
+                            // Flush the brake FIFO so a warm-start seek
+                            // doesn't replay pre-seek frames.
+                            brakes[i].reset();
                             deck.reset_request.store(false, Ordering::Release);
                         }
 
@@ -237,7 +248,18 @@ impl AudioOutput {
                         let buf = &mut scratch[..data.len()];
                         if rendering {
                             if let Some(p) = &mut procs[i] {
-                                p.process(buf);
+                                // Wide-fader brake: below the wide chain's
+                                // -50% floor the engine output is consumed
+                                // at the smoothed factor `b`; while the
+                                // resampler is engaged every block routes
+                                // through it (even at b = 1) so its FIFO
+                                // drains before the direct path resumes.
+                                let b = deck.shared.brake.load() as f64;
+                                if b < 1.0 || brakes[i].engaged() {
+                                    brakes[i].render(b, buf, |chunk| p.process(chunk));
+                                } else {
+                                    p.process(buf);
+                                }
                             } else {
                                 buf.fill(0.0);
                             }
