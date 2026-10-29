@@ -104,7 +104,7 @@ impl ScrubVoice {
     /// and return the predicted landing frame. The trajectory is simulated
     /// once with the same per-frame arithmetic [`render_settle`] runs, so
     /// the voice lands exactly on the returned frame — the engine can be
-    /// warm-started there in parallel for a seamless handoff.
+    /// primed there in parallel for a seamless handoff.
     pub fn begin_settle(&mut self, rate_target: f64, source: &[f32]) -> f64 {
         let total_frames = source.len() / CHANNELS;
         let max_pos = (total_frames.saturating_sub(1)) as f64;
@@ -146,6 +146,24 @@ impl ScrubVoice {
         // `.max(0.0)`: if the cap ever truncates a glide inside the lead-in,
         // report a real track frame anyway — the voice there is silent.
         if snap_frames > 0 { 0.0 } else { pos.max(0.0) }
+    }
+
+    /// Frames left before the exact landing; delivery splits at this boundary.
+    pub fn settle_remaining_frames(&self) -> u64 {
+        self.settle
+            .as_ref()
+            .map_or(0, |s| s.frames_left + s.snap_frames)
+    }
+
+    /// Match the session's integer seek target and achieved rate at handoff.
+    /// The glide ends within a tolerance; its residual rate must not drift
+    /// against the session during the crossfade.
+    pub fn align_landing(&mut self, frame: f64, rate: f64) {
+        self.pos = frame;
+        self.rate = rate;
+        if let Some(settle) = &mut self.settle {
+            settle.rate_target = rate;
+        }
     }
 
     /// Render one glide block into `out` (interleaved stereo, overwritten).

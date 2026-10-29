@@ -144,6 +144,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocation-counter"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "beb9e990c0a33699f1984d85a6abead615ccc72dd8130bf3e15dcabe2ca149c9"
+
+[[package]]
 name = "alsa"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -267,15 +273,6 @@ dependencies = [
  "percent-encoding",
  "windows-sys 0.60.2",
  "x11rb",
-]
-
-[[package]]
-name = "arc-swap"
-version = "1.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
-dependencies = [
- "rustversion",
 ]
 
 [[package]]
@@ -539,6 +536,19 @@ dependencies = [
  "serde",
  "zbus 4.4.0",
  "zvariant 4.2.0",
+]
+
+[[package]]
+name = "audio_thread_priority"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e58c7a923538aa84eef9947d81924fb9f34d7db6004e179218ab57a7bb7700b6"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "log",
+ "mach2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -954,6 +964,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "crossbeam-queue"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03e8bd762f7479489c70ed6c768ddca99d7296857de437a68dcb2a94365b3fae"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -1827,7 +1846,10 @@ dependencies = [
 name = "halo"
 version = "0.1.0"
 dependencies = [
+ "allocation-counter",
+ "audio_thread_priority",
  "cpal",
+ "crossbeam-queue",
  "dirs",
  "eframe",
  "egui_extras",
@@ -3963,13 +3985,33 @@ dependencies = [
 
 [[package]]
 name = "timestretch"
-version = "0.13.0"
+version = "0.16.0"
 dependencies = [
- "arc-swap",
+ "serde_json",
+ "timestretch-analysis",
+ "timestretch-core",
+]
+
+[[package]]
+name = "timestretch-accelerate"
+version = "0.1.0"
+
+[[package]]
+name = "timestretch-analysis"
+version = "0.16.0"
+dependencies = [
  "ebur128",
  "rustfft",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "timestretch-core"
+version = "0.16.0"
+dependencies = [
+ "rustfft",
+ "timestretch-accelerate",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-//! Lock-free state shared between the UI thread, the per-deck feed threads,
+//! Lock-free state shared between the UI thread, the per-deck render workers,
 //! and the audio callback. Everything here is atomics — the audio path never
 //! takes a lock it can block on.
 
@@ -48,19 +48,18 @@ pub enum Transport {
 /// Sentinel meaning "no seek requested".
 const NO_SEEK: u64 = u64::MAX;
 
-/// Per-deck state shared across the UI, feed thread, and audio callback.
+/// Per-deck state shared across the UI, render worker, and audio callback.
 pub struct DeckShared {
     transport: AtomicU8,
-    /// Playhead in source frames, published by the feed thread.
+    /// Playhead in source frames, published by the render worker.
     pub playhead: AtomicU64,
     /// Total source frames of the loaded track.
     pub total_frames: AtomicU64,
     /// Cue point in source frames.
     pub cue_point: AtomicU64,
-    /// Seek request in source frames (NO_SEEK = none). UI writes, feed
-    /// thread consumes.
+    /// Seek request in source frames (NO_SEEK = none). UI writes, worker consumes.
     seek_request: AtomicU64,
-    /// True once the feed thread has prerolled the engine's source ring —
+    /// True once the render worker has filled the output reserve —
     /// the audio callback only consumes the deck while this is set.
     pub stream_active: AtomicBool,
     /// Channel trim (gain), linear. 1.0 = unity.
@@ -83,22 +82,33 @@ pub struct DeckShared {
     /// Normalized filter cutoff 0..1 (log-mapped 20 Hz → 20 kHz).
     pub filter_cutoff: AtomicF32,
     /// Engine tempo rate (playback speed; 1.0 = original). Written by the
-    /// UI's tempo logic, forwarded to the engine by the feed thread.
+    /// UI's tempo logic, forwarded to the engine by the render worker.
     pub tempo_rate: AtomicF32,
-    /// Wide-fader brake factor `b` in `[0, 1]`: 1.0 = no brake, 0.0 = full
-    /// stop. Below the wide chain's -50% floor the engine pins at
-    /// `tempo_rate` 0.5 and the audio callback consumes its output at `b`
-    /// via the brake resampler. Written by the UI's tempo logic, read by
-    /// the audio callback every block and by the feed thread's EOF gate.
-    pub brake: AtomicF32,
+    /// Zero-speed fader detent pauses delivery without changing play intent.
+    pub tempo_stopped: AtomicBool,
+    /// Generation of the loaded track; stale callback deliveries stay muted.
+    pub track_generation: AtomicU64,
+    /// Worker processing time / elapsed wall time (EMA).
+    pub worker_load: AtomicF32,
+    /// Applied DSP tempo, reported separately from requested controls.
+    pub achieved_tempo: AtomicF64,
+    /// Conservative control boundary + pending/unacknowledged output, seconds.
+    pub control_latency: AtomicF64,
+    /// Host reserve in seconds, separate from device latency.
+    pub queue_latency: AtomicF64,
+    pub underrun_frames: AtomicU64,
+    /// True after a worker failure; UI drains its error channel.
+    pub worker_failed: AtomicBool,
+    /// Scrub landing sequence primed by the worker.
+    pub scrub_ready: AtomicU64,
     /// Keylock: pitch stays constant while tempo changes (Tape mode when
     /// off — pitch follows tempo).
     pub keylock: AtomicBool,
     /// Active loop region packed as `start << 32 | end` (frames, u32 each)
-    /// so the feed thread can never read a torn start/end pair.
+    /// so the render worker can never read a torn start/end pair.
     /// `u64::MAX` = no loop.
     loop_region: AtomicU64,
-    /// Audible-scrub handshake between the UI, feed thread, and audio
+    /// Audible-scrub handshake between the UI, render worker, and audio
     /// callback.
     pub scrub: ScrubState,
 }
@@ -122,7 +132,15 @@ impl DeckShared {
             filter_mode: AtomicU8::new(0),
             filter_cutoff: AtomicF32::new(1.0),
             tempo_rate: AtomicF32::new(1.0),
-            brake: AtomicF32::new(1.0),
+            tempo_stopped: AtomicBool::new(false),
+            track_generation: AtomicU64::new(0),
+            worker_load: AtomicF32::new(0.0),
+            achieved_tempo: AtomicF64::new(1.0),
+            control_latency: AtomicF64::new(0.0),
+            queue_latency: AtomicF64::new(0.0),
+            underrun_frames: AtomicU64::new(0),
+            worker_failed: AtomicBool::new(false),
+            scrub_ready: AtomicU64::new(0),
             keylock: AtomicBool::new(true),
             loop_region: AtomicU64::new(u64::MAX),
             scrub: ScrubState::new(),
@@ -200,8 +218,8 @@ pub enum ScrubPhase {
 /// Shared scrub state machine: the UI publishes the pointer-implied source
 /// position while the zoomed waveform is dragged; the audio callback chases
 /// it with a raw varispeed reader (bypassing the engine), then owns the
-/// post-release momentum glide. The feed thread yields the playhead while
-/// any phase is engaged and additionally stops feeding while `Active`.
+/// post-release momentum glide. The render worker publishes the voice position
+/// while a phase is engaged and stops rendering while `Active`.
 pub struct ScrubState {
     /// `ScrubPhase` as u8 (0/1/2).
     phase: AtomicU8,
@@ -221,8 +239,8 @@ pub struct ScrubState {
     /// Predicted settle landing frame, published by the callback when a
     /// glide starts.
     landing: AtomicF64,
-    /// Bumped with each published landing; the UI consumes each sequence
-    /// number exactly once to fire the engine warm-start seek.
+    /// Bumped with each published landing; the worker consumes each sequence
+    /// number exactly once to prepare the session landing.
     landing_seq: AtomicU64,
 }
 
@@ -350,7 +368,7 @@ impl MixerShared {
     }
 }
 
-/// Flag for signaling a feed thread to stop.
+/// Flag for signaling a render worker to stop.
 pub struct StopFlag(AtomicBool);
 
 impl StopFlag {

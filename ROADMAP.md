@@ -2,39 +2,71 @@
 
 Halo is a 2-deck DJ app for macOS, written in Rust. It uses [`timestretch`](https://github.com/robmorgan/timestretch-rs) for real-time tempo/pitch control and beat analysis, egui/eframe (wgpu backend) for the UI, cpal for audio output, and symphonia for decoding.
 
-The `timestretch-rs` desktop reference app (`timestretch-rs/desktop/`) is a proven single-deck implementation of most of the hard wiring — decoder, audio callback, feed thread, waveform rendering, gapless loops, scrub. Halo's early phases are largely about porting those patterns into a two-deck architecture, then building the DJ-specific features (mixer, EQ, sync, hot cues, library) on top.
+The `timestretch-rs` desktop reference app (`timestretch-rs/desktop/`) is a proven single-deck implementation of most of the hard wiring — decoder, worker-owned sessions, device delivery, waveform rendering, gapless loops, scrub. Halo's early phases are largely about porting those patterns into a two-deck architecture, then building the DJ-specific features (mixer, EQ, sync, hot cues, library) on top.
 
 ## Ground rules
 
-- **`timestretch` is referenced by local path** so the crate can evolve alongside Halo without publishing:
+- **`timestretch` is referenced by local path** from `crates/halo`, with CI pinned to the v0.16.0 release commit:
 
   ```toml
-  timestretch = { path = "../timestretch-rs" }
+  timestretch = { version = "=0.16.0", path = "../../../timestretch-rs", features = ["analysis", "io"] }
   ```
 
-- **All audio is `f32` interleaved stereo.** The audio callback is allocation-free and lock-free; UI ↔ audio communication uses atomics and the engine's wait-free control mailbox, with a mutex only for cold UI state.
+- **All audio is `f32` interleaved stereo.** The audio callback is allocation-free and lock-free; UI intent uses atomics, rendered audio uses bounded SPSC queues, and track handoffs use bounded ownership queues. Callback storage is preallocated; retired storage is reclaimed on the UI.
 - **Musical key is read from file tags only** (Mixed In Key / Rekordbox style tags). No in-app key detection before 1.0.
 
 ## Architecture overview
 
-Three kinds of threads, mirroring the `timestretch` engine's controller/processor/source split:
+Each loaded player (Deck A, Deck B, Prepare audition) owns one render worker:
 
 ```
-UI thread (egui, ~30fps while playing)
-    │  atomics + engine control mailbox (lock-free)
+UI thread (egui, ~30 fps while playing)
+    │ atomic transport / tempo / loop intent
     ▼
-Feed/control thread × 2 (one per deck)
-    keeps engine source ring fed, handles seeks (warm-start),
-    loops (JumpMap re-anchor), publishes playhead
-    │  lock-free source ring
-    ▼
-Audio callback thread (cpal, owns everything below)
-    Deck A EngineProcessor ─ gain ─ EQ ─ filter ─ fader ┐
-                                                        ├─ crossfader ─ sum ─ output
-    Deck B EngineProcessor ─ gain ─ EQ ─ filter ─ fader ┘
+Render worker × 3 (one per loaded player)
+    PreparedSession → StreamSession, source demand, seek/loop/EOF,
+    bounded render pump, consumption receipts → shared source playhead
+    │ preallocated output queue              ▲ consumption receipts
+    ▼                                       │
+Audio callback (cpal)
+    A queue + scrub → EQ/filter → trim → fader ┐
+    B queue + scrub → EQ/filter → trim → fader ├ crossfader → master → limiter
+    Audition queue + scrub → strip → fader ───┘ (bypasses crossfader)
 ```
 
-One `timestretch::Engine` per deck. The audio callback owns both `EngineProcessor`s and the mixer chain; per-deck DSP (gain, EQ, filter) runs after the engine, before the crossfader sum.
+Session preparation, processing, restart and destruction stay off the callback.
+Source frames remain in the device-rate domain: Halo resamples on load, and
+rescales native-rate analysis for waveforms and cues. The session's consumed
+position drives both deck displays and the independent 44 Hz DMX engine.
+Seek/loop changes invalidate old output with epoch boundaries, including while
+paused. A running loop preserves DSP history. EOF means delivered audio has
+been acknowledged, not merely rendered or collected. Scrub landing preparation
+runs on the worker without a UI round trip.
+
+The initial output reserve is 50 ms, following the upstream desktop. The deck
+latency readout includes session control boundaries and pending/unacknowledged
+output; it is not physical speaker latency. Auto selects Accelerate on macOS
+and Portable elsewhere. No analysis artifact is a DSP input.
+
+Qualification: `cargo test --workspace` covers receipt/epoch races, callback
+allocation and retirement, three-player transport, scrub handoff, device reloads,
+cache compatibility, bass, stereo separation and pitch intent. Device reloads
+retain source paths independently of library IDs and restart pending decodes at
+the new rate. The opt-in scheduling checks run with
+`cargo test --release -p halo qualification -- --ignored --nocapture --test-threads=1`:
+the synthetic harness covers three players plus background analysis at
+44.1/48/96 kHz and 128/512/2048-frame callbacks; the device harness opens the
+default output with its master muted and checks playback, pause, seek and loops.
+
+The v0.16 migration was validated on macOS arm64 and emulated Linux x86_64 with
+Rust 1.90.0: 145 tests pass on each, with both scheduling checks excluded from
+ordinary tests. Linux builds and the macOS release build pass; nightly formatting
+and Clippy with warnings denied are clean. All nine synthetic scheduling cases
+pass with zero underruns and callbacks within their device budgets (maximum
+observed callback: 0.69 ms). The MOTU M4 device check at 96 kHz passes all three
+buffer sizes with zero underruns. Subjective listening is a
+separate release check; these automated checks verify scheduling and measured
+signal properties.
 
 ---
 
@@ -54,7 +86,7 @@ One `timestretch::Engine` per deck. The audio callback owns both `EngineProcesso
 
 **Goal:** two independent decks mixed to one output — the audio-path skeleton every later phase builds on.
 
-- `Deck` struct ×2, each owning a `timestretch::Engine` (`EngineController` / `EngineProcessor` / `SourceProducer`). Port the feed-thread pattern from `desktop/src/deck.rs`: source ring top-up, warm-start seeks (mute → reset → preroll → `warm_start`), EOF handling, playhead publishing.
+- `Deck` owns a worker-driven `StreamSession` and an output queue, shared by performance decks and Prepare audition. The worker owns source demand, seeks, loops, EOF and receipt-based playhead publishing.
 - Mixer stage in the audio callback: per-deck gain (trim) and channel fader, constant-power crossfader, sum to output.
 - Transport per deck: play/pause and CDJ-style cue (set cue while paused, press to return + hold-to-preview, release returns to cue).
 - **Basic CPU meter** — callback processing time ÷ buffer duration, published via atomic. Built now, deliberately early: it's the tool that validates the DSP budget for every phase after this.
@@ -65,7 +97,7 @@ One `timestretch::Engine` per deck. The audio callback owns both `EngineProcesso
 
 **Goal:** the full CDJ-style deck display.
 
-- On load: `timestretch::detect_beat_grid_buffer` for an instant BPM readout, then background `analyze_for_dj` → `PreAnalysisArtifact` cached to a sidecar (port `spawn_pre_analysis` / `sidecar_path` from `desktop/src/app.rs`; the artifact also feeds the engine to improve stretch quality).
+- On load: downmix and `timestretch::detect_beat_grid` for an initial BPM, then background `analyze` → `PreAnalysisArtifact` cached in SQLite. Compatible `.tsa`/legacy sidecars can be imported. Analysis updates display metadata without rebuilding playback.
 - Port `desktop/src/waveform/`: 3-band RGB peaks pyramid (`peaks.rs`), full-track overview strip as GPU texture (`overview.rs`), centered-playhead zoomed scrolling waveform with beat/bar/phrase marks (`zoomed.rs`, `mod.rs`), audible scrub gesture (`scrub.rs`).
 - Track artwork from file tags via `lofty`, displayed in the deck header.
 - Elapsed + remaining time readouts; **prominent BPM display** = detected BPM × current tempo rate, updating live.
@@ -76,7 +108,7 @@ One `timestretch::Engine` per deck. The audio callback owns both `EngineProcesso
 
 **Goal:** full per-deck mixer DSP. Independent of Phase 2 — can overlap with it.
 
-- 3-band isolator EQ per deck (low / mid / high, full-kill at minimum). Build on the Linkwitz-Riley crossover math already in `timestretch` (`src/core/crossover.rs` — currently internal; expose it `pub` in the crate, which the local path dependency makes trivial) or implement biquads in Halo if keeping the crate's API surface clean is preferred.
+- 3-band isolator EQ per deck (low / mid / high, full-kill at minimum). Halo owns the LR4 crossover in `crossover.rs`, retained from timestretch 0.15 after its public DSP helpers were removed.
 - LP/HP filter per deck: mode toggle (low-pass / high-pass) + cutoff knob, gentle resonance.
 - Final DSP chain order: engine → gain → EQ → filter → fader → crossfader → sum. Smooth all parameter changes (per-block ramps) to avoid zipper noise.
 - Verify CPU headroom with the Phase 1 meter.
@@ -87,10 +119,10 @@ One `timestretch::Engine` per deck. The audio callback owns both `EngineProcesso
 
 **Goal:** beatmatching — manual and one-button.
 
-- Tempo slider per deck with range selector (±8 / ±16 / ±50%), mapped to `EngineController::set_tempo_rate`. Live BPM readout follows.
-- Keylock toggle per deck (`set_keylock` — the engine crossfades profiles click-free).
+- Tempo slider per deck with ±8 / ±16 / ±50% and WIDE ranges, mapped to typed `TempoRate` controls. WIDE supports 1/32–4x with keylock or 1/4–4x with linked pitch, plus a zero-speed transport detent. It no longer selects a different processor.
+- Keylock selects `Parameters::keylock` or `Parameters::linked`; switching off below 1/4x visibly raises the fader to that supported minimum.
 - Pitch bend / nudge buttons (temporary rate offset while held).
-- **Sync/Master:** designate a master deck; sync matches the other deck's BPM from the beat grids (Phase 2) and phase-aligns the nearest beat using `set_tempo_rate_at` for sample-accurate correction. Bar-aware alignment using downbeats where confidence allows.
+- **Sync/Master:** match BPM and align by seeking the nearest beat, then follow delivered beat phase with bounded rate corrections. Controls target the session commit horizon and apply at legal algorithm boundaries; queued output contributes to response latency.
 
 **Milestone:** press Sync and the decks lock in phase; manual beatmatching works with slider + nudge.
 
@@ -99,7 +131,7 @@ One `timestretch::Engine` per deck. The audio callback owns both `EngineProcesso
 **Goal:** performance-ready decks.
 
 - **Hot cues**, 8 per deck: Normal mode (empty slot = set, occupied = jump; delete via modifier) and **Gated mode** (plays from the cue while held, stops on release). Optional quantize snaps stored/triggered cues to the beat grid (`BeatGrid::snap_to_grid`).
-- **Loops:** manual loop in/out; **4-beat quantized loop** button snapped to the grid; halve/double loop-size controls covering **1/16 beat up to 16 beats** (`snap_to_subdivision` for sub-beat sizes). Port the reference app's grid-quantized autoloop ladder and gapless `JumpMap` wrap (no engine reset across the loop seam).
+- **Loops:** manual loop in/out; **4-beat quantized loop** button snapped to the grid; halve/double loop-size controls covering **1/16 beat up to 16 beats** (`snap_to_subdivision` for sub-beat sizes). Use the grid-quantized autoloop ladder and session-owned continuous wraps (no processor reset across the seam). Enabling/resizing/disabling loops is an epoch transaction; seeks outside a loop disable it first.
 - Loop + hot cue state survives seeks and tempo changes; active loop drawn on both waveforms.
 
 **Milestone:** finger-drum hot cues in both modes; set, resize (1/16→16 beats), and exit loops seamlessly.
@@ -109,7 +141,7 @@ One `timestretch::Engine` per deck. The audio callback owns both `EngineProcesso
 **Goal:** prepare and play a full set without a file dialog.
 
 - SQLite library via `rusqlite`: tracks table (path, tags, duration, BPM, key, artwork ref), playlist tree (folders + playlists), analysis cache keyed by the artifact's content hash. One-time import of existing `.halo.tsanalysis.json` sidecars, after which the DB is the only analysis cache (no new sidecars written).
-- Add a small `PreAnalysisArtifact::resample_to(rate)` helper to the `timestretch` crate (easy via the local path dependency): analysis runs **once at the file's native sample rate** and is rescaled to the engine/device rate on load. This keeps one analysis row per track instead of duplicates per output-device rate, and stops a device switch (48 kHz interface → 44.1 kHz headphones) from invalidating the cache.
+- Use `PreAnalysisArtifact::resample_to(rate)`: analysis runs **once at the file's native sample rate** and is rescaled to the engine/device rate on load. This keeps one analysis row per track instead of duplicates per output-device rate, and stops a device switch (48 kHz interface → 44.1 kHz headphones) from invalidating the cache.
 - Import: add folders, scan, read tags with `lofty` (title / artist / album / **key** / artwork), queue background analysis for BPM + beat grid.
 - Browser UI: left tree panel (playlist folders → playlists), right table with sortable columns (title, artist, BPM, key, duration, date added), search box, drag or button to load a track to a deck.
 

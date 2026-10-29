@@ -2,7 +2,7 @@
 //! filter, both running inside the audio callback (allocation-free,
 //! per-sample gain smoothing against zipper noise).
 
-use timestretch::core::crossover::LR4Crossover;
+use crate::crossover::LR4Crossover;
 
 /// Low/mid crossover of the isolator EQ.
 const EQ_LOW_HZ: f64 = 250.0;

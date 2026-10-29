@@ -7,7 +7,8 @@ publish = false
 [dependencies]
 halo-light = { workspace = true }
 # Local path so the crate can evolve alongside Halo without publishing.
-timestretch = { path = "../../../timestretch-rs" }
+timestretch = { version = "=0.16.0", path = "../../../timestretch-rs", features = ["analysis", "io"] }
+crossbeam-queue = "0.3.12"
 # wgpu backend (native Metal on macOS): the default glow backend presents
 # through CGLFlushDrawable / OpenGL-on-Metal, which profiled as the single
 # biggest CPU cost of the timestretch reference app.
@@ -34,6 +35,12 @@ lofty = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 log = { workspace = true }
 env_logger = "0.11"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+audio_thread_priority = { version = "0.37", default-features = false }
+
+[dev-dependencies]
+allocation-counter = "0.8.1"
 
 # `cargo install cargo-bundle && cargo bundle --release` builds Halo.app.
 [package.metadata.bundle]

@@ -24,7 +24,7 @@ persisted (see Persistence below). Logging is controlled with `RUST_LOG`.
 - **Stable Rust** for building/testing (CI pins 1.90.0); **nightly** only for formatting.
 - The `timestretch` crate is a **path dependency on a sibling clone**: `../timestretch-rs` next to this repo
   (from `crates/halo`, `path = "../../../timestretch-rs"`). CI checks out `robmorgan/timestretch-rs` to that
-  location. Builds fail without it.
+  location, pinned to v0.16.0. Enable `analysis` and `io`. Builds fail without it.
 
 ## Architecture Overview
 
@@ -37,15 +37,14 @@ Two workspace crates:
 
 ### Threading model (no tokio)
 
-Plain threads + channels/atomics, mirroring the `timestretch` controller/processor/source split:
+Plain threads + channels/atomics; each session has one owner:
 
-- **UI thread** — egui at ~30 fps while playing. Talks to audio via atomics and the engine's wait-free control
-  mailbox; a mutex only guards cold UI state.
-- **Feed/control thread per deck** — keeps the engine's source ring fed, handles warm-start seeks and gapless
-  loop wraps (`JumpMap` re-anchor), publishes the playhead.
-- **Audio callback thread (cpal)** — owns both `EngineProcessor`s and the whole mixer chain
-  (engine → trim → EQ → filter → fader → crossfader → master → limiter). Must stay **allocation-free and
-  lock-free**; parameters arrive via atomics and are smoothed per block.
+- **UI thread** — egui at ~30 fps; publishes atomic controls and reclaims retired playback storage.
+- **Render worker per loaded player** — owns a `PreparedSession`/`StreamSession`, source requests,
+  seek/loop/EOF transactions, output reserve, consumption receipts and shared playhead. Includes audition.
+- **Audio callback thread (cpal)** — consumes completed audio, renders scrub voices, applies channel
+  strips, faders, crossfader, master and limiter. Fixed scratch storage, no locks or allocations,
+  no session reset/processing/destruction. A bounded handoff returns old storage to the UI.
 - **Worker threads** (`std::thread` + `mpsc`, drained per frame by the UI) — library import, track analysis.
 - **DMX engine thread** — 44 Hz tick: reads deck playheads from atomics, `resolve()` → `render()` → Art-Net send.
 
@@ -53,8 +52,12 @@ Plain threads + channels/atomics, mirroring the `timestretch` controller/process
 
 - `main.rs` — eframe/wgpu entry point; positional file arg; `env_logger`.
 - `app.rs` — `HaloApp`: views (Prepare/Perform), deck UI, mixer UI, rig ownership, PATCH tab, settings window.
-- `deck.rs` — `Deck`: one `timestretch::Engine` per deck, feed thread, seeks, loops, EOF, playhead.
-- `audio.rs` — cpal stream setup and the audio callback owning the mixer chain.
+- `deck.rs` — worker-owned sessions, typed controls, transport transactions and consumed playheads.
+- `audio.rs` — cpal stream setup.
+- `delivery.rs` — allocation-free callback mixer, scrub handoff and retirement queues.
+- `output_queue.rs` / `render_worker.rs` — epoch-aware SPSC output and bounded session pump.
+- `worker_priority.rs` — host-owned scheduling policy (macOS audio priority).
+- `crossover.rs` — Halo-owned LR4 filters retained for the isolator EQ.
 - `dsp.rs` — `IsolatorEq` (LR4 crossover, full-kill), `DjFilter` (RBJ biquad LP/HP), `Limiter`.
 - `state.rs` — shared atomics (`DeckShared`, `MixerShared`), scrub state, meters, CPU load.
 - `scrub.rs` — audible scrub: varispeed voice with momentum glide/settle, engine↔voice crossfade.
