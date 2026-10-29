@@ -435,7 +435,7 @@ mod tests {
             )
             .unwrap();
             deck.handoff
-                .publish_grid(BeatMap::new((0..101).map(|i| i as f64 * 4800.0), 1));
+                .publish_grid(BeatMap::new((0..101).map(|i| i as f64 * 4800.0), 1, 600.0));
         }
         let mut renderer = audio(&decks, 48_000);
         let master = decks[0].shared.clone();

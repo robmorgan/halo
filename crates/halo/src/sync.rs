@@ -43,11 +43,13 @@ impl SyncState {
 /// Immutable UI-prepared mapping. Replaced and retired like playback storage.
 pub struct BeatMap {
     frames: Box<[f64]>,
+    /// Track BPM is the tempo reference; individual detected intervals only map phase.
+    bpm: f64,
     pub track: u64,
 }
 
 impl BeatMap {
-    pub fn new(frames: impl Iterator<Item = f64>, track: u64) -> Self {
+    pub fn new(frames: impl Iterator<Item = f64>, track: u64, bpm: f64) -> Self {
         let mut frames: Box<[f64]> = frames.collect();
         if frames.len() < 2
             || frames.iter().any(|x| !x.is_finite())
@@ -55,7 +57,18 @@ impl BeatMap {
         {
             frames = Box::new([]);
         }
-        Self { frames, track }
+        Self { frames, track, bpm }
+    }
+
+    pub fn matched_rate(&self, master: &Self, master_rate: f64) -> Option<f64> {
+        let rate = master.bpm * master_rate / self.bpm;
+        (self.bpm.is_finite()
+            && self.bpm > 0.0
+            && master.bpm.is_finite()
+            && master.bpm > 0.0
+            && rate.is_finite()
+            && rate > 0.0)
+            .then_some(rate)
     }
 
     /// Continuous beat coordinate and local source frames per beat.
@@ -165,8 +178,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn invalid_nominal_bpms_cannot_generate_a_sync_rate() {
+        let master = BeatMap::new([0.0, 100.0].into_iter(), 1, 130.0);
+        for bpm in [0.0, -120.0, f64::NAN, f64::INFINITY] {
+            let follower = BeatMap::new([0.0, 100.0].into_iter(), 1, bpm);
+            assert_eq!(follower.matched_rate(&master, 1.0), None);
+        }
+    }
+
+    #[test]
     fn crossings_follow_delivered_prefixes_within_one_frame() {
-        let map = BeatMap::new((0..100).map(|i| i as f64 * 997.0), 1);
+        let map = BeatMap::new((0..100).map(|i| i as f64 * 997.0), 1, 120.0);
         for master in 0..23 {
             for follower in 0..29 {
                 let start = master as f64 / 23.0 * 997.0;
@@ -200,7 +222,7 @@ mod tests {
 
     #[test]
     fn loops_require_whole_beats_and_targets_stay_inside() {
-        let map = BeatMap::new((0..10).map(|i| i as f64 * 100.0), 1);
+        let map = BeatMap::new((0..10).map(|i| i as f64 * 100.0), 1, 120.0);
         assert!(map.supports_loop(Some((150, 350))));
         assert!(!map.supports_loop(Some((150, 175))));
         assert!(!map.supports_loop(Some((150, 375))));
@@ -220,9 +242,9 @@ mod tests {
 
     #[test]
     fn missing_grid_and_underruns_cannot_invent_crossings() {
-        let empty = BeatMap::new([100.0, 100.0].into_iter(), 1);
+        let empty = BeatMap::new([100.0, 100.0].into_iter(), 1, 120.0);
         assert_eq!(empty.at(100.0), None);
-        let map = BeatMap::new([0.0, 100.0].into_iter(), 1);
+        let map = BeatMap::new([0.0, 100.0].into_iter(), 1, 120.0);
         assert_eq!(crossing(&map, Cursor::default(), &[0.0; 128], 0.5), None);
         assert_eq!(crossing(&map, Cursor::default(), &[0.0; 128], 0.0), None);
         assert_eq!(

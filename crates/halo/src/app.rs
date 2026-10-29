@@ -902,6 +902,7 @@ impl HaloApp {
                         deck_ui.deck.handoff.publish_grid(crate::sync::BeatMap::new(
                             (0..deck_ui.marks.len()).map(|i| deck_ui.marks.frame(i)),
                             deck_ui.deck.shared.track_generation.load(Ordering::Acquire),
+                            data.grid.bpm,
                         ));
                         deck_ui.cues = data
                             .track_id
@@ -1009,6 +1010,7 @@ impl HaloApp {
                             deck_ui.deck.handoff.publish_grid(crate::sync::BeatMap::new(
                                 (0..deck_ui.marks.len()).map(|i| deck_ui.marks.frame(i)),
                                 deck_ui.deck.shared.track_generation.load(Ordering::Acquire),
+                                resampled.bpm,
                             ));
                             deck_ui.bpm = resampled.bpm;
                             deck_ui.deck.pre_analysis = Some(Arc::new(resampled));
@@ -1067,14 +1069,13 @@ impl HaloApp {
     }
 
     fn update_tempo(&mut self) {
-        for d in &mut self.decks {
+        let master = self.master_source();
+        for (i, d) in self.decks.iter_mut().enumerate() {
             let shared = &d.deck.shared;
             shared.sync_enabled.store(d.synced, Ordering::Release);
             if d.synced
-                && !matches!(
-                    crate::sync::SyncState::load(shared),
-                    crate::sync::SyncState::Off | crate::sync::SyncState::Unavailable
-                )
+                && (i == master
+                    || crate::sync::SyncState::load(shared) != crate::sync::SyncState::Off)
             {
                 let pct = ((shared.matched_tempo.load() - 1.0) * 100.0) as f32;
                 if pct.abs() > 50.0 {
@@ -3437,7 +3438,14 @@ fn deck_panel(
     // invisible, and showing them makes a locked deck look like it's
     // hunting. The throw is shown deliberately: the BPM dipping and
     // settling is the platter feedback.
-    let tempo_rate = (1.0 + deck_ui.pitch_percent as f64 / 100.0) * deck_ui.bend as f64;
+    let base_rate = if is_master
+        || (deck_ui.synced && crate::sync::SyncState::load(&shared) != crate::sync::SyncState::Off)
+    {
+        shared.matched_tempo.load()
+    } else {
+        1.0 + deck_ui.pitch_percent as f64 / 100.0
+    };
+    let tempo_rate = base_rate * deck_ui.bend as f64;
 
     // Header: artwork | title/artist/key | elapsed + remaining readouts.
     ui.horizontal(|ui| {
@@ -3946,7 +3954,8 @@ fn deck_sidebar(
         state_toggle(ui, &mut deck_ui.keylock, [full, 20.0])
             .on_hover_text("Keylock: keep pitch constant while tempo changes");
         ui.add_space(4.0);
-        // Sync intent survives master promotion and can be armed on either deck.
+        // A master leads rather than follows. Retain its stored Sync intent
+        // for a later handoff, but show only the currently active role.
         if outlined_toggle(ui, is_master, "MASTER", [full, 20.0])
             .on_hover_text("Make this deck the tempo reference")
             .clicked()
@@ -3954,13 +3963,16 @@ fn deck_sidebar(
         {
             response.master_clicked = true;
         }
-        let sync = outlined_toggle(ui, deck_ui.synced, "SYNC", [full, 20.0])
-            .on_hover_text("Keep tempo and beat phase locked; Play waits at the parked position until aligned");
+        let following = deck_ui.synced && !is_master;
+        let sync = ui.add_enabled_ui(!is_master, |ui| {
+            outlined_toggle(ui, following, "SYNC", [full, 20.0])
+                .on_hover_text("Match the master BPM; Play keeps the parked position and waits for the next matching beat phase")
+        }).inner;
         if sync.clicked() {
             deck_ui.synced = !deck_ui.synced;
             deck_ui.deck.shared.sync_enabled.store(deck_ui.synced, Ordering::Release);
         }
-        if deck_ui.synced {
+        if following {
             let state = crate::sync::SyncState::load(&deck_ui.deck.shared);
             let label = if deck_ui.deck.shared.transport() != Transport::Playing
                 && state != crate::sync::SyncState::Unavailable { "ARMED" } else { state.label() };

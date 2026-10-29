@@ -213,7 +213,7 @@ impl DeckVoice {
             self.lock.version = version;
         }
         self.lock.enabled = enabled;
-        if !enabled || !master.playing() {
+        if !enabled {
             shared
                 .matched_tempo
                 .store(shared.manual_tempo.load() as f64);
@@ -225,11 +225,7 @@ impl DeckVoice {
                 &shared,
                 shared.manual_tempo.load() as f64 * shared.bend.load() as f64,
             ));
-            self.status(if enabled {
-                SyncState::Preparing
-            } else {
-                SyncState::Off
-            });
+            self.status(SyncState::Off);
             self.render_into(out, fader);
             return;
         }
@@ -237,6 +233,24 @@ impl DeckVoice {
             .playback
             .as_ref()
             .map_or(Cursor::default(), |p| p.consumer.cursor);
+        let matched_rate = self
+            .map()
+            .zip(master.map())
+            .and_then(|(grid, master_grid)| {
+                let rate =
+                    grid.matched_rate(master_grid, master.input.shared.matched_tempo.load())?;
+                let min = if shared.keylock.load(Ordering::Relaxed) {
+                    1.0 / 32.0
+                } else {
+                    0.25
+                };
+                (rate >= min && rate <= 4.0).then_some(rate)
+            });
+        // Tempo matching is independent of phase availability: pre-roll or an
+        // incompatible loop can prevent alignment without changing the BPM.
+        shared
+            .matched_tempo
+            .store(matched_rate.unwrap_or(shared.manual_tempo.load() as f64));
         let mapping = self.map().and_then(|grid| {
             let master_grid = master.map()?;
             if !grid.supports_loop(cursor.region)
@@ -246,39 +260,30 @@ impl DeckVoice {
             }
             let (beat, length) = grid.at(cursor.position)?;
             let (master_beat, master_length) = master_grid.at(master.prefix_start.position)?;
-            let rate = master.input.shared.tempo_rate.load() as f64 * length / master_length;
-            let min = if shared.keylock.load(Ordering::Relaxed) {
-                1.0 / 32.0
-            } else {
-                0.25
-            };
-            (rate >= min && rate <= 4.0).then_some((
+            Some((
                 beat.rem_euclid(1.0),
                 length,
                 master_beat.rem_euclid(1.0),
                 master_length,
-                rate,
+                matched_rate?,
             ))
         });
         let Some((phase, length, master_phase, master_length, rate)) = mapping else {
-            shared
-                .matched_tempo
-                .store(shared.manual_tempo.load() as f64);
             self.delivery_open = true;
             self.lock.launched = false;
             self.lock.fading_out = 0;
             self.lock.fading_in = 0;
             shared.tempo_rate.store(requested_rate(
                 &shared,
-                shared.manual_tempo.load() as f64 * shared.bend.load() as f64,
+                shared.matched_tempo.load() * shared.bend.load() as f64,
             ));
             self.status(SyncState::Unavailable);
             self.render_into(out, fader);
             return;
         };
-        shared.matched_tempo.store(rate);
         let nudge = (shared.bend.load() - 1.0).abs() > f32::EPSILON
-            || master.input.shared.scrub.phase() != ScrubPhase::Idle;
+            || master.input.shared.scrub.phase() != ScrubPhase::Idle
+            || (master.input.shared.bend.load() - 1.0).abs() > f32::EPSILON;
         let error = phase_error(master_phase, phase);
         let was_nudging = self.lock.nudging;
         self.lock.nudging = nudge;
@@ -291,12 +296,12 @@ impl DeckVoice {
             &shared,
             rate * (1.0 + correction) * shared.bend.load() as f64,
         ));
-        if !self.playing() || shared.scrub.phase() != ScrubPhase::Idle {
+        if !self.playing() || !master.playing() || shared.scrub.phase() != ScrubPhase::Idle {
             self.lock.launched = false;
             self.lock.fading_out = 0;
             self.lock.fading_in = 0;
             self.lock.drift_beats = 0.0;
-            self.delivery_open = false;
+            self.delivery_open = !master.playing();
             self.status(SyncState::Preparing);
             self.render_into(out, fader);
             return;
@@ -793,22 +798,8 @@ impl MixerRenderer {
             shared
                 .matched_tempo
                 .store(shared.manual_tempo.load() as f64);
-            master.status(if !shared.sync_enabled.load(Ordering::Relaxed) {
-                SyncState::Off
-            } else if master
-                .map()
-                .zip(master.playback.as_ref())
-                .is_none_or(|(map, playback)| {
-                    !map.supports_loop(playback.consumer.cursor.region)
-                        || map.at(playback.consumer.cursor.position).is_none()
-                })
-            {
-                SyncState::Unavailable
-            } else if master.playing() {
-                SyncState::Locked
-            } else {
-                SyncState::Preparing
-            });
+            // Remember intent through promotion, but a master is not following.
+            master.status(SyncState::Off);
             master.render_into(block, faders[self.master]);
             follower.render_following(
                 block,
@@ -853,6 +844,120 @@ mod tests {
 
     use super::*;
     use crate::output_queue::{self, Producer};
+
+    #[test]
+    fn uneven_detected_intervals_never_change_the_matched_bpm() {
+        // Reduced cached-analysis example: a straight 124 BPM follower against
+        // a 130 BPM master with per-beat onset jitter.
+        let master_beats = [
+            20215.2256,
+            40699.7146,
+            61177.5614,
+            81156.5636,
+            101638.7939,
+            122107.7101,
+            142599.3014,
+            162563.5545,
+            183032.4931,
+            203511.3947,
+            223993.5318,
+            244487.7003,
+            264456.3430,
+            284923.7041,
+            305401.3910,
+            325880.9168,
+        ];
+        let master_bpm = 130.01179245283018;
+        let follower_bpm = 123.99961515621824;
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        shared[0].manual_tempo.store(0.98);
+        shared[1].set_transport(Transport::Paused);
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        handoffs[0].publish_grid(BeatMap::new(master_beats.into_iter(), 1, master_bpm));
+        handoffs[1].publish_grid(BeatMap::new(
+            (0..100).map(|i| 218.8529 + i as f64 * 60.0 * 44100.0 / follower_bpm),
+            1,
+            follower_bpm,
+        ));
+        prime_fake(
+            &mut producers[0],
+            &shared[0],
+            2,
+            master_beats[0],
+            0.98,
+            8192,
+        );
+        prime_fake(&mut producers[1], &shared[1], 2, 21557.6288, 1.0, 8192);
+        renderer.render(&mut [0.0; 128]);
+        let expected_bpm = master_bpm * shared[0].matched_tempo.load();
+        for pair in master_beats.windows(2) {
+            renderer.decks[0]
+                .playback
+                .as_mut()
+                .unwrap()
+                .consumer
+                .cursor
+                .position = (pair[0] + pair[1]) / 2.0;
+            renderer.render(&mut [0.0; 128]);
+            let matched_bpm = follower_bpm * shared[1].matched_tempo.load();
+            assert!(
+                (matched_bpm - expected_bpm).abs() < 1e-10,
+                "matched BPM wandered to {matched_bpm}"
+            );
+            assert!(
+                (follower_bpm * shared[1].tempo_rate.load() as f64 - expected_bpm).abs() < 1e-5
+            );
+            assert_eq!(shared[1].take_seek(), None, "Sync moved a paused follower");
+        }
+        let follower_midpoint = 218.8529 + 1.5 * 60.0 * 44100.0 / follower_bpm;
+        shared[1].set_transport(Transport::Playing);
+        prime_fake(
+            &mut producers[1],
+            &shared[1],
+            3,
+            follower_midpoint,
+            shared[1].matched_tempo.load(),
+            8192,
+        );
+        renderer.decks[1].adopt();
+        for pair in master_beats.windows(2) {
+            renderer.decks[0]
+                .playback
+                .as_mut()
+                .unwrap()
+                .consumer
+                .cursor
+                .position = (pair[0] + pair[1]) / 2.0;
+            renderer.decks[1]
+                .playback
+                .as_mut()
+                .unwrap()
+                .consumer
+                .cursor
+                .position = follower_midpoint;
+            renderer.render(&mut [0.0; 128]);
+            assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
+            assert!((follower_bpm * shared[1].matched_tempo.load() - expected_bpm).abs() < 1e-10);
+            assert!(
+                (follower_bpm * shared[1].tempo_rate.load() as f64 - expected_bpm).abs() < 1e-5
+            );
+            assert_eq!(shared[1].take_seek(), None);
+        }
+        shared[1].set_transport(Transport::Paused);
+        shared[0].set_transport(Transport::Paused);
+        renderer.render(&mut [0.0; 128]);
+        assert!((follower_bpm * shared[1].matched_tempo.load() - expected_bpm).abs() < 1e-10);
+        assert_eq!(shared[1].take_seek(), None);
+        // Manual master tempo changes propagate, while a held nudge does not
+        // redefine the underlying matched BPM or move the parked follower.
+        shared[0].manual_tempo.store(1.05);
+        shared[0].bend.store(1.04);
+        renderer.render(&mut [0.0; 128]);
+        assert!(
+            (follower_bpm * shared[1].matched_tempo.load() - master_bpm * 1.05_f32 as f64).abs()
+                < 1e-10
+        );
+    }
 
     #[test]
     fn first_synced_deck_starts_as_master_at_its_existing_manual_tempo() {
@@ -1075,6 +1180,7 @@ mod tests {
         handoff.publish_grid(BeatMap::new(
             (0..2000).map(|i| offset + i as f64 * length),
             1,
+            60.0 * 48_000.0 / length,
         ));
     }
 
@@ -1222,6 +1328,7 @@ mod tests {
         shared[0].set_transport(Transport::Paused);
         renderer.render(&mut [0.0; 128]);
         assert_eq!(renderer.master, 1);
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Off);
         shared[0].set_transport(Transport::Playing);
         renderer.render(&mut [0.0; 128]);
         assert_eq!(renderer.master, 1, "both playing must retain master");
