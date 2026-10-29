@@ -161,7 +161,7 @@ struct DeckUi {
     gated_held: Option<usize>,
     /// Quantize hot cues and loop points to the beat grid.
     quantize: bool,
-    /// Auto cue: on load, park the deck at the first downbeat.
+    /// Auto cue: on load, park the deck at the first detected beat.
     auto_cue: bool,
     /// Cue frame last set by auto cue; guards re-application when async
     /// analysis refines the grid.
@@ -977,10 +977,9 @@ impl HaloApp {
                         if data.artifact.is_none() && data.track_id.is_some() {
                             let _ = wake_tx.send(());
                         }
-                        // Auto cue: park the deck at the first downbeat
-                        // (first beat on a low-confidence grid).
-                        // Ceil so the parked position sits at/after the
-                        // grid frame and the bar readout says 1.1, not 0.4.
+                        // Auto cue: park at the first detected beat. Ceil so
+                        // the parked position sits at/after its fractional
+                        // grid frame, rather than just before the beat.
                         deck_ui.last_auto_cue = None;
                         if deck_ui.auto_cue
                             && deck_ui.marks.is_usable()
@@ -1052,7 +1051,7 @@ impl HaloApp {
                             deck_ui.marks = GridMarks::from_grid(&grid_from_artifact(&resampled));
                             deck_ui.bpm = resampled.bpm;
                             deck_ui.deck.pre_analysis = Some(Arc::new(resampled));
-                            // The refined grid may move the first downbeat:
+                            // The refined grid may move the first beat:
                             // re-apply auto cue, but never disturb a playing
                             // or scrubbing deck, a user-moved cue, or a
                             // user-moved playhead.
@@ -4056,7 +4055,7 @@ fn deck_panel(
             });
             control_group(ui, "AUTO CUE", |ui| {
                 state_toggle(ui, &mut deck_ui.auto_cue, [40.0, 30.0]).on_hover_text(
-                    "On load, set the cue to the first downbeat and park the deck there",
+                    "On load, set the cue to the first detected beat and park the deck there",
                 );
             });
         });
@@ -4825,6 +4824,34 @@ pub fn format_time(frames: usize, sample_rate: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_analysis_auto_cue_keeps_first_beat_across_device_rates() {
+        // A confident cached grid can label the second kick as a bar start.
+        // Loading it at a different device rate must still cue the first kick.
+        let first = 220.5;
+        let period = 60.0 * 44_100.0 / 124.0;
+        let beats: Vec<_> = (0..8).map(|i| first + i as f64 * period).collect();
+        let artifact = PreAnalysisArtifact {
+            sample_rate: 44_100,
+            bpm: 124.0,
+            confidence: 0.9,
+            beat_positions: beats.iter().map(|b| b.round() as usize).collect(),
+            beat_positions_fractional: beats,
+            downbeat_beat_indices: vec![1, 5],
+            ..Default::default()
+        };
+        for rate in [44_100, 48_000, 96_000] {
+            let grid = grid_from_artifact(&artifact.resample_to(rate));
+            let marks = GridMarks::from_grid(&grid);
+            let cue = marks.auto_cue_frame().unwrap().ceil() as usize;
+            // Fractional rescaling can cross an integer boundary by one ULP;
+            // ceil may then park one sample later, but never one beat later.
+            let expected = (first * rate as f64 / 44_100.0).ceil() as usize;
+            assert!(cue.abs_diff(expected) <= 1);
+            assert_eq!(marks.bar_start(grid.beats[1]), Some(grid.beats[1]));
+        }
+    }
 
     #[test]
     fn device_reload_keeps_non_library_sources_and_pending_decodes() {
