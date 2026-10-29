@@ -16,6 +16,7 @@ mod scrub;
 mod show;
 mod show_preview;
 mod state;
+mod sync;
 mod waveform;
 mod worker;
 mod worker_priority;

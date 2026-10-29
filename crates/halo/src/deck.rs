@@ -12,7 +12,7 @@ use timestretch::{
 };
 
 use crate::delivery::{DeliveryHandoff, Playback};
-use crate::output_queue::{self, Producer};
+use crate::output_queue::{self, Cursor, Producer};
 use crate::render_worker::{fill_reserve, output_reserve_frames};
 use crate::state::{DeckShared, ScrubPhase, StopFlag, Transport};
 use crate::worker_priority::AudioPriority;
@@ -76,10 +76,15 @@ impl Deck {
         self.shared.set_transport(Transport::Stopped);
         self.shared.stream_active.store(false, Ordering::Release);
         self.shared.worker_failed.store(false, Ordering::Relaxed);
-        self.shared.take_seek();
+        self.shared.take_anchor(0);
         self.shared.playhead.store(0, Ordering::Relaxed);
+        self.shared.delivery_position.store(0.0);
         self.shared.cue_point.store(0, Ordering::Relaxed);
         self.shared.set_loop(None);
+        self.shared.request_anchor(0.0);
+        self.shared
+            .manual_tempo
+            .store(self.shared.tempo_rate.load());
         self.shared
             .total_frames
             .store(num_frames as u64, Ordering::Relaxed);
@@ -175,7 +180,7 @@ impl Controls {
         parameters: Parameters,
         epoch_changed: bool,
     ) -> Result<(), SessionError> {
-        while session.next_applied().is_some() {
+        if session.applied_parameters().command_id == self.next_id {
             self.pending = false;
         }
         if epoch_changed {
@@ -227,32 +232,50 @@ fn run_worker(
     let mut priority_requested = false;
     let mut landing_pending = None;
     let mut last_tick = Instant::now();
-    output.publish_epoch(session.epoch());
+    let mut anchor_revision = 0;
+    output.publish_timing(
+        session.epoch(),
+        Cursor {
+            total: (source.len() / CHANNELS) as f64,
+            ..Cursor::default()
+        },
+        anchor_revision,
+    );
     while !stop.is_set() {
         let tick = Instant::now();
         if let Some(receipt) = output.receipt() {
             session.acknowledge(receipt)?;
         }
         let previous_epoch = session.epoch();
-        let mut region = shared.loop_region().map(|(a, b)| (a as u64, b as u64));
-        let mut seek = shared
-            .take_seek()
-            .map(|n| n.min(source.len() / CHANNELS) as u64);
+        let command = shared.take_anchor(anchor_revision);
+        let revision = command.map_or(anchor_revision, |command| command.revision);
+        let transport_revision = shared.transport_revision();
+        let mut region = command.map_or(session.loop_region(), |command| {
+            command.region.map(|(a, b)| (a as u64, b as u64))
+        });
+        let mut seek = command
+            .and_then(|command| command.frame)
+            .map(|n| n.clamp(0.0, (source.len() / CHANNELS) as f64));
         let (sequence, landing) = shared.scrub.landing();
         if sequence != landing_seen {
             landing_seen = sequence;
             if shared.scrub.phase() == ScrubPhase::Settling {
-                seek = Some((landing.max(0.0) as u64).min((source.len() / CHANNELS) as u64));
+                seek = Some(landing.clamp(0.0, (source.len() / CHANNELS) as f64).floor());
                 landing_pending = Some(sequence);
             }
         }
         if seek.is_some_and(|target| {
-            region.is_some_and(|(start, end)| target < start || target >= end)
+            region.is_some_and(|(start, end)| target < start as f64 || target >= end as f64)
         }) {
+            if let Some((start, end)) = region {
+                shared.clear_loop_for_seek((start as usize, end as usize));
+            }
             region = None;
-            shared.set_loop(None);
         }
-        if region != session.loop_region() || seek.is_some() {
+        let changed =
+            region != session.loop_region() || seek.is_some() || revision != anchor_revision;
+        let mut anchor = seek.unwrap_or_else(|| shared.delivery_position.load());
+        if changed {
             shared.stream_active.store(false, Ordering::Release);
             // Restart is heavyweight and must run under ordinary worker policy.
             drop(priority.take());
@@ -260,13 +283,26 @@ fn run_worker(
             if region != session.loop_region() {
                 session.set_loop(region)?;
             }
-            if let Some(target) = seek {
-                session.seek(target)?;
+            if let Some((start, end)) = region
+                && anchor >= end as f64
+            {
+                anchor = start as f64;
             }
+            session.seek(anchor.floor() as u64)?;
         }
         let epoch_changed = session.epoch() != previous_epoch;
         if epoch_changed {
-            output.publish_epoch(session.epoch());
+            output.publish_timing(
+                session.epoch(),
+                Cursor {
+                    position: anchor,
+                    region: region.map(|(a, b)| (a as usize, b as usize)),
+                    total: (source.len() / CHANNELS) as f64,
+                    ..Cursor::default()
+                },
+                revision,
+            );
+            anchor_revision = revision;
             primed = false;
         }
         let requested = playback_parameters(
@@ -314,16 +350,14 @@ fn run_worker(
             playing && primed && scrubbing != ScrubPhase::Active && !session.finished(),
             Ordering::Release,
         );
-        if scrubbing == ScrubPhase::Idle {
+        if primed {
             shared
-                .playhead
-                .store(session.position() as u64, Ordering::Relaxed);
-        } else {
-            shared.playhead.store(
-                shared.scrub.voice_frame().max(0.0) as u64,
-                Ordering::Relaxed,
-            );
+                .prepared_revision
+                .store(transport_revision, Ordering::Release);
         }
+        shared
+            .controls_pending
+            .store(controls.pending, Ordering::Release);
         if session.finished() && scrubbing == ScrubPhase::Idle {
             shared.set_transport(Transport::Stopped);
         }
@@ -386,6 +420,113 @@ mod tests {
             );
             thread::sleep(Duration::from_millis(2));
         }
+    }
+
+    #[test]
+    fn real_workers_reacquire_after_play_seek_loop_and_scrub_without_ui_ticks() {
+        use crate::sync::{BeatMap, SyncState, phase_error};
+        let mut decks = std::array::from_fn(|_| Deck::new());
+        for deck in &mut decks[..2] {
+            deck.load(
+                "sync integration".into(),
+                Arc::new(vec![0.1; 960_000]),
+                48_000,
+                None,
+            )
+            .unwrap();
+            deck.handoff
+                .publish_grid(BeatMap::new((0..101).map(|i| i as f64 * 4800.0), 1));
+        }
+        let mut renderer = audio(&decks, 48_000);
+        let master = decks[0].shared.clone();
+        let follower = decks[1].shared.clone();
+        follower.request_anchor(12_750.25);
+        follower.sync_enabled.store(true, Ordering::Release);
+        wait(|| {
+            renderer.render(&mut [0.0; 256]);
+            follower.delivery_position.load() == 12_750.25
+        });
+        master.set_transport(Transport::Playing);
+        wait(|| {
+            renderer.render(&mut [0.0; 256]);
+            master.playhead_frames() >= 2048
+        });
+        assert_eq!(follower.delivery_position.load(), 12_750.25);
+        follower.set_transport(Transport::Playing);
+        wait(|| {
+            renderer.render(&mut [0.0; 256]);
+            SyncState::load(&follower) == SyncState::Locked
+        });
+        let aligned = || {
+            let error = phase_error(
+                master.delivery_position.load() / 4800.0,
+                follower.delivery_position.load() / 4800.0,
+            )
+            .abs();
+            assert!(error <= 1.01 / 4800.0, "phase error {error} beats");
+        };
+        aligned();
+        assert!((follower.delivery_position.load().fract() - 0.25).abs() < 1e-6);
+        for target in [33_123.75, 28_800.0] {
+            let previous_launch = follower.launch_frame.load(Ordering::Relaxed);
+            follower.request_anchor(target);
+            wait(|| {
+                renderer.render(&mut [0.0; 256]);
+                follower.launch_frame.load(Ordering::Relaxed) != previous_launch
+                    && SyncState::load(&follower) == SyncState::Locked
+            });
+            aligned();
+        }
+        let previous_launch = follower.launch_frame.load(Ordering::Relaxed);
+        follower.set_loop(Some((28_800, 38_400)));
+        wait(|| {
+            renderer.render(&mut [0.0; 256]);
+            follower.launch_frame.load(Ordering::Relaxed) != previous_launch
+                && SyncState::load(&follower) == SyncState::Locked
+        });
+        aligned();
+        follower.scrub.begin(follower.delivery_position.load(), 0.0);
+        renderer.render(&mut [0.0; 256]);
+        let previous_launch = follower.launch_frame.load(Ordering::Relaxed);
+        follower.scrub.release(1.0);
+        wait(|| {
+            renderer.render(&mut [0.0; 256]);
+            follower.scrub.phase() == ScrubPhase::Idle
+                && follower.launch_frame.load(Ordering::Relaxed) != previous_launch
+                && SyncState::load(&follower) == SyncState::Locked
+        });
+        aligned();
+        for deck in &mut decks {
+            assert_eq!(deck.poll(), None);
+        }
+    }
+
+    #[test]
+    fn eof_at_fractional_tempo_reaches_the_source_endpoint_and_can_rewind() {
+        let mut decks = std::array::from_fn(|_| Deck::new());
+        decks[0].shared.tempo_rate.store(1.37);
+        decks[0]
+            .load(
+                "fractional EOF".into(),
+                Arc::new(vec![0.1; 48002]),
+                48_000,
+                None,
+            )
+            .unwrap();
+        let mut renderer = audio(&decks, 48_000);
+        let shared = decks[0].shared.clone();
+        shared.set_transport(Transport::Playing);
+        wait(|| {
+            renderer.render(&mut [0.0; 512]);
+            shared.transport() == Transport::Stopped && shared.playhead_frames() == 24_001
+        });
+        shared.request_seek(0);
+        shared.set_transport(Transport::Playing);
+        wait(|| {
+            renderer.render(&mut [0.0; 512]);
+            shared.playhead_frames() > 0 && shared.playhead_frames() < 5000
+        });
+        assert_eq!(decks[0].poll(), None);
     }
 
     #[test]

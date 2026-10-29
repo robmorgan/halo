@@ -61,43 +61,6 @@ struct PendingDecode {
     receiver: mpsc::Receiver<DecodeResult>,
 }
 
-/// Ghost-playhead slide-in duration after a sync-aligned play start.
-const GHOST_ANIM_SECS: f32 = 0.4;
-/// Skip the ghost when the align jump is smaller than this (source frames);
-/// a sub-beat sliver would just flicker under the playhead.
-const GHOST_MIN_DELTA_FRAMES: f64 = 256.0;
-
-/// Sync-aligned play start animation: the pre-align playhead position
-/// gliding into the centered playhead.
-struct GhostAnim {
-    /// Pre-align playhead minus the aligned seek target (source frames).
-    delta_frames: f64,
-    started: std::time::Instant,
-}
-
-impl GhostAnim {
-    fn new(delta_frames: f64) -> Self {
-        Self {
-            delta_frames,
-            started: std::time::Instant::now(),
-        }
-    }
-
-    fn finished(&self) -> bool {
-        self.started.elapsed().as_secs_f32() >= GHOST_ANIM_SECS
-    }
-
-    /// Cubic ease-out slide toward offset 0, linear fade.
-    fn params(&self) -> GhostPlayhead {
-        let t = (self.started.elapsed().as_secs_f32() / GHOST_ANIM_SECS).clamp(0.0, 1.0);
-        let ease = 1.0 - (1.0 - t).powi(3);
-        GhostPlayhead {
-            offset_frames: self.delta_frames * (1.0 - f64::from(ease)),
-            alpha: (1.0 - t) * 0.9,
-        }
-    }
-}
-
 struct DeckUi {
     deck: Deck,
     decode_rx: Option<PendingDecode>,
@@ -146,12 +109,6 @@ struct DeckUi {
     synced: bool,
     /// Momentary pitch-bend factor from the held nudge buttons (1.0 = none).
     bend: f32,
-    /// Smoothed beat-phase error vs the master (beats, ±0.5), tracked only
-    /// while synced and both decks play. Filters playhead-publish jitter so
-    /// the sync PLL doesn't chase phantom errors.
-    phase_err: Option<f64>,
-    /// Ghost-playhead slide-in running after a sync-aligned jump.
-    ghost: Option<GhostAnim>,
     /// Hot cue slots (source frames).
     hot_cues: [Option<usize>; 8],
     hotcue_was_down: [bool; 8],
@@ -205,8 +162,6 @@ impl DeckUi {
             keylock: true,
             synced: false,
             bend: 1.0,
-            phase_err: None,
-            ghost: None,
             hot_cues: [None; 8],
             hotcue_was_down: [false; 8],
             gated: false,
@@ -491,8 +446,6 @@ pub struct HaloApp {
     audio: Option<AudioOutput>,
     mixer: Arc<MixerShared>,
     decks: [DeckUi; 2],
-    /// Index of the tempo-master deck.
-    master: usize,
     /// Index of the deck driving the lighting rig.
     lighting_deck: usize,
     view: View,
@@ -675,7 +628,6 @@ impl HaloApp {
             audio,
             mixer,
             decks,
-            master: 0,
             lighting_deck: 0,
             view: persisted.view,
             prepare,
@@ -947,6 +899,10 @@ impl HaloApp {
                         });
                         deck_ui.peaks = Some(data.peaks);
                         deck_ui.marks = GridMarks::from_grid(&data.grid);
+                        deck_ui.deck.handoff.publish_grid(crate::sync::BeatMap::new(
+                            (0..deck_ui.marks.len()).map(|i| deck_ui.marks.frame(i)),
+                            deck_ui.deck.shared.track_generation.load(Ordering::Acquire),
+                        ));
                         deck_ui.cues = data
                             .track_id
                             .and_then(|id| library?.cues(id).ok().flatten())
@@ -1050,6 +1006,10 @@ impl HaloApp {
                         {
                             let resampled = native.resample_to(device_rate);
                             deck_ui.marks = GridMarks::from_grid(&grid_from_artifact(&resampled));
+                            deck_ui.deck.handoff.publish_grid(crate::sync::BeatMap::new(
+                                (0..deck_ui.marks.len()).map(|i| deck_ui.marks.frame(i)),
+                                deck_ui.deck.shared.track_generation.load(Ordering::Acquire),
+                            ));
                             deck_ui.bpm = resampled.bpm;
                             deck_ui.deck.pre_analysis = Some(Arc::new(resampled));
                             // The refined grid may move the first downbeat:
@@ -1096,110 +1056,41 @@ impl HaloApp {
         }
     }
 
-    /// Recompute and publish each deck's tempo rate + keylock.
-    ///
-    /// A synced deck follows the master's effective BPM and writes the
-    /// matching pitch back to its own slider (expanding the range if it
-    /// doesn't fit) so the control shows the real tempo; while both decks
-    /// run, a gentle proportional rate correction (smoothed error, capped
-    /// at ±1.5%) chases the master's beat phase — a continuous PLL, like a
-    /// DJ riding the platter, so the lock survives grid drift and seeks.
-    /// The PLL nudge is deliberately left out of the displayed pitch to
-    /// keep the slider steady. Pitch-bend multiplies on top either way.
-    /// Global/master BPM for the header readout: the pitch-adjusted BPM of the
-    /// deck driving the mix. A deck is "live" if it's playing with its channel
-    /// fader up (> 50%); the live deck wins, the master deck breaks ties (both
-    /// live) and is the fallback (neither live). Excludes momentary bend so the
-    /// clock reads steady.
-    /// Deck the master BPM (and the lighting rig) is sourced from: the live
-    /// deck (playing with fader > 50%), the master deck breaking ties / as the
-    /// fallback.
+    /// One callback-owned master drives transport, displays and lighting.
     fn master_source(&self) -> usize {
-        let live = |i: usize| {
-            let d = &self.decks[i];
-            d.deck.shared.transport() == Transport::Playing && d.deck.shared.fader.load() > 0.5
-        };
-        match (live(0), live(1)) {
-            (true, false) => 0,
-            (false, true) => 1,
-            _ => self.master,
-        }
+        usize::from(self.mixer.effective_master.load(Ordering::Acquire)).min(1)
     }
 
     fn global_bpm(&self) -> f64 {
         let d = &self.decks[self.master_source()];
-        d.bpm * (1.0 + d.pitch_percent as f64 / 100.0)
+        d.bpm * d.deck.shared.matched_tempo.load()
     }
 
-    fn update_tempo(&mut self, dt: f64) {
-        // Account for delivery/control latency in the phase-error smoothing.
-        // The feedback follows consumed playheads, not render-ahead positions.
-        let master = self.master;
-        let master_base = self.decks[master].bpm;
-        let master_rate = 1.0 + self.decks[master].pitch_percent as f64 / 100.0;
-        let master_playing = self.decks[master]
-            .deck
-            .shared
-            .stream_active
-            .load(Ordering::Acquire);
-        let master_latency = self.decks[master].deck.shared.control_latency.load();
-        let master_phase = beat_phase(
-            &self.decks[master].marks,
-            self.decks[master].deck.shared.playhead_frames() as f64,
-        );
-
-        for i in 0..2 {
-            let d = &mut self.decks[i];
-            let manual = 1.0 + d.pitch_percent as f64 / 100.0;
-            let mut rate = if d.synced && i != master && d.bpm > 0.0 && master_base > 0.0 {
-                let mut r = master_base * master_rate / d.bpm;
-                r = legal_tempo(r, d.keylock);
-                let sync_pct = ((r - 1.0) * 100.0) as f32;
-                if sync_pct.abs() > 50.0 {
+    fn update_tempo(&mut self) {
+        for d in &mut self.decks {
+            let shared = &d.deck.shared;
+            shared.sync_enabled.store(d.synced, Ordering::Release);
+            if d.synced
+                && !matches!(
+                    crate::sync::SyncState::load(shared),
+                    crate::sync::SyncState::Off | crate::sync::SyncState::Unavailable
+                )
+            {
+                let pct = ((shared.matched_tempo.load() - 1.0) * 100.0) as f32;
+                if pct.abs() > 50.0 {
                     d.wide = true;
                     d.pitch_range = 300.0;
                 } else {
-                    d.pitch_range = d.pitch_range.max(range_for_pitch(sync_pct));
+                    d.pitch_range = d.pitch_range.max(range_for_pitch(pct));
                 }
-                d.pitch_percent = sync_pct;
-                // A scrub (grab or glide) freezes or overrides the deck's
-                // playhead — suspend the phase chase so it doesn't poison
-                // the smoothed error; the PLL re-acquires once it ends.
-                if master_playing
-                    && d.deck.shared.scrub.phase() == ScrubPhase::Idle
-                    && d.deck.shared.stream_active.load(Ordering::Acquire)
-                    && !d.deck.shared.tempo_stopped.load(Ordering::Relaxed)
-                    && let Some(mp) = master_phase
-                    && let Some(dp) = beat_phase(&d.marks, d.deck.shared.playhead_frames() as f64)
-                {
-                    let latency = master_latency
-                        .max(d.deck.shared.control_latency.load())
-                        .min(1.0);
-                    let alpha = 1.0 - (-dt / (0.15 + latency)).exp();
-                    let err = smooth_phase_err(d.phase_err, wrap_phase_err(mp, dp), alpha);
-                    d.phase_err = Some(err);
-                    r *= 1.0 + phase_correction(err);
-                } else {
-                    d.phase_err = None;
-                }
-                r
-            } else {
-                d.phase_err = None;
-                manual
-            };
-            // Reconcile persisted/manual values and keylock changes visibly.
+                d.pitch_percent = pct;
+            }
             let base = legal_tempo(1.0 + d.pitch_percent as f64 / 100.0, d.keylock);
             d.pitch_percent = ((base - 1.0) * 100.0) as f32;
-            rate = if !d.synced || i == master { base } else { rate };
-            let stopped = rate <= 0.0;
-            rate = legal_tempo(rate * d.bend as f64, d.keylock);
-            let params = crate::deck::playback_parameters(rate, d.keylock).unwrap_or_default();
-            d.deck.shared.tempo_rate.store(params.tempo.get() as f32);
-            d.deck
-                .shared
-                .tempo_stopped
-                .store(stopped, Ordering::Relaxed);
-            d.deck.shared.keylock.store(d.keylock, Ordering::Relaxed);
+            shared.manual_tempo.store(base.max(1.0 / 32.0) as f32);
+            shared.bend.store(d.bend);
+            shared.tempo_stopped.store(base <= 0.0, Ordering::Relaxed);
+            shared.keylock.store(d.keylock, Ordering::Relaxed);
         }
     }
 
@@ -1378,39 +1269,45 @@ impl HaloApp {
     /// it extrapolate musical time between publishes so effects stay
     /// beat-locked through UI stalls.
     fn publish_dmx(&self, ctx: &egui::Context) {
-        let d = &self.decks[self.lighting_deck];
-        let playhead = d.playhead() as f64;
-        let beat_ref = match (
-            d.marks.beat_at_or_before(playhead),
-            beat_phase(&d.marks, playhead),
-        ) {
-            (Some(i), Some(ph)) => dmx::BeatRef {
-                beat_t: i as f64 + ph,
-                playhead,
-                frames_per_beat: d.marks.median_beat_frames(),
-            },
-            _ => {
-                // No grid: wall-clock at the master BPM, matching the
-                // programmer's effect previews. Advances per publish only.
-                let bpm = {
-                    let b = self.global_bpm();
-                    if b > 0.0 { b } else { 120.0 }
-                };
-                dmx::BeatRef {
-                    beat_t: ctx.input(|i| i.time) * bpm / 60.0,
+        let decks = std::array::from_fn(|i| {
+            let d = &self.decks[i];
+            let playhead = d.playhead() as f64;
+            let beat_ref = match (
+                d.marks.beat_at_or_before(playhead),
+                beat_phase(&d.marks, playhead),
+            ) {
+                (Some(i), Some(ph)) => dmx::BeatRef {
+                    beat_t: i as f64 + ph,
                     playhead,
-                    frames_per_beat: 0.0,
+                    frames_per_beat: d.marks.median_beat_frames(),
+                },
+                _ => {
+                    // No grid: wall-clock at the master BPM, matching the
+                    // programmer's effect previews. Advances per publish only.
+                    let bpm = {
+                        let b = self.global_bpm();
+                        if b > 0.0 { b } else { 120.0 }
+                    };
+                    dmx::BeatRef {
+                        beat_t: ctx.input(|i| i.time) * bpm / 60.0,
+                        playhead,
+                        frames_per_beat: 0.0,
+                    }
                 }
+            };
+            dmx::DmxDeck {
+                cues: d.deck.track.is_some().then(|| d.cues.clone()),
+                deck: d.deck.shared.clone(),
+                beat_ref,
             }
-        };
+        });
         *self.dmx.lock().unwrap() = Some(dmx::DmxSnapshot {
             rig: self.rig.clone(),
-            cues: d.deck.track.is_some().then(|| d.cues.clone()),
+            decks,
+            mixer: self.mixer.clone(),
             overrides: self.programmer.clone(),
             params: self.programmer_params.clone(),
             selection: self.fixture_selection.clone(),
-            deck: d.deck.shared.clone(),
-            beat_ref,
             net: self.net.clone(),
         });
     }
@@ -2538,53 +2435,15 @@ impl HaloApp {
                     // A scrub glide animates the playhead even while paused,
                     // so it keeps the repaint loop alive too.
                     || d.deck.shared.scrub.phase() != ScrubPhase::Idle
-                    // A ghost playhead keeps fading even if the deck was
-                    // paused right after the sync-aligned start.
-                    || d.ghost.is_some()
+                // A ghost playhead keeps fading even if the deck was
+                // paused right after the sync-aligned start.
             })
     }
 
-    /// Play/pause for deck `i`. When starting a synced non-master deck while
-    /// the master plays, seek to the nearest phase-aligned frame first so the
-    /// audio starts on beat, and kick off the ghost-playhead slide-in.
+    /// Play intent is scheduled by the callback after worker preparation.
+    /// Pressing again cancels Preparing/Waiting just like ordinary playback.
     fn toggle_play_synced(&mut self, i: usize) {
-        let d = &self.decks[i];
-        let starting = d.deck.track.is_some() && d.deck.shared.transport() != Transport::Playing;
-        let aligned_start = starting
-            && d.synced
-            && i != self.master
-            // Don't fight a scrub glide's own landing seek.
-            && d.deck.shared.scrub.phase() == ScrubPhase::Idle
-            && self.decks[self.master].deck.shared.transport() == Transport::Playing;
-        if !aligned_start {
-            self.decks[i].toggle_play();
-            return;
-        }
-        let m = &self.decks[self.master];
-        let master_phase = beat_phase(&m.marks, m.playhead() as f64);
-        let d = &self.decks[i];
-        let total = d.deck.shared.total();
-        // Mirror toggle_play's EOF rewind: align as if starting from zero.
-        let from = if total > 0 && d.playhead() >= total {
-            0.0
-        } else {
-            d.playhead() as f64
-        };
-        let target = master_phase.and_then(|mp| align_target_frame(&d.marks, from, mp, total));
-        let Some(target) = target else {
-            // No usable grid on one of the decks: plain start, no jump.
-            self.decks[i].toggle_play();
-            return;
-        };
-        let d = &mut self.decks[i];
-        d.cue_previewing = false;
-        request_seek_guarded(&d.deck.shared, target);
-        d.deck.shared.set_transport(Transport::Playing);
-        // The jump invalidates any smoothed error history (same as engaging
-        // sync does).
-        d.phase_err = None;
-        let delta = from - target as f64;
-        d.ghost = (delta.abs() >= GHOST_MIN_DELTA_FRAMES).then(|| GhostAnim::new(delta));
+        self.decks[i].toggle_play();
     }
 }
 
@@ -2619,21 +2478,11 @@ impl eframe::App for HaloApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Landing preparation runs directly on the deck worker.
-        for deck_ui in self
-            .decks
-            .iter_mut()
-            .chain(std::iter::once(&mut self.prepare.audition))
-        {
-            if deck_ui.ghost.as_ref().is_some_and(GhostAnim::finished) {
-                deck_ui.ghost = None;
-            }
-        }
         self.poll_decodes(ctx);
         self.poll_worker_events();
         self.refresh_browser();
         self.handle_shortcuts(ctx);
-        self.update_tempo(ctx.input(|i| i.stable_dt).min(0.1) as f64);
+        self.update_tempo();
         // Lighting auto-follows the deck the master BPM is sourced from.
         self.lighting_deck = self.master_source();
         self.update_cpu();
@@ -2841,7 +2690,7 @@ impl eframe::App for HaloApp {
                 .max(280.0);
 
             let sample_rate = self.device_rate();
-            let master = self.master;
+            let master = self.master_source();
             let lighting_deck = self.lighting_deck;
             let has_audio = self.audio.is_some();
             let mut responses: [DeckPanelResponse; 2] = Default::default();
@@ -2883,35 +2732,13 @@ impl eframe::App for HaloApp {
             });
             for (i, resp) in responses.into_iter().enumerate() {
                 if resp.master_clicked {
-                    self.master = i;
-                    // The master leads; it can't also follow.
-                    self.decks[i].synced = false;
+                    let request = self.mixer.master_request.load(Ordering::Relaxed);
+                    self.mixer
+                        .master_request
+                        .store((request & !1) + 2 + i as u64, Ordering::Release);
                 }
                 if resp.play_toggled {
                     self.toggle_play_synced(i);
-                }
-                // Engaging sync jumps straight onto the master's beat (at
-                // most half a beat, the short way); the PLL holds the lock
-                // from there.
-                if resp.sync_engaged && i != self.master {
-                    let m = &self.decks[self.master];
-                    let master_phase = beat_phase(&m.marks, m.playhead() as f64);
-                    if let Some(mp) = master_phase {
-                        let d = &self.decks[i];
-                        let from = d.playhead() as f64;
-                        if let Some(target) =
-                            align_target_frame(&d.marks, from, mp, d.deck.shared.total())
-                        {
-                            request_seek_guarded(&d.deck.shared, target);
-                            // Same visual jump as an aligned play start, so
-                            // it gets the same ghost slide-in.
-                            let delta = from - target as f64;
-                            self.decks[i].ghost = (delta.abs() >= GHOST_MIN_DELTA_FRAMES)
-                                .then(|| GhostAnim::new(delta));
-                        }
-                    }
-                    // The jump invalidates any smoothed error history.
-                    self.decks[i].phase_err = None;
                 }
                 if let Some(path) = resp.load_path {
                     self.import_and_load(i, path);
@@ -3477,9 +3304,7 @@ struct DeckPanelResponse {
     load_path: Option<PathBuf>,
     load_track_id: Option<i64>,
     master_clicked: bool,
-    sync_engaged: bool,
-    /// Play/pause was pressed; handled at app level so a synced start can
-    /// beat-align against the master deck first.
+    /// Play/pause was pressed; delivery schedules a synced start after priming.
     play_toggled: bool,
 }
 
@@ -3767,7 +3592,12 @@ fn deck_panel(
                     loop_in: deck_ui.loop_in_staged,
                     hot_cues: &deck_ui.hot_cues,
                     cue_point: has_track.then(|| shared.cue_point.load(Ordering::Relaxed) as usize),
-                    ghost: deck_ui.ghost.as_ref().map(GhostAnim::params),
+                    ghost: (crate::sync::SyncState::load(&shared)
+                        == crate::sync::SyncState::Waiting)
+                        .then(|| GhostPlayhead {
+                            offset_frames: -shared.sync_remaining.load(),
+                            alpha: 0.85,
+                        }),
                 },
                 &mut deck_ui.zoom,
             );
@@ -4116,10 +3946,7 @@ fn deck_sidebar(
         state_toggle(ui, &mut deck_ui.keylock, [full, 20.0])
             .on_hover_text("Keylock: keep pitch constant while tempo changes");
         ui.add_space(4.0);
-        // Master/Sync: mutually exclusive, at most one lit (master deck
-        // shows MASTER with SYNC disabled; a follower shows SYNC; neither
-        // lit = independent). Stacked — the narrow strip can't fit both
-        // side by side.
+        // Sync intent survives master promotion and can be armed on either deck.
         if outlined_toggle(ui, is_master, "MASTER", [full, 20.0])
             .on_hover_text("Make this deck the tempo reference")
             .clicked()
@@ -4127,17 +3954,17 @@ fn deck_sidebar(
         {
             response.master_clicked = true;
         }
-        let sync = ui
-            .add_enabled_ui(!is_master, |ui| {
-                outlined_toggle(ui, deck_ui.synced, "SYNC", [full, 20.0])
-                    .on_hover_text("Follow the master deck's tempo and beat phase")
-            })
-            .inner;
+        let sync = outlined_toggle(ui, deck_ui.synced, "SYNC", [full, 20.0])
+            .on_hover_text("Keep tempo and beat phase locked; Play waits at the parked position until aligned");
         if sync.clicked() {
             deck_ui.synced = !deck_ui.synced;
-            if deck_ui.synced {
-                response.sync_engaged = true;
-            }
+            deck_ui.deck.shared.sync_enabled.store(deck_ui.synced, Ordering::Release);
+        }
+        if deck_ui.synced {
+            let state = crate::sync::SyncState::load(&deck_ui.deck.shared);
+            let label = if deck_ui.deck.shared.transport() != Transport::Playing
+                && state != crate::sync::SyncState::Unavailable { "ARMED" } else { state.label() };
+            ui.label(egui::RichText::new(label).size(9.0).weak());
         }
 
         ui.add_space(6.0);
@@ -4174,6 +4001,7 @@ fn deck_sidebar(
             if fader.changed() {
                 deck_ui.pitch_percent = ((legal_tempo(1.0 + pct as f64 / 100.0, deck_ui.keylock) - 1.0) * 100.0) as f32;
                 deck_ui.synced = false;
+                deck_ui.deck.shared.sync_enabled.store(false, Ordering::Release);
             }
         });
         ui.vertical_centered(|ui| {
@@ -4761,59 +4589,6 @@ fn range_for_pitch(pct: f32) -> f32 {
     }
 }
 
-/// Seek target that puts the deck's beat phase at `master_phase`, taking
-/// the nearest alignment (offset wrapped to ±half a beat) using the deck's
-/// local beat length at the playhead. None without a usable grid reading.
-fn align_target_frame(
-    marks: &GridMarks,
-    playhead: f64,
-    master_phase: f64,
-    total: usize,
-) -> Option<usize> {
-    let dp = beat_phase(marks, playhead)?;
-    let i = marks.beat_at_or_before(playhead)?;
-    // beat_phase succeeding proves i + 1 is in range and the interval > 0.
-    let beat_len = marks.frame(i + 1) - marks.frame(i);
-    let mut off = master_phase - dp;
-    off -= off.round();
-    let target = playhead + off * beat_len;
-    Some((target.round().max(0.0) as usize).min(total.saturating_sub(1)))
-}
-
-/// Beat-phase error in beats, wrapped to ±half a beat so the deck always
-/// takes the short way round.
-fn wrap_phase_err(master_phase: f64, deck_phase: f64) -> f64 {
-    let mut err = master_phase - deck_phase;
-    err -= err.round();
-    err
-}
-
-/// Low-pass the phase error across frames. Playheads are published in
-/// audio-callback quanta on independent threads, so a single reading can be
-/// off by a couple hundredths of a beat; the EMA averages that phantom
-/// error away while real drift passes through. A jump bigger than a quarter
-/// beat (seek, loop wrap, grid seam) restarts the filter instead of slewing
-/// through stale history.
-fn smooth_phase_err(prev: Option<f64>, raw: f64, alpha: f64) -> f64 {
-    match prev {
-        Some(p) if (raw - p).abs() <= 0.25 => p + (raw - p) * alpha,
-        _ => raw,
-    }
-}
-
-/// Proportional rate correction toward the master's beat phase, from an
-/// already-smoothed error. Soft-knee deadband: corrections ramp from zero
-/// past 0.02 beats (no step at the threshold), capped at an inaudible
-/// ±1.5% — the align-on-engage seek means the PLL only ever counters slow
-/// drift, never performs big chases.
-fn phase_correction(err: f64) -> f64 {
-    let past_knee = err.abs() - 0.02;
-    if past_knee <= 0.0 {
-        return 0.0;
-    }
-    (err.signum() * past_knee * 0.3).clamp(-0.015, 0.015)
-}
-
 /// `m:ss.t` for a frame count at the given sample rate.
 pub fn format_time(frames: usize, sample_rate: u32) -> String {
     let secs = frames as f64 / sample_rate.max(1) as f64;
@@ -4857,40 +4632,6 @@ mod tests {
         deck.pending_seek_frac = Some(0.75);
         assert_eq!(deck.prepare_device_reload(), Some((next, Some(42))));
         assert_eq!(deck.pending_seek_frac, Some(0.75));
-    }
-
-    #[test]
-    fn phase_err_takes_short_way_round() {
-        // Master just past a beat (0.1), deck late in its beat (0.9): the
-        // short way is forward +0.2 beats, so the deck speeds up.
-        assert!((wrap_phase_err(0.1, 0.9) - 0.2).abs() < 1e-9);
-        assert!(phase_correction(wrap_phase_err(0.1, 0.9)) > 0.0);
-        // Mirror case slows down.
-        assert!(phase_correction(wrap_phase_err(0.9, 0.1)) < 0.0);
-    }
-
-    #[test]
-    fn phase_correction_knee_and_clamp() {
-        // Inside the knee: no correction.
-        assert_eq!(phase_correction(0.005), 0.0);
-        assert_eq!(phase_correction(-0.02), 0.0);
-        // Ramps from zero past the knee — no step at the threshold.
-        let c = phase_correction(0.03);
-        assert!((c - 0.003).abs() < 1e-9);
-        // Large errors cap at an inaudible ±1.5%.
-        assert_eq!(phase_correction(0.5), 0.015);
-        assert_eq!(phase_correction(-0.5), -0.015);
-    }
-
-    #[test]
-    fn phase_err_smoothing_filters_jitter_but_resets_on_jumps() {
-        // First reading passes straight through.
-        assert_eq!(smooth_phase_err(None, 0.04, 0.1), 0.04);
-        // Small readings blend toward the new value.
-        let s = smooth_phase_err(Some(0.0), 0.04, 0.1);
-        assert!((s - 0.004).abs() < 1e-9);
-        // A jump past a quarter beat restarts the filter.
-        assert_eq!(smooth_phase_err(Some(0.0), 0.4, 0.1), 0.4);
     }
 
     fn grid_100(sr: u32, n: usize) -> GridMarks {
@@ -4953,25 +4694,6 @@ mod tests {
         assert_eq!(range_for_pitch(16.0), 16.0);
         assert_eq!(range_for_pitch(-20.0), 50.0);
         assert_eq!(range_for_pitch(74.0), 50.0); // saturates
-    }
-
-    #[test]
-    fn align_seeks_nearest_beat_offset() {
-        let marks = grid_100(48_000, 8);
-        // Already in phase: no movement.
-        assert_eq!(align_target_frame(&marks, 250.0, 0.5, 800), Some(250));
-        // Deck late (0.9), master early (0.1): forward to the next beat's
-        // 0.1, not back a near-full beat.
-        assert_eq!(align_target_frame(&marks, 290.0, 0.1, 800), Some(310));
-        // Mirror case wraps backwards.
-        assert_eq!(align_target_frame(&marks, 210.0, 0.9, 800), Some(190));
-        // Target clamped inside the track.
-        assert_eq!(align_target_frame(&marks, 640.0, 0.8, 660), Some(659));
-        // No grid: no seek.
-        assert_eq!(
-            align_target_frame(&GridMarks::empty(), 250.0, 0.5, 800),
-            None
-        );
     }
 
     #[test]

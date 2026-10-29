@@ -22,7 +22,13 @@ pub fn fill_reserve(
     quota: usize,
 ) -> Result<(), SessionError> {
     let ch = session.config().channels;
+    output.initialize_advance(session.applied_parameters());
     for _ in 0..128 {
+        // Keep events until their output boundaries are tagged, including media
+        // rendered under an older ratio but collected after a new control.
+        while let Some(applied) = session.next_applied() {
+            output.retain_applied(applied);
+        }
         let occupied = output.occupied_frames();
         if occupied >= reserve {
             break;
@@ -49,6 +55,9 @@ pub fn fill_reserve(
             break;
         }
         let progress = session.advance(quota);
+        while let Some(applied) = session.next_applied() {
+            output.retain_applied(applied);
+        }
         if progress.status == ProcessStatus::Fault {
             return Err(session.fault().unwrap_or(SessionError::InvalidState));
         }
@@ -89,6 +98,65 @@ mod tests {
 
     use super::*;
     use crate::output_queue;
+    #[test]
+    fn collected_audio_keeps_actual_applied_boundaries_after_tempo_changes() {
+        let source = vec![0.1; 192_000];
+        let mut session = PreparedSession::new(SessionConfig {
+            source_frames: Some(96_000),
+            source_access: SourceAccess::Seekable,
+            ..Default::default()
+        })
+        .unwrap()
+        .activate();
+        let (mut producer, mut consumer) = output_queue::channel(32_768);
+        let mut scratch = [0.0; 514];
+        fill_reserve(&mut session, &source, &mut producer, &mut scratch, 1024, 32).unwrap();
+        let boundary = session.commit_horizon();
+        assert!(boundary >= 1024);
+        session
+            .schedule(
+                1,
+                boundary,
+                Parameters::keylock(TempoRate::new(0.5).unwrap()),
+            )
+            .unwrap();
+        for _ in 0..100 {
+            fill_reserve(
+                &mut session,
+                &source,
+                &mut producer,
+                &mut scratch,
+                16_000,
+                32,
+            )
+            .unwrap();
+            if producer.occupied_frames() >= 16_000 {
+                break;
+            }
+        }
+        let applied = session.applied_parameters();
+        assert_eq!(applied.command_id, 1);
+        assert!(applied.applied_at >= boundary);
+        let mut samples = vec![0.0; 32_000];
+        let mut tags = vec![0.0; 16_000];
+        let frames = consumer.read_timed(&mut samples, &mut tags);
+        assert_eq!(frames, 16_000);
+        for (i, tag) in tags.iter().enumerate() {
+            let expected = if (i as u64) < applied.applied_at {
+                1.0
+            } else {
+                applied.tempo()
+            };
+            assert!(
+                (tag - expected).abs() < 1e-9,
+                "frame {i}, boundary {}",
+                applied.applied_at
+            );
+        }
+        consumer.acknowledge_frames(frames);
+        assert!((consumer.cursor.position - tags.iter().sum::<f64>()).abs() < 1e-9);
+    }
+
     #[test]
     fn pending_media_fills_reserve_without_advancing_the_control_horizon() {
         let source: Vec<_> = (0..48000).map(|i| (i as f32 * 0.031).sin() * 0.2).collect();
