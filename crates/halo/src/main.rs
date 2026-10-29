@@ -1,20 +1,24 @@
 mod app;
 mod audio;
-mod brake;
+mod crossover;
 mod deck;
 mod decoder;
+mod delivery;
 mod dmx;
 mod dsp;
 mod fader;
 mod knob;
 mod library;
+mod output_queue;
 mod programmer_ui;
+mod render_worker;
 mod scrub;
 mod show;
 mod show_preview;
 mod state;
 mod waveform;
 mod worker;
+mod worker_priority;
 
 fn main() -> eframe::Result<()> {
     env_logger::init();

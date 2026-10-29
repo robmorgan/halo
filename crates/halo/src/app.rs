@@ -55,14 +55,11 @@ struct LoadedData {
 
 type DecodeResult = Result<LoadedData, String>;
 
-/// The wide chain's true tempo-rate floor: its PV head clamps the
-/// stretch ratio to [0.5, 2.0] (`wide_pv_head.rs`, private to the
-/// library), so requests below rate 0.5 pin silently at -50%. Mirrored
-/// here because there is no public accessor. In WIDE the engine rate is
-/// clamped to this floor; the brake factor carries the fader on down.
-const WIDE_MIN_TEMPO_RATE: f64 = 0.5;
-/// The wide chain's rate ceiling (same PV-head clamp, upper end): +100%.
-const WIDE_MAX_TEMPO_RATE: f64 = 2.0;
+struct PendingDecode {
+    path: PathBuf,
+    track_id: Option<i64>,
+    receiver: mpsc::Receiver<DecodeResult>,
+}
 
 /// Ghost-playhead slide-in duration after a sync-aligned play start.
 const GHOST_ANIM_SECS: f32 = 0.4;
@@ -103,14 +100,13 @@ impl GhostAnim {
 
 struct DeckUi {
     deck: Deck,
-    decode_rx: Option<mpsc::Receiver<DecodeResult>>,
+    decode_rx: Option<PendingDecode>,
+    /// Keep the source available for device changes even without a library row.
+    source_path: Option<PathBuf>,
     /// Library row of the loaded track (None only when the library is
     /// unavailable).
     track_id: Option<i64>,
     key: Option<String>,
-    /// Artifact that landed while the deck was playing; applied at the next
-    /// non-playing moment.
-    pending_artifact: Option<Arc<PreAnalysisArtifact>>,
     peaks: Option<BandPeaks>,
     marks: GridMarks,
     /// Lighting/pixels/FX cues, loaded from the library on track load.
@@ -135,20 +131,15 @@ struct DeckUi {
     /// exactly the floor the audio voice saw even if the grid re-analyzes
     /// mid-gesture.
     scrub_lead_in: f64,
-    /// Last consumed scrub-landing sequence number; each newly published
-    /// landing fires one parallel engine warm-start seek.
-    landing_seq_seen: u64,
     /// Previous frame's cue-button-held state, for press/release edges.
     cue_was_down: bool,
     /// True while the cue button is previewing (play-from-cue while held).
     cue_previewing: bool,
     /// Tempo slider value in percent, within ±`pitch_range`.
     pitch_percent: f32,
-    /// Tempo slider range in percent (8 / 16 / 50, or 100 in WIDE).
+    /// Tempo slider range in percent (8 / 16 / 50, or 300 in WIDE).
     pitch_range: f32,
-    /// Wide-range Master Tempo (CDJ WIDE): full-spectrum keylock on the
-    /// WideKeylock engine profile, fader spanning ±100%. Mirrored into
-    /// `Deck::wide`; toggling is a seek-priced engine rebuild.
+    /// WIDE expands the fader range; all ranges use the same processor.
     wide: bool,
     keylock: bool,
     /// Following the master deck's tempo + beat phase.
@@ -191,9 +182,9 @@ impl DeckUi {
         Self {
             deck: Deck::new(),
             decode_rx: None,
+            source_path: None,
             track_id: None,
             key: None,
-            pending_artifact: None,
             peaks: None,
             marks: GridMarks::empty(),
             cues: CueSet::empty(),
@@ -206,7 +197,6 @@ impl DeckUi {
             zoom: ZoomSpan::default(),
             scrub_pos: None,
             scrub_lead_in: 0.0,
-            landing_seq_seen: 0,
             cue_was_down: false,
             cue_previewing: false,
             pitch_percent: 0.0,
@@ -236,6 +226,23 @@ impl DeckUi {
             .shared
             .playhead_frames()
             .min(self.deck.shared.total())
+    }
+
+    fn prepare_device_reload(&mut self) -> Option<(PathBuf, Option<i64>)> {
+        let shared = &self.deck.shared;
+        shared.set_transport(Transport::Stopped);
+        shared.stream_active.store(false, Ordering::Release);
+        shared.scrub.cancel();
+        if let Some(pending) = &self.decode_rx {
+            // A decode already in flight must restart at the new device rate.
+            // Preserve an earlier device reload's position across rapid changes.
+            Some((pending.path.clone(), pending.track_id))
+        } else {
+            let path = self.source_path.clone()?;
+            self.pending_seek_frac =
+                Some(shared.playhead_frames() as f64 / shared.total().max(1) as f64);
+            Some((path, self.track_id))
+        }
     }
 
     fn toggle_play(&mut self) {
@@ -553,11 +560,7 @@ impl HaloApp {
     fn deck_audio(deck_ui: &DeckUi) -> DeckAudio {
         DeckAudio {
             shared: deck_ui.deck.shared.clone(),
-            slot: deck_ui.deck.processor_slot.clone(),
-            retired: deck_ui.deck.retired_slot.clone(),
-            scratch_source: deck_ui.deck.scratch_source.clone(),
-            scratch_retired: deck_ui.deck.scratch_retired.clone(),
-            reset_request: deck_ui.deck.reset_request.clone(),
+            handoff: deck_ui.deck.handoff.clone(),
         }
     }
 
@@ -583,10 +586,7 @@ impl HaloApp {
                 deck_ui.pitch_range = persisted.pitch_ranges[i].max(8.0);
                 deck_ui.wide = persisted.wides[i];
                 if deck_ui.wide {
-                    deck_ui.pitch_range = 100.0;
-                    // No track loaded yet, so this just arms the profile
-                    // for the first engine build.
-                    deck_ui.deck.wide = true;
+                    deck_ui.pitch_range = 300.0;
                 }
                 deck_ui.quantize = persisted.quantize[i];
                 deck_ui.auto_cue = !persisted.auto_cue_off[i];
@@ -818,6 +818,7 @@ impl HaloApp {
 
     fn start_decode(&mut self, deck_idx: usize, path: PathBuf, track_id: Option<i64>) {
         self.status = format!("Deck {}: loading {}…", DECK_NAMES[deck_idx], path.display());
+        self.decks[deck_idx].pending_seek_frac = None;
         self.decks[deck_idx].decode_rx = Some(self.spawn_decode(path, track_id));
     }
 
@@ -830,13 +831,14 @@ impl HaloApp {
         match row {
             Some(row) => {
                 self.status = format!("Prepare: loading {}…", row.path.display());
+                self.prepare.audition.pending_seek_frac = None;
                 self.prepare.audition.decode_rx = Some(self.spawn_decode(row.path, Some(track_id)));
             }
             None => self.status = "Track not found in library".to_string(),
         }
     }
 
-    fn spawn_decode(&self, path: PathBuf, track_id: Option<i64>) -> mpsc::Receiver<DecodeResult> {
+    fn spawn_decode(&self, path: PathBuf, track_id: Option<i64>) -> PendingDecode {
         let device_rate = self.device_rate();
         // Stored analysis (native rate) and key come from the library; both
         // queries are cheap enough for the UI thread.
@@ -848,15 +850,25 @@ impl HaloApp {
             _ => (None, None),
         };
         let (tx, rx) = mpsc::channel();
+        let source_path = path.clone();
         std::thread::spawn(move || {
             let _ = tx.send(load_track_data(&path, device_rate, track_id, key, artifact));
         });
-        rx
+        PendingDecode {
+            path: source_path,
+            track_id,
+            receiver: rx,
+        }
     }
 
     /// Handle finished decode threads: install the track on its deck (A, B,
     /// or the Prepare audition player) and kick off background pre-analysis.
     fn poll_decodes(&mut self, ctx: &egui::Context) {
+        // Keep pending sources for a retry after a device-open failure; never
+        // install audio decoded for an old rate while there is no output.
+        if self.audio.is_none() {
+            return;
+        }
         let device_rate = self.device_rate();
         for (i, name) in DECK_NAMES.iter().enumerate().take(self.decks.len()) {
             if let Some(status) = Self::poll_deck_decode(
@@ -907,15 +919,14 @@ impl HaloApp {
         library: Option<&Library>,
         wake_tx: &mpsc::Sender<()>,
     ) -> Option<String> {
-        // Drop sample Arcs the callback retired, off the audio thread.
-        if let Ok(mut retired) = deck_ui.deck.scratch_retired.try_lock() {
-            retired.take();
+        if let Some(error) = deck_ui.deck.poll() {
+            return Some(format!("Deck {label}: {error}"));
         }
-        let rx = deck_ui.decode_rx.as_ref()?;
-        let Ok(result) = rx.try_recv() else {
+        let pending = deck_ui.decode_rx.as_ref()?;
+        let Ok(result) = pending.receiver.try_recv() else {
             return None;
         };
-        deck_ui.decode_rx = None;
+        let path = deck_ui.decode_rx.take()?.path;
         match result {
             Ok(data) => {
                 match deck_ui.deck.load(
@@ -925,6 +936,7 @@ impl HaloApp {
                     data.artifact.clone(),
                 ) {
                     Ok(()) => {
+                        deck_ui.source_path = Some(path);
                         deck_ui.overview = Some(OverviewTexture::from_peaks(ctx, &data.peaks));
                         deck_ui.artwork = data.artwork.map(|img| {
                             ctx.load_texture(
@@ -955,7 +967,6 @@ impl HaloApp {
                         deck_ui.artist = data.artist;
                         deck_ui.key = data.key;
                         deck_ui.track_id = data.track_id;
-                        deck_ui.pending_artifact = None;
                         deck_ui.scrub_pos = None;
                         deck_ui.hot_cues = [None; 8];
                         deck_ui.gated_held = None;
@@ -1019,10 +1030,7 @@ impl HaloApp {
         }
     }
 
-    /// Drain analysis-worker events and apply pending artifacts. A freshly
-    /// analyzed track that's sitting on a deck gets its display grid/BPM
-    /// immediately; the engine upgrade waits for the next moment the deck
-    /// isn't playing (rebuilding a live engine would audibly interrupt it).
+    /// Apply library metadata independently of the playback session.
     fn poll_worker_events(&mut self) {
         let device_rate = self.device_rate();
         while let Ok(event) = self.events_rx.try_recv() {
@@ -1031,11 +1039,11 @@ impl HaloApp {
                     self.browser.dirty = true;
                     // Analysis (first or re-) rewrote the thumbnail blob.
                     self.waveform_thumbs.remove(&id);
-                    // No `pre_analysis.is_none()` guard: a reanalyzed track
-                    // already on a deck must refresh too. The engine-side
-                    // apply still waits for a non-playing moment via
-                    // `pending_artifact`.
-                    for deck_ui in self.decks.iter_mut() {
+                    for deck_ui in self
+                        .decks
+                        .iter_mut()
+                        .chain(std::iter::once(&mut self.prepare.audition))
+                    {
                         if deck_ui.track_id == Some(id)
                             && let Some(lib) = &self.library
                             && let Ok(Some(native)) = lib.analysis(id)
@@ -1043,7 +1051,7 @@ impl HaloApp {
                             let resampled = native.resample_to(device_rate);
                             deck_ui.marks = GridMarks::from_grid(&grid_from_artifact(&resampled));
                             deck_ui.bpm = resampled.bpm;
-                            deck_ui.pending_artifact = Some(Arc::new(resampled));
+                            deck_ui.deck.pre_analysis = Some(Arc::new(resampled));
                             // The refined grid may move the first downbeat:
                             // re-apply auto cue, but never disturb a playing
                             // or scrubbing deck, a user-moved cue, or a
@@ -1086,17 +1094,6 @@ impl HaloApp {
                 }
             }
         }
-
-        for deck_ui in self.decks.iter_mut() {
-            if deck_ui.pending_artifact.is_some()
-                && deck_ui.deck.shared.transport() != Transport::Playing
-            {
-                let artifact = deck_ui.pending_artifact.take().unwrap();
-                if let Err(e) = deck_ui.deck.apply_pre_analysis(artifact, device_rate) {
-                    log::error!("apply_pre_analysis: {e}");
-                }
-            }
-        }
     }
 
     /// Recompute and publish each deck's tempo rate + keylock.
@@ -1135,13 +1132,17 @@ impl HaloApp {
     }
 
     fn update_tempo(&mut self, dt: f64) {
-        // EMA weight for a ~150 ms error-smoothing time constant at the
-        // actual frame rate.
-        let alpha = 1.0 - (-dt / 0.15).exp();
+        // Account for delivery/control latency in the phase-error smoothing.
+        // The feedback follows consumed playheads, not render-ahead positions.
         let master = self.master;
         let master_base = self.decks[master].bpm;
         let master_rate = 1.0 + self.decks[master].pitch_percent as f64 / 100.0;
-        let master_playing = self.decks[master].deck.shared.transport() == Transport::Playing;
+        let master_playing = self.decks[master]
+            .deck
+            .shared
+            .stream_active
+            .load(Ordering::Acquire);
+        let master_latency = self.decks[master].deck.shared.control_latency.load();
         let master_phase = beat_phase(
             &self.decks[master].marks,
             self.decks[master].deck.shared.playhead_frames() as f64,
@@ -1152,18 +1153,29 @@ impl HaloApp {
             let manual = 1.0 + d.pitch_percent as f64 / 100.0;
             let mut rate = if d.synced && i != master && d.bpm > 0.0 && master_base > 0.0 {
                 let mut r = master_base * master_rate / d.bpm;
+                r = legal_tempo(r, d.keylock);
                 let sync_pct = ((r - 1.0) * 100.0) as f32;
-                d.pitch_range = d.pitch_range.max(range_for_pitch(sync_pct));
-                d.pitch_percent = sync_pct.clamp(-50.0, 50.0);
+                if sync_pct.abs() > 50.0 {
+                    d.wide = true;
+                    d.pitch_range = 300.0;
+                } else {
+                    d.pitch_range = d.pitch_range.max(range_for_pitch(sync_pct));
+                }
+                d.pitch_percent = sync_pct;
                 // A scrub (grab or glide) freezes or overrides the deck's
                 // playhead — suspend the phase chase so it doesn't poison
                 // the smoothed error; the PLL re-acquires once it ends.
                 if master_playing
                     && d.deck.shared.scrub.phase() == ScrubPhase::Idle
-                    && d.deck.shared.transport() == Transport::Playing
+                    && d.deck.shared.stream_active.load(Ordering::Acquire)
+                    && !d.deck.shared.tempo_stopped.load(Ordering::Relaxed)
                     && let Some(mp) = master_phase
                     && let Some(dp) = beat_phase(&d.marks, d.deck.shared.playhead_frames() as f64)
                 {
+                    let latency = master_latency
+                        .max(d.deck.shared.control_latency.load())
+                        .min(1.0);
+                    let alpha = 1.0 - (-dt / (0.15 + latency)).exp();
                     let err = smooth_phase_err(d.phase_err, wrap_phase_err(mp, dp), alpha);
                     d.phase_err = Some(err);
                     r *= 1.0 + phase_correction(err);
@@ -1175,22 +1187,31 @@ impl HaloApp {
                 d.phase_err = None;
                 manual
             };
-            rate *= d.bend as f64;
-            let (engine_rate, brake) = if d.wide {
-                wide_tempo_split(rate)
-            } else {
-                (rate.clamp(0.25, 4.0), 1.0)
-            };
-            d.deck.shared.tempo_rate.store(engine_rate as f32);
-            d.deck.shared.brake.store(brake as f32);
+            // Reconcile persisted/manual values and keylock changes visibly.
+            let base = legal_tempo(1.0 + d.pitch_percent as f64 / 100.0, d.keylock);
+            d.pitch_percent = ((base - 1.0) * 100.0) as f32;
+            rate = if !d.synced || i == master { base } else { rate };
+            let stopped = rate <= 0.0;
+            rate = legal_tempo(rate * d.bend as f64, d.keylock);
+            let params = crate::deck::playback_parameters(rate, d.keylock).unwrap_or_default();
+            d.deck.shared.tempo_rate.store(params.tempo.get() as f32);
+            d.deck
+                .shared
+                .tempo_stopped
+                .store(stopped, Ordering::Relaxed);
             d.deck.shared.keylock.store(d.keylock, Ordering::Relaxed);
         }
     }
 
     /// Tear down and rebuild the output stream with the current settings.
-    /// The old callback owned the deck processors, so loaded decks always
-    /// reload afterwards (restoring their playhead position).
+    /// Loaded decks reload into fresh delivery queues at the new device rate,
+    /// restoring their playhead position.
     fn rebuild_audio(&mut self) {
+        let reloads = [
+            self.decks[0].prepare_device_reload(),
+            self.decks[1].prepare_device_reload(),
+            self.prepare.audition.prepare_device_reload(),
+        ];
         self.audio = None;
         match AudioOutput::new(
             [
@@ -1210,23 +1231,16 @@ impl HaloApp {
                 return;
             }
         }
-        for i in 0..2 {
-            if let Some(id) = self.decks[i].track_id {
-                let shared = &self.decks[i].deck.shared;
-                shared.set_transport(Transport::Stopped);
-                let total = shared.total().max(1);
-                self.decks[i].pending_seek_frac =
-                    Some(shared.playhead_frames() as f64 / total as f64);
-                self.load_track_row(i, id);
+        for (i, reload) in reloads.into_iter().enumerate() {
+            if let Some((path, track_id)) = reload {
+                let pending = self.spawn_decode(path, track_id);
+                let deck = if i < 2 {
+                    &mut self.decks[i]
+                } else {
+                    &mut self.prepare.audition
+                };
+                deck.decode_rx = Some(pending);
             }
-        }
-        if let Some(id) = self.prepare.audition.track_id {
-            let shared = &self.prepare.audition.deck.shared;
-            shared.set_transport(Transport::Stopped);
-            let total = shared.total().max(1);
-            self.prepare.audition.pending_seek_frac =
-                Some(shared.playhead_frames() as f64 / total as f64);
-            self.load_audition(id);
         }
     }
 
@@ -1706,6 +1720,15 @@ impl HaloApp {
 
     /// Sample process-wide CPU roughly once a second, and latch the DSP
     /// readout a couple of times a second.
+    fn audio_load(&self) -> f32 {
+        self.decks
+            .iter()
+            .chain(std::iter::once(&self.prepare.audition))
+            .fold(self.mixer.cpu_load.load(), |load, deck| {
+                load.max(deck.deck.shared.worker_load.load())
+            })
+    }
+
     fn update_cpu(&mut self) {
         let (last_at, last_cpu, _) = self.cpu_sample;
         let elapsed = last_at.elapsed().as_secs_f64();
@@ -1715,7 +1738,7 @@ impl HaloApp {
             self.cpu_sample = (std::time::Instant::now(), cpu_now, pct.max(0.0));
         }
         if self.dsp_display.0.elapsed().as_secs_f32() >= 0.5 {
-            self.dsp_display = (std::time::Instant::now(), self.mixer.cpu_load.load());
+            self.dsp_display = (std::time::Instant::now(), self.audio_load());
         }
     }
 
@@ -2596,22 +2619,12 @@ impl eframe::App for HaloApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Scrub glide bookkeeping: each newly published landing fires the
-        // parallel engine warm-start, so the engine is primed at the
-        // predicted frame by the time the glide hands back to it.
+        // Landing preparation runs directly on the deck worker.
         for deck_ui in self
             .decks
             .iter_mut()
             .chain(std::iter::once(&mut self.prepare.audition))
         {
-            let shared = &deck_ui.deck.shared;
-            let (landing_seq, landing) = shared.scrub.landing();
-            if landing_seq != deck_ui.landing_seq_seen {
-                deck_ui.landing_seq_seen = landing_seq;
-                // `.max(0.0)`: a landing is >= 0 by contract, but a negative
-                // f64 cast to usize would wrap into a garbage seek.
-                request_seek_guarded(shared, landing.max(0.0) as usize);
-            }
             if deck_ui.ghost.as_ref().is_some_and(GhostAnim::finished) {
                 deck_ui.ghost = None;
             }
@@ -2696,12 +2709,7 @@ impl eframe::App for HaloApp {
                             }
                         }
                         ui.separator();
-                        cpu_meter(
-                            ui,
-                            self.mixer.cpu_load.load(),
-                            self.dsp_display.1,
-                            self.cpu_sample.2,
-                        );
+                        cpu_meter(ui, self.audio_load(), self.dsp_display.1, self.cpu_sample.2);
                         ui.separator();
                         // Right-to-left layout: the output bar lands between
                         // the DSP cluster and the master knob, i.e. just to
@@ -2882,15 +2890,6 @@ impl eframe::App for HaloApp {
                 if resp.play_toggled {
                     self.toggle_play_synced(i);
                 }
-                if resp.wide_toggled {
-                    // Seek-priced profile swap; set_wide restores the
-                    // playhead via warm-start seek.
-                    let device_rate = self.device_rate();
-                    let d = &mut self.decks[i];
-                    if let Err(e) = d.deck.set_wide(d.wide, device_rate) {
-                        log::error!("set_wide: {e}");
-                    }
-                }
                 // Engaging sync jumps straight onto the master's beat (at
                 // most half a beat, the short way); the PLL holds the lock
                 // from there.
@@ -2942,7 +2941,8 @@ fn load_track_data(
     // are per-second and grid positions rescale exactly, so the result is
     // identical — but a 96 kHz device no longer pays for analyzing the
     // 2.2x-larger resampled copy on every load.
-    let native = AudioBuffer::new(decoded.samples, decoded.sample_rate, Channels::Stereo);
+    let native = AudioBuffer::new(decoded.samples, decoded.sample_rate, Channels::Stereo)
+        .map_err(|e| format!("Invalid decoded audio: {e}"))?;
     let peaks =
         cached_peaks.unwrap_or_else(|| BandPeaks::compute(&native.data, 2, native.sample_rate));
     let (grid, artifact) = match stored {
@@ -2951,7 +2951,8 @@ fn load_track_data(
             (grid_from_artifact(&resampled), Some(Arc::new(resampled)))
         }
         None => {
-            let mut grid = timestretch::detect_beat_grid_buffer(&native);
+            let mono = timestretch::downmix_to_mid(&native.data, 2);
+            let mut grid = timestretch::detect_beat_grid(&mono, native.sample_rate);
             log::info!(
                 "Quick BPM: {:.1} ({} beats, confidence {:.2})",
                 grid.bpm,
@@ -3480,10 +3481,6 @@ struct DeckPanelResponse {
     /// Play/pause was pressed; handled at app level so a synced start can
     /// beat-align against the master deck first.
     play_toggled: bool,
-    /// The RANGE combo crossed into or out of WIDE; the engine profile
-    /// swap (a seek-priced rebuild) is handled at app level where the
-    /// device rate lives.
-    wide_toggled: bool,
 }
 
 /// Three always-visible dots answering "what is the rig doing right now":
@@ -3552,16 +3549,14 @@ fn handle_scrub_gesture(
         Some(ScrubGesture::Release) => {
             if let Some(frame) = deck_ui.scrub_pos.take() {
                 if has_audio {
-                    // Momentum glide: the audio callback eases the voice
-                    // toward play speed (or rest), predicts the landing,
-                    // and the landing consumer in `update` warm-starts the
-                    // engine there in parallel.
-                    // The glide must land at the *braked* speed (engine
-                    // rate × brake factor), or the crossfade back to the
-                    // engine lurches while WIDE holds the fader below the
-                    // -50% floor.
+                    // The callback predicts the landing; the render worker
+                    // primes it directly, including while the UI is stalled.
                     let rate = if playing {
-                        shared.tempo_rate.load() as f64 * shared.brake.load() as f64
+                        if shared.tempo_stopped.load(Ordering::Relaxed) {
+                            0.0
+                        } else {
+                            shared.tempo_rate.load() as f64
+                        }
                     } else {
                         0.0
                     };
@@ -3759,7 +3754,7 @@ fn deck_panel(
             // audio callback's varispeed voice audibly chases the hand
             // (both directions); the drop releases the momentum into a
             // glide that eases back to play speed (or rest), handing off
-            // to a warm-started engine at the predicted landing.
+            // to a primed session at the predicted landing.
             let gesture = paint_zoomed(
                 ui,
                 ZoomedParams {
@@ -3935,7 +3930,7 @@ fn deck_panel(
             control_group(ui, "LOOP", |ui| {
                 // Loops: manual in/out, quantized autoloop at the shown
                 // length, halve/double between 1/16 and 16 beats (gapless
-                // feed-thread re-anchor). Every button is a fixed 45×30 to
+                // session loop transaction). Every button is a fixed 45×30 to
                 // match the play/cue height; only the 4 BEATS chip is wider.
                 let has_loop = loop_region.is_some();
                 let grid_ok = deck_ui.marks.is_usable();
@@ -4168,7 +4163,7 @@ fn deck_sidebar(
             // writing pitch_percent and the fader just displays it.
             // Pitch-strip look: dark slot, chunky cap, dense tick ladder.
             let fader = ui.add(
-                Fader::new(&mut pct, -range..=range, ACCENT)
+                Fader::new(&mut pct, -range.min(100.0)..=range, ACCENT)
                     .vertical(true)
                     .size([32.0, fader_h])
                     .groove_width(8.0)
@@ -4177,7 +4172,7 @@ fn deck_sidebar(
                     .default_value(0.0),
             );
             if fader.changed() {
-                deck_ui.pitch_percent = pct;
+                deck_ui.pitch_percent = ((legal_tempo(1.0 + pct as f64 / 100.0, deck_ui.keylock) - 1.0) * 100.0) as f32;
                 deck_ui.synced = false;
             }
         });
@@ -4210,42 +4205,29 @@ fn deck_sidebar(
                     if ui
                         .selectable_label(deck_ui.wide, "WIDE")
                         .on_hover_text(
-                            "Wide-range Master Tempo: the full spectrum is \
-                             pitch-corrected across ±100% (0 ms pipeline delay — \
-                             the analysis window is source-side lookahead). \
-                             Switching ranges rebuilds the engine and restores \
-                             the playhead via warm-start seek.",
+                            "Full tempo range: down to 1/32 speed with keylock, \
+                             1/4 with linked pitch, up to 4x. Bottom detent stops \
+                             playback; raise the fader to resume.",
                         )
                         .clicked()
                     {
                         deck_ui.wide = true;
-                        deck_ui.pitch_range = 100.0;
+                        deck_ui.pitch_range = 300.0;
                     }
                 });
             if deck_ui.pitch_range != prev_range || deck_ui.wide != prev_wide {
                 deck_ui.pitch_percent = deck_ui
                     .pitch_percent
-                    .clamp(-deck_ui.pitch_range, deck_ui.pitch_range);
-                if deck_ui.wide != prev_wide {
-                    // Entering/leaving WIDE swaps the engine profile — a
-                    // seek-priced rebuild, handled at app level where the
-                    // device rate lives.
-                    response.wide_toggled = true;
-                }
+                    .clamp(-deck_ui.pitch_range.min(100.0), deck_ui.pitch_range);
             }
-            // Latency chip: whatever the engine has reported — 0.0 ms is
-            // the WIDE range's honest number (source-side lookahead), not
-            // "no info"; before the first build there is no figure to show.
-            if let Some(secs) = deck_ui.deck.pipeline_latency_secs() {
-                ui.label(
-                    egui::RichText::new(format!("{:.1} ms", secs * 1_000.0))
-                        .weak()
-                        .size(10.0),
-                )
-                .on_hover_text(
-                    "Constant pipeline delay reported by the active engine — \
-                     each range has its own honest figure.",
-                );
+            if has_track {
+                let shared = &deck_ui.deck.shared;
+                ui.label(egui::RichText::new(format!("{:.0} ms", shared.control_latency.load() * 1000.0)).weak().size(10.0))
+                    .on_hover_text(format!(
+                        "Control response estimate, including pending audio. Output reserve: {:.0} ms. \
+                         Worker: {:.1}%. Underrun frames: {}. Applied tempo: {:.4}x. Device latency is additional.",
+                        shared.queue_latency.load() * 1000.0, shared.worker_load.load() * 100.0,
+                        shared.underrun_frames.load(Ordering::Relaxed), shared.achieved_tempo.load()));
             }
         });
     });
@@ -4341,13 +4323,7 @@ fn mixer_panel(ui: &mut egui::Ui, mixer: &MixerShared, decks: &[DeckUi; 2]) {
         ui.add_space(8.0);
         for (i, gap) in [(0, 3.0), (1, 8.0)] {
             let shared = &decks[i].deck.shared;
-            // Prefer the freshest analysis: `pending_artifact` holds a
-            // completed analysis waiting for a non-playing moment to reach
-            // the engine, but the loudness marker is display-only.
-            let artifact = decks[i]
-                .pending_artifact
-                .as_ref()
-                .or(decks[i].deck.pre_analysis.as_ref());
+            let artifact = decks[i].deck.pre_analysis.as_ref();
             deck_lufs_meter(
                 ui,
                 shared.meter_lufs.load(),
@@ -4545,7 +4521,7 @@ fn cpu_meter(ui: &mut egui::Ui, dsp_load: f32, dsp_latched: f32, process_pct: f3
         egui::RichText::new(format!("DSP {dsp_pct:>4.1}%"))
             .color(color)
             .monospace(),
-    );
+    ).on_hover_text("Busiest audio processing thread: stretching or output delivery. Per-deck details appear in the latency readout.");
     let (rect, _) = ui.allocate_exact_size(egui::vec2(64.0, 10.0), egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 2.0, egui::Color32::from_rgb(30, 30, 34));
@@ -4673,7 +4649,7 @@ fn apply_theme(ctx: &egui::Context) {
 }
 
 /// Seek, exiting any active loop the target falls outside of (otherwise
-/// the feed thread would immediately wrap the playhead back in).
+/// the session rejects seeks beyond an active loop end).
 fn request_seek_guarded(shared: &crate::state::DeckShared, target: usize) {
     if let Some((start, end)) = shared.loop_region()
         && (target < start || target >= end)
@@ -4764,16 +4740,13 @@ fn beat_phase(marks: &GridMarks, frame: f64) -> Option<f64> {
     Some(((frame - a) / (b - a)).clamp(0.0, 1.0))
 }
 
-/// Split a WIDE deck's desired playback rate into the engine tempo rate
-/// and the brake factor `b`. Down to the wide chain's floor the engine
-/// follows the fader and `b` stays 1.0; below it the engine pins at the
-/// floor and only `b` moves. At exactly the floor `b == 1.0`, so the brake
-/// engages with zero effect — a continuous handoff, no pitch jump.
-fn wide_tempo_split(rate: f64) -> (f64, f64) {
-    (
-        rate.clamp(WIDE_MIN_TEMPO_RATE, WIDE_MAX_TEMPO_RATE),
-        (rate / WIDE_MIN_TEMPO_RATE).clamp(0.0, 1.0),
-    )
+/// Supported nonzero rates plus the full-stop fader detent. Keep the displayed
+/// rate in the same domain as the DSP, including when keylock is switched off.
+fn legal_tempo(rate: f64, keylock: bool) -> f64 {
+    if rate <= 0.001 {
+        return 0.0;
+    }
+    crate::deck::playback_parameters(rate, keylock).map_or(1.0, |p| p.tempo.get())
 }
 
 /// Smallest standard pitch range (8/16/50) that fits `pct`; saturates at 50.
@@ -4854,6 +4827,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn device_reload_keeps_non_library_sources_and_pending_decodes() {
+        let mut deck = DeckUi::new();
+        let first = PathBuf::from("unregistered.wav");
+        deck.source_path = Some(first.clone());
+        deck.deck
+            .shared
+            .total_frames
+            .store(96_000, Ordering::Relaxed);
+        deck.deck.shared.playhead.store(24_000, Ordering::Relaxed);
+        deck.deck.shared.set_transport(Transport::Playing);
+        assert_eq!(deck.prepare_device_reload(), Some((first, None)));
+        assert_eq!(deck.pending_seek_frac, Some(0.25));
+        assert_eq!(deck.deck.shared.transport(), Transport::Stopped);
+
+        let next = PathBuf::from("next.wav");
+        let (_tx, receiver) = mpsc::channel();
+        deck.decode_rx = Some(PendingDecode {
+            path: next.clone(),
+            track_id: Some(42),
+            receiver,
+        });
+        // A new track has no inherited seek. A second device change must keep
+        // its request, rather than reload the previously installed track.
+        deck.pending_seek_frac = None;
+        assert_eq!(deck.prepare_device_reload(), Some((next.clone(), Some(42))));
+        assert_eq!(deck.pending_seek_frac, None);
+        // Repeated device changes during a position-restoring reload keep it.
+        deck.pending_seek_frac = Some(0.75);
+        assert_eq!(deck.prepare_device_reload(), Some((next, Some(42))));
+        assert_eq!(deck.pending_seek_frac, Some(0.75));
+    }
+
+    #[test]
     fn phase_err_takes_short_way_round() {
         // Master just past a beat (0.1), deck late in its beat (0.9): the
         // short way is forward +0.2 beats, so the deck speeds up.
@@ -4930,18 +4936,13 @@ mod tests {
     }
 
     #[test]
-    fn wide_tempo_split_pins_engine_at_floor() {
-        // Above the floor: engine follows, no brake.
-        assert_eq!(wide_tempo_split(1.0), (1.0, 1.0));
-        assert_eq!(wide_tempo_split(0.75), (0.75, 1.0));
-        // Exactly at the floor: brake engages with zero effect —
-        // continuous handoff, no pitch jump.
-        assert_eq!(wide_tempo_split(0.5), (0.5, 1.0));
-        // Below the floor: engine pinned, only the brake moves.
-        assert_eq!(wide_tempo_split(0.25), (0.5, 0.5));
-        assert_eq!(wide_tempo_split(0.0), (0.5, 0.0));
-        // Ceiling: the wide PV head tops out at rate 2.0 (+100%).
-        assert_eq!(wide_tempo_split(2.5), (2.0, 1.0));
+    fn tempo_limits_follow_pitch_intent_and_preserve_stop() {
+        assert_eq!(legal_tempo(0.0, true), 0.0);
+        assert_eq!(legal_tempo(0.0, false), 0.0);
+        assert_eq!(legal_tempo(0.01, true), 1.0 / 32.0);
+        assert_eq!(legal_tempo(0.1, false), 0.25);
+        assert_eq!(legal_tempo(2.5, true), 2.5);
+        assert_eq!(legal_tempo(5.0, true), 4.0);
     }
 
     #[test]
