@@ -1,6 +1,6 @@
 //! Lock-free state shared between the UI thread, the per-deck render workers,
-//! and the audio callback. Everything here is atomics — the audio path never
-//! takes a lock it can block on.
+//! and the audio callback. Controls and telemetry use atomics — the audio path never
+//! takes a lock it can block on. Anchor commands use a bounded ownership queue.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
@@ -45,20 +45,103 @@ pub enum Transport {
     Paused = 2,
 }
 
-/// Sentinel meaning "no seek requested".
-const NO_SEEK: u64 = u64::MAX;
+/// Bounded, value-only anchor messages. The published revision is advanced
+/// AFTER insertion, so an acknowledgement can never refer to an unobserved seek.
+#[derive(Clone, Copy)]
+pub struct AnchorCommand {
+    pub revision: u64,
+    pub frame: Option<f64>,
+    pub region: Option<(usize, usize)>,
+}
+
+/// Coherent observation of one software delivery boundary. No speaker-time
+/// or exact sample-origin claim is made by these coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeliveryClock {
+    pub output_frame: u64,
+    pub position: f64,
+    pub iteration: u64,
+    pub track: u64,
+    pub anchor: u64,
+}
+
+pub struct ClockSnapshot {
+    sequence: AtomicU64,
+    output_frame: AtomicU64,
+    position: AtomicF64,
+    iteration: AtomicU64,
+    track: AtomicU64,
+    anchor: AtomicU64,
+}
+
+impl ClockSnapshot {
+    fn new() -> Self {
+        Self {
+            sequence: AtomicU64::new(0),
+            output_frame: AtomicU64::new(0),
+            position: AtomicF64::new(0.0),
+            iteration: AtomicU64::new(0),
+            track: AtomicU64::new(0),
+            anchor: AtomicU64::new(0),
+        }
+    }
+
+    /// Callback only: the sole writer. Readers make one bounded attempt.
+    pub fn publish(&self, clock: DeliveryClock) {
+        self.sequence.fetch_add(1, Ordering::AcqRel);
+        self.output_frame
+            .store(clock.output_frame, Ordering::Relaxed);
+        self.position.store(clock.position);
+        self.iteration.store(clock.iteration, Ordering::Relaxed);
+        self.track.store(clock.track, Ordering::Relaxed);
+        self.anchor.store(clock.anchor, Ordering::Relaxed);
+        self.sequence.fetch_add(1, Ordering::Release);
+    }
+
+    pub fn read(&self) -> Option<DeliveryClock> {
+        let sequence = self.sequence.load(Ordering::Acquire);
+        if sequence == 0 || sequence & 1 != 0 {
+            return None;
+        }
+        let clock = DeliveryClock {
+            output_frame: self.output_frame.load(Ordering::Relaxed),
+            position: self.position.load(),
+            iteration: self.iteration.load(Ordering::Relaxed),
+            track: self.track.load(Ordering::Relaxed),
+            anchor: self.anchor.load(Ordering::Relaxed),
+        };
+        std::sync::atomic::fence(Ordering::Acquire);
+        (sequence == self.sequence.load(Ordering::Relaxed)).then_some(clock)
+    }
+}
 
 /// Per-deck state shared across the UI, render worker, and audio callback.
 pub struct DeckShared {
-    transport: AtomicU8,
-    /// Playhead in source frames, published by the render worker.
+    transport: AtomicU64,
+    /// Persistent intent is independent of master promotion and runtime state.
+    pub sync_enabled: AtomicBool,
+    pub sync_state: AtomicU8,
+    pub sync_remaining: AtomicF64,
+    pub manual_tempo: AtomicF32,
+    pub bend: AtomicF32,
+    pub matched_tempo: AtomicF64,
+    pub delivered_tempo: AtomicF64,
+    pub controls_pending: AtomicBool,
+    pub anchor_revision: AtomicU64,
+    pub prepared_revision: AtomicU64,
+    pub delivery_position: AtomicF64,
+    pub delivery_clock: ClockSnapshot,
+    pub loop_iteration: AtomicU64,
+    pub launch_frame: AtomicU64,
+    /// Playhead in source frames, published at software delivery boundaries.
     pub playhead: AtomicU64,
     /// Total source frames of the loaded track.
     pub total_frames: AtomicU64,
     /// Cue point in source frames.
     pub cue_point: AtomicU64,
-    /// Seek request in source frames (NO_SEEK = none). UI writes, worker consumes.
-    seek_request: AtomicU64,
+    /// Bounded seek/loop requests. UI and callback publish, worker consumes.
+    anchor_commands: crossbeam_queue::ArrayQueue<AnchorCommand>,
+    anchor_counter: AtomicU64,
     /// True once the render worker has filled the output reserve —
     /// the audio callback only consumes the deck while this is set.
     pub stream_active: AtomicBool,
@@ -81,8 +164,8 @@ pub struct DeckShared {
     pub filter_mode: AtomicU8,
     /// Normalized filter cutoff 0..1 (log-mapped 20 Hz → 20 kHz).
     pub filter_cutoff: AtomicF32,
-    /// Engine tempo rate (playback speed; 1.0 = original). Written by the
-    /// UI's tempo logic, forwarded to the engine by the render worker.
+    /// Engine tempo rate (playback speed; 1.0 = original). The callback
+    /// resolves manual/matched tempo and nudge; the worker forwards it to DSP.
     pub tempo_rate: AtomicF32,
     /// Zero-speed fader detent pauses delivery without changing play intent.
     pub tempo_stopped: AtomicBool,
@@ -116,11 +199,26 @@ pub struct DeckShared {
 impl DeckShared {
     pub fn new() -> Self {
         Self {
-            transport: AtomicU8::new(Transport::Stopped as u8),
+            transport: AtomicU64::new(Transport::Stopped as u64),
+            sync_enabled: AtomicBool::new(false),
+            sync_state: AtomicU8::new(0),
+            sync_remaining: AtomicF64::new(0.0),
+            manual_tempo: AtomicF32::new(1.0),
+            bend: AtomicF32::new(1.0),
+            matched_tempo: AtomicF64::new(1.0),
+            delivered_tempo: AtomicF64::new(1.0),
+            controls_pending: AtomicBool::new(false),
+            anchor_revision: AtomicU64::new(0),
+            prepared_revision: AtomicU64::new(0),
+            delivery_position: AtomicF64::new(0.0),
+            delivery_clock: ClockSnapshot::new(),
+            loop_iteration: AtomicU64::new(0),
+            launch_frame: AtomicU64::new(u64::MAX),
             playhead: AtomicU64::new(0),
             total_frames: AtomicU64::new(0),
             cue_point: AtomicU64::new(0),
-            seek_request: AtomicU64::new(NO_SEEK),
+            anchor_commands: crossbeam_queue::ArrayQueue::new(8),
+            anchor_counter: AtomicU64::new(0),
             stream_active: AtomicBool::new(false),
             trim: AtomicF32::new(1.0),
             fader: AtomicF32::new(1.0),
@@ -152,7 +250,9 @@ impl DeckShared {
             Some((start, end)) => ((start as u64) << 32) | (end as u64 & 0xFFFF_FFFF),
             None => u64::MAX,
         };
-        self.loop_region.store(packed, Ordering::Relaxed);
+        if self.loop_region.swap(packed, Ordering::AcqRel) != packed {
+            self.publish_anchor(None);
+        }
     }
 
     pub fn loop_region(&self) -> Option<(usize, usize)> {
@@ -172,7 +272,7 @@ impl DeckShared {
     }
 
     pub fn transport(&self) -> Transport {
-        match self.transport.load(Ordering::Relaxed) {
+        match self.transport.load(Ordering::Acquire) & 3 {
             1 => Transport::Playing,
             2 => Transport::Paused,
             _ => Transport::Stopped,
@@ -180,16 +280,80 @@ impl DeckShared {
     }
 
     pub fn set_transport(&self, t: Transport) {
-        self.transport.store(t as u8, Ordering::Relaxed);
+        let _ = self
+            .transport
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |old| {
+                ((old & 3) != t as u64).then_some(((old >> 2) + 1) << 2 | t as u64)
+            });
+    }
+
+    pub fn transport_revision(&self) -> u64 {
+        self.transport.load(Ordering::Acquire) >> 2
     }
 
     pub fn request_seek(&self, frame: usize) {
-        self.seek_request.store(frame as u64, Ordering::Relaxed);
+        self.request_anchor(frame as f64);
     }
 
-    pub fn take_seek(&self) -> Option<usize> {
-        let v = self.seek_request.swap(NO_SEEK, Ordering::Relaxed);
-        (v != NO_SEEK).then_some(v as usize)
+    pub fn request_anchor(&self, frame: f64) {
+        if frame.is_finite() && frame >= 0.0 {
+            self.publish_anchor(Some(frame));
+        }
+    }
+
+    fn publish_anchor(&self, frame: Option<f64>) {
+        let revision = self.anchor_counter.fetch_add(1, Ordering::Relaxed) + 1;
+        let _ = self.anchor_commands.force_push(AnchorCommand {
+            revision,
+            frame,
+            region: self.loop_region(),
+        });
+        self.anchor_revision.fetch_max(revision, Ordering::Release);
+        self.stream_active.store(false, Ordering::Release);
+    }
+
+    /// Worker only. Coalesce a bounded batch; a delayed older writer cannot
+    /// supersede a newer revision. Keep the newest seek across loop edits.
+    pub fn take_anchor(&self, after_revision: u64) -> Option<AnchorCommand> {
+        let mut newest: Option<AnchorCommand> = None;
+        let mut seek: Option<(u64, f64)> = None;
+        for _ in 0..8 {
+            let Some(command) = self.anchor_commands.pop() else {
+                break;
+            };
+            if command.revision <= after_revision {
+                continue;
+            }
+            if let Some(frame) = command.frame
+                && seek.is_none_or(|(revision, _)| command.revision > revision)
+            {
+                seek = Some((command.revision, frame));
+            }
+            if newest.is_none_or(|old| command.revision > old.revision) {
+                newest = Some(command);
+            }
+        }
+        newest.map(|mut command| {
+            command.frame = seek.map(|(_, frame)| frame);
+            command
+        })
+    }
+
+    #[cfg(test)]
+    pub fn take_seek(&self) -> Option<f64> {
+        self.take_anchor(0).and_then(|command| command.frame)
+    }
+
+    /// An explicit seek outside the loop disables that observed loop as part
+    /// of the same transaction, without superseding concurrent UI loop edits.
+    pub fn clear_loop_for_seek(&self, region: (usize, usize)) {
+        let packed = ((region.0 as u64) << 32) | region.1 as u64;
+        let _ = self.loop_region.compare_exchange(
+            packed,
+            u64::MAX,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
     }
 
     pub fn playhead_frames(&self) -> usize {
@@ -218,8 +382,8 @@ pub enum ScrubPhase {
 /// Shared scrub state machine: the UI publishes the pointer-implied source
 /// position while the zoomed waveform is dragged; the audio callback chases
 /// it with a raw varispeed reader (bypassing the engine), then owns the
-/// post-release momentum glide. The render worker publishes the voice position
-/// while a phase is engaged and stops rendering while `Active`.
+/// post-release momentum glide. The callback publishes the voice position;
+/// the render worker stops rendering while `Active`.
 pub struct ScrubState {
     /// `ScrubPhase` as u8 (0/1/2).
     phase: AtomicU8,
@@ -344,6 +508,10 @@ impl ScrubState {
 
 /// Mixer state shared between the UI and the audio callback.
 pub struct MixerShared {
+    /// Callback-owned effective master; UI requests changes separately.
+    pub effective_master: AtomicU8,
+    pub master_request: AtomicU64,
+    pub output_frame: AtomicU64,
     /// Crossfader position 0..1: 0 = full deck A, 1 = full deck B.
     pub crossfader: AtomicF32,
     /// Master volume, linear.
@@ -360,6 +528,9 @@ pub struct MixerShared {
 impl MixerShared {
     pub fn new() -> Self {
         Self {
+            effective_master: AtomicU8::new(0),
+            master_request: AtomicU64::new(0),
+            output_frame: AtomicU64::new(0),
             crossfader: AtomicF32::new(0.5),
             master: AtomicF32::new(1.0),
             master_meter: AtomicF32::new(0.0),
@@ -382,5 +553,88 @@ impl StopFlag {
 
     pub fn is_set(&self) -> bool {
         self.0.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delivery_snapshots_never_mix_adjacent_callback_boundaries() {
+        let snapshot = std::sync::Arc::new(ClockSnapshot::new());
+        let writer = snapshot.clone();
+        let worker = std::thread::spawn(move || {
+            for frame in 1..10_000 {
+                writer.publish(DeliveryClock {
+                    output_frame: frame,
+                    position: frame as f64 * 0.5,
+                    iteration: frame / 100,
+                    track: 7,
+                    anchor: 11,
+                });
+            }
+        });
+        while !worker.is_finished() {
+            if let Some(clock) = snapshot.read() {
+                assert_eq!(clock.position, clock.output_frame as f64 * 0.5);
+                assert_eq!(clock.iteration, clock.output_frame / 100);
+                assert_eq!((clock.track, clock.anchor), (7, 11));
+            }
+        }
+        worker.join().unwrap();
+        assert_eq!(snapshot.read().unwrap().output_frame, 9999);
+    }
+
+    #[test]
+    fn anchor_batches_keep_the_newest_seek_and_reject_delayed_commands() {
+        let shared = DeckShared::new();
+        shared.request_anchor(123.75);
+        shared.set_loop(Some((0, 1000)));
+        let command = shared.take_anchor(0).unwrap();
+        assert_eq!(command.frame, Some(123.75));
+        assert_eq!(command.region, Some((0, 1000)));
+        assert_eq!(
+            command.revision,
+            shared.anchor_revision.load(Ordering::Acquire)
+        );
+        shared
+            .anchor_commands
+            .push(AnchorCommand {
+                revision: 1,
+                frame: Some(9.0),
+                region: None,
+            })
+            .ok()
+            .unwrap();
+        shared.set_loop(Some((0, 2000)));
+        let next = shared.take_anchor(command.revision).unwrap();
+        assert_eq!(
+            next.frame, None,
+            "delayed seek must not be replayed during a newer loop edit"
+        );
+        assert_eq!(next.region, Some((0, 2000)));
+        for frame in 0..100 {
+            shared.request_seek(frame);
+        }
+        let latest = shared.take_anchor(next.revision).unwrap();
+        assert_eq!(latest.frame, Some(99.0));
+        assert_eq!(
+            latest.revision,
+            shared.anchor_revision.load(Ordering::Acquire)
+        );
+    }
+
+    #[test]
+    fn transport_intent_and_generation_are_published_together() {
+        let shared = DeckShared::new();
+        shared.set_transport(Transport::Playing);
+        let playing = shared.transport_revision();
+        shared.set_transport(Transport::Playing);
+        assert_eq!(shared.transport_revision(), playing);
+        shared.set_transport(Transport::Paused);
+        shared.set_transport(Transport::Playing);
+        assert_eq!(shared.transport_revision(), playing + 2);
+        assert_eq!(shared.transport(), Transport::Playing);
     }
 }

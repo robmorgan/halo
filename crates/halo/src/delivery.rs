@@ -9,11 +9,21 @@ use crossbeam_queue::ArrayQueue;
 use timestretch::{MomentaryLoudness, TransitionEnvelope};
 
 use crate::dsp::{ChannelStrip, FilterMode, Limiter, StripParams};
-use crate::output_queue::Consumer;
+use crate::output_queue::{Consumer, Cursor};
 use crate::scrub::ScrubVoice;
-use crate::state::{DeckShared, MixerShared, ScrubPhase, Transport};
+use crate::state::{DeckShared, DeliveryClock, MixerShared, ScrubPhase, Transport};
+use crate::sync::{BeatMap, Lock, PhaseLock, SyncState, correction, crossing, phase_error};
 
 const BLOCK_SAMPLES: usize = 4096;
+
+fn requested_rate(shared: &DeckShared, rate: f64) -> f32 {
+    let min = if shared.keylock.load(Ordering::Relaxed) {
+        1.0 / 32.0
+    } else {
+        0.25
+    };
+    rate.clamp(min, 4.0) as f32
+}
 
 pub struct Playback {
     pub consumer: Consumer,
@@ -24,6 +34,8 @@ pub struct Playback {
 pub struct DeliveryHandoff {
     pending: ArrayQueue<Playback>,
     retired: ArrayQueue<Playback>,
+    grids: ArrayQueue<BeatMap>,
+    retired_grids: ArrayQueue<BeatMap>,
 }
 
 impl DeliveryHandoff {
@@ -31,6 +43,8 @@ impl DeliveryHandoff {
         Self {
             pending: ArrayQueue::new(1),
             retired: ArrayQueue::new(2),
+            grids: ArrayQueue::new(1),
+            retired_grids: ArrayQueue::new(2),
         }
     }
 
@@ -39,7 +53,12 @@ impl DeliveryHandoff {
         drop(self.pending.force_push(playback));
     }
 
+    pub fn publish_grid(&self, map: BeatMap) {
+        drop(self.grids.force_push(map));
+    }
+
     pub fn reclaim(&self) {
+        while self.retired_grids.pop().is_some() {}
         while self.retired.pop().is_some() {}
     }
 }
@@ -50,6 +69,14 @@ pub struct DeckAudio {
 }
 
 struct DeckVoice {
+    grid: Option<BeatMap>,
+    retiring_grid: Option<BeatMap>,
+    grid_revision: u64,
+    lock: Lock,
+    delivery_open: bool,
+    advances: Box<[f64; BLOCK_SAMPLES / 2]>,
+    prefix_start: Cursor,
+    frame_clock: u64,
     input: DeckAudio,
     playback: Option<Playback>,
     retiring: Option<Playback>,
@@ -74,6 +101,14 @@ impl DeckVoice {
     fn new(input: DeckAudio, sample_rate: u32) -> Self {
         Self {
             input,
+            grid: None,
+            retiring_grid: None,
+            grid_revision: 0,
+            lock: Lock::default(),
+            delivery_open: true,
+            advances: Box::new([0.0; BLOCK_SAMPLES / 2]),
+            prefix_start: Cursor::default(),
+            frame_clock: 0,
             playback: None,
             retiring: None,
             strip: ChannelStrip::new(sample_rate),
@@ -95,6 +130,15 @@ impl DeckVoice {
     }
 
     fn adopt(&mut self) {
+        if let Some(old) = self.retiring_grid.take() {
+            self.retiring_grid = self.input.handoff.retired_grids.push(old).err();
+        }
+        if self.retiring_grid.is_none()
+            && let Some(next) = self.input.handoff.grids.pop()
+        {
+            self.retiring_grid = self.grid.replace(next);
+            self.grid_revision += 1;
+        }
         // Backpressure retains ownership locally; it must never destroy the
         // previous source/queue on this thread, even if the UI stops polling.
         if let Some(old) = self.retiring.take() {
@@ -104,6 +148,7 @@ impl DeckVoice {
             && let Some(next) = self.input.handoff.pending.pop()
         {
             self.retiring = self.playback.replace(next);
+            self.lock = Lock::default();
             self.strip.reset();
             self.scrub_strip.reset();
             self.voice.seed(0.0);
@@ -117,16 +162,386 @@ impl DeckVoice {
         if let Some(playback) = &mut self.playback
             && playback.consumer.sync_epoch()
         {
+            self.lock.launched = false;
+            self.lock.phase = None;
+            self.publish_cursor();
             self.strip.reset();
             self.transition.begin(self.last_frame);
             if let Some(lufs) = &mut self.lufs {
                 lufs.reset();
             }
         }
+        if let Some(playback) = &mut self.playback
+            && playback.consumer.complete()
+        {
+            self.publish_cursor();
+        }
+    }
+
+    fn render_following(
+        &mut self,
+        out: &mut [f32],
+        fader: f32,
+        master: &DeckVoice,
+        master_revision: u64,
+        clock: u64,
+    ) {
+        // The clone cannot be the final owner: input retains the same Arc.
+        let shared = self.input.shared.clone();
+        let enabled = shared.sync_enabled.load(Ordering::Acquire);
+        let version = [
+            shared.track_generation.load(Ordering::Acquire),
+            shared.transport_revision(),
+            shared.anchor_revision.load(Ordering::Acquire),
+            self.grid_revision,
+            master_revision,
+            master.grid_revision,
+            master.input.shared.track_generation.load(Ordering::Acquire),
+            master.input.shared.anchor_revision.load(Ordering::Acquire),
+            master.playback.as_ref().map_or(0, |p| p.consumer.epoch().0),
+        ];
+        let newly_enabled = enabled && !self.lock.enabled;
+        let changed = version != self.lock.version;
+        let mut force = newly_enabled && self.was_live;
+        if changed {
+            // Grid/master changes can invalidate a playing lock. A new anchor
+            // or transport already closes delivery and is prepared by the worker.
+            force |= self.was_live && version[..3] == self.lock.version[..3];
+            if version[1] != self.lock.version[1] || version[0] != self.lock.version[0] {
+                self.lock.reprime = true;
+                self.lock.fading_out = 0;
+                self.lock.fading_in = 0;
+            }
+            self.lock.launched = false;
+            self.lock.phase = None;
+            self.lock.drift_beats = 0.0;
+            self.lock.version = version;
+        }
+        self.lock.enabled = enabled;
+        if !enabled {
+            shared
+                .matched_tempo
+                .store(shared.manual_tempo.load() as f64);
+            self.delivery_open = true;
+            self.lock.launched = false;
+            self.lock.fading_out = 0;
+            self.lock.fading_in = 0;
+            shared.tempo_rate.store(requested_rate(
+                &shared,
+                shared.manual_tempo.load() as f64 * shared.bend.load() as f64,
+            ));
+            self.status(SyncState::Off);
+            self.render_into(out, fader);
+            return;
+        }
+        let cursor = self
+            .playback
+            .as_ref()
+            .map_or(Cursor::default(), |p| p.consumer.cursor);
+        let matched_rate = self
+            .map()
+            .zip(master.map())
+            .and_then(|(grid, master_grid)| {
+                let rate =
+                    grid.matched_rate(master_grid, master.input.shared.matched_tempo.load())?;
+                let min = if shared.keylock.load(Ordering::Relaxed) {
+                    1.0 / 32.0
+                } else {
+                    0.25
+                };
+                (rate >= min && rate <= 4.0).then_some(rate)
+            });
+        // Tempo matching is independent of phase availability: pre-roll or an
+        // incompatible loop can prevent alignment without changing the BPM.
+        shared
+            .matched_tempo
+            .store(matched_rate.unwrap_or(shared.manual_tempo.load() as f64));
+        let mapping = self.map().and_then(|grid| {
+            let master_grid = master.map()?;
+            if !grid.supports_loop(cursor.region)
+                || !master_grid.supports_loop(master.prefix_start.region)
+            {
+                return None;
+            }
+            let (beat, length, master_beat, master_length) = if self.lock.launched
+                && let Some(lock) = &self.lock.phase
+            {
+                let (master_phase, phase) = lock.phases(master.prefix_start, cursor);
+                (
+                    phase,
+                    grid.beat_frames(self.sample_rate),
+                    master_phase,
+                    master_grid.beat_frames(self.sample_rate),
+                )
+            } else {
+                let (beat, length) = grid.at(cursor.position)?;
+                let (master_beat, master_length) = master_grid.at(master.prefix_start.position)?;
+                (beat, length, master_beat, master_length)
+            };
+            Some((
+                beat.rem_euclid(1.0),
+                length,
+                master_beat.rem_euclid(1.0),
+                master_length,
+                matched_rate?,
+            ))
+        });
+        let Some((phase, length, master_phase, master_length, rate)) = mapping else {
+            self.delivery_open = true;
+            self.lock.launched = false;
+            self.lock.fading_out = 0;
+            self.lock.fading_in = 0;
+            shared.tempo_rate.store(requested_rate(
+                &shared,
+                shared.matched_tempo.load() * shared.bend.load() as f64,
+            ));
+            self.status(SyncState::Unavailable);
+            self.render_into(out, fader);
+            return;
+        };
+        let nudge = (shared.bend.load() - 1.0).abs() > f32::EPSILON
+            || master.input.shared.scrub.phase() != ScrubPhase::Idle
+            || (master.input.shared.bend.load() - 1.0).abs() > f32::EPSILON;
+        let error = phase_error(master_phase, phase);
+        let was_nudging = self.lock.nudging;
+        self.lock.nudging = nudge;
+        let correction = if self.lock.launched && !nudge && self.lock.fading_out == 0 {
+            correction(error)
+        } else {
+            0.0
+        };
+        shared.tempo_rate.store(requested_rate(
+            &shared,
+            rate * (1.0 + correction) * shared.bend.load() as f64,
+        ));
+        if !self.playing() || !master.playing() || shared.scrub.phase() != ScrubPhase::Idle {
+            self.lock.launched = false;
+            self.lock.fading_out = 0;
+            self.lock.fading_in = 0;
+            self.lock.drift_beats = 0.0;
+            self.delivery_open = !master.playing();
+            self.status(SyncState::Preparing);
+            self.render_into(out, fader);
+            return;
+        }
+        if newly_enabled && !self.was_live {
+            self.lock.reprime = true;
+        }
+        if (self.lock.launched || was_nudging) && !nudge {
+            force |= error.abs() > 0.125;
+            if error.abs() <= 1.0 / 64.0 {
+                self.lock.drift_beats = 0.0;
+            } else if !shared.controls_pending.load(Ordering::Acquire)
+                && (shared.delivered_tempo.load() - shared.tempo_rate.load() as f64).abs()
+                    < rate * 0.001
+            {
+                self.lock.drift_beats += master.advances[..out.len() / 2].iter().sum::<f64>()
+                    * master.prefix_start.conversion
+                    / master_length;
+                force |= self.lock.drift_beats >= 2.0;
+            }
+        }
+        if force && !nudge && self.lock.fading_out == 0 {
+            shared.tempo_rate.store(requested_rate(&shared, rate));
+            self.lock.fading_out = (self.sample_rate as usize).div_ceil(200);
+            self.lock.fading_in = 0;
+            self.lock.reprime = false;
+        }
+        if self.lock.fading_out > 0 {
+            let count = self.lock.fading_out.min(out.len() / 2);
+            self.delivery_open = true;
+            self.status(SyncState::Preparing);
+            self.render_into(&mut out[..count * 2], fader);
+            if self.lock.fading_out == 0 {
+                let mut master_cursor = master.prefix_start;
+                for &advance in &master.advances[..count] {
+                    master_cursor.advance(advance);
+                }
+                let target = master
+                    .map()
+                    .and_then(|grid| grid.at(master_cursor.position))
+                    .and_then(|(beat, _)| {
+                        self.map()?.aligned_target(
+                            self.playback.as_ref()?.consumer.cursor,
+                            beat.rem_euclid(1.0),
+                        )
+                    });
+                if let Some(target) = target {
+                    shared.request_anchor(target);
+                }
+                self.lock.launched = false;
+                self.lock.drift_beats = 0.0;
+                self.delivery_open = false;
+                self.render_into(&mut out[count * 2..], fader);
+            }
+            return;
+        }
+        if self.lock.reprime
+            && self.ready()
+            && self
+                .playback
+                .as_ref()
+                .and_then(|p| p.consumer.next_advance())
+                .is_some_and(|advance| (advance - rate).abs() < rate * 1e-6)
+        {
+            self.lock.reprime = false;
+        }
+        if self.lock.reprime {
+            // A Play edge prepares exactly the parked coordinate with the
+            // matched tempo. Do not overwrite an outstanding external seek.
+            if self
+                .playback
+                .as_ref()
+                .is_some_and(|p| p.consumer.anchor_revision == version[2])
+            {
+                shared.request_anchor(cursor.position);
+                self.lock.reprime = false;
+            }
+        }
+        if !self.ready() || self.lock.reprime {
+            self.delivery_open = false;
+            self.status(SyncState::Preparing);
+            self.render_into(out, fader);
+            return;
+        }
+        if self.lock.launched {
+            self.delivery_open = true;
+            self.status(if nudge {
+                SyncState::Nudging
+            } else {
+                SyncState::Locked
+            });
+            self.render_into(out, fader);
+            return;
+        }
+        let distance = (phase - master_phase).rem_euclid(1.0);
+        shared.sync_remaining.store(distance * length);
+        self.status(SyncState::Waiting);
+        let launch = if master.ready()
+            && master.input.shared.scrub.phase() == ScrubPhase::Idle
+            && master.advances[..out.len() / 2]
+                .iter()
+                .any(|&advance| advance > 0.0)
+        {
+            master.map().and_then(|grid| {
+                crossing(
+                    grid,
+                    master.prefix_start,
+                    &master.advances[..out.len() / 2],
+                    phase,
+                )
+            })
+        } else {
+            None
+        };
+        if launch.is_none() {
+            let mut end = master.prefix_start;
+            for &advance in &master.advances[..out.len() / 2] {
+                end.advance(advance);
+            }
+            if let Some((beat, _)) = master.map().and_then(|map| map.at(end.position)) {
+                shared
+                    .sync_remaining
+                    .store((phase - beat.rem_euclid(1.0)).rem_euclid(1.0) * length);
+            }
+        }
+        self.delivery_open = false;
+        let offset = launch.unwrap_or(out.len() / 2);
+        self.render_into(&mut out[..offset * 2], fader);
+        if let Some(offset) = launch {
+            // Recheck cancellation after scanning the bounded prefix. The next
+            // render_segment also checks readiness and the anchor generation.
+            if shared.transport_revision() != version[1]
+                || shared.anchor_revision.load(Ordering::Acquire) != version[2]
+            {
+                return;
+            }
+            self.lock.launched = true;
+            let mut master_at_launch = master.prefix_start;
+            for &advance in &master.advances[..offset] {
+                master_at_launch.advance(advance);
+            }
+            self.lock.phase = self.map().zip(master.map()).map(|(grid, master_grid)| {
+                PhaseLock::new(
+                    master_at_launch,
+                    cursor,
+                    master_grid.beat_frames(self.sample_rate),
+                    grid.beat_frames(self.sample_rate),
+                )
+            });
+            self.lock.fading_in = (self.sample_rate as usize).div_ceil(200);
+            self.delivery_open = true;
+            shared
+                .launch_frame
+                .store(clock + offset as u64, Ordering::Relaxed);
+            self.status(if nudge {
+                SyncState::Nudging
+            } else {
+                SyncState::Locked
+            });
+            self.render_into(&mut out[offset * 2..], fader);
+        }
+    }
+
+    fn publish_cursor(&self) {
+        if let Some(playback) = &self.playback
+            && playback.generation == self.input.shared.track_generation.load(Ordering::Acquire)
+            && playback.consumer.anchor_revision
+                == self.input.shared.anchor_revision.load(Ordering::Acquire)
+        {
+            let cursor = playback.consumer.cursor;
+            self.input.shared.delivery_position.store(cursor.position);
+            self.input
+                .shared
+                .playhead
+                .store(cursor.position.max(0.0) as u64, Ordering::Relaxed);
+            self.input
+                .shared
+                .loop_iteration
+                .store(cursor.iterations, Ordering::Relaxed);
+        }
+    }
+
+    fn map(&self) -> Option<&BeatMap> {
+        self.grid
+            .as_ref()
+            .filter(|grid| grid.track == self.input.shared.track_generation.load(Ordering::Acquire))
+    }
+
+    fn ready(&self) -> bool {
+        let shared = &self.input.shared;
+        shared.stream_active.load(Ordering::Acquire)
+            && shared.prepared_revision.load(Ordering::Acquire) == shared.transport_revision()
+            && self.playback.as_ref().is_some_and(|p| {
+                p.generation == shared.track_generation.load(Ordering::Acquire)
+                    && p.consumer.anchor_revision == shared.anchor_revision.load(Ordering::Acquire)
+            })
+    }
+
+    fn playing(&self) -> bool {
+        self.input.shared.transport() == Transport::Playing
+            && !self.input.shared.tempo_stopped.load(Ordering::Relaxed)
+            && self.playback.as_ref().is_some_and(|p| {
+                p.generation == self.input.shared.track_generation.load(Ordering::Acquire)
+            })
+    }
+
+    fn status(&self, state: SyncState) {
+        self.input
+            .shared
+            .sync_state
+            .store(state as u8, Ordering::Relaxed);
+        if state != SyncState::Waiting {
+            self.input.shared.sync_remaining.store(0.0);
+        }
     }
 
     fn render_into(&mut self, out: &mut [f32], fader: f32) {
-        self.adopt();
+        self.advances.fill(0.0);
+        self.prefix_start = self
+            .playback
+            .as_ref()
+            .map_or(Cursor::default(), |p| p.consumer.cursor);
         let shared = &self.input.shared;
         let Some(playback) = &self.playback else {
             return;
@@ -154,7 +569,8 @@ impl DeckVoice {
             if phase == ScrubPhase::Settling && self.voice.settle_remaining_frames() == 0 {
                 let (sequence, landing) = self.input.shared.scrub.landing();
                 if self.input.shared.scrub_ready.load(Ordering::Acquire) == sequence {
-                    let rate = if self.input.shared.transport() == Transport::Playing
+                    let rate = if self.delivery_open
+                        && self.input.shared.transport() == Transport::Playing
                         && !self.input.shared.tempo_stopped.load(Ordering::Relaxed)
                     {
                         self.input.shared.achieved_tempo.load()
@@ -177,17 +593,19 @@ impl DeckVoice {
             } else {
                 out.len() - offset
             };
-            self.render_segment(&mut out[offset..offset + count], fader, phase);
+            self.render_segment(&mut out[offset..offset + count], fader, phase, offset / 2);
             offset += count;
         }
     }
 
-    fn render_segment(&mut self, out: &mut [f32], fader: f32, phase: ScrubPhase) {
+    fn render_segment(&mut self, out: &mut [f32], fader: f32, phase: ScrubPhase, offset: usize) {
+        let ready = self.ready();
         let Some(playback) = &mut self.playback else {
             return;
         };
         let shared = &self.input.shared;
-        let live = shared.stream_active.load(Ordering::Acquire)
+        let live = self.delivery_open
+            && ready
             && shared.transport() == Transport::Playing
             && !shared.tempo_stopped.load(Ordering::Relaxed);
         if live != self.was_live {
@@ -199,7 +617,11 @@ impl DeckVoice {
             && (phase == ScrubPhase::Idle || self.scrub_mix < 1.0)
             && phase != ScrubPhase::Settling
         {
-            let frames = playback.consumer.read(buf);
+            let tags = &mut self.advances[offset..offset + out.len() / 2];
+            let frames = playback.consumer.read_timed(buf, tags);
+            if let Some(&last) = tags.get(frames.wrapping_sub(1)) {
+                shared.delivered_tempo.store(last);
+            }
             playback.consumer.acknowledge_frames(frames);
         } else {
             buf.fill(0.0);
@@ -250,6 +672,23 @@ impl DeckVoice {
             }
         }
         self.transition.apply(buf, 2);
+        let fade_frames = (self.sample_rate as usize).div_ceil(200);
+        for frame in buf.chunks_exact_mut(2) {
+            let envelope = if self.lock.fading_out > 0 {
+                self.lock.fading_out -= 1;
+                self.lock.fading_out as f32 / fade_frames as f32
+            } else if self.lock.fading_in > 0 {
+                self.lock.fading_in -= 1;
+                1.0 - self.lock.fading_in as f32 / fade_frames as f32
+            } else if !self.delivery_open && phase == ScrubPhase::Idle && self.scrub_mix == 0.0 {
+                0.0
+            } else {
+                1.0
+            };
+            for sample in frame {
+                *sample *= envelope;
+            }
+        }
         if let Some(last) = buf.chunks_exact(2).last() {
             self.last_frame.copy_from_slice(last);
         }
@@ -277,6 +716,28 @@ impl DeckVoice {
         } else {
             self.meter + (peak - self.meter) * release
         };
+        if scrubbing {
+            shared.playhead.store(
+                shared.scrub.voice_frame().max(0.0) as u64,
+                Ordering::Relaxed,
+            );
+        } else {
+            self.publish_cursor();
+        }
+        self.frame_clock += (out.len() / 2) as u64;
+        if let Some(playback) = &self.playback {
+            shared.delivery_clock.publish(DeliveryClock {
+                output_frame: self.frame_clock,
+                position: if scrubbing {
+                    shared.scrub.voice_frame().max(0.0)
+                } else {
+                    playback.consumer.cursor.position
+                },
+                iteration: playback.consumer.cursor.iterations,
+                track: playback.generation,
+                anchor: playback.consumer.anchor_revision,
+            });
+        }
         shared.meter.store(self.meter);
         shared.meter_lufs.store(self.lufs.as_mut().map_or(
             MomentaryLoudness::SILENCE_LUFS,
@@ -292,6 +753,10 @@ pub struct MixerRenderer {
     limiter: Limiter,
     master_meter: f32,
     sample_rate: u32,
+    master: usize,
+    master_request: u64,
+    master_revision: u64,
+    output_frame: u64,
 }
 
 impl MixerRenderer {
@@ -302,6 +767,10 @@ impl MixerRenderer {
             limiter: Limiter::new(sample_rate),
             master_meter: 0.0,
             sample_rate,
+            master: 0,
+            master_request: 0,
+            master_revision: 0,
+            output_frame: 0,
         }
     }
 
@@ -317,9 +786,63 @@ impl MixerRenderer {
         let whole = data.len() / 2 * 2;
         let mut peak = 0.0_f32;
         for block in data[..whole].chunks_mut(BLOCK_SAMPLES) {
-            for (deck, fader) in self.decks.iter_mut().zip(faders) {
-                deck.render_into(block, fader);
+            for deck in &mut self.decks {
+                deck.frame_clock = self.output_frame;
+                deck.adopt();
             }
+            let request = self.mixer.master_request.load(Ordering::Acquire);
+            let previous = self.master;
+            if request != self.master_request {
+                self.master_request = request;
+                self.master = (request & 1) as usize;
+            }
+            if !self.decks[self.master].playing() && self.decks[1 - self.master].playing() {
+                self.master = 1 - self.master;
+            }
+            if previous != self.master {
+                self.master_revision += 1;
+                let shared = &self.decks[self.master].input.shared;
+                if shared.sync_enabled.load(Ordering::Relaxed) {
+                    shared
+                        .manual_tempo
+                        .store(shared.matched_tempo.load() as f32);
+                }
+            }
+            self.mixer
+                .effective_master
+                .store(self.master as u8, Ordering::Release);
+            let (a, rest) = self.decks.split_at_mut(1);
+            let (b, audition) = rest.split_at_mut(1);
+            let (master, follower) = if self.master == 0 {
+                (&mut a[0], &mut b[0])
+            } else {
+                (&mut b[0], &mut a[0])
+            };
+            master.delivery_open = true;
+            master.lock = Lock::default();
+            let shared = &master.input.shared;
+            shared.tempo_rate.store(requested_rate(
+                shared,
+                shared.manual_tempo.load() as f64 * shared.bend.load() as f64,
+            ));
+            shared
+                .matched_tempo
+                .store(shared.manual_tempo.load() as f64);
+            // Remember intent through promotion, but a master is not following.
+            master.status(SyncState::Off);
+            master.render_into(block, faders[self.master]);
+            follower.render_following(
+                block,
+                faders[1 - self.master],
+                master,
+                self.master_revision,
+                self.output_frame,
+            );
+            audition[0].render_into(block, faders[2]);
+            self.output_frame += (block.len() / 2) as u64;
+            self.mixer
+                .output_frame
+                .store(self.output_frame, Ordering::Release);
             let master = self.mixer.master.load();
             for sample in block.iter_mut() {
                 *sample *= master;
@@ -351,6 +874,667 @@ mod tests {
 
     use super::*;
     use crate::output_queue::{self, Producer};
+
+    #[test]
+    fn breakdown_grid_wander_does_not_interrupt_an_established_lock() {
+        for wandering_deck in [0, 1] {
+            for cut_master in [false, true] {
+                let (mut renderer, shared, handoffs, mut producers) = fixture();
+                shared[1].sync_enabled.store(true, Ordering::Release);
+                for (i, handoff) in handoffs[..2].iter().enumerate() {
+                    // Onsets drift by half a beat and disappear during a sparse
+                    // passage. The source transport and nominal BPM stay steady.
+                    handoff.publish_grid(BeatMap::new(
+                        (0..22)
+                            .filter(|&beat| i != wandering_deck || !(14..18).contains(&beat))
+                            .map(|beat| {
+                                let drift = if i == wandering_deck {
+                                    match beat {
+                                        5..=9 => (beat - 4) as f64 * 100.0,
+                                        10..=13 => (14 - beat) as f64 * 100.0,
+                                        _ => 0.0,
+                                    }
+                                } else {
+                                    0.0
+                                };
+                                beat as f64 * 1000.0 + drift
+                            }),
+                        1,
+                        2880.0,
+                    ));
+                    prime_fake(
+                        &mut producers[i],
+                        &shared[i],
+                        2,
+                        i as f64 * 2000.0,
+                        1.0,
+                        4096,
+                    );
+                    assert!(producers[i].push(
+                        &[0.0; 4096],
+                        OutputStamp {
+                            epoch: Epoch(2),
+                            start_frame: 4096,
+                            frames: 2048,
+                        }
+                    ));
+                    assert!(producers[i].push(
+                        &vec![0.1; 48000],
+                        OutputStamp {
+                            epoch: Epoch(2),
+                            start_frame: 6144,
+                            frames: 24000,
+                        }
+                    ));
+                }
+                for block in 0..100 {
+                    if cut_master && block == 8 {
+                        shared[0].eq_low.store(0.0);
+                        shared[0].eq_mid.store(0.0);
+                        shared[0].filter_mode.store(2, Ordering::Relaxed);
+                        shared[0].filter_cutoff.store(2000.0);
+                    }
+                    let allocations =
+                        allocation_counter::measure(|| renderer.render(&mut [0.0; 512]));
+                    assert_eq!(allocations.count_total, 0);
+                    assert_eq!(allocations.count_current, 0);
+                    assert_eq!(
+                        SyncState::load(&shared[1]),
+                        SyncState::Locked,
+                        "false re-lock at block {block}, grid on deck {wandering_deck}, EQ cut {cut_master}"
+                    );
+                    assert_eq!(shared[1].launch_frame.load(Ordering::Relaxed), 0);
+                    assert_eq!(shared[1].take_seek(), None);
+                    assert_eq!(shared[1].tempo_rate.load(), 1.0);
+                    assert_eq!(
+                        shared[1].delivery_position.load(),
+                        2000.0 + (block + 1) as f64 * 256.0
+                    );
+                    assert_eq!(producers[1].receipt().unwrap().end_frame, (block + 1) * 256);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn uneven_detected_intervals_never_change_the_matched_bpm() {
+        // Reduced cached-analysis example: a straight 124 BPM follower against
+        // a 130 BPM master with per-beat onset jitter.
+        let master_beats = [
+            20215.2256,
+            40699.7146,
+            61177.5614,
+            81156.5636,
+            101638.7939,
+            122107.7101,
+            142599.3014,
+            162563.5545,
+            183032.4931,
+            203511.3947,
+            223993.5318,
+            244487.7003,
+            264456.3430,
+            284923.7041,
+            305401.3910,
+            325880.9168,
+        ];
+        let master_bpm = 130.01179245283018;
+        let follower_bpm = 123.99961515621824;
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        shared[0].manual_tempo.store(0.98);
+        shared[1].set_transport(Transport::Paused);
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        handoffs[0].publish_grid(BeatMap::new(master_beats.into_iter(), 1, master_bpm));
+        handoffs[1].publish_grid(BeatMap::new(
+            (0..100).map(|i| 218.8529 + i as f64 * 60.0 * 44100.0 / follower_bpm),
+            1,
+            follower_bpm,
+        ));
+        prime_fake(
+            &mut producers[0],
+            &shared[0],
+            2,
+            master_beats[0],
+            0.98,
+            8192,
+        );
+        prime_fake(&mut producers[1], &shared[1], 2, 21557.6288, 1.0, 8192);
+        renderer.render(&mut [0.0; 128]);
+        let expected_bpm = master_bpm * shared[0].matched_tempo.load();
+        for pair in master_beats.windows(2) {
+            renderer.decks[0]
+                .playback
+                .as_mut()
+                .unwrap()
+                .consumer
+                .cursor
+                .position = (pair[0] + pair[1]) / 2.0;
+            renderer.render(&mut [0.0; 128]);
+            let matched_bpm = follower_bpm * shared[1].matched_tempo.load();
+            assert!(
+                (matched_bpm - expected_bpm).abs() < 1e-10,
+                "matched BPM wandered to {matched_bpm}"
+            );
+            assert!(
+                (follower_bpm * shared[1].tempo_rate.load() as f64 - expected_bpm).abs() < 1e-5
+            );
+            assert_eq!(shared[1].take_seek(), None, "Sync moved a paused follower");
+        }
+        let follower_midpoint = 218.8529 + 1.5 * 60.0 * 44100.0 / follower_bpm;
+        shared[1].set_transport(Transport::Playing);
+        prime_fake(
+            &mut producers[1],
+            &shared[1],
+            3,
+            follower_midpoint,
+            shared[1].matched_tempo.load(),
+            8192,
+        );
+        renderer.decks[1].adopt();
+        let master_start = (master_beats[0] + master_beats[1]) / 2.0;
+        for pair in master_beats.windows(2) {
+            let master_position = (pair[0] + pair[1]) / 2.0;
+            renderer.decks[0]
+                .playback
+                .as_mut()
+                .unwrap()
+                .consumer
+                .cursor
+                .position = master_position;
+            renderer.decks[1]
+                .playback
+                .as_mut()
+                .unwrap()
+                .consumer
+                .cursor
+                .position =
+                follower_midpoint + (master_position - master_start) * master_bpm / follower_bpm;
+            renderer.render(&mut [0.0; 128]);
+            assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
+            assert!((follower_bpm * shared[1].matched_tempo.load() - expected_bpm).abs() < 1e-10);
+            assert!(
+                (follower_bpm * shared[1].tempo_rate.load() as f64 - expected_bpm).abs() < 1e-5
+            );
+            assert_eq!(shared[1].take_seek(), None);
+        }
+        shared[1].set_transport(Transport::Paused);
+        shared[0].set_transport(Transport::Paused);
+        renderer.render(&mut [0.0; 128]);
+        assert!((follower_bpm * shared[1].matched_tempo.load() - expected_bpm).abs() < 1e-10);
+        assert_eq!(shared[1].take_seek(), None);
+        // Manual master tempo changes propagate, while a held nudge does not
+        // redefine the underlying matched BPM or move the parked follower.
+        shared[0].manual_tempo.store(1.05);
+        shared[0].bend.store(1.04);
+        renderer.render(&mut [0.0; 128]);
+        assert!(
+            (follower_bpm * shared[1].matched_tempo.load() - master_bpm * 1.05_f32 as f64).abs()
+                < 1e-10
+        );
+    }
+
+    #[test]
+    fn first_synced_deck_starts_as_master_at_its_existing_manual_tempo() {
+        let (mut renderer, shared, _, mut producers) = fixture();
+        shared[0].set_transport(Transport::Paused);
+        shared[1].set_transport(Transport::Paused);
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        shared[1].manual_tempo.store(1.23);
+        prime_fake(&mut producers[1], &shared[1], 2, 1000.0, 1.23, 8192);
+        renderer.render(&mut [0.0; 128]);
+        assert!((shared[1].matched_tempo.load() - 1.23).abs() < 1e-6);
+        assert_eq!(shared[1].take_seek(), None);
+        shared[1].set_transport(Transport::Playing);
+        shared[1]
+            .prepared_revision
+            .store(shared[1].transport_revision(), Ordering::Release);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(renderer.master, 1);
+        assert!((shared[1].tempo_rate.load() - 1.23).abs() < 1e-6);
+        assert_eq!(producers[1].receipt().unwrap().end_frame, 64);
+    }
+
+    #[test]
+    fn ready_and_aligned_play_starts_immediately_without_repreparation() {
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        for handoff in &handoffs[..2] {
+            grid(handoff, 0.0, 1000.0);
+        }
+        shared[1].set_transport(Transport::Paused);
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 8192);
+        prime_fake(&mut producers[1], &shared[1], 2, 2064.0, 1.0, 8192);
+        renderer.render(&mut [0.0; 128]);
+        shared[1].set_transport(Transport::Playing);
+        shared[1]
+            .prepared_revision
+            .store(shared[1].transport_revision(), Ordering::Release);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(shared[1].launch_frame.load(Ordering::Relaxed), 64);
+        assert_eq!(shared[1].take_seek(), None);
+        assert_eq!(producers[1].receipt().unwrap().end_frame, 64);
+    }
+
+    #[test]
+    fn master_seek_or_scrub_epoch_invalidates_the_established_delivery_reference() {
+        for external_seek in [false, true] {
+            let (mut renderer, shared, handoffs, mut producers) = fixture();
+            for handoff in &handoffs[..2] {
+                grid(handoff, 0.0, 1000.0);
+            }
+            shared[1].sync_enabled.store(true, Ordering::Release);
+            prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 8192);
+            prime_fake(&mut producers[1], &shared[1], 2, 2000.0, 1.0, 8192);
+            renderer.render(&mut [0.0; 128]);
+            assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
+            if external_seek {
+                shared[0].request_seek(1000);
+                assert_eq!(shared[0].take_seek(), Some(1000.0));
+            }
+            // Scrub landings advance the worker's epoch without a UI anchor command.
+            prime_fake(&mut producers[0], &shared[0], 3, 1000.0, 1.0, 8192);
+            renderer.render(&mut [0.0; 512]);
+            assert_eq!(SyncState::load(&shared[1]), SyncState::Preparing);
+            assert!(
+                shared[1].take_seek().is_some(),
+                "master seek must reacquire the grid relationship"
+            );
+            assert!(renderer.decks[1].lock.phase.is_none());
+        }
+    }
+
+    #[test]
+    fn forced_relock_fades_then_prepares_and_reopens_only_at_matching_phase() {
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        for handoff in &handoffs[..2] {
+            grid(handoff, 0.0, 1000.0);
+        }
+        shared[1].set_loop(Some((2000, 4000)));
+        prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 30_000);
+        prime_fake(&mut producers[1], &shared[1], 2, 2300.0, 1.0, 8192);
+        renderer.render(&mut [0.0; 256]);
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        let before = producers[1].receipt().unwrap().end_frame;
+        renderer.render(&mut [0.0; 256]);
+        assert_eq!(
+            shared[1].take_seek(),
+            None,
+            "seek started before fade completed"
+        );
+        renderer.render(&mut [0.0; 256]);
+        assert_eq!(
+            producers[1].receipt().unwrap().end_frame - before,
+            240,
+            "fade must consume exactly 5 ms"
+        );
+        let target = shared[1].take_seek().expect("forced seek after fade");
+        assert!((2000.0..4000.0).contains(&target));
+        let parked = shared[1].delivery_position.load();
+        for _ in 0..9 {
+            renderer.render(&mut [0.0; 256]);
+        }
+        assert_eq!(shared[1].delivery_position.load(), parked);
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Preparing);
+        prime_fake(&mut producers[1], &shared[1], 3, target, 1.0, 8192);
+        for _ in 0..20 {
+            renderer.render(&mut [0.0; 256]);
+            if SyncState::load(&shared[1]) == SyncState::Locked {
+                break;
+            }
+        }
+        let launch = shared[1].launch_frame.load(Ordering::Relaxed);
+        assert_ne!(launch, u64::MAX);
+        assert!(phase_error(launch as f64 / 1000.0, target / 1000.0).abs() <= 0.001 + 1e-9);
+        assert_eq!(shared[1].loop_region(), Some((2000, 4000)));
+    }
+
+    #[test]
+    fn nudges_suspend_correction_and_release_relocks_large_errors() {
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        for handoff in &handoffs[..2] {
+            grid(handoff, 0.0, 1000.0);
+        }
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        shared[1].set_transport(Transport::Paused);
+        prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 30_000);
+        prime_fake(&mut producers[1], &shared[1], 2, 2000.0, 1.0, 8192);
+        renderer.render(&mut [0.0; 256]);
+        shared[1].set_transport(Transport::Playing);
+        renderer.render(&mut [0.0; 256]);
+        let target = shared[1].take_seek().unwrap();
+        prime_fake(&mut producers[1], &shared[1], 3, target, 1.0, 8192);
+        for _ in 0..10 {
+            renderer.render(&mut [0.0; 256]);
+        }
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
+        shared[1].bend.store(1.04);
+        // Model drift accumulated by a held nudge without running a real DSP.
+        renderer.decks[1]
+            .playback
+            .as_mut()
+            .unwrap()
+            .consumer
+            .cursor
+            .position += 200.0;
+        for _ in 0..5 {
+            renderer.render(&mut [0.0; 256]);
+        }
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Nudging);
+        assert_eq!(shared[1].take_seek(), None);
+        assert!((shared[1].tempo_rate.load() - 1.04).abs() < 1e-6);
+        shared[1].bend.store(1.0);
+        renderer.render(&mut [0.0; 512]);
+        assert!((shared[1].tempo_rate.load() - 1.0).abs() < 1e-6);
+        assert!(shared[1].take_seek().is_some());
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Preparing);
+    }
+
+    #[test]
+    fn persistent_small_drift_waits_for_controls_then_forces_after_two_beats() {
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        for handoff in &handoffs[..2] {
+            grid(handoff, 0.0, 1000.0);
+        }
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        shared[1].set_transport(Transport::Paused);
+        prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 30_000);
+        prime_fake(&mut producers[1], &shared[1], 2, 2000.0, 1.0, 16_000);
+        renderer.render(&mut [0.0; 256]);
+        shared[1].set_transport(Transport::Playing);
+        renderer.render(&mut [0.0; 256]);
+        let target = shared[1].take_seek().unwrap();
+        prime_fake(&mut producers[1], &shared[1], 3, target, 1.0, 16_000);
+        for _ in 0..10 {
+            renderer.render(&mut [0.0; 256]);
+        }
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
+        renderer.decks[1]
+            .playback
+            .as_mut()
+            .unwrap()
+            .consumer
+            .cursor
+            .position += 18.0;
+        shared[1].controls_pending.store(true, Ordering::Release);
+        for _ in 0..20 {
+            renderer.render(&mut [0.0; 256]);
+        }
+        assert_eq!(
+            shared[1].take_seek(),
+            None,
+            "pending controls must not start drift timeout"
+        );
+        shared[1].controls_pending.store(false, Ordering::Release);
+        for _ in 0..14 {
+            renderer.render(&mut [0.0; 256]);
+        }
+        assert_eq!(shared[1].take_seek(), None);
+        for _ in 0..4 {
+            renderer.render(&mut [0.0; 256]);
+        }
+        assert!(
+            shared[1].take_seek().is_some(),
+            "persistent error > 1/64 beat must force re-lock"
+        );
+    }
+
+    fn prime_fake(
+        producer: &mut Producer,
+        shared: &DeckShared,
+        epoch: u64,
+        target: f64,
+        rate: f64,
+        frames: usize,
+    ) {
+        producer.publish_timing(
+            Epoch(epoch),
+            Cursor {
+                position: target,
+                region: shared.loop_region(),
+                total: 1_000_000.0,
+                ..Cursor::default()
+            },
+            shared.anchor_revision.load(Ordering::Acquire),
+        );
+        producer.initialize_advance(timestretch::AppliedParameters {
+            requested: timestretch::Parameters::default(),
+            achieved_stretch: 1.0 / rate,
+            achieved_pitch: 1.0,
+            command_id: 0,
+            requested_at: 0,
+            applied_at: 0,
+        });
+        assert!(producer.push(
+            &vec![0.1; frames * 2],
+            OutputStamp {
+                epoch: Epoch(epoch),
+                start_frame: 0,
+                frames
+            }
+        ));
+        shared
+            .prepared_revision
+            .store(shared.transport_revision(), Ordering::Release);
+        shared.stream_active.store(true, Ordering::Release);
+    }
+
+    fn grid(handoff: &DeliveryHandoff, offset: f64, length: f64) {
+        handoff.publish_grid(BeatMap::new(
+            (0..2000).map(|i| offset + i as f64 * length),
+            1,
+            60.0 * 48_000.0 / length,
+        ));
+    }
+
+    #[test]
+    fn scheduled_launches_preserve_fractional_parking_through_worker_and_ui_stalls() {
+        let mut worst_error = 0.0_f64;
+        let mut internal = 0;
+        for rate in [0.5, 1.0, 1.25] {
+            for master_phase in [0.0, 0.19, 0.5, 0.91] {
+                for follower_phase in [0.0, 0.07, 0.5, 0.79, 0.999] {
+                    let (mut renderer, shared, handoffs, mut producers) = fixture();
+                    let parked = 997.0 * (2.0 + follower_phase);
+                    shared[0].manual_tempo.store(rate as f32);
+                    shared[1].set_transport(Transport::Paused);
+                    shared[1].sync_enabled.store(true, Ordering::Release);
+                    for handoff in &handoffs[..2] {
+                        grid(handoff, 0.0, 997.0);
+                    }
+                    prime_fake(
+                        &mut producers[0],
+                        &shared[0],
+                        2,
+                        997.0 * master_phase,
+                        rate,
+                        30_000,
+                    );
+                    prime_fake(&mut producers[1], &shared[1], 2, parked, rate, 1024);
+                    renderer.render(&mut [0.0; 254]);
+                    assert_eq!(
+                        shared[1].delivery_position.load(),
+                        parked,
+                        "arming moved a paused track"
+                    );
+                    assert_eq!(shared[1].take_seek(), None);
+                    shared[1].set_transport(Transport::Playing);
+                    renderer.render(&mut [0.0; 254]);
+                    let target = shared[1].take_seek().expect("Play requests preparation");
+                    assert_eq!(target, parked);
+                    for _ in 0..11 {
+                        renderer.render(&mut [0.0; 254]);
+                    }
+                    assert_eq!(shared[1].delivery_position.load(), parked);
+                    assert_eq!(SyncState::load(&shared[1]), SyncState::Preparing);
+                    assert_eq!(shared[1].launch_frame.load(Ordering::Relaxed), u64::MAX);
+                    prime_fake(&mut producers[1], &shared[1], 3, target, rate, 8192);
+                    for _ in 0..40 {
+                        let allocation =
+                            allocation_counter::measure(|| renderer.render(&mut [0.0; 254]));
+                        assert_eq!(allocation.count_total, 0);
+                        assert_eq!(allocation.count_current, 0);
+                        let launch = shared[1].launch_frame.load(Ordering::Relaxed);
+                        if launch != u64::MAX {
+                            let master_at_launch = master_phase + launch as f64 * rate / 997.0;
+                            let error =
+                                phase_error(master_at_launch, follower_phase).abs() * 997.0 / rate;
+                            worst_error = worst_error.max(error);
+                            assert!(error <= 1.0 + 1e-9, "launch error {error} frames");
+                            internal += usize::from(launch % 127 != 0);
+                            let snapshot = shared[1].delivery_clock.read().unwrap();
+                            assert_eq!(snapshot.output_frame, renderer.output_frame);
+                            assert_eq!(snapshot.position, shared[1].delivery_position.load());
+                            assert_eq!(snapshot.track, 1);
+                            let consumed = producers[1].receipt().unwrap().end_frame;
+                            assert_eq!(consumed, renderer.output_frame - launch);
+                            assert!(
+                                (shared[1].delivery_position.load()
+                                    - parked
+                                    - consumed as f64 * rate)
+                                    .abs()
+                                    < 1e-8
+                            );
+                            break;
+                        }
+                        assert_eq!(
+                            shared[1].delivery_position.load(),
+                            parked,
+                            "waiting moved the playhead"
+                        );
+                        assert_eq!(SyncState::load(&shared[1]), SyncState::Waiting);
+                    }
+                    assert_ne!(shared[1].launch_frame.load(Ordering::Relaxed), u64::MAX);
+                }
+            }
+        }
+        assert!(internal > 40);
+        println!(
+            "60 scheduled phase/rate cases: maximum launch error {worst_error:.9} output frames; {internal} callback-internal starts"
+        );
+    }
+
+    #[test]
+    fn cancel_and_grid_replacement_reject_stale_launch_predictions() {
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        for handoff in &handoffs[..2] {
+            grid(handoff, 0.0, 1000.0);
+        }
+        shared[1].set_transport(Transport::Paused);
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 20_000);
+        prime_fake(&mut producers[1], &shared[1], 2, 2750.0, 1.0, 2048);
+        renderer.render(&mut [0.0; 128]);
+        shared[1].set_transport(Transport::Playing);
+        renderer.render(&mut [0.0; 128]);
+        let stale_transport = shared[1].transport_revision();
+        let target = shared[1].take_seek().unwrap();
+        shared[1].set_transport(Transport::Paused);
+        prime_fake(&mut producers[1], &shared[1], 3, target, 1.0, 8192);
+        shared[1]
+            .prepared_revision
+            .store(stale_transport, Ordering::Release);
+        for _ in 0..20 {
+            renderer.render(&mut [0.0; 128]);
+        }
+        assert_eq!(shared[1].launch_frame.load(Ordering::Relaxed), u64::MAX);
+        assert_eq!(shared[1].delivery_position.load(), 2750.0);
+        shared[1].set_transport(Transport::Playing);
+        renderer.render(&mut [0.0; 128]);
+        let target = shared[1].take_seek().unwrap();
+        prime_fake(&mut producers[1], &shared[1], 4, target, 1.0, 8192);
+        // Replacement changes the parked phase from .75 to .35 before readiness.
+        grid(&handoffs[1], 400.0, 1000.0);
+        for _ in 0..20 {
+            renderer.render(&mut [0.0; 128]);
+            if shared[1].launch_frame.load(Ordering::Relaxed) != u64::MAX {
+                break;
+            }
+        }
+        let launch = shared[1].launch_frame.load(Ordering::Relaxed);
+        assert_ne!(launch, u64::MAX);
+        assert!(phase_error(launch as f64 / 1000.0, 0.35).abs() <= 0.001 + 1e-9);
+    }
+
+    #[test]
+    fn master_handoff_ignores_faders_and_underruns_and_preserves_sync_intent() {
+        let (mut renderer, shared, _, _producers) = fixture();
+        for deck in &shared[..2] {
+            deck.sync_enabled.store(true, Ordering::Release);
+        }
+        shared[0].fader.store(0.0);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(renderer.master, 0);
+        shared[0].stream_active.store(false, Ordering::Release);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(renderer.master, 0, "underrun changed master");
+        shared[0].set_transport(Transport::Paused);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(renderer.master, 1);
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Off);
+        shared[0].set_transport(Transport::Playing);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(renderer.master, 1, "both playing must retain master");
+        renderer.mixer.master_request.store(2, Ordering::Release);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(renderer.master, 0);
+        shared[0].track_generation.fetch_add(1, Ordering::AcqRel);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(renderer.master, 1, "unloaded master did not transfer");
+        assert!(
+            shared[..2]
+                .iter()
+                .all(|s| s.sync_enabled.load(Ordering::Acquire))
+        );
+    }
+
+    #[test]
+    fn unavailable_sync_allows_plain_playback_and_keeps_intent() {
+        let (mut renderer, shared, handoffs, mut producers) = fixture();
+        shared[1].sync_enabled.store(true, Ordering::Release);
+        prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 8192);
+        prime_fake(&mut producers[1], &shared[1], 2, 2000.0, 1.0, 8192);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(SyncState::load(&shared[1]), SyncState::Unavailable);
+        assert_eq!(producers[1].receipt().unwrap().end_frame, 64);
+        grid(&handoffs[0], 0.0, 100.0);
+        grid(&handoffs[1], 0.0, 1000.0);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(
+            SyncState::load(&shared[1]),
+            SyncState::Unavailable,
+            "unsupported tempo"
+        );
+        grid(&handoffs[0], 0.0, 1000.0);
+        shared[1].set_loop(Some((2000, 2250)));
+        prime_fake(&mut producers[1], &shared[1], 3, 2000.0, 1.0, 8192);
+        renderer.render(&mut [0.0; 128]);
+        assert_eq!(
+            SyncState::load(&shared[1]),
+            SyncState::Unavailable,
+            "sub-beat loop cannot align continuously"
+        );
+        assert!(shared[1].sync_enabled.load(Ordering::Acquire));
+        assert_eq!(shared[1].take_seek(), None);
+    }
+
+    #[test]
+    fn grid_retirement_backpressure_never_destroys_callback_storage() {
+        let (mut renderer, _, handoffs, _) = fixture();
+        for offset in 0..10 {
+            grid(&handoffs[0], offset as f64, 1000.0);
+            let allocation = allocation_counter::measure(|| renderer.render(&mut [0.0; 128]));
+            assert_eq!(allocation.count_total, 0);
+            assert_eq!(allocation.count_current, 0);
+        }
+        handoffs[0].reclaim();
+        let allocation = allocation_counter::measure(|| renderer.render(&mut [0.0; 128]));
+        assert_eq!(allocation.count_total, 0);
+        assert_eq!(allocation.count_current, 0);
+        assert_eq!(
+            renderer.decks[0].map().unwrap().at(9.0),
+            Some((0.0, 1000.0))
+        );
+    }
 
     #[test]
     fn rendered_audio_preserves_bass_stereo_and_pitch_intent() {
@@ -398,6 +1582,9 @@ mod tests {
             producer.publish_epoch(session.epoch());
             shared[0].track_generation.store(1, Ordering::Release);
             shared[0].set_transport(Transport::Playing);
+            shared[0]
+                .prepared_revision
+                .store(shared[0].transport_revision(), Ordering::Release);
             shared[0].stream_active.store(true, Ordering::Release);
             handoffs[0].publish(Playback {
                 consumer,
@@ -495,6 +1682,9 @@ mod tests {
             shared[i].track_generation.store(1, Ordering::Release);
             shared[i].stream_active.store(true, Ordering::Release);
             shared[i].set_transport(Transport::Playing);
+            shared[i]
+                .prepared_revision
+                .store(shared[i].transport_revision(), Ordering::Release);
             handoffs[i].publish(Playback {
                 consumer,
                 samples: Arc::new(vec![0.1; 96_000]),

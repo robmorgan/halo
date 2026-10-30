@@ -21,14 +21,15 @@ Each loaded player (Deck A, Deck B, Prepare audition) owns one render worker:
 
 ```
 UI thread (egui, ~30 fps while playing)
-    │ atomic transport / tempo / loop intent
+    │ atomic transport / tempo + bounded seek / loop commands
     ▼
 Render worker × 3 (one per loaded player)
     PreparedSession → StreamSession, source demand, seek/loop/EOF,
-    bounded render pump, consumption receipts → shared source playhead
+    bounded render pump, applied-ratio timing tags, consumption receipts
     │ preallocated output queue              ▲ consumption receipts
     ▼                                       │
 Audio callback (cpal)
+    delivery clock + beat-phase launch coordinator → shared playheads
     A queue + scrub → EQ/filter → trim → fader ┐
     B queue + scrub → EQ/filter → trim → fader ├ crossfader → master → limiter
     Audition queue + scrub → strip → fader ───┘ (bypasses crossfader)
@@ -36,8 +37,15 @@ Audio callback (cpal)
 
 Session preparation, processing, restart and destruction stay off the callback.
 Source frames remain in the device-rate domain: Halo resamples on load, and
-rescales native-rate analysis for waveforms and cues. The session's consumed
-position drives both deck displays and the independent 44 Hz DMX engine.
+rescales native-rate analysis for waveforms and cues. Halo's ratio-derived
+delivery cursor drives both deck displays and the independent 44 Hz DMX engine. Each FIFO frame carries the applied source advance, split at
+`next_applied().applied_at` boundaries; old queued tags survive tempo changes.
+Only delivered frames advance the cursor. Epochs carry their anchor, rate
+conversion and loop bounds; continuous wraps retain iteration counts. These are
+software delivery coordinates, not exact sample origins or speaker timestamps.
+Library receipts remain authoritative for delivered EOF. Coherent per-deck
+snapshots include the common output-frame clock, track/anchor versions, fractional
+position and loop iteration.
 Seek/loop changes invalidate old output with epoch boundaries, including while
 paused. A running loop preserves DSP history. EOF means delivered audio has
 been acknowledged, not merely rendered or collected. Scrub landing preparation
@@ -86,7 +94,7 @@ signal properties.
 
 **Goal:** two independent decks mixed to one output — the audio-path skeleton every later phase builds on.
 
-- `Deck` owns a worker-driven `StreamSession` and an output queue, shared by performance decks and Prepare audition. The worker owns source demand, seeks, loops, EOF and receipt-based playhead publishing.
+- `Deck` owns a worker-driven `StreamSession` and an output queue, shared by performance decks and Prepare audition. The worker owns source demand, seeks, loops, EOF and delivery receipts; the callback publishes the playhead.
 - Mixer stage in the audio callback: per-deck gain (trim) and channel fader, constant-power crossfader, sum to output.
 - Transport per deck: play/pause and CDJ-style cue (set cue while paused, press to return + hold-to-preview, release returns to cue).
 - **Basic CPU meter** — callback processing time ÷ buffer duration, published via atomic. Built now, deliberately early: it's the tool that validates the DSP budget for every phase after this.
@@ -122,9 +130,65 @@ signal properties.
 - Tempo slider per deck with ±8 / ±16 / ±50% and WIDE ranges, mapped to typed `TempoRate` controls. WIDE supports 1/32–4x with keylock or 1/4–4x with linked pitch, plus a zero-speed transport detent. It no longer selects a different processor.
 - Keylock selects `Parameters::keylock` or `Parameters::linked`; switching off below 1/4x visibly raises the fader to that supported minimum.
 - Pitch bend / nudge buttons (temporary rate offset while held).
-- **Sync/Master:** match BPM and align by seeking the nearest beat, then follow delivered beat phase with bounded rate corrections. Controls target the session commit horizon and apply at legal algorithm boundaries; queued output contributes to response latency.
+- **Persistent Sync/Master:** Sync intent survives pause and automatic master promotion.
+  A paused follower matches tempo without moving its exact parked coordinate.
+  The matched rate uses the tracks' analyzed BPMs and the master's base tempo;
+  detected beat intervals guide initial alignment without changing that BPM target.
+  Play prepares audio there, then the callback opens delivery at the first matching
+  individual beat phase, including between-beat positions and crossings inside a
+  callback. A second Play cancels. Already prepared, aligned media starts immediately.
+- **Preparation and feedback:** runtime telemetry distinguishes Preparing, Waiting,
+  Locked, Nudging and Unavailable. The waiting ghost approaches the stationary
+  playhead from the left using actual remaining phase distance; preparation has its
+  own status. Track/transport/anchor/grid/master revisions reject stale preparation.
+  Grid ownership uses bounded handoff and UI retirement, as playback storage does.
+- **Established lock:** capture both delivery cursors at launch and compare their
+  subsequent source advance in nominal beats, including loop iterations. Sparse
+  audio, missing markers and wandering detected onsets cannot manufacture drift
+  or restart a playing follower. EQ, filter and fader changes never enter this
+  clock calculation. This is fixed-BPM sync, not automatic tempo-ramp following.
+- **Re-lock:** explicit engagement during playback or delivery-phase error above
+  1/8 beat fades out over 5 ms, seeks the nearest aligned position on the worker, primes, waits for
+  matching phase, then fades in over 5 ms. Smaller drift uses at most ±1.5% correction;
+  error above 1/64 beat for two delivered beats after controls reach delivery also
+  forces re-lock. Held nudges suspend correction; release reacquires. Manual pitch
+  movement disengages Sync. Master seeks and scrub epochs invalidate the captured
+  relationship, as do track, grid and master changes.
+- **Master:** the callback retains the current playing master unless explicitly
+  changed. Pause, stop, EOF and unload transfer master to the other playing deck;
+  faders and underruns do not. MASTER, BPM, Sync and lighting use that same choice.
+  MASTER and SYNC indicators are exclusive: promotion hides the retained Sync
+  intent until the deck becomes a follower again.
+  The DMX snapshot carries both decks so handoff works through UI stalls.
+- **Recovery and limits:** seek/hot-cue, loop edits and scrub landings establish new
+  epochs and reacquire before delivery. Integer-beat loops preserve continuous
+  phase; incompatible loops, missing grids and unsupported matched tempos report
+  Unavailable while allowing ordinary playback and retaining intent. The first
+  deck started with no playing master starts normally. Reverse and bar/phrase sync
+  are not implemented. No database migration or timestretch API change is needed.
 
 **Milestone:** press Sync and the decks lock in phase; manual beatmatching works with slider + nudge.
+
+Persistent Sync validation (macOS arm64, 2026-10-30): 167 workspace tests pass,
+including on CI's Rust 1.90.0; strict Clippy, nightly formatting and the release
+build pass. The deterministic launch harness covers 60 phase/rate combinations,
+including fractional parked positions and delayed workers, with a maximum error
+of 0.9976 output frames; all 60 launches occur inside callback blocks. Real worker
+tests cover Play, seek/hot-cue requests, loop edits and scrub recovery without UI
+polling. Cached beat timings from a jittered 130 BPM master and straight 124 BPM
+follower reproduce the tempo regression: the matched BPM now stays fixed while
+armed and playing. A breakdown regression reproduces a false re-lock before the
+fix and verifies uninterrupted delivery through wandering/missing markers, silent
+audio and the end of detected beats on either deck, with master EQ/filter cuts.
+It also checks zero callback allocations, unchanged launch identity, and complete
+delivery receipts. Loop/conversion and master seek/scrub epoch tests protect the
+captured phase reference. Callback allocation/retirement tests include waiting
+launches and grid replacement. All nine three-player scheduling cases have zero
+underruns and stay within their callback budgets (maximum observed in the
+qualification run: 0.741 ms). The muted M4 device check at 96 kHz passes all three buffer sizes with
+zero underruns. Subjective listening for launch timing, forced transitions and
+nudge recovery remains a manual release check.
+
 
 ## Phase 5 — Performance features: hot cues + loops
 

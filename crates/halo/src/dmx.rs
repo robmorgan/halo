@@ -10,6 +10,7 @@
 //! its look — and keeps receiving frames — even when the UI goes quiet.
 
 use std::collections::HashSet;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,7 +22,7 @@ use halo_light::fixture_library::FixtureLibrary;
 use halo_light::output::render;
 use halo_light::programmer::{LaneOverride, ProgrammerParams, resolve};
 
-use crate::state::DeckShared;
+use crate::state::{DeckShared, MixerShared};
 
 /// DMX refresh rate (full-universe Art-Net refresh convention).
 pub const DMX_FPS: f64 = 44.0;
@@ -40,16 +41,28 @@ pub struct BeatRef {
 #[derive(Clone)]
 pub struct DmxSnapshot {
     pub rig: Arc<Rig>,
-    pub cues: Option<CueSet>,
     pub overrides: [LaneOverride; LANE_COUNT],
     pub params: ProgrammerParams,
     pub selection: HashSet<u32>,
-    /// The lighting deck's shared state (playhead atomics).
-    pub deck: Arc<DeckShared>,
-    pub beat_ref: BeatRef,
+    pub decks: [DmxDeck; 2],
+    pub mixer: Arc<MixerShared>,
     /// Destinations + universe routing. Publish a *new* Arc to make the
     /// engine rebuild its sockets (it compares pointers, not contents).
     pub net: Arc<NetworkConfig>,
+}
+
+/// Keep both cue maps so automatic master handoff survives a stalled UI.
+#[derive(Clone)]
+pub struct DmxDeck {
+    pub cues: Option<CueSet>,
+    pub deck: Arc<DeckShared>,
+    pub beat_ref: BeatRef,
+}
+
+impl DmxSnapshot {
+    fn master_deck(&self) -> &DmxDeck {
+        &self.decks[usize::from(self.mixer.effective_master.load(Ordering::Acquire)).min(1)]
+    }
 }
 
 pub type DmxShared = Arc<Mutex<Option<DmxSnapshot>>>;
@@ -97,13 +110,22 @@ pub fn spawn_dmx_engine() -> DmxShared {
                 };
                 current_net = Some(Arc::clone(&snap.net));
             }
-            let playhead = snap.deck.playhead_frames() as f64;
-            let lanes = resolve(&snap.overrides, snap.cues.as_ref(), playhead);
-            let beat_t = if snap.beat_ref.frames_per_beat > 0.0 {
-                snap.beat_ref.beat_t
-                    + (playhead - snap.beat_ref.playhead) / snap.beat_ref.frames_per_beat
+            let deck = snap.master_deck();
+            let playhead = deck
+                .deck
+                .delivery_clock
+                .read()
+                .filter(|clock| clock.track == deck.deck.track_generation.load(Ordering::Acquire))
+                .map_or_else(
+                    || deck.deck.playhead_frames() as f64,
+                    |clock| clock.position,
+                );
+            let lanes = resolve(&snap.overrides, deck.cues.as_ref(), playhead);
+            let beat_t = if deck.beat_ref.frames_per_beat > 0.0 {
+                deck.beat_ref.beat_t
+                    + (playhead - deck.beat_ref.playhead) / deck.beat_ref.frames_per_beat
             } else {
-                snap.beat_ref.beat_t
+                deck.beat_ref.beat_t
             };
 
             let frames = render(
@@ -160,16 +182,19 @@ mod tests {
         let library = FixtureLibrary::new();
         *shared.lock().unwrap() = Some(DmxSnapshot {
             rig: Arc::new(default_rig(&library)),
-            cues: None,
             overrides: Default::default(),
             params: ProgrammerParams::default(),
             selection: HashSet::new(),
-            deck: Arc::new(DeckShared::new()),
-            beat_ref: BeatRef {
-                beat_t: 0.0,
-                playhead: 0.0,
-                frames_per_beat: 0.0,
-            },
+            decks: std::array::from_fn(|_| DmxDeck {
+                cues: None,
+                deck: Arc::new(DeckShared::new()),
+                beat_ref: BeatRef {
+                    beat_t: 0.0,
+                    playhead: 0.0,
+                    frames_per_beat: 0.0,
+                },
+            }),
+            mixer: Arc::new(MixerShared::new()),
             net: Arc::new(net),
         });
 

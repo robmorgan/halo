@@ -105,7 +105,7 @@ pub enum ScrubGesture {
     Release,
 }
 
-/// Translucent ghost playhead for the sync-align slide-in: drawn
+/// Translucent ghost for a prepared Sync launch waiting on master phase: drawn
 /// `offset_frames` from the centered playhead, fading with `alpha`.
 pub struct GhostPlayhead {
     pub offset_frames: f64,
@@ -307,9 +307,8 @@ pub fn paint_zoomed(
         }
     }
 
-    // Ghost playhead: the pre-align position gliding into the centered
-    // playhead after a sync-aligned start. Drawn center-relative so it
-    // converges exactly, and under the real playhead so it merges into it.
+    // The callback publishes remaining phase distance while waiting. A
+    // negative offset approaches from the left and meets the parked playhead.
     if let Some(g) = &params.ghost {
         let x = rect.center().x + (g.offset_frames * map.px_per_frame()) as f32;
         if x >= rect.left() && x <= rect.right() {
