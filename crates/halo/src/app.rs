@@ -1972,6 +1972,7 @@ impl HaloApp {
                             .size(13.0)
                             .color(egui::Color32::from_rgb(255, 215, 70)),
                     )
+                    .sense(egui::Sense::click_and_drag())
                     .fill(egui::Color32::from_rgb(58, 50, 26)),
                 );
                 let cue_down = cue_resp.is_pointer_button_down_on();
@@ -3720,10 +3721,12 @@ fn deck_panel(
                     response.play_toggled = true;
                 }
 
-                // CUE — CDJ semantics on press/release edges; amber outline.
+                // Drag sense retains capture past egui's 0.8 s click timeout
+                // and outside the button until the pointer is released.
                 let cue_resp = ui.add_sized(
                     [70.0, 30.0],
                     egui::Button::new(egui::RichText::new("CUE").size(15.0).color(ACCENT))
+                        .sense(egui::Sense::click_and_drag())
                         .stroke(egui::Stroke::new(1.0, ACCENT))
                         .fill(ACCENT_FILL),
                 );
@@ -3745,10 +3748,16 @@ fn deck_panel(
             control_group(ui, "NUDGE", |ui| {
                 // Pitch bend: momentary ±4% while held.
                 let bend_minus = ui
-                    .add_sized([28.0, 30.0], egui::Button::new("−"))
+                    .add_sized(
+                        [28.0, 30.0],
+                        egui::Button::new("−").sense(egui::Sense::click_and_drag()),
+                    )
                     .is_pointer_button_down_on();
                 let bend_plus = ui
-                    .add_sized([28.0, 30.0], egui::Button::new("+"))
+                    .add_sized(
+                        [28.0, 30.0],
+                        egui::Button::new("+").sense(egui::Sense::click_and_drag()),
+                    )
                     .is_pointer_button_down_on();
                 deck_ui.bend = if bend_minus {
                     0.96
@@ -3855,7 +3864,8 @@ fn deck_panel(
                             } else {
                                 egui::Color32::from_rgb(140, 140, 150)
                             }),
-                    );
+                    )
+                    .sense(egui::Sense::click_and_drag());
                     if set {
                         button = button.fill(ACCENT);
                     }
@@ -4611,6 +4621,152 @@ pub fn format_time(frames: usize, sample_rate: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pointer_frame(
+        ctx: &egui::Context,
+        deck: &mut DeckUi,
+        time: f64,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1200.0, 1000.0),
+                )),
+                time: Some(time),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    deck_panel(ui, deck, 0, 48_000, true, None, false);
+                });
+            },
+        )
+    }
+
+    fn button_position(output: &egui::FullOutput, label: &str) -> egui::Pos2 {
+        output
+            .shapes
+            .iter()
+            .rev()
+            .find_map(|shape| {
+                if let egui::Shape::Text(text) = &shape.shape
+                    && text.galley.job.text == label
+                {
+                    Some(text.pos + text.galley.rect.center().to_vec2())
+                } else {
+                    None
+                }
+            })
+            .expect("button label was not rendered")
+    }
+
+    fn pointer_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn paused_deck_ui() -> DeckUi {
+        let mut deck = DeckUi::new();
+        let total = 48_000 * 10;
+        deck.deck.track = Some(crate::deck::Track {
+            name: "cue preview".into(),
+            samples: Arc::new(vec![0.0; total * 2]),
+            num_frames: total,
+        });
+        let shared = &deck.deck.shared;
+        shared.total_frames.store(total as u64, Ordering::Relaxed);
+        shared.playhead.store(12_000, Ordering::Relaxed);
+        shared.set_transport(Transport::Paused);
+        deck
+    }
+
+    #[test]
+    fn mouse_cue_previews_until_release_after_long_hold_and_drag_outside() {
+        let ctx = egui::Context::default();
+        let mut deck = paused_deck_ui();
+        let shared = deck.deck.shared.clone();
+        let output = pointer_frame(&ctx, &mut deck, 0.0, vec![]);
+        let cue = button_position(&output, "CUE");
+        pointer_frame(&ctx, &mut deck, 0.1, vec![egui::Event::PointerMoved(cue)]);
+        pointer_frame(&ctx, &mut deck, 0.2, vec![pointer_button(cue, true)]);
+        assert!(deck.cue_previewing);
+        assert_eq!(shared.transport(), Transport::Playing);
+        assert_eq!(shared.cue_point.load(Ordering::Relaxed), 12_000);
+
+        for time in [0.5, 1.1, 2.0, 5.0] {
+            shared.playhead.store(36_000, Ordering::Relaxed);
+            pointer_frame(&ctx, &mut deck, time, vec![]);
+            assert!(
+                deck.cue_previewing,
+                "preview released at {time}s while mouse was held"
+            );
+            assert_eq!(shared.transport(), Transport::Playing);
+            assert_eq!(shared.take_seek(), None);
+        }
+        let outside = egui::pos2(1190.0, 990.0);
+        pointer_frame(
+            &ctx,
+            &mut deck,
+            6.0,
+            vec![egui::Event::PointerMoved(outside)],
+        );
+        assert!(deck.cue_previewing, "moving outside ended the held preview");
+        assert_eq!(shared.transport(), Transport::Playing);
+        pointer_frame(&ctx, &mut deck, 7.0, vec![pointer_button(outside, false)]);
+        assert!(!deck.cue_previewing);
+        assert_eq!(shared.transport(), Transport::Paused);
+        assert_eq!(shared.take_seek(), Some(12_000.0));
+        pointer_frame(&ctx, &mut deck, 8.0, vec![]);
+        assert_eq!(shared.take_seek(), None, "release was repeated");
+    }
+
+    #[test]
+    fn mouse_nudges_and_gated_hot_cues_stay_active_until_release() {
+        for (label, bend) in [("−", 0.96), ("+", 1.04), ("1", 1.0)] {
+            let ctx = egui::Context::default();
+            let mut deck = paused_deck_ui();
+            deck.gated = true;
+            deck.hot_cues[0] = Some(12_000);
+            let output = pointer_frame(&ctx, &mut deck, 0.0, vec![]);
+            let button = button_position(&output, label);
+            pointer_frame(
+                &ctx,
+                &mut deck,
+                0.1,
+                vec![egui::Event::PointerMoved(button)],
+            );
+            pointer_frame(&ctx, &mut deck, 0.2, vec![pointer_button(button, true)]);
+            let assert_held = |deck: &DeckUi| {
+                assert_eq!(deck.bend, bend, "nudge {label} released while held");
+                if label == "1" {
+                    assert_eq!(deck.gated_held, Some(0));
+                    assert_eq!(deck.deck.shared.transport(), Transport::Playing);
+                }
+            };
+            assert_held(&deck);
+            pointer_frame(&ctx, &mut deck, 2.0, vec![]);
+            assert_held(&deck);
+            let outside = egui::pos2(1190.0, 990.0);
+            pointer_frame(
+                &ctx,
+                &mut deck,
+                3.0,
+                vec![egui::Event::PointerMoved(outside)],
+            );
+            assert_held(&deck);
+            pointer_frame(&ctx, &mut deck, 4.0, vec![pointer_button(outside, false)]);
+            assert_eq!(deck.bend, 1.0);
+            assert_eq!(deck.gated_held, None);
+            assert_eq!(deck.deck.shared.transport(), Transport::Paused);
+        }
+    }
 
     #[test]
     fn cached_analysis_auto_cue_keeps_first_beat_across_device_rates() {
