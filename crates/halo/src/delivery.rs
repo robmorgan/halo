@@ -12,7 +12,9 @@ use crate::dsp::{ChannelStrip, FilterMode, Limiter, StripParams};
 use crate::output_queue::{Consumer, Cursor};
 use crate::scrub::ScrubVoice;
 use crate::state::{DeckShared, DeliveryClock, MixerShared, ScrubPhase, Transport};
-use crate::sync::{BeatMap, Lock, PhaseLock, SyncState, correction, crossing, phase_error};
+use crate::sync::{
+    BeatMap, DRIFT_TOLERANCE_BEATS, Lock, PhaseLock, SyncState, correction, crossing, phase_error,
+};
 
 const BLOCK_SAMPLES: usize = 4096;
 
@@ -329,7 +331,7 @@ impl DeckVoice {
         }
         if (self.lock.launched || was_nudging) && !nudge {
             force |= error.abs() > 0.125;
-            if error.abs() <= 1.0 / 64.0 {
+            if error.abs() <= DRIFT_TOLERANCE_BEATS {
                 self.lock.drift_beats = 0.0;
             } else if !shared.controls_pending.load(Ordering::Acquire)
                 && (shared.delivered_tempo.load() - shared.tempo_rate.load() as f64).abs()
@@ -876,6 +878,93 @@ mod tests {
     use crate::output_queue::{self, Producer};
 
     #[test]
+    fn rounded_tempo_is_corrected_without_restarting_an_established_lock() {
+        const MASTER_BPM: f64 = 118.00116088848971;
+        const FOLLOWER_BPM: f64 = 130.01179245283018;
+        let matched = MASTER_BPM / FOLLOWER_BPM;
+        // Measured at 96 kHz with keylock: the native engine returns a nearby
+        // representable tempo, rather than the exact requested BPM ratio.
+        let rounding = 0.9078014184397163 - matched;
+        for bias in [rounding, -rounding] {
+            let (mut renderer, shared, handoffs, mut producers) = fixture();
+            renderer.mixer.crossfader.store(1.0);
+            shared[2].set_transport(Transport::Paused);
+            shared[1].sync_enabled.store(true, Ordering::Release);
+            shared[1].tempo_rate.store(matched as f32);
+            for (i, bpm) in [MASTER_BPM, FOLLOWER_BPM].into_iter().enumerate() {
+                handoffs[i].publish_grid(BeatMap::new(
+                    (0..300).map(|beat| beat as f64 * 60.0 * 48_000.0 / bpm),
+                    1,
+                    bpm,
+                ));
+            }
+            let mut worst_error = 0.0_f64;
+            let mut corrected = false;
+            let media = [0.1; 6144];
+            for block in 0..(120 * 48_000 / 512) {
+                // A 64 ms reserve delays new controls before delivery. A fixed
+                // applied-rate bias models rounding in either direction even
+                // after the callback starts asking for small corrections.
+                for (i, producer) in producers[..2].iter_mut().enumerate() {
+                    let frames = if block == 0 { 3072 } else { 512 };
+                    let start_frame = if block == 0 {
+                        0
+                    } else {
+                        3072 + (block - 1) * 512
+                    };
+                    let requested = shared[i].tempo_rate.load() as f64;
+                    let delivered = requested + if i == 1 && block > 0 { bias } else { 0.0 };
+                    producer.retain_applied(timestretch::AppliedParameters {
+                        requested: crate::deck::playback_parameters(requested, true).unwrap(),
+                        achieved_stretch: 1.0 / delivered,
+                        achieved_pitch: 1.0,
+                        command_id: block,
+                        requested_at: block * 512,
+                        applied_at: start_frame,
+                    });
+                    assert!(producer.push(
+                        &media[..frames * 2],
+                        OutputStamp {
+                            epoch: Epoch(1),
+                            start_frame,
+                            frames
+                        },
+                    ));
+                }
+                let mut out = [0.0; 1024];
+                renderer.render(&mut out);
+                assert_eq!(
+                    SyncState::load(&shared[1]),
+                    SyncState::Locked,
+                    "block={block} bias={bias}"
+                );
+                assert_eq!(shared[1].take_seek(), None);
+                assert_eq!(shared[1].launch_frame.load(Ordering::Relaxed), 0);
+                assert_eq!(producers[1].receipt().unwrap().end_frame, (block + 1) * 512);
+                assert_eq!(producers[1].underrun_frames(), 0);
+                let lock = renderer.decks[1].lock.phase.as_ref().unwrap();
+                let (master, follower) = lock.phases(
+                    renderer.decks[0].playback.as_ref().unwrap().consumer.cursor,
+                    renderer.decks[1].playback.as_ref().unwrap().consumer.cursor,
+                );
+                worst_error = worst_error.max(phase_error(master, follower).abs());
+                corrected |= (shared[1].tempo_rate.load() as f64 - matched).abs() > 1e-5;
+                if block > 10 {
+                    assert!(
+                        out.iter().all(|&sample| sample > 0.01),
+                        "audio was interrupted"
+                    );
+                }
+            }
+            assert!(corrected, "rounded tempo never received correction");
+            assert!(
+                worst_error < DRIFT_TOLERANCE_BEATS,
+                "drift reached the re-lock threshold: {worst_error}"
+            );
+        }
+    }
+
+    #[test]
     fn breakdown_grid_wander_does_not_interrupt_an_established_lock() {
         for wandering_deck in [0, 1] {
             for cut_master in [false, true] {
@@ -1236,28 +1325,49 @@ mod tests {
             grid(handoff, 0.0, 1000.0);
         }
         shared[1].sync_enabled.store(true, Ordering::Release);
-        shared[1].set_transport(Transport::Paused);
-        prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 30_000);
-        prime_fake(&mut producers[1], &shared[1], 2, 2000.0, 1.0, 16_000);
-        renderer.render(&mut [0.0; 256]);
-        shared[1].set_transport(Transport::Playing);
-        renderer.render(&mut [0.0; 256]);
-        let target = shared[1].take_seek().unwrap();
-        prime_fake(&mut producers[1], &shared[1], 3, target, 1.0, 16_000);
-        for _ in 0..10 {
+        shared[2].set_transport(Transport::Paused);
+        let mut start_frame = 0;
+        let mut render = |renderer: &mut MixerRenderer, apply_controls: bool| {
+            for (i, producer) in producers[..2].iter_mut().enumerate() {
+                let rate = if apply_controls {
+                    shared[i].tempo_rate.load() as f64
+                } else {
+                    1.0
+                };
+                producer.retain_applied(timestretch::AppliedParameters {
+                    requested: crate::deck::playback_parameters(rate, true).unwrap(),
+                    achieved_stretch: 1.0 / rate,
+                    achieved_pitch: 1.0,
+                    command_id: start_frame,
+                    requested_at: start_frame,
+                    applied_at: start_frame,
+                });
+                assert!(producer.push(
+                    &[0.1; 256],
+                    OutputStamp {
+                        epoch: Epoch(1),
+                        start_frame,
+                        frames: 128
+                    },
+                ));
+            }
             renderer.render(&mut [0.0; 256]);
-        }
+            start_frame += 128;
+        };
+        render(&mut renderer, false);
         assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
+        // This is within the gentle correction range, but large enough to
+        // remain outside tolerance for two beats after controls reach output.
         renderer.decks[1]
             .playback
             .as_mut()
             .unwrap()
             .consumer
             .cursor
-            .position += 18.0;
+            .position += 50.0;
         shared[1].controls_pending.store(true, Ordering::Release);
         for _ in 0..20 {
-            renderer.render(&mut [0.0; 256]);
+            render(&mut renderer, false);
         }
         assert_eq!(
             shared[1].take_seek(),
@@ -1266,11 +1376,11 @@ mod tests {
         );
         shared[1].controls_pending.store(false, Ordering::Release);
         for _ in 0..14 {
-            renderer.render(&mut [0.0; 256]);
+            render(&mut renderer, true);
         }
         assert_eq!(shared[1].take_seek(), None);
         for _ in 0..4 {
-            renderer.render(&mut [0.0; 256]);
+            render(&mut renderer, true);
         }
         assert!(
             shared[1].take_seek().is_some(),

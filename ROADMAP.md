@@ -149,7 +149,8 @@ signal properties.
   clock calculation. This is fixed-BPM sync, not automatic tempo-ramp following.
 - **Re-lock:** explicit engagement during playback or delivery-phase error above
   1/8 beat fades out over 5 ms, seeks the nearest aligned position on the worker, primes, waits for
-  matching phase, then fades in over 5 ms. Smaller drift uses at most ±1.5% correction;
+  matching phase, then fades in over 5 ms. Smaller drift uses at most ±1.5% correction,
+  starting above 1/128 beat so rounded DSP tempos are corrected before the re-lock threshold;
   error above 1/64 beat for two delivered beats after controls reach delivery also
   forces re-lock. Held nudges suspend correction; release reacquires. Manual pitch
   movement disengages Sync. Master seeks and scrub epochs invalidate the captured
@@ -188,6 +189,12 @@ underruns and stay within their callback budgets (maximum observed in the
 qualification run: 0.741 ms). The muted M4 device check at 96 kHz passes all three buffer sizes with
 zero underruns. Subjective listening for launch timing, forced transitions and
 nudge recovery remains a manual release check.
+
+A rounded-tempo regression also covers two minutes of delivery with applied-rate
+errors in either direction and delayed controls. It reproduced a false re-lock
+after about 40.6 seconds before the correction deadband was reduced. The updated
+suite has 168 passing tests; a 95-second muted M4 run at 96 kHz with the reported
+118/130 BPM track pair retained one launch and had zero underruns.
 
 
 ## Phase 5 — Performance features: hot cues + loops
