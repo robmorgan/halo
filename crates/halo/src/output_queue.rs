@@ -251,6 +251,10 @@ impl Producer {
     }
 }
 impl Consumer {
+    pub fn epoch(&self) -> Epoch {
+        self.epoch
+    }
+
     /// O(1) boundary handoff, including while paused. Never scans a stale backlog.
     pub fn sync_epoch(&mut self) -> bool {
         let a = self.queue.generation.load(Ordering::Acquire);

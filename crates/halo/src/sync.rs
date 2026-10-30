@@ -71,6 +71,11 @@ impl BeatMap {
             .then_some(rate)
     }
 
+    /// Only used after matched_rate has validated both nominal BPMs.
+    pub fn beat_frames(&self, sample_rate: u32) -> f64 {
+        60.0 * sample_rate as f64 / self.bpm
+    }
+
     /// Continuous beat coordinate and local source frames per beat.
     pub fn at(&self, position: f64) -> Option<(f64, f64)> {
         if self.frames.len() < 2 || position < self.frames[0] || position > *self.frames.last()? {
@@ -161,11 +166,54 @@ pub fn crossing(map: &BeatMap, cursor: Cursor, advances: &[f64], phase: f64) -> 
     None
 }
 
+/// A phase relationship established at the actual launch boundary. Once
+/// aligned, compare delivered musical time at the nominal BPMs: detected
+/// onsets can wander or disappear in a breakdown without transport drifting.
+/// Track/grid/anchor revisions invalidate this reference before it is reused.
+pub struct PhaseLock {
+    master: Cursor,
+    follower: Cursor,
+    master_beat_frames: f64,
+    follower_beat_frames: f64,
+}
+
+impl PhaseLock {
+    pub fn new(
+        master: Cursor,
+        follower: Cursor,
+        master_beat_frames: f64,
+        follower_beat_frames: f64,
+    ) -> Self {
+        Self {
+            master,
+            follower,
+            master_beat_frames,
+            follower_beat_frames,
+        }
+    }
+
+    pub fn phases(&self, master: Cursor, follower: Cursor) -> (f64, f64) {
+        let beats = |anchor: Cursor, cursor: Cursor, length: f64| {
+            let wraps = cursor.iterations.saturating_sub(anchor.iterations) as f64;
+            let loop_frames = anchor
+                .region
+                .map_or(0.0, |(start, end)| (end - start) as f64);
+            // Cursor positions already include the source/output conversion.
+            (cursor.position - anchor.position + wraps * loop_frames) / length
+        };
+        (
+            beats(self.master, master, self.master_beat_frames).rem_euclid(1.0),
+            beats(self.follower, follower, self.follower_beat_frames).rem_euclid(1.0),
+        )
+    }
+}
+
 #[derive(Default)]
 pub struct Lock {
     pub launched: bool,
     pub enabled: bool,
-    pub version: [u64; 6],
+    pub version: [u64; 9],
+    pub phase: Option<PhaseLock>,
     pub fading_out: usize,
     pub fading_in: usize,
     pub drift_beats: f64,
@@ -176,6 +224,33 @@ pub struct Lock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delivered_phase_reference_counts_wraps_and_converts_only_once() {
+        let mut master = Cursor {
+            position: 1234.0,
+            ..Cursor::default()
+        };
+        let mut follower = Cursor {
+            position: 350.0,
+            region: Some((0, 400)),
+            conversion: 2.0,
+            ..Cursor::default()
+        };
+        let lock = PhaseLock::new(master, follower, 100.0, 200.0);
+        master.advance(75.0);
+        follower.advance(75.0);
+        assert_eq!(follower.iterations, 1);
+        assert_eq!(lock.phases(master, follower), (0.75, 0.75));
+        master.advance(1000.0);
+        follower.advance(1000.0);
+        assert_eq!(follower.iterations, 6);
+        assert_eq!(lock.phases(master, follower), (0.75, 0.75));
+        // A stalled follower delivers no source frames and really loses phase.
+        master.advance(25.0);
+        let (master_phase, follower_phase) = lock.phases(master, follower);
+        assert_eq!(phase_error(master_phase, follower_phase), 0.25);
+    }
 
     #[test]
     fn invalid_nominal_bpms_cannot_generate_a_sync_rate() {

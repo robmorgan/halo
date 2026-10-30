@@ -133,7 +133,7 @@ signal properties.
 - **Persistent Sync/Master:** Sync intent survives pause and automatic master promotion.
   A paused follower matches tempo without moving its exact parked coordinate.
   The matched rate uses the tracks' analyzed BPMs and the master's base tempo;
-  uneven detected beat intervals map phase without changing that BPM target.
+  detected beat intervals guide initial alignment without changing that BPM target.
   Play prepares audio there, then the callback opens delivery at the first matching
   individual beat phase, including between-beat positions and crossings inside a
   callback. A second Play cancels. Already prepared, aligned media starts immediately.
@@ -142,12 +142,18 @@ signal properties.
   playhead from the left using actual remaining phase distance; preparation has its
   own status. Track/transport/anchor/grid/master revisions reject stale preparation.
   Grid ownership uses bounded handoff and UI retirement, as playback storage does.
-- **Re-lock:** explicit engagement during playback or error above 1/8 beat fades out
-  over 5 ms, seeks the nearest aligned position on the worker, primes, waits for
+- **Established lock:** capture both delivery cursors at launch and compare their
+  subsequent source advance in nominal beats, including loop iterations. Sparse
+  audio, missing markers and wandering detected onsets cannot manufacture drift
+  or restart a playing follower. EQ, filter and fader changes never enter this
+  clock calculation. This is fixed-BPM sync, not automatic tempo-ramp following.
+- **Re-lock:** explicit engagement during playback or delivery-phase error above
+  1/8 beat fades out over 5 ms, seeks the nearest aligned position on the worker, primes, waits for
   matching phase, then fades in over 5 ms. Smaller drift uses at most ±1.5% correction;
   error above 1/64 beat for two delivered beats after controls reach delivery also
   forces re-lock. Held nudges suspend correction; release reacquires. Manual pitch
-  movement disengages Sync.
+  movement disengages Sync. Master seeks and scrub epochs invalidate the captured
+  relationship, as do track, grid and master changes.
 - **Master:** the callback retains the current playing master unless explicitly
   changed. Pause, stop, EOF and unload transfer master to the other playing deck;
   faders and underruns do not. MASTER, BPM, Sync and lighting use that same choice.
@@ -163,7 +169,7 @@ signal properties.
 
 **Milestone:** press Sync and the decks lock in phase; manual beatmatching works with slider + nudge.
 
-Persistent Sync validation (macOS arm64, 2026-10-30): 164 workspace tests pass,
+Persistent Sync validation (macOS arm64, 2026-10-30): 167 workspace tests pass,
 including on CI's Rust 1.90.0; strict Clippy, nightly formatting and the release
 build pass. The deterministic launch harness covers 60 phase/rate combinations,
 including fractional parked positions and delayed workers, with a maximum error
@@ -171,10 +177,15 @@ of 0.9976 output frames; all 60 launches occur inside callback blocks. Real work
 tests cover Play, seek/hot-cue requests, loop edits and scrub recovery without UI
 polling. Cached beat timings from a jittered 130 BPM master and straight 124 BPM
 follower reproduce the tempo regression: the matched BPM now stays fixed while
-armed and playing. Callback allocation/retirement tests include waiting launches
-and grid replacement. All nine three-player scheduling cases have zero underruns
-and stay within their callback budgets (maximum observed in the qualification run:
-1.526 ms). The muted M4 device check at 96 kHz passes all three buffer sizes with
+armed and playing. A breakdown regression reproduces a false re-lock before the
+fix and verifies uninterrupted delivery through wandering/missing markers, silent
+audio and the end of detected beats on either deck, with master EQ/filter cuts.
+It also checks zero callback allocations, unchanged launch identity, and complete
+delivery receipts. Loop/conversion and master seek/scrub epoch tests protect the
+captured phase reference. Callback allocation/retirement tests include waiting
+launches and grid replacement. All nine three-player scheduling cases have zero
+underruns and stay within their callback budgets (maximum observed in the
+qualification run: 0.741 ms). The muted M4 device check at 96 kHz passes all three buffer sizes with
 zero underruns. Subjective listening for launch timing, forced transitions and
 nudge recovery remains a manual release check.
 

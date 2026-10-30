@@ -12,7 +12,7 @@ use crate::dsp::{ChannelStrip, FilterMode, Limiter, StripParams};
 use crate::output_queue::{Consumer, Cursor};
 use crate::scrub::ScrubVoice;
 use crate::state::{DeckShared, DeliveryClock, MixerShared, ScrubPhase, Transport};
-use crate::sync::{BeatMap, Lock, SyncState, correction, crossing, phase_error};
+use crate::sync::{BeatMap, Lock, PhaseLock, SyncState, correction, crossing, phase_error};
 
 const BLOCK_SAMPLES: usize = 4096;
 
@@ -163,6 +163,7 @@ impl DeckVoice {
             && playback.consumer.sync_epoch()
         {
             self.lock.launched = false;
+            self.lock.phase = None;
             self.publish_cursor();
             self.strip.reset();
             self.transition.begin(self.last_frame);
@@ -195,6 +196,9 @@ impl DeckVoice {
             self.grid_revision,
             master_revision,
             master.grid_revision,
+            master.input.shared.track_generation.load(Ordering::Acquire),
+            master.input.shared.anchor_revision.load(Ordering::Acquire),
+            master.playback.as_ref().map_or(0, |p| p.consumer.epoch().0),
         ];
         let newly_enabled = enabled && !self.lock.enabled;
         let changed = version != self.lock.version;
@@ -209,6 +213,7 @@ impl DeckVoice {
                 self.lock.fading_in = 0;
             }
             self.lock.launched = false;
+            self.lock.phase = None;
             self.lock.drift_beats = 0.0;
             self.lock.version = version;
         }
@@ -258,8 +263,21 @@ impl DeckVoice {
             {
                 return None;
             }
-            let (beat, length) = grid.at(cursor.position)?;
-            let (master_beat, master_length) = master_grid.at(master.prefix_start.position)?;
+            let (beat, length, master_beat, master_length) = if self.lock.launched
+                && let Some(lock) = &self.lock.phase
+            {
+                let (master_phase, phase) = lock.phases(master.prefix_start, cursor);
+                (
+                    phase,
+                    grid.beat_frames(self.sample_rate),
+                    master_phase,
+                    master_grid.beat_frames(self.sample_rate),
+                )
+            } else {
+                let (beat, length) = grid.at(cursor.position)?;
+                let (master_beat, master_length) = master_grid.at(master.prefix_start.position)?;
+                (beat, length, master_beat, master_length)
+            };
             Some((
                 beat.rem_euclid(1.0),
                 length,
@@ -439,6 +457,18 @@ impl DeckVoice {
                 return;
             }
             self.lock.launched = true;
+            let mut master_at_launch = master.prefix_start;
+            for &advance in &master.advances[..offset] {
+                master_at_launch.advance(advance);
+            }
+            self.lock.phase = self.map().zip(master.map()).map(|(grid, master_grid)| {
+                PhaseLock::new(
+                    master_at_launch,
+                    cursor,
+                    master_grid.beat_frames(self.sample_rate),
+                    grid.beat_frames(self.sample_rate),
+                )
+            });
             self.lock.fading_in = (self.sample_rate as usize).div_ceil(200);
             self.delivery_open = true;
             shared
@@ -846,6 +876,87 @@ mod tests {
     use crate::output_queue::{self, Producer};
 
     #[test]
+    fn breakdown_grid_wander_does_not_interrupt_an_established_lock() {
+        for wandering_deck in [0, 1] {
+            for cut_master in [false, true] {
+                let (mut renderer, shared, handoffs, mut producers) = fixture();
+                shared[1].sync_enabled.store(true, Ordering::Release);
+                for (i, handoff) in handoffs[..2].iter().enumerate() {
+                    // Onsets drift by half a beat and disappear during a sparse
+                    // passage. The source transport and nominal BPM stay steady.
+                    handoff.publish_grid(BeatMap::new(
+                        (0..22)
+                            .filter(|&beat| i != wandering_deck || !(14..18).contains(&beat))
+                            .map(|beat| {
+                                let drift = if i == wandering_deck {
+                                    match beat {
+                                        5..=9 => (beat - 4) as f64 * 100.0,
+                                        10..=13 => (14 - beat) as f64 * 100.0,
+                                        _ => 0.0,
+                                    }
+                                } else {
+                                    0.0
+                                };
+                                beat as f64 * 1000.0 + drift
+                            }),
+                        1,
+                        2880.0,
+                    ));
+                    prime_fake(
+                        &mut producers[i],
+                        &shared[i],
+                        2,
+                        i as f64 * 2000.0,
+                        1.0,
+                        4096,
+                    );
+                    assert!(producers[i].push(
+                        &[0.0; 4096],
+                        OutputStamp {
+                            epoch: Epoch(2),
+                            start_frame: 4096,
+                            frames: 2048,
+                        }
+                    ));
+                    assert!(producers[i].push(
+                        &vec![0.1; 48000],
+                        OutputStamp {
+                            epoch: Epoch(2),
+                            start_frame: 6144,
+                            frames: 24000,
+                        }
+                    ));
+                }
+                for block in 0..100 {
+                    if cut_master && block == 8 {
+                        shared[0].eq_low.store(0.0);
+                        shared[0].eq_mid.store(0.0);
+                        shared[0].filter_mode.store(2, Ordering::Relaxed);
+                        shared[0].filter_cutoff.store(2000.0);
+                    }
+                    let allocations =
+                        allocation_counter::measure(|| renderer.render(&mut [0.0; 512]));
+                    assert_eq!(allocations.count_total, 0);
+                    assert_eq!(allocations.count_current, 0);
+                    assert_eq!(
+                        SyncState::load(&shared[1]),
+                        SyncState::Locked,
+                        "false re-lock at block {block}, grid on deck {wandering_deck}, EQ cut {cut_master}"
+                    );
+                    assert_eq!(shared[1].launch_frame.load(Ordering::Relaxed), 0);
+                    assert_eq!(shared[1].take_seek(), None);
+                    assert_eq!(shared[1].tempo_rate.load(), 1.0);
+                    assert_eq!(
+                        shared[1].delivery_position.load(),
+                        2000.0 + (block + 1) as f64 * 256.0
+                    );
+                    assert_eq!(producers[1].receipt().unwrap().end_frame, (block + 1) * 256);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn uneven_detected_intervals_never_change_the_matched_bpm() {
         // Reduced cached-analysis example: a straight 124 BPM follower against
         // a 130 BPM master with per-beat onset jitter.
@@ -920,21 +1031,24 @@ mod tests {
             8192,
         );
         renderer.decks[1].adopt();
+        let master_start = (master_beats[0] + master_beats[1]) / 2.0;
         for pair in master_beats.windows(2) {
+            let master_position = (pair[0] + pair[1]) / 2.0;
             renderer.decks[0]
                 .playback
                 .as_mut()
                 .unwrap()
                 .consumer
                 .cursor
-                .position = (pair[0] + pair[1]) / 2.0;
+                .position = master_position;
             renderer.decks[1]
                 .playback
                 .as_mut()
                 .unwrap()
                 .consumer
                 .cursor
-                .position = follower_midpoint;
+                .position =
+                follower_midpoint + (master_position - master_start) * master_bpm / follower_bpm;
             renderer.render(&mut [0.0; 128]);
             assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
             assert!((follower_bpm * shared[1].matched_tempo.load() - expected_bpm).abs() < 1e-10);
@@ -999,6 +1113,34 @@ mod tests {
         assert_eq!(shared[1].launch_frame.load(Ordering::Relaxed), 64);
         assert_eq!(shared[1].take_seek(), None);
         assert_eq!(producers[1].receipt().unwrap().end_frame, 64);
+    }
+
+    #[test]
+    fn master_seek_or_scrub_epoch_invalidates_the_established_delivery_reference() {
+        for external_seek in [false, true] {
+            let (mut renderer, shared, handoffs, mut producers) = fixture();
+            for handoff in &handoffs[..2] {
+                grid(handoff, 0.0, 1000.0);
+            }
+            shared[1].sync_enabled.store(true, Ordering::Release);
+            prime_fake(&mut producers[0], &shared[0], 2, 0.0, 1.0, 8192);
+            prime_fake(&mut producers[1], &shared[1], 2, 2000.0, 1.0, 8192);
+            renderer.render(&mut [0.0; 128]);
+            assert_eq!(SyncState::load(&shared[1]), SyncState::Locked);
+            if external_seek {
+                shared[0].request_seek(1000);
+                assert_eq!(shared[0].take_seek(), Some(1000.0));
+            }
+            // Scrub landings advance the worker's epoch without a UI anchor command.
+            prime_fake(&mut producers[0], &shared[0], 3, 1000.0, 1.0, 8192);
+            renderer.render(&mut [0.0; 512]);
+            assert_eq!(SyncState::load(&shared[1]), SyncState::Preparing);
+            assert!(
+                shared[1].take_seek().is_some(),
+                "master seek must reacquire the grid relationship"
+            );
+            assert!(renderer.decks[1].lock.phase.is_none());
+        }
     }
 
     #[test]
