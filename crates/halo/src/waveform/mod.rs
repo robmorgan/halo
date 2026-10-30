@@ -335,25 +335,11 @@ impl GridMarks {
         self.frames.partition_point(|&f| f <= frame).checked_sub(1)
     }
 
-    /// Frame of the first flagged downbeat; falls back to the first beat
-    /// when no downbeat was detected. None on an empty grid.
-    pub fn first_downbeat_frame(&self) -> Option<f64> {
-        let i = self.downbeat.iter().position(|&d| d).unwrap_or(0);
-        self.frames.get(i).copied()
-    }
-
-    /// Frame where auto cue parks the deck: the first flagged downbeat —
-    /// unless the grid is low-confidence, where the downbeat phase is a
-    /// weak 4-way guess (timestretch caps stored confidence at 0.5 on
-    /// estimator phase disagreement precisely so hosts can distrust it).
-    /// A wrong phase parks the deck beats into the track; the first beat
-    /// is never worse than the first downbeat, so park there instead.
+    /// Frame where auto cue parks the deck: the first detected beat.
+    /// Bar-start labels must not skip opening beats, even on a confident grid:
+    /// confidence in beat timing does not establish which beat starts a bar.
     pub fn auto_cue_frame(&self) -> Option<f64> {
-        if self.low_confidence {
-            self.frames.first().copied()
-        } else {
-            self.first_downbeat_frame()
-        }
+        self.frames.first().copied()
     }
 
     /// Frame of the bar start (downbeat) at or before `frame`.
@@ -513,39 +499,42 @@ mod tests {
     }
 
     #[test]
-    fn first_downbeat_frame_finds_flagged_downbeat() {
-        // test_grid's first downbeat is beat idx 2 -> frame 200.
-        assert_eq!(test_grid().first_downbeat_frame(), Some(200.0));
-    }
-
-    #[test]
-    fn first_downbeat_frame_falls_back_to_first_beat() {
+    fn auto_cue_without_bar_labels_keeps_first_beat() {
         let mut grid = timestretch::BeatGrid::empty(100);
         grid.beats = (0..8).map(|i| i as f64 * 100.0).collect();
         let marks = GridMarks::from_grid(&grid);
-        assert_eq!(marks.first_downbeat_frame(), Some(0.0));
+        assert_eq!(marks.auto_cue_frame(), Some(0.0));
     }
 
     #[test]
-    fn first_downbeat_frame_none_on_empty_grid() {
+    fn auto_cue_none_on_empty_grid() {
         let marks = GridMarks::from_grid(&timestretch::BeatGrid::empty(100));
-        assert_eq!(marks.first_downbeat_frame(), None);
+        assert_eq!(marks.auto_cue_frame(), None);
     }
 
     #[test]
-    fn auto_cue_parks_on_first_downbeat_when_confident() {
-        let mut grid = timestretch::BeatGrid::empty(100);
-        grid.beats = (0..16).map(|i| i as f64 * 100.0).collect();
-        grid.downbeats = vec![2, 6, 10, 14];
+    fn auto_cue_keeps_opening_beat_for_every_confident_downbeat_rotation() {
+        let mut grid = timestretch::BeatGrid::empty(44_100);
+        // Preserve the opening beat after a short lead-in, even when bar
+        // detection labels a later kick as beat one (the reported regression).
+        let first = 220.5;
+        let period = 60.0 * 44_100.0 / 124.0;
+        grid.beats = (0..16).map(|i| first + i as f64 * period).collect();
         grid.confidence = 0.9;
-        let marks = GridMarks::from_grid(&grid);
-        assert_eq!(marks.auto_cue_frame(), Some(200.0));
+        for rotation in 0..4 {
+            grid.downbeats = (rotation..16).step_by(4).collect();
+            let marks = GridMarks::from_grid(&grid);
+            assert_eq!(marks.auto_cue_frame(), Some(first));
+            assert_eq!(
+                marks.bar_start(grid.beats[rotation]),
+                Some(grid.beats[rotation])
+            );
+        }
     }
 
     #[test]
     fn auto_cue_parks_on_first_beat_when_low_confidence() {
-        // test_grid leaves confidence at 0.0 (low): the downbeat phase is
-        // a weak guess there, so auto cue ignores it and takes beat 0.
+        // Low confidence still cues at the opening beat.
         assert_eq!(test_grid().auto_cue_frame(), Some(0.0));
     }
 
