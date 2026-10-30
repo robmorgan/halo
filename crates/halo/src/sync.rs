@@ -128,8 +128,14 @@ pub fn phase_error(master: f64, follower: f64) -> f64 {
     error - error.round()
 }
 
+pub const DRIFT_TOLERANCE_BEATS: f64 = 1.0 / 64.0;
+
 pub fn correction(error: f64) -> f64 {
-    (error.signum() * (error.abs() - 0.02).max(0.0) * 0.3).clamp(-0.015, 0.015)
+    // Correct rounded DSP ratios before they reach the persistent-drift
+    // timeout. A deadband wider than that tolerance would force a seek for
+    // small errors that the rate controller was deliberately ignoring.
+    let deadband = DRIFT_TOLERANCE_BEATS / 2.0;
+    (error.signum() * (error.abs() - deadband).max(0.0) * 0.3).clamp(-0.015, 0.015)
 }
 
 /// Prefixes contain ONLY delivered source advances. Underrun silence contributes
