@@ -6,6 +6,10 @@
 //! value. Bipolar knobs fill the arc outward from a center detent (EQ/trim
 //! unity); unipolar knobs fill from the min end (master).
 //!
+//! Drawn as Halo's design system has it: a lit cap seated in a well, the
+//! track in `segment-off`, the value arc in amber and a `text-strong`
+//! pointer.
+//!
 //! The widget is pure UI: callers load an atomic into a local `f32`, pass a
 //! `&mut` to it, and store back on `Response::changed()` — the same pattern
 //! the mixer sliders use.
@@ -13,7 +17,9 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use eframe::egui::{self, Color32, Response, Sense, Stroke, Ui, Vec2, Widget};
+use eframe::egui::{self, Color32, Pos2, Response, Sense, Stroke, Ui, Vec2, Widget};
+
+use crate::theme;
 
 /// Total sweep, from `-SWEEP/2` to `+SWEEP/2` about 12 o'clock.
 const SWEEP: f32 = 1.5 * PI; // 270°
@@ -22,8 +28,17 @@ const HALF_SWEEP: f32 = SWEEP / 2.0;
 const PIXELS_FOR_FULL_TRAVEL: f32 = 200.0;
 /// Fine-adjust multiplier while Shift is held.
 const FINE: f32 = 0.25;
-/// Points from the widget rect edge to the track ring.
-const RING_INSET: f32 = 3.0;
+/// The cap's radius as a fraction of the diameter.
+const CAP_RATIO: f32 = 0.29;
+/// `face-knob`: a radial gradient lit from the top left, centred at
+/// (38%, 28%) of the cap's box with a radius of 80% of it.
+const CAP_FOCUS: Vec2 = Vec2::new(0.38, 0.28);
+const CAP_REACH: f32 = 0.8;
+const CAP_STOPS: [(f32, Color32); 3] = [
+    (0.0, theme::CAP_HI),
+    (0.55, theme::CAP),
+    (1.0, theme::CAP_LO),
+];
 
 /// How the value arc is drawn.
 pub enum KnobArc {
@@ -51,7 +66,7 @@ impl<'a> Knob<'a> {
             range,
             arc: KnobArc::Unipolar,
             default,
-            diameter: 35.0,
+            diameter: theme::SIZE_KNOB,
             accent,
         }
     }
@@ -125,53 +140,64 @@ impl Widget for Knob<'_> {
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
             let center = rect.center();
-            let radius = self.diameter / 2.0 - RING_INSET;
-            let visuals = ui.visuals();
-
-            let track_col = visuals.weak_text_color().gamma_multiply(0.5);
+            let d = self.diameter;
+            let ring = d / 2.0 - (d / 12.0).max(4.0);
+            let width = (d / 20.0).max(2.0);
+            let cap_r = d * CAP_RATIO;
+            // Arc at 85% until hovered or dragged.
             let accent = if response.hovered() || response.dragged() {
                 self.accent
             } else {
                 self.accent.gamma_multiply(0.85)
             };
 
-            // Background track across the full sweep.
+            // The seat: a well disc with a lip of light along its lower edge.
+            painter.circle_filled(center, d / 2.0 - 0.5, theme::WELL);
             painter.add(egui::Shape::line(
-                arc_points(center, radius, -HALF_SWEEP, HALF_SWEEP),
-                Stroke::new(3.0, track_col),
+                arc_points(center, d / 2.0 - 0.5, PI * 0.68, PI * 1.32),
+                Stroke::new(1.0, theme::LIP),
             ));
 
-            // Value arc.
+            // Track across the full sweep, then the value arc.
+            round_arc(
+                painter,
+                center,
+                ring,
+                -HALF_SWEEP,
+                HALF_SWEEP,
+                width,
+                theme::SEGMENT_OFF,
+            );
             let cur = self.angle_of(*self.value);
             let from = match self.arc {
                 KnobArc::Unipolar => -HALF_SWEEP,
                 KnobArc::Bipolar { center: c } => self.angle_of(c),
             };
             if (cur - from).abs() > 1e-4 {
-                let (a, b) = if from <= cur {
-                    (from, cur)
-                } else {
-                    (cur, from)
-                };
-                painter.add(egui::Shape::line(
-                    arc_points(center, radius, a, b),
-                    Stroke::new(3.0, accent),
-                ));
+                round_arc(
+                    painter,
+                    center,
+                    ring,
+                    from.min(cur),
+                    from.max(cur),
+                    width,
+                    accent,
+                );
             }
 
-            // Body.
-            painter.circle(
-                center,
-                radius - 3.5,
-                visuals.extreme_bg_color,
-                Stroke::new(1.0, visuals.widgets.inactive.bg_stroke.color),
-            );
+            // The cap: face-knob, a 1px edge and a faint sheen-lit arc on top.
+            painter.add(cap_mesh(center, cap_r));
+            painter.circle_stroke(center, cap_r, Stroke::new(1.0, theme::EDGE));
+            painter.add(egui::Shape::line(
+                arc_points(center, cap_r - 0.9, -0.95, 0.95),
+                Stroke::new(1.0, theme::SHEEN_LIT.gamma_multiply(0.4)),
+            ));
 
-            // Pointer from just inside the body to the rim.
-            let d = dir(cur);
+            // Pointer from near the centre to just inside the cap's rim.
+            let dv = dir(cur);
             painter.line_segment(
-                [center + d * (radius * 0.35), center + d * (radius - 2.0)],
-                Stroke::new(2.0, accent),
+                [center + dv * (d * 0.1), center + dv * (cap_r - d * 0.06)],
+                Stroke::new((d * 0.037).max(1.6), theme::TEXT_STRONG),
             );
         }
 
@@ -189,4 +215,74 @@ fn arc_points(center: egui::Pos2, radius: f32, a0: f32, a1: f32) -> Vec<egui::Po
             center + dir(a) * radius
         })
         .collect()
+}
+
+/// An arc stroke with round ends.
+fn round_arc(
+    painter: &egui::Painter,
+    center: Pos2,
+    radius: f32,
+    a0: f32,
+    a1: f32,
+    width: f32,
+    color: Color32,
+) {
+    painter.add(egui::Shape::line(
+        arc_points(center, radius, a0, a1),
+        Stroke::new(width, color),
+    ));
+    for a in [a0, a1] {
+        painter.circle_filled(center + dir(a) * radius, width / 2.0, color);
+    }
+}
+
+/// Colour of `face-knob` at a point of the cap.
+fn cap_color(center: Pos2, radius: f32, p: Pos2) -> Color32 {
+    let size = 2.0 * radius;
+    let focus = center - Vec2::splat(radius) + CAP_FOCUS * size;
+    let t = ((p - focus).length() / (CAP_REACH * size)).clamp(0.0, 1.0);
+    let mut prev = CAP_STOPS[0];
+    for next in CAP_STOPS {
+        if t <= next.0 {
+            let k = (t - prev.0) / (next.0 - prev.0).max(f32::EPSILON);
+            return lerp_color(prev.1, next.1, k);
+        }
+        prev = next;
+    }
+    prev.1
+}
+
+fn lerp_color(a: Color32, b: Color32, k: f32) -> Color32 {
+    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * k).round() as u8;
+    Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
+}
+
+/// The cap disc as a mesh of rings with per-vertex colours: the knob's
+/// one radial gradient.
+fn cap_mesh(center: Pos2, radius: f32) -> egui::Mesh {
+    const RINGS: u32 = 6;
+    const SEGMENTS: u32 = 40;
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(center, cap_color(center, radius, center));
+    for ring in 1..=RINGS {
+        let r = radius * ring as f32 / RINGS as f32;
+        for seg in 0..SEGMENTS {
+            let a = seg as f32 / SEGMENTS as f32 * 2.0 * PI;
+            let p = center + Vec2::angled(a) * r;
+            mesh.colored_vertex(p, cap_color(center, radius, p));
+        }
+    }
+    let at = |ring: u32, seg: u32| 1 + (ring - 1) * SEGMENTS + seg % SEGMENTS;
+    for seg in 0..SEGMENTS {
+        mesh.add_triangle(0, at(1, seg), at(1, seg + 1));
+    }
+    for ring in 1..RINGS {
+        for seg in 0..SEGMENTS {
+            let (a, b) = (at(ring, seg), at(ring, seg + 1));
+            let (c, d) = (at(ring + 1, seg), at(ring + 1, seg + 1));
+            mesh.add_triangle(a, c, b);
+            mesh.add_triangle(b, c, d);
+        }
+    }
+    mesh
 }

@@ -2573,7 +2573,7 @@ impl eframe::App for HaloApp {
                                 Knob::new(&mut master, 0.0..=1.0, ACCENT)
                                     .arc(KnobArc::Unipolar)
                                     .default_value(1.0)
-                                    .diameter(24.0),
+                                    .diameter(theme::SIZE_KNOB_SMALL),
                             )
                             .on_hover_text(format!("Master: {:.0}%", master * 100.0))
                             .changed()
@@ -2682,9 +2682,8 @@ impl eframe::App for HaloApp {
             .frame(theme::ground_frame(theme::SPACE_8))
             .show(ctx, |ui| {
                 let full_width = ui.available_width();
-                // Sized to just fit the mixer content (131 px strip cluster) with
-                // ~6 px breathing room each side, rather than a wide centered panel.
-                let mixer_width = 144.0;
+                // Sized to just fit the mixer's strip cluster.
+                let mixer_width = MIXER_W;
                 // Three panels on the ground (deck | mixer | deck), `space-8`
                 // apart, each with `space-16` inside.
                 let gap = theme::SPACE_8;
@@ -4108,19 +4107,24 @@ fn deck_sidebar(
 /// centered beneath it, in a fixed-width column so the knobs land directly
 /// over the fader. Returns the column rect (used to size the level meter).
 fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> egui::Rect {
+    // Each knob sits `space-6` under its caption, `space-8` from the next.
+    let caption = |ui: &mut egui::Ui, text: &str| {
+        ui.label(theme::CAPTION.rich(text).color(theme::TEXT_MUTED));
+        ui.add_space(theme::SPACE_6);
+    };
     ui.scope(|ui| {
-        ui.set_width(44.0);
+        ui.set_width(MIXER_STRIP_W);
+        ui.spacing_mut().item_spacing.y = 0.0;
         ui.vertical_centered(|ui| {
             // Trim + isolator EQ: all bipolar knobs centered at unity (1.0),
             // range 0..2 (kill hard left, +6 dB hard right).
-            for (label, atom) in [
-                ("Trim", &shared.trim),
-                ("Hi", &shared.eq_high),
-                ("Mid", &shared.eq_mid),
-                ("Low", &shared.eq_low),
+            for (cap, label, atom) in [
+                ("TRIM", "Trim", &shared.trim),
+                ("HI", "Hi", &shared.eq_high),
+                ("MID", "Mid", &shared.eq_mid),
+                ("LOW", "Low", &shared.eq_low),
             ] {
-                ui.add_space(2.0);
-                ui.label(egui::RichText::new(label).weak().size(11.0));
+                caption(ui, cap);
                 let mut v = atom.load();
                 if ui
                     .add(
@@ -4133,13 +4137,13 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
                 {
                     atom.store(v);
                 }
+                ui.add_space(theme::SPACE_8);
             }
 
             // Filter: one bipolar knob. Center (12 o'clock) = off; twist left =
             // low-pass sweeping closed, right = high-pass sweeping closed. Rides
             // a synthetic position t in [-1, 1] mapped to (mode, cutoff).
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new("Filter").weak().size(11.0));
+            caption(ui, "FILTER");
             let mut t = filter_pos(shared.filter_mode_u8(), shared.filter_cutoff.load());
             if ui
                 .add(
@@ -4157,7 +4161,7 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
                 shared.filter_cutoff.store(cutoff);
             }
 
-            ui.add_space(6.0);
+            ui.add_space(theme::SPACE_16);
             let mut fader = shared.fader.load();
             if ui
                 .add(
@@ -4177,19 +4181,20 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
     .rect
 }
 
-fn mixer_panel(ui: &mut egui::Ui, mixer: &MixerShared, decks: &[DeckUi; 2]) {
-    ui.add_space(8.0);
+/// Width of one mixer channel strip: a knob across.
+const MIXER_STRIP_W: f32 = theme::SIZE_KNOB;
+/// Both strips with the LUFS ladders between them:
+/// strip + 8 + 12 + 3 + 12 + 8 + strip.
+const MIXER_W: f32 = MIXER_STRIP_W + 8.0 + 12.0 + 3.0 + 12.0 + 8.0 + MIXER_STRIP_W;
 
+fn mixer_panel(ui: &mut egui::Ui, mixer: &MixerShared, decks: &[DeckUi; 2]) {
     // Two channel strips packed toward the center, with the pair of level
     // meters between them (classic DJ-mixer layout). `vertical_centered` won't
     // center a multi-widget horizontal row (egui seeds it at full width), so
     // pad-center it to the panel mid-line — the same axis the crossfader uses.
-    const STRIP_W: f32 = 44.0;
-    // 44 + 8 + 12 + 3 + 12 + 8 + 44
-    const CLUSTER_W: f32 = STRIP_W + 8.0 + 12.0 + 3.0 + 12.0 + 8.0 + STRIP_W;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        ui.add_space(((ui.available_width() - CLUSTER_W) * 0.5).max(0.0));
+        ui.add_space(((ui.available_width() - MIXER_W) * 0.5).max(0.0));
         let a = deck_channel_strip(ui, &decks[0].deck.shared);
         ui.add_space(8.0);
         for (i, gap) in [(0, 3.0), (1, 8.0)] {
@@ -4209,7 +4214,7 @@ fn mixer_panel(ui: &mut egui::Ui, mixer: &MixerShared, decks: &[DeckUi; 2]) {
         deck_channel_strip(ui, &decks[1].deck.shared);
     });
 
-    ui.add_space(12.0);
+    ui.add_space(theme::SPACE_16);
     ui.vertical_centered(|ui| {
         let mut xf = mixer.crossfader.load();
         if ui
@@ -4295,26 +4300,28 @@ fn deck_lufs_meter(
         None => format!("Momentary {momentary_lufs:.1} LUFS\nTrack: not analyzed"),
     });
 
+    // A well with a 1px edge; every 3 px step is drawn, unlit ones in
+    // `segment-off`, so the ladder reads before it lights.
     let painter = ui.painter();
-    painter.rect_filled(rect, 1.0, egui::Color32::from_rgb(30, 30, 34));
-
-    // 3 px segments with 1 px gaps, lit bottom-up to the momentary level.
-    let fill_h = norm(momentary_lufs) * height;
+    theme::paint_well_edged(painter, rect.shrink(0.5), 2);
+    let inner = height - 4.0;
+    let lit = norm(momentary_lufs) * inner;
     let mut y = 0.0;
-    while y < fill_h {
-        let seg_top = (y + 3.0).min(fill_h);
-        let lufs_here = RANGE_LO * (1.0 - (y + seg_top) * 0.5 / height);
-        let color = if lufs_here < GREEN_TO {
-            egui::Color32::from_rgb(110, 200, 110)
+    while y + 3.0 <= inner {
+        let lufs_here = RANGE_LO * (1.0 - (y + 1.5) / inner);
+        let color = if y + 1.5 > lit {
+            theme::SEGMENT_OFF
+        } else if lufs_here < GREEN_TO {
+            theme::METER_GREEN
         } else if lufs_here < AMBER_TO {
-            ACCENT
+            theme::ACCENT
         } else {
-            egui::Color32::from_rgb(230, 80, 80)
+            theme::METER_RED
         };
         painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::pos2(rect.left() + 1.0, rect.bottom() - seg_top),
-                egui::pos2(rect.right() - 1.0, rect.bottom() - y),
+            egui::Rect::from_min_size(
+                egui::pos2(rect.left() + 2.0, rect.bottom() - 2.0 - y - 3.0),
+                egui::vec2(8.0, 3.0),
             ),
             0.0,
             color,
@@ -4323,22 +4330,22 @@ fn deck_lufs_meter(
     }
 
     if let Some(i) = integrated_lufs {
-        let marker_y = rect.bottom() - norm(i) * height;
+        let marker_y = rect.bottom() - 2.0 - norm(i) * inner;
         painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::pos2(rect.left(), marker_y - 1.0),
-                egui::pos2(rect.right(), marker_y + 1.0),
+            egui::Rect::from_min_size(
+                egui::pos2(rect.left() + 1.0, marker_y - 1.0),
+                egui::vec2(10.0, 2.0),
             ),
             0.0,
-            egui::Color32::from_gray(200),
+            theme::TEXT_STRONG,
         );
     }
 
     if peak_linear >= 0.99 {
         painter.rect_filled(
-            egui::Rect::from_min_max(rect.left_top(), egui::pos2(rect.right(), rect.top() + 2.0)),
-            1.0,
-            egui::Color32::from_rgb(230, 80, 80),
+            egui::Rect::from_min_size(rect.left_top() + egui::vec2(2.0, 2.0), egui::vec2(8.0, 2.0)),
+            0.0,
+            theme::METER_RED,
         );
     }
 }
