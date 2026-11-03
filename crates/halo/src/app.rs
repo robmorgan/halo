@@ -2709,10 +2709,12 @@ impl eframe::App for HaloApp {
                         |ui: &mut egui::Ui, width: f32, content: &mut dyn FnMut(&mut egui::Ui)| {
                             theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
                                 ui.set_width(width);
-                                let top = ui.cursor().top();
-                                ui.vertical(|ui| content(ui));
-                                tallest = tallest.max(ui.cursor().top() - top);
+                                // Measured from the cursor, so set before
+                                // the content.
                                 ui.set_min_height(row_h);
+                                let content_h =
+                                    ui.vertical(|ui| content(ui)).response.rect.height();
+                                tallest = tallest.max(content_h);
                             })
                             .response
                             .rect
