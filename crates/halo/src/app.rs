@@ -4579,15 +4579,11 @@ fn cpu_meter(ui: &mut egui::Ui, dsp_load: f32, dsp_latched: f32, process_pct: f3
 
 /// Cumulative user+system CPU time of this process, in seconds.
 fn process_cpu_secs() -> f64 {
-    unsafe {
-        let mut usage: libc::rusage = std::mem::zeroed();
-        if libc::getrusage(libc::RUSAGE_SELF, &mut usage) == 0 {
-            let secs = |tv: libc::timeval| tv.tv_sec as f64 + tv.tv_usec as f64 * 1e-6;
-            secs(usage.ru_utime) + secs(usage.ru_stime)
-        } else {
-            0.0
-        }
-    }
+    use nix::sys::resource::{UsageWho, getrusage};
+    let secs = |tv: nix::sys::time::TimeVal| tv.tv_sec() as f64 + tv.tv_usec() as f64 * 1e-6;
+    getrusage(UsageWho::RUSAGE_SELF)
+        .map(|u| secs(u.user_time()) + secs(u.system_time()))
+        .unwrap_or(0.0)
 }
 
 /// Spaced uppercase caption over a control group ("TRANSPORT", …):
