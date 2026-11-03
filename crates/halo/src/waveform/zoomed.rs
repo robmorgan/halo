@@ -141,7 +141,7 @@ pub fn paint_zoomed(
     let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::drag());
     let rect = response.rect;
 
-    painter.rect_filled(rect, 4.0, palette::BACKGROUND);
+    crate::theme::paint_content_well(&painter, rect, palette::BACKGROUND);
 
     let (Some(peaks), true) = (params.peaks, params.total_frames > 0) else {
         paint_placeholder(&painter, rect);
@@ -244,11 +244,12 @@ pub fn paint_zoomed(
                     continue;
                 }
                 if (bar - 1).is_multiple_of(label_stride) {
-                    painter.text(
+                    crate::theme::paint_text(
+                        &painter,
                         egui::pos2(map.x(params.marks.frame(i)) + 3.0, rect.top() + 1.0),
                         egui::Align2::LEFT_TOP,
                         bar,
-                        egui::FontId::monospace(9.0),
+                        crate::theme::WAVE_NUMBER,
                         palette::TEXT_DIM,
                     );
                 }
@@ -467,11 +468,12 @@ fn cue_marker(painter: &egui::Painter, rect: egui::Rect, x: f32, label: Option<u
         color,
     );
     if let Some(n) = label {
-        painter.text(
+        crate::theme::paint_text(
+            painter,
             egui::pos2(x + CUE_TRI_W / 2.0 + 2.0, rect.top()),
             egui::Align2::LEFT_TOP,
             n,
-            egui::FontId::proportional(8.0),
+            crate::theme::WAVE_NUMBER,
             color,
         );
     }

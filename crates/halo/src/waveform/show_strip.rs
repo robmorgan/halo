@@ -21,7 +21,7 @@ const MIN_BAR_W: f32 = 2.0;
 /// Extra dim applied to every lane when the deck isn't driving lighting.
 const INACTIVE_DIM: f32 = 0.30;
 /// Width of the left label gutter in points.
-const LABEL_GUTTER_W: f32 = 30.0;
+const LABEL_GUTTER_W: f32 = 40.0;
 /// Look blocks narrower than this skip their name label.
 const MIN_LABEL_W: f32 = 28.0;
 
@@ -47,7 +47,7 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
     let rect = response.rect;
     let painter = painter.with_clip_rect(rect);
 
-    painter.rect_filled(rect, 4.0, palette::LANE_BG);
+    crate::theme::paint_content_well(&painter, rect, palette::LANE_BG);
 
     let dim = |color: egui::Color32, alpha: f32| {
         let alpha = if params.lighting_active {
@@ -134,11 +134,12 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
                 // pins to the visible edge (past the gutter) instead of
                 // sitting at an off-screen block start.
                 let label_x = (x0 + 5.0).max(rect.left() + LABEL_GUTTER_W + 5.0);
-                painter.text(
+                crate::theme::paint_text(
+                    &painter,
                     egui::pos2(label_x, rr.center().y),
                     egui::Align2::LEFT_CENTER,
                     ev.look.def().name,
-                    egui::FontId::monospace(8.0),
+                    crate::theme::NOTE_TEXT,
                     dim(egui::Color32::WHITE, 0.75),
                 );
             }
@@ -222,9 +223,9 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
     painter.rect_filled(
         gutter,
         egui::CornerRadius {
-            nw: 4,
+            nw: crate::theme::RADIUS_CONTROL,
             ne: 0,
-            sw: 4,
+            sw: crate::theme::RADIUS_CONTROL,
             se: 0,
         },
         palette::LANE_BG,
@@ -251,11 +252,12 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
     .into_iter()
     .enumerate()
     {
-        painter.text(
+        crate::theme::paint_text(
+            &painter,
             egui::pos2(gutter.center().x, rows[row].center().y),
             egui::Align2::CENTER_CENTER,
             label,
-            egui::FontId::monospace(8.0),
+            crate::theme::CAPTION,
             dim(color, 0.9),
         );
     }

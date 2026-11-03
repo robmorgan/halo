@@ -8,10 +8,6 @@
 //! is a flat well with shade inside its top and a 1px lip of light below.
 //! Never hand-mix a new grey: every colour here is a token.
 
-// The full token table lands before every consumer does (later redesign
-// steps); drop this once each token has a use.
-#![allow(dead_code)]
-
 use std::sync::{Arc, LazyLock};
 
 use eframe::egui::epaint::RectShape;
@@ -82,10 +78,43 @@ pub const METER_RED: Color32 = Color32::from_rgb(0xe6, 0x50, 0x50);
 pub const SELECTION: Color32 = rgba(0xff, 0xaa, 0x28, 0x2e);
 
 // ---------------------------------------------------------------- content
+// The waveform's and the show's own colours. They stay in content.
 pub const WAVE_GROUND: Color32 = Color32::from_rgb(0x0a, 0x0a, 0x0f);
+pub const WAVE_LOW: Color32 = Color32::from_rgb(0x28, 0x5a, 0xdc);
+pub const WAVE_MID: Color32 = Color32::from_rgb(0xe6, 0x96, 0x28);
+pub const WAVE_HIGH: Color32 = Color32::from_rgb(0xeb, 0xeb, 0xf0);
+pub const WAVE_PLAYED: Color32 = Color32::from_rgb(0x6e, 0x6e, 0x76);
 pub const WAVE_ANNOTATION: Color32 = Color32::from_rgb(0x8a, 0x8a, 0xa0);
 pub const PLAYHEAD: Color32 = Color32::from_rgb(0xe6, 0x28, 0x28);
+pub const BEAT_TICK: Color32 = rgba(0xff, 0xff, 0xff, 0xc8);
+pub const LOOP_FILL: Color32 = rgba(0xff, 0xaa, 0x22, 0x3c);
+pub const LOOP_EDGE: Color32 = Color32::from_rgb(0xeb, 0xa0, 0x28);
+pub const ENERGY: Color32 = Color32::from_rgb(0xeb, 0xaf, 0x32);
+pub const LANE_GROUND: Color32 = Color32::from_rgb(0x10, 0x10, 0x16);
+pub const LANE_SEPARATOR: Color32 = Color32::from_rgb(0x1c, 0x1c, 0x24);
 pub const LANE_LIGHTING: Color32 = Color32::from_rgb(0x50, 0xa5, 0xff);
+pub const LANE_PIXELS: Color32 = Color32::from_rgb(0xf0, 0x5f, 0xaf);
+pub const LANE_FX: Color32 = Color32::from_rgb(0x46, 0xd2, 0x82);
+pub const LANE_ACCENTS: Color32 = Color32::from_rgb(0xee, 0xee, 0xf4);
+// The look palette's values live in `show_preview.rs` (the show model);
+// these name them for the system. Not every look is drawn by name here.
+#[allow(dead_code)]
+pub const LOOK_WARM_OPEN: Color32 = Color32::from_rgb(0xff, 0xaa, 0x3c);
+#[allow(dead_code)]
+pub const LOOK_DEEP_BLUE: Color32 = Color32::from_rgb(0x3c, 0x6e, 0xeb);
+#[allow(dead_code)]
+pub const LOOK_RED_DROP: Color32 = Color32::from_rgb(0xe6, 0x2d, 0x2d);
+pub const LOOK_STROBE_WHITE: Color32 = Color32::from_rgb(0xee, 0xee, 0xf4);
+#[allow(dead_code)]
+pub const LOOK_ACID_GREEN: Color32 = Color32::from_rgb(0x78, 0xe1, 0x46);
+#[allow(dead_code)]
+pub const LOOK_MAGENTA_CHASE: Color32 = Color32::from_rgb(0xf0, 0x3c, 0xbe);
+pub const LOOK_AMBER_SWEEP: Color32 = Color32::from_rgb(0xfa, 0xcd, 0x28);
+pub const LOOK_UV_VIOLET: Color32 = Color32::from_rgb(0x8c, 0x46, 0xff);
+pub const FIXTURE_R: Color32 = Color32::from_rgb(0xeb, 0x46, 0x3c);
+pub const FIXTURE_G: Color32 = Color32::from_rgb(0x50, 0xcd, 0x5f);
+pub const FIXTURE_B: Color32 = Color32::from_rgb(0x4b, 0x7d, 0xff);
+pub const FIXTURE_W: Color32 = Color32::from_rgb(0xeb, 0xeb, 0xf0);
 
 // ---------------------------------------------------------------- shape
 pub const RADIUS_CONTROL: u8 = 3;
@@ -98,6 +127,8 @@ pub const SPACE_6: f32 = 6.0;
 pub const SPACE_8: f32 = 8.0;
 pub const SPACE_12: f32 = 12.0;
 pub const SPACE_16: f32 = 16.0;
+/// Between control groups; part of the scale, unused by the current layout.
+#[allow(dead_code)]
 pub const SPACE_24: f32 = 24.0;
 
 pub const SIZE_KEY: f32 = 30.0;
@@ -219,6 +250,26 @@ pub const TRACK_TITLE: TypeStyle = TypeStyle::new(16.0, Weight::SemiBold, 0.0);
 pub const BODY_TEXT: TypeStyle = TypeStyle::new(13.0, Weight::Regular, 0.0);
 pub const NOTE_TEXT: TypeStyle = TypeStyle::new(11.0, Weight::Regular, 0.0);
 pub const MONO_TEXT: TypeStyle = TypeStyle::new(12.0, Weight::Mono, 0.0);
+/// Numbers drawn on the waveforms (bar numbers, hot cue numbers):
+/// `numerals-sm` at the performance surface's 10px floor.
+pub const WAVE_NUMBER: TypeStyle = NUMERALS_SM.sized(10.0);
+
+/// Paint one line of `text` in `style` anchored like `Painter::text`,
+/// keeping the style's letter-spacing (which `Painter::text` drops).
+pub fn paint_text(
+    painter: &Painter,
+    pos: Pos2,
+    anchor: egui::Align2,
+    text: impl ToString,
+    style: TypeStyle,
+    color: Color32,
+) -> Rect {
+    let galley = style.galley(painter.ctx(), &text.to_string(), color);
+    let size = egui::vec2(galley.size().x - style.spacing, galley.size().y);
+    let rect = anchor.anchor_size(pos, size);
+    painter.galley(rect.min, galley, color);
+    rect
+}
 
 /// Register Inter (three weights plus the tabular copy) and JetBrains Mono,
 /// each ahead of egui's emoji fallbacks so Halo's Unicode icons still draw.
@@ -469,6 +520,19 @@ pub fn paint_well(painter: &Painter, rect: Rect, radius: u8) {
     );
 }
 
+/// A content well (waveform, show lanes): the content's own ground with
+/// the well's shade and lip.
+pub fn paint_content_well(painter: &Painter, rect: Rect, ground: Color32) {
+    painter.rect_filled(rect, RADIUS_CONTROL, ground);
+    top_shade(painter, rect, RADIUS_CONTROL);
+    let inset = RADIUS_CONTROL as f32 * 0.6;
+    painter.hline(
+        (rect.left() + inset)..=(rect.right() - inset),
+        rect.bottom() + 0.5,
+        Stroke::new(1.0, LIP),
+    );
+}
+
 /// A well with a 1px `edge` (meters, fader slots, LED bezels).
 pub fn paint_well_edged(painter: &Painter, rect: Rect, radius: u8) {
     painter.rect_filled(rect, radius, WELL);
@@ -486,7 +550,11 @@ pub fn paint_led(painter: &Painter, center: Pos2, on: bool, color: Color32) {
     let r = SIZE_LED / 2.0;
     let rect = Rect::from_center_size(center, Vec2::splat(SIZE_LED));
     if on {
-        let glow = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 0x8c);
+        let glow = if color == ACCENT {
+            ACCENT_GLOW
+        } else {
+            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 0x8c)
+        };
         paint_glow(painter, rect, r, SIZE_LED, glow);
         painter.circle(center, r, color, Stroke::new(1.0, rgba(0, 0, 0, 0x8c)));
     } else {
@@ -610,6 +678,34 @@ pub fn panel<R>(
     let background = ui.painter().add(egui::Shape::Noop);
     let inner = egui::Frame::new().inner_margin(margin).show(ui, content);
     let shapes = panel_shapes(ui.ctx(), inner.response.rect);
+    ui.painter().set(background, egui::Shape::Vec(shapes));
+    inner
+}
+
+/// Lay `content` out in a well (`well` + `shadow-well`), `margin` inside:
+/// the library table, the playlist tree, programmer trays.
+pub fn well<R>(
+    ui: &mut egui::Ui,
+    margin: impl Into<egui::Margin>,
+    content: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let background = ui.painter().add(egui::Shape::Noop);
+    let inner = egui::Frame::new().inner_margin(margin).show(ui, content);
+    let rect = inner.response.rect;
+    let mut shapes = vec![egui::Shape::rect_filled(rect, RADIUS_CONTROL, WELL)];
+    let inset = RADIUS_CONTROL as f32 * 0.6;
+    for (row, k) in [(0.0, 1.0), (1.0, 0.45), (2.0, 0.15)] {
+        shapes.push(egui::Shape::hline(
+            (rect.left() + inset)..=(rect.right() - inset),
+            rect.top() + row + 0.5,
+            Stroke::new(1.0, SHADE.gamma_multiply(k)),
+        ));
+    }
+    shapes.push(egui::Shape::hline(
+        (rect.left() + inset)..=(rect.right() - inset),
+        rect.bottom() + 0.5,
+        Stroke::new(1.0, LIP),
+    ));
     ui.painter().set(background, egui::Shape::Vec(shapes));
     inner
 }

@@ -1319,7 +1319,7 @@ impl HaloApp {
     /// last-applied patch until APPLY swaps the draft in and persists it
     /// to the show file. REVERT discards the draft.
     fn patch_ui(&mut self, ui: &mut egui::Ui) {
-        const WARN: egui::Color32 = egui::Color32::from_rgb(230, 90, 70);
+        const WARN: egui::Color32 = theme::WARN;
         let mut work = self
             .patch_draft
             .clone()
@@ -1343,7 +1343,8 @@ impl HaloApp {
             let fl = &self.fixture_library;
             let rig = &mut work;
             ui.horizontal(|ui| {
-                ui.menu_button("+ ADD FIXTURE", |ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_8;
+                ui.menu_button(theme::KEY_LABEL.rich("+ ADD FIXTURE"), |ui| {
                     for kind in ALL_KINDS {
                         if ui.button(kind.group_label()).clicked() {
                             let id = rig.next_id();
@@ -1374,22 +1375,23 @@ impl HaloApp {
                         }
                     }
                 });
-                if ui.button("RESET TO DEFAULT RIG").clicked() {
+                if ui.add(Key::new("RESET TO DEFAULT RIG").small()).clicked() {
                     *rig = default_rig(fl);
                     changed = true;
                 }
                 if !conflicts.is_empty() {
-                    ui.colored_label(
-                        WARN,
-                        format!("{} fixtures with patch conflicts", conflicts.len()),
+                    ui.label(
+                        theme::BODY_TEXT
+                            .rich(format!(
+                                "⚠ {} fixtures with patch conflicts",
+                                conflicts.len()
+                            ))
+                            .color(WARN),
                     );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let can_apply = dirty && conflicts.is_empty();
-                    let apply = ui.add_enabled(
-                        can_apply,
-                        egui::Button::new(egui::RichText::new("APPLY").strong()),
-                    );
+                    let apply = ui.add_enabled(can_apply, Key::new("APPLY").small());
                     let apply = if dirty && !conflicts.is_empty() {
                         apply.on_disabled_hover_text("Resolve patch conflicts first")
                     } else {
@@ -1399,89 +1401,115 @@ impl HaloApp {
                         do_apply = true;
                     }
                     if ui
-                        .add_enabled(dirty, egui::Button::new("REVERT"))
+                        .add_enabled(dirty, Key::new("REVERT").small())
                         .on_hover_text("Discard the draft; keep the applied patch")
                         .clicked()
                     {
                         do_revert = true;
                     }
                     if dirty {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(240, 200, 90),
-                            "● unapplied changes",
-                        );
+                        ui.label(theme::NOTE_TEXT.rich("● unapplied changes").color(ACCENT));
                     }
                 });
             });
-            ui.add_space(4.0);
+            ui.add_space(theme::SPACE_12);
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("patch_sheet")
-                    .striped(true)
-                    .min_col_width(44.0)
-                    .show(ui, |ui| {
-                        for h in [
-                            "FIXTURE", "KIND", "PROFILE", "UNIV", "ADDR", "COL", "ROW", "",
-                        ] {
-                            ui.label(egui::RichText::new(h).weak().size(10.0));
-                        }
-                        ui.end_row();
-                        for f in rig.fixtures_mut().iter_mut() {
-                            let bad = conflicts.contains(&f.id);
-                            if bad {
-                                ui.colored_label(WARN, format!("⚠ {}", f.label));
-                            } else {
-                                ui.label(&f.label);
-                            }
-                            egui::ComboBox::from_id_salt(("patch-kind", f.id))
-                                .selected_text(f.kind.group_label())
-                                .show_ui(ui, |ui| {
-                                    for kind in ALL_KINDS {
-                                        if ui
-                                            .selectable_label(f.kind == kind, kind.group_label())
-                                            .clicked()
-                                            && f.kind != kind
-                                        {
-                                            f.kind = kind;
-                                            changed = true;
-                                        }
-                                    }
-                                });
-                            let profile_text = fl
-                                .get(&f.profile_id)
-                                .map(|p| p.to_string())
-                                .unwrap_or_else(|| format!("? {}", f.profile_id));
-                            egui::ComboBox::from_id_salt(("patch-profile", f.id))
-                                .selected_text(profile_text)
-                                .width(230.0)
-                                .show_ui(ui, |ui| {
-                                    for (pid, name) in &profiles {
-                                        if ui.selectable_label(&f.profile_id == pid, name).clicked()
-                                            && &f.profile_id != pid
-                                        {
-                                            f.profile_id = pid.clone();
-                                            changed = true;
-                                        }
-                                    }
-                                });
-                            changed |= ui
-                                .add(egui::DragValue::new(&mut f.universe).range(1..=32))
-                                .changed();
-                            changed |= ui
-                                .add(egui::DragValue::new(&mut f.start_address).range(1..=512))
-                                .changed();
-                            changed |= ui
-                                .add(egui::DragValue::new(&mut f.col).range(0..=15))
-                                .changed();
-                            changed |= ui
-                                .add(egui::DragValue::new(&mut f.row).range(0..=15))
-                                .changed();
-                            if ui.small_button("✕").on_hover_text("Unpatch").clicked() {
-                                remove = Some(f.id);
+            // The patch sheet sits in a well; DMX addresses are the one
+            // place JetBrains Mono appears.
+            let sheet_h = ui.available_height() - 2.0 * theme::SPACE_8;
+            theme::well(ui, theme::SPACE_8, |ui| {
+                ui.set_min_size(egui::vec2(ui.available_width(), sheet_h));
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui::Grid::new("patch_sheet")
+                        .striped(true)
+                        .min_col_width(44.0)
+                        .spacing([theme::SPACE_12, theme::SPACE_6])
+                        .show(ui, |ui| {
+                            for h in [
+                                "FIXTURE", "KIND", "PROFILE", "UNIV", "ADDR", "COL", "ROW", "",
+                            ] {
+                                ui.label(theme::CAPTION.rich(h).color(theme::TEXT_MUTED));
                             }
                             ui.end_row();
-                        }
-                    });
+                            for f in rig.fixtures_mut().iter_mut() {
+                                let bad = conflicts.contains(&f.id);
+                                if bad {
+                                    ui.label(
+                                        theme::BODY_TEXT.rich(format!("⚠ {}", f.label)).color(WARN),
+                                    );
+                                } else {
+                                    ui.label(&f.label);
+                                }
+                                egui::ComboBox::from_id_salt(("patch-kind", f.id))
+                                    .selected_text(f.kind.group_label())
+                                    .show_ui(ui, |ui| {
+                                        for kind in ALL_KINDS {
+                                            if ui
+                                                .selectable_label(
+                                                    f.kind == kind,
+                                                    kind.group_label(),
+                                                )
+                                                .clicked()
+                                                && f.kind != kind
+                                            {
+                                                f.kind = kind;
+                                                changed = true;
+                                            }
+                                        }
+                                    });
+                                let profile_text = fl
+                                    .get(&f.profile_id)
+                                    .map(|p| p.to_string())
+                                    .unwrap_or_else(|| format!("? {}", f.profile_id));
+                                egui::ComboBox::from_id_salt(("patch-profile", f.id))
+                                    .selected_text(profile_text)
+                                    .width(230.0)
+                                    .show_ui(ui, |ui| {
+                                        for (pid, name) in &profiles {
+                                            if ui
+                                                .selectable_label(&f.profile_id == pid, name)
+                                                .clicked()
+                                                && &f.profile_id != pid
+                                            {
+                                                f.profile_id = pid.clone();
+                                                changed = true;
+                                            }
+                                        }
+                                    });
+                                ui.scope(|ui| {
+                                    ui.style_mut().drag_value_text_style =
+                                        egui::TextStyle::Monospace;
+                                    changed |= ui
+                                        .add(egui::DragValue::new(&mut f.universe).range(1..=32))
+                                        .changed();
+                                });
+                                ui.scope(|ui| {
+                                    ui.style_mut().drag_value_text_style =
+                                        egui::TextStyle::Monospace;
+                                    changed |= ui
+                                        .add(
+                                            egui::DragValue::new(&mut f.start_address)
+                                                .range(1..=512),
+                                        )
+                                        .changed();
+                                });
+                                changed |= ui
+                                    .add(egui::DragValue::new(&mut f.col).range(0..=15))
+                                    .changed();
+                                changed |= ui
+                                    .add(egui::DragValue::new(&mut f.row).range(0..=15))
+                                    .changed();
+                                if ui
+                                    .add(Key::new("−").small())
+                                    .on_hover_text("Unpatch")
+                                    .clicked()
+                                {
+                                    remove = Some(f.id);
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
             });
 
             if let Some(id) = remove {
@@ -1651,7 +1679,8 @@ impl HaloApp {
             .open(&mut open)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.label(egui::RichText::new("Audio output").strong());
+                ui.spacing_mut().item_spacing.y = theme::SPACE_8;
+                ui.label(theme::CAPTION.rich("AUDIO OUTPUT").color(theme::TEXT_MUTED));
                 let current = self
                     .audio_settings
                     .device_name
@@ -1708,27 +1737,37 @@ impl HaloApp {
                         }
                     });
 
-                ui.add_space(6.0);
                 ui.label(
-                    egui::RichText::new("Applying restarts the audio stream and reloads decks.")
-                        .weak()
-                        .size(11.0),
+                    theme::NOTE_TEXT
+                        .rich("Applying restarts the audio stream and reloads decks.")
+                        .color(theme::TEXT_MUTED),
                 );
-                if ui.button("Apply").clicked() {
+                if ui.add(Key::new("APPLY").small()).clicked() {
                     apply = true;
                 }
 
-                ui.add_space(12.0);
-                ui.separator();
-                ui.label(egui::RichText::new("Art-Net output").strong());
+                ui.add_space(theme::SPACE_12);
+                ui.label(
+                    theme::CAPTION
+                        .rich("ART-NET OUTPUT")
+                        .color(theme::TEXT_MUTED),
+                );
                 let was_broadcast = self.artnet.unicast_ip.is_none();
                 let mut artnet_dirty = false;
                 ui.horizontal(|ui| {
-                    if ui.selectable_label(was_broadcast, "Broadcast").clicked() && !was_broadcast {
+                    if ui
+                        .add(Key::new("BROADCAST").small().selected(was_broadcast))
+                        .clicked()
+                        && !was_broadcast
+                    {
                         self.artnet.unicast_ip = None;
                         artnet_dirty = true;
                     }
-                    if ui.selectable_label(!was_broadcast, "Unicast").clicked() && was_broadcast {
+                    if ui
+                        .add(Key::new("UNICAST").small().selected(!was_broadcast))
+                        .clicked()
+                        && was_broadcast
+                    {
                         self.artnet.unicast_ip = Some(self.artnet_ip_edit.clone());
                         artnet_dirty = true;
                     }
@@ -1739,10 +1778,7 @@ impl HaloApp {
                         let resp = ui.text_edit_singleline(&mut self.artnet_ip_edit);
                         let valid = self.artnet_ip_edit.parse::<std::net::IpAddr>().is_ok();
                         if !valid {
-                            ui.colored_label(
-                                egui::Color32::from_rgb(230, 90, 70),
-                                "invalid address",
-                            );
+                            ui.label(theme::NOTE_TEXT.rich("invalid address").color(theme::WARN));
                         } else if resp.lost_focus()
                             && self.artnet.unicast_ip.as_deref()
                                 != Some(self.artnet_ip_edit.as_str())
@@ -1752,7 +1788,11 @@ impl HaloApp {
                         }
                     });
                 }
-                ui.label(egui::RichText::new(self.net.summary()).weak().size(11.0));
+                ui.label(
+                    theme::NOTE_TEXT
+                        .rich(self.net.summary())
+                        .color(theme::TEXT_MUTED),
+                );
                 if artnet_dirty {
                     self.apply_artnet();
                 }
@@ -1791,58 +1831,73 @@ impl HaloApp {
             .resizable(true)
             .default_height(300.0)
             .min_height(140.0)
+            .frame(theme::ground_frame(0.0).inner_margin(egui::Margin {
+                left: 8,
+                right: 8,
+                top: 8,
+                bottom: 0,
+            }))
             .show(ctx, |ui| {
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    for (tab, label) in [
-                        (FooterTab::Library, "LIBRARY"),
-                        (FooterTab::Programmer, "PROGRAMMER"),
-                    ] {
-                        if ui
-                            .selectable_label(
-                                self.footer_tab == tab,
-                                egui::RichText::new(label).size(11.0),
-                            )
-                            .clicked()
-                        {
-                            self.footer_tab = tab;
+                // The panel card fills the footer's (resizable) height.
+                let fill_h = ui.available_height() - 2.0 * PERFORM_PANEL_PAD;
+                theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
+                    ui.set_min_size(egui::vec2(ui.available_width(), fill_h));
+                    ui.horizontal(|ui| {
+                        for (tab, label) in [
+                            (FooterTab::Library, "LIBRARY"),
+                            (FooterTab::Programmer, "PROGRAMMER"),
+                        ] {
+                            if ui
+                                .add(Key::new(label).small().selected(self.footer_tab == tab))
+                                .clicked()
+                            {
+                                self.footer_tab = tab;
+                            }
+                        }
+                        group_divider(ui, theme::SIZE_KEY_SMALL);
+                        lighting_leds(ui, lighting);
+                    });
+                    ui.add_space(theme::SPACE_8);
+                    match self.footer_tab {
+                        FooterTab::Library => {
+                            if self.library.is_none() {
+                                ui.centered_and_justified(|ui| {
+                                    ui.label(
+                                        theme::BODY_TEXT
+                                            .rich("Library unavailable")
+                                            .color(theme::TEXT_MUTED),
+                                    );
+                                });
+                                return;
+                            }
+                            let view = self.view;
+                            let body_h = ui.available_height();
+                            ui.horizontal_top(|ui| {
+                                ui.spacing_mut().item_spacing.x = theme::SPACE_8;
+                                theme::well(ui, theme::SPACE_8, |ui| {
+                                    ui.set_width(190.0);
+                                    ui.set_min_height(body_h - 2.0 * theme::SPACE_8);
+                                    ui.vertical(|ui| {
+                                        playlist_tree(ui, &mut self.browser, &mut actions);
+                                    });
+                                });
+                                ui.vertical(|ui| {
+                                    track_table(
+                                        ui,
+                                        &mut self.browser,
+                                        self.library.as_ref(),
+                                        &mut self.waveform_thumbs,
+                                        &mut actions,
+                                        view,
+                                    );
+                                });
+                            });
+                        }
+                        FooterTab::Programmer => {
+                            store = self.programmer_ui(ui, lighting);
                         }
                     }
-                    lighting_leds(ui, lighting);
                 });
-                ui.add_space(4.0);
-                match self.footer_tab {
-                    FooterTab::Library => {
-                        if self.library.is_none() {
-                            ui.centered_and_justified(|ui| {
-                                ui.label(egui::RichText::new("Library unavailable").weak());
-                            });
-                            return;
-                        }
-                        let view = self.view;
-                        ui.horizontal_top(|ui| {
-                            ui.vertical(|ui| {
-                                ui.set_width(190.0);
-                                playlist_tree(ui, &mut self.browser, &mut actions);
-                            });
-                            ui.separator();
-                            ui.vertical(|ui| {
-                                track_table(
-                                    ui,
-                                    &mut self.browser,
-                                    self.library.as_ref(),
-                                    &mut self.waveform_thumbs,
-                                    &mut actions,
-                                    view,
-                                );
-                            });
-                        });
-                    }
-                    FooterTab::Programmer => {
-                        ui.add_space(4.0);
-                        store = self.programmer_ui(ui, lighting);
-                    }
-                }
             });
 
         for action in actions {
@@ -1914,94 +1969,111 @@ impl HaloApp {
         let playhead = display_pos.max(0.0) as usize;
         let playing = shared.transport() == Transport::Playing;
 
-        ui.add_space(8.0);
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
             if has_track {
                 ui.vertical(|ui| {
-                    ui.label(egui::RichText::new(&audition.title).strong().size(16.0));
-                    ui.label(egui::RichText::new(audition.artist.as_deref().unwrap_or("—")).weak());
+                    ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+                    ui.label(
+                        theme::TRACK_TITLE
+                            .rich(&audition.title)
+                            .color(theme::TEXT_STRONG),
+                    );
+                    ui.label(
+                        theme::BODY_TEXT
+                            .rich(audition.artist.as_deref().unwrap_or("—"))
+                            .color(theme::TEXT_MUTED),
+                    );
                 });
             } else {
                 ui.label(
-                    egui::RichText::new(
-                        "Load a track from the library below (EDIT or double-click) \
-                         to author its lighting cues",
-                    )
-                    .weak(),
+                    theme::BODY_TEXT
+                        .rich(
+                            "Load a track from the library below (EDIT or double-click) \
+                             to author its lighting cues",
+                        )
+                        .color(theme::TEXT_MUTED),
                 );
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if audition.bpm > 0.0 {
-                    ui.label(
-                        egui::RichText::new(format!("{:.1} BPM", audition.bpm))
-                            .monospace()
-                            .color(ACCENT),
-                    );
-                    ui.add_space(10.0);
-                }
-                ui.label(
-                    egui::RichText::new(format_time(playhead, sample_rate))
-                        .monospace()
-                        .size(16.0),
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let bpm = if audition.bpm > 0.0 {
+                    format!("{:.1}", audition.bpm)
+                } else {
+                    "—".to_string()
+                };
+                theme::paint_readout(ui, "BPM", &bpm, theme::TEXT_STRONG, 5);
+                ui.add_space(theme::SPACE_12);
+                theme::paint_readout(
+                    ui,
+                    "ELAPSED",
+                    &format_time(playhead, sample_rate),
+                    theme::TEXT_STRONG,
+                    8,
                 );
             });
         });
-        ui.add_space(6.0);
+        ui.add_space(theme::SPACE_12);
 
         // Transport + audition volume (this channel bypasses the
         // crossfader; the fader alone is its level).
         ui.add_enabled_ui(has_track, |ui| {
             ui.horizontal(|ui| {
-                let play_label = if playing { "⏸" } else { "▶" };
-                if ui
-                    .add_sized(
-                        [50.0, 30.0],
-                        egui::Button::new(
-                            egui::RichText::new(play_label)
-                                .size(16.0)
-                                .color(egui::Color32::from_rgb(90, 220, 120)),
+                ui.spacing_mut().item_spacing.x = 0.0;
+                control_group(ui, "TRANSPORT", |ui| {
+                    // The audition player's keys are 44 wide; its CUE is
+                    // yellow, kept apart from the decks' amber.
+                    let size = [44.0, theme::SIZE_KEY];
+                    let play_label = if playing { "⏸" } else { "▶" };
+                    if ui
+                        .add(
+                            Key::new(play_label)
+                                .size(size)
+                                .text_style(theme::KEY_LABEL.sized(16.0))
+                                .label_color(theme::PLAY)
+                                .lit(playing.then_some(Lit::Play)),
                         )
-                        .fill(egui::Color32::from_rgb(32, 56, 40)),
-                    )
-                    .clicked()
-                {
-                    audition.toggle_play();
-                }
-                let cue_resp = ui.add_sized(
-                    [50.0, 30.0],
-                    egui::Button::new(
-                        egui::RichText::new("CUE")
-                            .size(13.0)
-                            .color(egui::Color32::from_rgb(255, 215, 70)),
-                    )
-                    .fill(egui::Color32::from_rgb(58, 50, 26)),
-                );
-                let cue_down = cue_resp.is_pointer_button_down_on();
-                let pressed = cue_down && !audition.cue_was_down;
-                let released = !cue_down && audition.cue_was_down;
-                audition.cue_was_down = cue_down;
-                if pressed {
-                    audition.cue_press();
-                }
-                if released {
-                    audition.cue_release();
-                }
-                ui.separator();
-                let mut vol = shared.fader.load();
-                if ui
-                    .add(
-                        egui::Slider::new(&mut vol, 0.0..=1.0)
-                            .show_value(false)
-                            .text("VOL"),
-                    )
-                    .on_hover_text("Audition volume (independent of the crossfader)")
-                    .changed()
-                {
-                    shared.fader.store(vol);
-                }
+                        .clicked()
+                    {
+                        audition.toggle_play();
+                    }
+                    let cue_resp = ui.add(
+                        Key::new("CUE")
+                            .size(size)
+                            .label_color(theme::AUDITION)
+                            .lit_when_held(Lit::Audition),
+                    );
+                    let cue_down = cue_resp.is_pointer_button_down_on();
+                    let pressed = cue_down && !audition.cue_was_down;
+                    let released = !cue_down && audition.cue_was_down;
+                    audition.cue_was_down = cue_down;
+                    if pressed {
+                        audition.cue_press();
+                    }
+                    if released {
+                        audition.cue_release();
+                    }
+                });
+                ui.add_space(theme::SPACE_12);
+                group_divider(ui, 48.0);
+                ui.add_space(theme::SPACE_12);
+                control_group(ui, "VOLUME", |ui| {
+                    let mut vol = shared.fader.load();
+                    ui.spacing_mut().slider_width = 160.0;
+                    if ui
+                        .add_sized(
+                            [160.0, theme::SIZE_KEY],
+                            egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false),
+                        )
+                        .on_hover_text("Audition volume (independent of the crossfader)")
+                        .changed()
+                    {
+                        shared.fader.store(vol);
+                    }
+                });
             });
         });
-        ui.add_space(8.0);
+        ui.add_space(theme::SPACE_12);
 
         // Waveform stack — same painters as a deck, full width.
         let loop_region = shared.loop_region();
@@ -2049,17 +2121,17 @@ impl HaloApp {
         );
 
         // Inspector row: snap, look palette, selection tools, reset/clear.
-        ui.add_space(4.0);
+        ui.add_space(theme::SPACE_8);
         ui.add_enabled_ui(has_track, |ui| {
             ui.horizontal(|ui| {
-                if ui
-                    .selectable_label(*snap, "SNAP")
+                ui.spacing_mut().item_spacing.x = theme::SPACE_8;
+                if outlined_toggle(ui, *snap, "SNAP", None)
                     .on_hover_text("Snap edits to the beat grid")
                     .clicked()
                 {
                     *snap = !*snap;
                 }
-                ui.separator();
+                group_divider(ui, theme::SIZE_KEY);
                 // Look palette: click arms the look for new events and
                 // reassigns any selected look events.
                 let selected_looks: Vec<u64> = selection
@@ -2071,13 +2143,7 @@ impl HaloApp {
                     .collect();
                 for (i, look) in LOOK_PALETTE.iter().enumerate() {
                     let armed = armed_look.0 == i;
-                    let mut swatch = egui::Button::new("")
-                        .fill(look.color.gamma_multiply(0.85))
-                        .min_size(egui::vec2(18.0, 18.0));
-                    if armed {
-                        swatch = swatch.stroke(egui::Stroke::new(2.0_f32, egui::Color32::WHITE));
-                    }
-                    let resp = ui.add(swatch).on_hover_text(look.name);
+                    let resp = look_swatch(ui, look.color, armed).on_hover_text(look.name);
                     if resp.clicked() {
                         *armed_look = LookId(i);
                         if !selected_looks.is_empty() {
@@ -2088,7 +2154,7 @@ impl HaloApp {
                         }
                     }
                 }
-                ui.separator();
+                group_divider(ui, theme::SIZE_KEY);
                 let selected_accents: std::collections::HashSet<u64> = selection
                     .iter()
                     .filter_map(|&s| match s {
@@ -2098,28 +2164,34 @@ impl HaloApp {
                     .collect();
                 if selection.is_empty() {
                     ui.label(
-                        egui::RichText::new(
-                            "Drag in LOOK to place the armed look · drag in ENERGY to shape \
-                             the arc · draw one-shots in ACCENT",
-                        )
-                        .weak()
-                        .size(11.0),
+                        theme::NOTE_TEXT
+                            .rich(
+                                "Drag in LOOK to place the armed look · drag in ENERGY to shape \
+                                 the arc · draw one-shots in ACCENT",
+                            )
+                            .color(theme::TEXT_MUTED),
                     );
                 } else {
                     if let [id] = selected_looks[..]
                         && let Some(ev) = audition.show.looks.find(id)
                     {
+                        // The look's colour as an LED; its name in
+                        // `text-strong` (look colours aren't text colours).
+                        let (dot, _) = ui.allocate_exact_size(
+                            egui::vec2(theme::SIZE_LED, theme::SIZE_LED),
+                            egui::Sense::hover(),
+                        );
+                        theme::paint_led(ui.painter(), dot.center(), true, ev.look.def().color);
                         ui.label(
-                            egui::RichText::new(ev.look.def().name)
-                                .size(11.0)
-                                .color(ev.look.def().color)
-                                .strong(),
+                            theme::BODY_TEXT
+                                .rich(ev.look.def().name)
+                                .color(theme::TEXT_STRONG),
                         );
                     } else {
                         ui.label(
-                            egui::RichText::new(format!("{} selected", selection.len()))
-                                .size(11.0)
-                                .strong(),
+                            theme::BODY_TEXT
+                                .rich(format!("{} selected", selection.len()))
+                                .color(theme::TEXT_STRONG),
                         );
                     }
                     if !selected_accents.is_empty() {
@@ -2145,7 +2217,7 @@ impl HaloApp {
                             mutated = true;
                         }
                     }
-                    if ui.button("Delete").clicked() {
+                    if ui.add(Key::new("DELETE").small()).clicked() {
                         for &s in selection.iter() {
                             match s {
                                 ShowSel::Look(id) => audition.show.looks.remove(id),
@@ -2159,7 +2231,7 @@ impl HaloApp {
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.menu_button("Clear ▾", |ui| {
+                    ui.menu_button(theme::KEY_LABEL.rich("CLEAR"), |ui| {
                         if ui.button("Looks").clicked() {
                             audition.show.looks.clear();
                             mutated = true;
@@ -2183,7 +2255,7 @@ impl HaloApp {
                         }
                     });
                     if ui
-                        .button("Reset demo show")
+                        .add(Key::new("RESET DEMO SHOW").small())
                         .on_hover_text(
                             "Re-seed the look / energy / accent lanes with the simulated \
                              show, then edit",
@@ -2202,7 +2274,7 @@ impl HaloApp {
                 });
             });
         });
-        ui.add_space(4.0);
+        ui.add_space(theme::SPACE_8);
 
         if let Some(frac) = paint_overview(
             ui,
@@ -2225,18 +2297,19 @@ impl HaloApp {
         }
 
         ui.add_space(2.0);
+        ui.add_space(theme::SPACE_6);
         ui.horizontal(|ui| {
             paint_beat_counter(ui, &audition.marks, display_pos);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("+").clicked() {
+                if ui.add(Key::new("+").small()).clicked() {
                     audition.zoom.zoom_in();
                 }
                 ui.label(
-                    egui::RichText::new(audition.zoom.label(audition.marks.is_usable()))
-                        .weak()
-                        .size(11.0),
+                    theme::CAPTION
+                        .rich(audition.zoom.label(audition.marks.is_usable()))
+                        .color(theme::TEXT_MUTED),
                 );
-                if ui.small_button("−").clicked() {
+                if ui.add(Key::new("−").small()).clicked() {
                     audition.zoom.zoom_out();
                 }
             });
@@ -2250,7 +2323,7 @@ impl HaloApp {
             if ui.rect_contains_pointer(rect) {
                 ui.painter().rect_stroke(
                     rect.expand(2.0),
-                    6.0,
+                    theme::RADIUS_PANEL,
                     egui::Stroke::new(2.0, ACCENT),
                     egui::StrokeKind::Inside,
                 );
@@ -2294,21 +2367,26 @@ impl HaloApp {
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .open(&mut open)
             .show(ctx, |ui| {
-                ui.label(format!("Remove “{title}” from the library?"));
                 ui.label(
-                    egui::RichText::new(
-                        "Authored lighting cues will be deleted.\n\
-                         The audio file on disk is not touched.",
-                    )
-                    .weak(),
+                    theme::BODY_TEXT
+                        .rich(format!("Remove “{title}” from the library?"))
+                        .color(theme::TEXT_STRONG),
                 );
-                ui.add_space(8.0);
+                ui.label(
+                    theme::NOTE_TEXT
+                        .rich(
+                            "Authored lighting cues will be deleted.\n\
+                             The audio file on disk is not touched.",
+                        )
+                        .color(theme::TEXT_MUTED),
+                );
+                ui.add_space(theme::SPACE_12);
                 ui.horizontal(|ui| {
-                    if ui.button("Remove").clicked() {
+                    if ui.add(Key::new("REMOVE")).clicked() {
                         decided = true;
                         remove = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.add(Key::new("CANCEL")).clicked() {
                         decided = true;
                     }
                 });
@@ -2633,17 +2711,27 @@ impl eframe::App for HaloApp {
         }
 
         if self.view == View::Prepare {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                self.prepare_panel(ui);
-            });
+            egui::CentralPanel::default()
+                .frame(theme::ground_frame(theme::SPACE_8))
+                .show(ctx, |ui| {
+                    theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
+                        ui.set_width(ui.available_width());
+                        self.prepare_panel(ui);
+                    });
+                });
             return;
         }
 
         if self.view == View::Patch {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.add_space(6.0);
-                self.patch_ui(ui);
-            });
+            egui::CentralPanel::default()
+                .frame(theme::ground_frame(theme::SPACE_8))
+                .show(ctx, |ui| {
+                    let fill = ui.available_size() - egui::Vec2::splat(2.0 * PERFORM_PANEL_PAD);
+                    theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
+                        ui.set_min_size(fill);
+                        self.patch_ui(ui);
+                    });
+                });
             return;
         }
 
@@ -2963,16 +3051,16 @@ fn playlist_tree(ui: &mut egui::Ui, browser: &mut BrowserState, actions: &mut Ve
         playlist_row(ui, browser, pl, actions);
     }
 
-    ui.add_space(6.0);
+    ui.add_space(theme::SPACE_8);
     ui.horizontal(|ui| {
-        if ui.small_button("+ List").clicked() {
+        if ui.add(Key::new("+ LIST").small()).clicked() {
             actions.push(BrowserAction::NewPlaylist(false));
         }
-        if ui.small_button("+ Folder").clicked() {
+        if ui.add(Key::new("+ FOLDER").small()).clicked() {
             actions.push(BrowserAction::NewPlaylist(true));
         }
     });
-    if ui.small_button("⬇ Import folder…").clicked()
+    if ui.add(Key::new("⬇ IMPORT FOLDER…").small()).clicked()
         && let Some(dir) = rfd::FileDialog::new().pick_folder()
     {
         actions.push(BrowserAction::ImportFolder(dir));
@@ -3032,12 +3120,14 @@ fn track_table(
     view: View,
 ) {
     ui.horizontal(|ui| {
-        ui.label("🔍");
+        ui.label(egui::RichText::new("🔍").color(theme::TEXT_MUTED));
+        // A well field: `extreme_bg_color` is the well.
         if ui
             .add(
                 egui::TextEdit::singleline(&mut browser.search)
                     .hint_text("Search title, artist, album")
-                    .desired_width(240.0),
+                    .desired_width(240.0)
+                    .margin(egui::vec2(theme::SPACE_8, 4.0)),
             )
             .changed()
         {
@@ -3045,13 +3135,13 @@ fn track_table(
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
-                egui::RichText::new(format!("{} tracks", browser.rows.len()))
-                    .weak()
-                    .size(11.0),
+                theme::NOTE_TEXT
+                    .rich(format!("{} tracks", browser.rows.len()))
+                    .color(theme::TEXT_MUTED),
             );
         });
     });
-    ui.add_space(4.0);
+    ui.add_space(theme::SPACE_8);
 
     use egui_extras::{Column, TableBuilder};
     let header = |ui: &mut egui::Ui,
@@ -3064,10 +3154,21 @@ fn track_table(
         } else {
             ""
         };
+        // Column headings stay Title Case (the one exception to uppercase
+        // labels); the sorted column reads `text-strong`.
+        let color = if browser.sort == col {
+            theme::TEXT_STRONG
+        } else {
+            theme::TEXT_MUTED
+        };
         if ui
             .add(
-                egui::Label::new(egui::RichText::new(format!("{label}{arrow}")).strong())
-                    .sense(egui::Sense::click()),
+                egui::Label::new(
+                    theme::KEY_LABEL
+                        .rich(format!("{label}{arrow}"))
+                        .color(color),
+                )
+                .sense(egui::Sense::click()),
             )
             .clicked()
         {
@@ -3087,188 +3188,212 @@ fn track_table(
     // from the row; the whole row must act as one draggable unit.
     ui.style_mut().interaction.selectable_labels = false;
 
-    TableBuilder::new(ui)
-        .striped(true)
-        .sense(egui::Sense::click_and_drag())
-        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        .column(Column::exact(58.0)) // load buttons
-        .column(Column::exact(96.0)) // waveform thumbnail
-        .column(Column::remainder().at_least(140.0)) // title
-        .column(Column::initial(140.0).at_least(80.0)) // artist
-        .column(Column::initial(120.0).at_least(60.0)) // album
-        .column(Column::exact(52.0)) // bpm
-        .column(Column::exact(44.0)) // key
-        .column(Column::exact(48.0)) // time
-        .header(20.0, |mut h| {
-            h.col(|_| {});
-            h.col(|_| {}); // thumbnail: unlabeled, not sortable
-            h.col(|ui| header(ui, "Title", SortColumn::Title, browser, actions));
-            h.col(|ui| header(ui, "Artist", SortColumn::Artist, browser, actions));
-            h.col(|ui| header(ui, "Album", SortColumn::Album, browser, actions));
-            h.col(|ui| header(ui, "BPM", SortColumn::Bpm, browser, actions));
-            h.col(|ui| header(ui, "Key", SortColumn::Key, browser, actions));
-            h.col(|ui| header(ui, "Time", SortColumn::Duration, browser, actions));
-        })
-        .body(|body| {
-            body.rows(TRACK_ROW_HEIGHT, browser.rows.len(), |mut row| {
-                let track = &browser.rows[row.index()];
-                row.col(|ui| {
-                    ui.horizontal(|ui| match view {
-                        View::Perform | View::Patch => {
-                            if ui
-                                .small_button("A")
-                                .on_hover_text("Load to deck A")
-                                .clicked()
-                            {
-                                actions.push(BrowserAction::LoadDeck(0, track.id));
+    // The table sits in a well.
+    theme::well(
+        ui,
+        egui::Margin::symmetric(theme::SPACE_8 as i8, theme::SPACE_4 as i8),
+        |ui| {
+            ui.set_min_size(ui.available_size());
+            TableBuilder::new(ui)
+                .striped(true)
+                .sense(egui::Sense::click_and_drag())
+                .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                .column(Column::exact(58.0)) // load buttons
+                .column(Column::exact(96.0)) // waveform thumbnail
+                .column(Column::remainder().at_least(140.0)) // title
+                .column(Column::initial(140.0).at_least(80.0)) // artist
+                .column(Column::initial(120.0).at_least(60.0)) // album
+                .column(Column::exact(52.0)) // bpm
+                .column(Column::exact(44.0)) // key
+                .column(Column::exact(48.0)) // time
+                .header(20.0, |mut h| {
+                    h.col(|_| {});
+                    h.col(|_| {}); // thumbnail: unlabeled, not sortable
+                    h.col(|ui| header(ui, "Title", SortColumn::Title, browser, actions));
+                    h.col(|ui| header(ui, "Artist", SortColumn::Artist, browser, actions));
+                    h.col(|ui| header(ui, "Album", SortColumn::Album, browser, actions));
+                    h.col(|ui| header(ui, "BPM", SortColumn::Bpm, browser, actions));
+                    h.col(|ui| header(ui, "Key", SortColumn::Key, browser, actions));
+                    h.col(|ui| header(ui, "Time", SortColumn::Duration, browser, actions));
+                })
+                .body(|body| {
+                    body.rows(TRACK_ROW_HEIGHT, browser.rows.len(), |mut row| {
+                        let track = &browser.rows[row.index()];
+                        row.col(|ui| {
+                            ui.horizontal(|ui| match view {
+                                View::Perform | View::Patch => {
+                                    ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                                    if ui
+                                        .add(Key::new("A").small())
+                                        .on_hover_text("Load to deck A")
+                                        .clicked()
+                                    {
+                                        actions.push(BrowserAction::LoadDeck(0, track.id));
+                                    }
+                                    if ui
+                                        .add(Key::new("B").small())
+                                        .on_hover_text("Load to deck B")
+                                        .clicked()
+                                    {
+                                        actions.push(BrowserAction::LoadDeck(1, track.id));
+                                    }
+                                }
+                                View::Prepare => {
+                                    if ui
+                                        .add(Key::new("EDIT").small())
+                                        .on_hover_text("Open in the cue editor")
+                                        .clicked()
+                                    {
+                                        actions.push(BrowserAction::LoadAudition(track.id));
+                                    }
+                                }
+                            });
+                        });
+                        row.col(|ui| {
+                            // Painter-only (no widget) so the cell never competes
+                            // with the table's row-level click/drag sense.
+                            let rect = egui::Rect::from_center_size(
+                                ui.max_rect().center(),
+                                THUMB_CELL_SIZE,
+                            );
+                            if thumbs.len() >= 512 && !thumbs.contains_key(&track.id) {
+                                // Cap: dropping the handles frees the textures;
+                                // visible rows repopulate over the next frames.
+                                thumbs.clear();
                             }
-                            if ui
-                                .small_button("B")
-                                .on_hover_text("Load to deck B")
-                                .clicked()
-                            {
-                                actions.push(BrowserAction::LoadDeck(1, track.id));
+                            let entry = thumbs.entry(track.id).or_insert_with(|| {
+                                lib.and_then(|l| l.waveform_blob(track.id).ok().flatten())
+                                    .and_then(|data| crate::waveform::render_thumbnail(&data))
+                                    .map(|img| {
+                                        ui.ctx().load_texture(
+                                            format!("track_thumb_{}", track.id),
+                                            img,
+                                            egui::TextureOptions::LINEAR,
+                                        )
+                                    })
+                            });
+                            match entry {
+                                Some(tex) => {
+                                    ui.painter().image(
+                                        tex.id(),
+                                        rect,
+                                        egui::Rect::from_min_max(
+                                            egui::pos2(0.0, 0.0),
+                                            egui::pos2(1.0, 1.0),
+                                        ),
+                                        egui::Color32::WHITE,
+                                    );
+                                }
+                                // No blob yet (unanalyzed / backfill pending /
+                                // failed): a quiet baseline placeholder.
+                                None => {
+                                    ui.painter().hline(
+                                        rect.x_range(),
+                                        rect.bottom() - 1.0,
+                                        egui::Stroke::new(
+                                            1.0_f32,
+                                            crate::waveform::palette::TEXT_DIM,
+                                        ),
+                                    );
+                                }
                             }
-                        }
-                        View::Prepare => {
-                            if ui
-                                .small_button("EDIT")
-                                .on_hover_text("Open in the cue editor")
-                                .clicked()
-                            {
-                                actions.push(BrowserAction::LoadAudition(track.id));
-                            }
-                        }
-                    });
-                });
-                row.col(|ui| {
-                    // Painter-only (no widget) so the cell never competes
-                    // with the table's row-level click/drag sense.
-                    let rect =
-                        egui::Rect::from_center_size(ui.max_rect().center(), THUMB_CELL_SIZE);
-                    if thumbs.len() >= 512 && !thumbs.contains_key(&track.id) {
-                        // Cap: dropping the handles frees the textures;
-                        // visible rows repopulate over the next frames.
-                        thumbs.clear();
-                    }
-                    let entry = thumbs.entry(track.id).or_insert_with(|| {
-                        lib.and_then(|l| l.waveform_blob(track.id).ok().flatten())
-                            .and_then(|data| crate::waveform::render_thumbnail(&data))
-                            .map(|img| {
-                                ui.ctx().load_texture(
-                                    format!("track_thumb_{}", track.id),
-                                    img,
-                                    egui::TextureOptions::LINEAR,
-                                )
-                            })
-                    });
-                    match entry {
-                        Some(tex) => {
-                            ui.painter().image(
-                                tex.id(),
-                                rect,
-                                egui::Rect::from_min_max(
-                                    egui::pos2(0.0, 0.0),
-                                    egui::pos2(1.0, 1.0),
+                        });
+                        row.col(|ui| {
+                            ui.label(&track.title);
+                        });
+                        row.col(|ui| {
+                            ui.label(
+                                theme::BODY_TEXT
+                                    .rich(track.artist.as_deref().unwrap_or("—"))
+                                    .color(theme::TEXT_MUTED),
+                            );
+                        });
+                        row.col(|ui| {
+                            ui.label(
+                                theme::BODY_TEXT
+                                    .rich(track.album.as_deref().unwrap_or("—"))
+                                    .color(theme::TEXT_MUTED),
+                            );
+                        });
+                        row.col(|ui| {
+                            ui.label(
+                                theme::NUMERALS_SM.rich(
+                                    track
+                                        .bpm
+                                        .map(|b| format!("{b:.1}"))
+                                        .unwrap_or_else(|| "—".to_string()),
                                 ),
-                                egui::Color32::WHITE,
                             );
-                        }
-                        // No blob yet (unanalyzed / backfill pending /
-                        // failed): a quiet baseline placeholder.
-                        None => {
-                            ui.painter().hline(
-                                rect.x_range(),
-                                rect.bottom() - 1.0,
-                                egui::Stroke::new(1.0_f32, crate::waveform::palette::TEXT_DIM),
+                        });
+                        row.col(|ui| {
+                            key_badge(ui, track.key.as_deref().unwrap_or("—"));
+                        });
+                        row.col(|ui| {
+                            ui.label(
+                                theme::NUMERALS_SM.rich(
+                                    track
+                                        .duration_secs
+                                        .map(|s| format!("{}:{:02}", s as u64 / 60, s as u64 % 60))
+                                        .unwrap_or_else(|| "—".to_string()),
+                                ),
                             );
-                        }
-                    }
-                });
-                row.col(|ui| {
-                    ui.label(&track.title);
-                });
-                row.col(|ui| {
-                    ui.label(track.artist.as_deref().unwrap_or("—"));
-                });
-                row.col(|ui| {
-                    ui.label(track.album.as_deref().unwrap_or("—"));
-                });
-                row.col(|ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            track
-                                .bpm
-                                .map(|b| format!("{b:.1}"))
-                                .unwrap_or_else(|| "—".to_string()),
-                        )
-                        .monospace(),
-                    );
-                });
-                row.col(|ui| {
-                    ui.label(track.key.as_deref().unwrap_or("—"));
-                });
-                row.col(|ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            track
-                                .duration_secs
-                                .map(|s| format!("{}:{:02}", s as u64 / 60, s as u64 % 60))
-                                .unwrap_or_else(|| "—".to_string()),
-                        )
-                        .monospace(),
-                    );
-                });
-                let row_resp = row.response();
-                // Right-click anywhere on the row (the menu used to live on
-                // the Title cell only).
-                row_resp.context_menu(|ui| {
-                    ui.menu_button("Add to playlist", |ui| {
-                        for (id, name) in &playlists {
-                            if ui.button(name).clicked() {
-                                actions.push(BrowserAction::AddToPlaylist(*id, track.id));
+                        });
+                        let row_resp = row.response();
+                        // Right-click anywhere on the row (the menu used to live on
+                        // the Title cell only).
+                        row_resp.context_menu(|ui| {
+                            ui.menu_button("Add to playlist", |ui| {
+                                for (id, name) in &playlists {
+                                    if ui.button(name).clicked() {
+                                        actions.push(BrowserAction::AddToPlaylist(*id, track.id));
+                                        ui.close_menu();
+                                    }
+                                }
+                                if playlists.is_empty() {
+                                    ui.label(
+                                        theme::BODY_TEXT
+                                            .rich("No playlists")
+                                            .color(theme::TEXT_MUTED),
+                                    );
+                                }
+                            });
+                            if let Some(pl) = selected_playlist
+                                && ui.button("Remove from this playlist").clicked()
+                            {
+                                actions.push(BrowserAction::RemoveFromPlaylist(pl, track.id));
                                 ui.close_menu();
                             }
+                            ui.separator();
+                            if ui.button("Reanalyze").clicked() {
+                                actions.push(BrowserAction::Reanalyze(track.id));
+                                ui.close_menu();
+                            }
+                            if ui.button("Remove from library…").clicked() {
+                                actions.push(BrowserAction::RemoveFromLibrary(
+                                    track.id,
+                                    track.title.clone(),
+                                ));
+                                ui.close_menu();
+                            }
+                        });
+                        if view == View::Prepare && row_resp.double_clicked() {
+                            actions.push(BrowserAction::LoadAudition(track.id));
                         }
-                        if playlists.is_empty() {
-                            ui.label(egui::RichText::new("No playlists").weak());
+                        // Rows drag in both views: onto a deck in Perform, onto
+                        // the cue editor in Prepare.
+                        if row_resp.drag_started() {
+                            egui::DragAndDrop::set_payload(
+                                &row_resp.ctx,
+                                DragTrack {
+                                    track_id: track.id,
+                                    title: track.title.clone(),
+                                },
+                            );
                         }
                     });
-                    if let Some(pl) = selected_playlist
-                        && ui.button("Remove from this playlist").clicked()
-                    {
-                        actions.push(BrowserAction::RemoveFromPlaylist(pl, track.id));
-                        ui.close_menu();
-                    }
-                    ui.separator();
-                    if ui.button("Reanalyze").clicked() {
-                        actions.push(BrowserAction::Reanalyze(track.id));
-                        ui.close_menu();
-                    }
-                    if ui.button("Remove from library…").clicked() {
-                        actions.push(BrowserAction::RemoveFromLibrary(
-                            track.id,
-                            track.title.clone(),
-                        ));
-                        ui.close_menu();
-                    }
                 });
-                if view == View::Prepare && row_resp.double_clicked() {
-                    actions.push(BrowserAction::LoadAudition(track.id));
-                }
-                // Rows drag in both views: onto a deck in Perform, onto
-                // the cue editor in Prepare.
-                if row_resp.drag_started() {
-                    egui::DragAndDrop::set_payload(
-                        &row_resp.ctx,
-                        DragTrack {
-                            track_id: track.id,
-                            title: track.title.clone(),
-                        },
-                    );
-                }
-            });
-        });
+        },
+    );
 
     // Floating chip that follows the cursor while a track is being dragged.
     if let Some(drag) = egui::DragAndDrop::payload::<DragTrack>(ui.ctx())
@@ -3907,7 +4032,7 @@ fn deck_panel(
         if ui.rect_contains_pointer(rect) {
             ui.painter().rect_stroke(
                 rect.expand(2.0),
-                6.0,
+                theme::RADIUS_PANEL,
                 egui::Stroke::new(2.0, ACCENT),
                 egui::StrokeKind::Inside,
             );
@@ -4558,6 +4683,24 @@ fn key_badge(ui: &mut egui::Ui, key: &str) {
     ui.painter().galley(pos, galley, theme::MUSICAL_KEY);
 }
 
+/// An 18px look swatch in Prepare's palette: the look's colour with a 1px
+/// edge; the armed look carries a `text-strong` ring.
+fn look_swatch(ui: &mut egui::Ui, color: egui::Color32, armed: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+    let painter = ui.painter();
+    painter.rect_filled(rect, theme::RADIUS_CONTROL, color.gamma_multiply(0.85));
+    theme::paint_edge(painter, rect, theme::RADIUS_CONTROL, theme::EDGE);
+    if armed {
+        painter.rect_stroke(
+            rect.expand(1.0),
+            theme::RADIUS_CONTROL,
+            egui::Stroke::new(2.0, theme::TEXT_STRONG),
+            egui::StrokeKind::Outside,
+        );
+    }
+    resp
+}
+
 fn apply_theme(ctx: &egui::Context) {
     // Pin to dark regardless of the OS appearance setting; set_visuals only
     // styles the active theme, so following the system would fall back to
@@ -4575,7 +4718,8 @@ fn apply_theme(ctx: &egui::Context) {
     visuals.menu_corner_radius = theme::RADIUS_PANEL.into();
     visuals.extreme_bg_color = theme::WELL;
     visuals.code_bg_color = theme::WELL;
-    visuals.faint_bg_color = theme::PANEL;
+    // Table stripes sit in wells: one step up from the well.
+    visuals.faint_bg_color = theme::PANEL_DEEP;
     visuals.warn_fg_color = theme::WARN;
     visuals.error_fg_color = theme::WARN;
     visuals.hyperlink_color = theme::ACCENT;

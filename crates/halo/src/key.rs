@@ -10,10 +10,6 @@
 //! plain `Response`, so callers keep their own press / release / right-click
 //! handling exactly as with `egui::Button`.
 
-// Small keys, `pressed` and the audition face arrive with the toolbar and
-// Prepare redesign steps; drop this once they are used.
-#![allow(dead_code)]
-
 use eframe::egui::{self, Color32, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType};
 
 use crate::theme::{self, Face, TypeStyle};
@@ -62,7 +58,6 @@ pub struct Key {
     lit_when_held: Option<Lit>,
     color: Option<Color32>,
     led: Option<(bool, Color32)>,
-    pressed: bool,
     selected: bool,
 }
 
@@ -78,7 +73,6 @@ impl Key {
             lit_when_held: None,
             color: None,
             led: None,
-            pressed: false,
             selected: false,
         }
     }
@@ -122,12 +116,6 @@ impl Key {
     /// An LED before the label, lit in `color` when `on`.
     pub fn led(mut self, on: bool, color: Color32) -> Self {
         self.led = Some((on, color));
-        self
-    }
-
-    /// Draw it held regardless of the pointer.
-    pub fn pressed(mut self, pressed: bool) -> Self {
-        self.pressed = pressed;
         self
     }
 
@@ -176,7 +164,7 @@ impl Widget for Key {
             return response;
         }
 
-        let held = enabled && (self.pressed || response.is_pointer_button_down_on());
+        let held = enabled && response.is_pointer_button_down_on();
         let hovered = enabled && response.hovered();
         let lit = if !enabled {
             None
