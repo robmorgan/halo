@@ -69,6 +69,10 @@ Plain threads + channels/atomics; each session has one owner:
 - `programmer_ui.rs` — lighting programmer surface (fixture grid, five parameter views, effect panels).
 - `show.rs` — `simulate_show()`: deterministic demo cue generator, not real authored content.
 - `fader.rs` / `knob.rs` — custom egui widgets.
+- `theme.rs` — the Halo design system: tokens by role name, type styles, fonts (Inter + tabular copy,
+  JetBrains Mono for DMX addresses), `face-*` gradient textures and raised / lit / well / LED / panel
+  paint helpers. Use its tokens; don't hand-mix colours.
+- `key.rs` — the `Key` widget every performance-surface button is built from (lit faces, LEDs, selected).
 
 ### Key modules — `crates/halo-light/src`
 

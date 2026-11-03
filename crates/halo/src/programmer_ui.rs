@@ -18,7 +18,9 @@ use halo_light::programmer::{
 };
 
 use crate::fader::{Fader, Notches};
+use crate::key::{Key, Lit};
 use crate::knob::{Knob, KnobArc};
+use crate::theme;
 
 /// Everything the programmer panel reads and writes.
 pub struct ProgrammerCtx<'a> {
@@ -34,12 +36,22 @@ pub struct ProgrammerCtx<'a> {
     pub beat_t: f64,
 }
 
-const ACTION_COL_W: f32 = 96.0;
+const ACTION_COL_W: f32 = 112.0;
 const FADER_W: f32 = 20.0;
 /// Fixed width of the parameter column so the effects panel never shifts
 /// when the view changes (sized for the widest view: Color's four faders
 /// plus the swatch column).
 const PARAMS_W: f32 = 300.0;
+
+/// A small key for one choice of a set; the current choice is selected.
+fn choice(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
+    ui.add(Key::new(label).small().selected(selected))
+}
+
+/// A spaced caption over a programmer group.
+fn caption(ui: &mut egui::Ui, text: &str) {
+    ui.label(theme::CAPTION.rich(text).color(theme::TEXT_MUTED));
+}
 
 /// Returns true when STORE was pressed.
 pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
@@ -49,17 +61,19 @@ pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
         // row and the view tabs sit on the same top line.
         ui.vertical(|ui| {
             groups_row(ui, cx.rig, cx.selection);
-            ui.add_space(6.0);
-            fixture_grid(ui, cx.rig, cx.selection, cx.outputs);
-            ui.add_space(6.0);
+            ui.add_space(theme::SPACE_8);
+            theme::well(ui, theme::SPACE_8, |ui| {
+                fixture_grid(ui, cx.rig, cx.selection, cx.outputs);
+            });
+            ui.add_space(theme::SPACE_8);
             ui.horizontal(|ui| {
                 for (i, o) in cx.overrides.iter_mut().enumerate() {
                     lane_controls(ui, o, i);
-                    ui.add_space(4.0);
+                    ui.add_space(theme::SPACE_8);
                 }
             });
         });
-        ui.separator();
+        programmer_divider(ui);
 
         // Middle: view tabs + the active view + its effect panel.
         let center_w = (ui.available_width() - ACTION_COL_W - 20.0).max(300.0);
@@ -67,18 +81,12 @@ pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
             ui.set_width(center_w);
             ui.horizontal(|ui| {
                 for (view, label) in ALL_VIEWS {
-                    if ui
-                        .selectable_label(
-                            cx.params.view == view,
-                            egui::RichText::new(label).size(10.0),
-                        )
-                        .clicked()
-                    {
+                    if choice(ui, cx.params.view == view, label).clicked() {
                         cx.params.view = view;
                     }
                 }
             });
-            ui.add_space(6.0);
+            ui.add_space(theme::SPACE_8);
             ui.horizontal_top(|ui| {
                 let beat_t = cx.beat_t;
                 // Fixed-width parameter column: the effects panel to its
@@ -107,18 +115,11 @@ pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                         &mut cx.params.intensity.effect,
                         crate::waveform::palette::LANE_LIGHTING,
                     )),
-                    ParamView::Color => Some((
-                        &mut cx.params.color.effect,
-                        egui::Color32::from_rgb(240, 200, 90),
-                    )),
-                    ParamView::Position => Some((
-                        &mut cx.params.position.effect,
-                        egui::Color32::from_rgb(140, 120, 255),
-                    )),
-                    ParamView::Beam => Some((
-                        &mut cx.params.beam.effect,
-                        egui::Color32::from_rgb(225, 235, 250),
-                    )),
+                    ParamView::Color => {
+                        Some((&mut cx.params.color.effect, theme::LOOK_AMBER_SWEEP))
+                    }
+                    ParamView::Position => Some((&mut cx.params.position.effect, POSITION_ACCENT)),
+                    ParamView::Beam => Some((&mut cx.params.beam.effect, theme::LOOK_STROBE_WHITE)),
                     ParamView::PixelFx => None,
                 };
                 if let Some((cfg, accent)) = effect {
@@ -126,12 +127,27 @@ pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                 }
             });
         });
-        ui.separator();
+        programmer_divider(ui);
 
         // Right: stacked actions.
         store = action_column(ui, cx);
     });
     store
+}
+
+/// Accent of the Position view's effect, pad dot and faders.
+const POSITION_ACCENT: egui::Color32 = theme::LOOK_UV_VIOLET;
+
+/// The groove between the programmer's columns: a 1px `edge` line with a
+/// 1px `lip` beside it, as tall as the column beside it.
+fn programmer_divider(ui: &mut egui::Ui) {
+    let height = ui.min_rect().height().max(theme::SIZE_KEY);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, height), egui::Sense::hover());
+    let x = rect.left() + 3.5;
+    ui.painter()
+        .vline(x, rect.y_range(), egui::Stroke::new(1.0, theme::EDGE));
+    ui.painter()
+        .vline(x + 1.0, rect.y_range(), egui::Stroke::new(1.0, theme::LIP));
 }
 
 /// Group-select row: click selects exactly that kind's fixtures,
@@ -141,19 +157,13 @@ fn groups_row(ui: &mut egui::Ui, rig: &Rig, selection: &mut HashSet<u32>) {
     ui.horizontal(|ui| {
         let all: HashSet<u32> = rig.ids().collect();
         let all_selected = !all.is_empty() && selection.len() == all.len();
-        if ui
-            .selectable_label(all_selected, egui::RichText::new("ALL").size(10.0))
-            .clicked()
-        {
+        if choice(ui, all_selected, "ALL").clicked() {
             *selection = all;
         }
         for kind in ALL_KINDS {
             let ids: HashSet<u32> = rig.ids_of_kind(kind).collect();
             let active = !ids.is_empty() && ids.is_subset(selection);
-            if ui
-                .selectable_label(active, egui::RichText::new(kind.group_label()).size(10.0))
-                .clicked()
-            {
+            if choice(ui, active, kind.group_label()).clicked() {
                 if shift {
                     selection.extend(&ids);
                 } else {
@@ -168,14 +178,14 @@ fn groups_row(ui: &mut egui::Ui, rig: &Rig, selection: &mut HashSet<u32>) {
         } else {
             format!("{n} selected")
         };
-        ui.label(egui::RichText::new(caption).weak().size(9.0));
+        ui.label(theme::NOTE_TEXT.rich(caption).color(theme::TEXT_MUTED));
     });
 }
 
 /// Fader height that fills the footer space left below the view tabs
-/// (the ~34 pt reserve holds the readout + label under each fader).
+/// (the ~40 pt reserve holds the readout + caption under each fader).
 fn fill_fader_height(ui: &egui::Ui) -> f32 {
-    (ui.available_height() - 34.0).clamp(140.0, 420.0)
+    (ui.available_height() - 40.0).clamp(140.0, 420.0)
 }
 
 /// Spec for one labeled vertical fader column.
@@ -191,7 +201,7 @@ struct FaderCol<'a> {
 /// One labeled vertical fader with a live value readout.
 fn fader_col(ui: &mut egui::Ui, value: &mut f32, spec: FaderCol<'_>) {
     ui.vertical(|ui| {
-        ui.set_width(38.0);
+        ui.set_width(48.0);
         ui.vertical_centered(|ui| {
             ui.add(
                 Fader::new(value, spec.range, spec.accent)
@@ -200,11 +210,11 @@ fn fader_col(ui: &mut egui::Ui, value: &mut f32, spec: FaderCol<'_>) {
                     .default_value(spec.default),
             );
             ui.label(
-                egui::RichText::new(format!("{value:.0}{}", spec.unit))
-                    .monospace()
-                    .size(9.0),
+                theme::NUMERALS_SM
+                    .rich(format!("{value:.0}{}", spec.unit))
+                    .color(theme::TEXT_STRONG),
             );
-            ui.label(egui::RichText::new(spec.label).weak().size(9.0));
+            caption(ui, spec.label);
         });
     });
 }
@@ -233,10 +243,10 @@ fn intensity_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::IntensityPa
 
 fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
     const ACCENTS: [(usize, &str, egui::Color32); 4] = [
-        (0, "R", egui::Color32::from_rgb(235, 70, 60)),
-        (1, "G", egui::Color32::from_rgb(80, 205, 95)),
-        (2, "B", egui::Color32::from_rgb(75, 125, 255)),
-        (3, "W", egui::Color32::from_rgb(235, 235, 240)),
+        (0, "R", theme::FIXTURE_R),
+        (1, "G", theme::FIXTURE_G),
+        (2, "B", theme::FIXTURE_B),
+        (3, "W", theme::FIXTURE_W),
     ];
     let height = fill_fader_height(ui);
     for (i, label, accent) in ACCENTS {
@@ -260,9 +270,10 @@ fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(56.0, 22.0), egui::Sense::hover());
         ui.painter().rect_filled(
             rect,
-            3.0,
+            theme::RADIUS_CONTROL,
             egui::Color32::from_rgb(mix(p.rgbw[0]), mix(p.rgbw[1]), mix(p.rgbw[2])),
         );
+        theme::paint_edge(ui.painter(), rect, theme::RADIUS_CONTROL, theme::EDGE);
         ui.add_space(4.0);
         // Preset swatches set the faders instantly.
         egui::Grid::new("color_presets")
@@ -287,14 +298,15 @@ fn color_swatch(ui: &mut egui::Ui, rgbw: [f32; 4], selected: bool) -> egui::Resp
     let mix = |c: f32| (((c + rgbw[3] * 0.9) / 100.0).clamp(0.0, 1.0) * 255.0) as u8;
     ui.painter().rect_filled(
         rect,
-        3.0,
+        theme::RADIUS_CONTROL,
         egui::Color32::from_rgb(mix(rgbw[0]), mix(rgbw[1]), mix(rgbw[2])),
     );
+    theme::paint_edge(ui.painter(), rect, theme::RADIUS_CONTROL, theme::EDGE);
     if selected {
         ui.painter().rect_stroke(
-            rect,
-            3.0,
-            egui::Stroke::new(1.5_f32, egui::Color32::WHITE),
+            rect.expand(1.0),
+            theme::RADIUS_CONTROL,
+            egui::Stroke::new(1.5_f32, theme::TEXT_STRONG),
             egui::StrokeKind::Outside,
         );
     }
@@ -302,7 +314,7 @@ fn color_swatch(ui: &mut egui::Ui, rgbw: [f32; 4], selected: bool) -> egui::Resp
 }
 
 fn position_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PositionParams) {
-    let accent = egui::Color32::from_rgb(140, 120, 255);
+    let accent = POSITION_ACCENT;
     let height = fill_fader_height(ui);
     for (value, label) in [(&mut p.pan, "PAN"), (&mut p.tilt, "TILT")] {
         fader_col(
@@ -324,17 +336,17 @@ fn position_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PositionPara
         const PAD: f32 = 96.0;
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(PAD, PAD), egui::Sense::click_and_drag());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(16, 16, 22));
+        let painter = ui.painter_at(rect.expand(1.0));
+        theme::paint_well(&painter, rect, theme::RADIUS_CONTROL);
         for f in [0.25, 0.5, 0.75] {
             let x = rect.left() + rect.width() * f;
             let y = rect.top() + rect.height() * f;
             let stroke = egui::Stroke::new(
                 1.0_f32,
                 if f == 0.5 {
-                    egui::Color32::from_rgb(45, 45, 55)
+                    theme::KEY
                 } else {
-                    egui::Color32::from_rgb(28, 28, 36)
+                    theme::SEGMENT_OFF
                 },
             );
             painter.line_segment(
@@ -357,18 +369,18 @@ fn position_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PositionPara
             rect.top() + rect.height() * (1.0 - p.tilt / 360.0),
         );
         painter.circle_filled(dot, 4.5, accent);
-        painter.circle_stroke(dot, 6.0, egui::Stroke::new(1.0_f32, egui::Color32::WHITE));
+        painter.circle_stroke(dot, 6.0, egui::Stroke::new(1.0_f32, theme::TEXT_STRONG));
 
         // Which axes the effect drives.
-        ui.add_space(4.0);
+        ui.add_space(theme::SPACE_8);
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_4;
             for (t, label) in [
                 (PanTiltTarget::Both, "BOTH"),
                 (PanTiltTarget::Pan, "PAN"),
                 (PanTiltTarget::Tilt, "TILT"),
             ] {
-                if ui
-                    .selectable_label(p.target == t, egui::RichText::new(label).size(9.0))
+                if choice(ui, p.target == t, label)
                     .on_hover_text("Apply the effect to these axes")
                     .clicked()
                 {
@@ -381,19 +393,17 @@ fn position_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PositionPara
 
 fn beam_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::BeamParams) {
     ui.vertical(|ui| {
-        ui.label(egui::RichText::new("GOBO").weak().size(9.0));
-        ui.add_space(2.0);
+        caption(ui, "GOBO");
+        ui.add_space(theme::SPACE_6);
         egui::Grid::new("gobo_grid")
-            .spacing([4.0, 4.0])
+            .spacing([theme::SPACE_8, theme::SPACE_8])
             .show(ui, |ui| {
                 for g in 1..=8u8 {
                     if ui
-                        .add_sized(
-                            [34.0, 30.0],
-                            egui::SelectableLabel::new(
-                                p.gobo == g,
-                                egui::RichText::new(format!("G{g}")).monospace().size(10.0),
-                            ),
+                        .add(
+                            Key::new(format!("G{g}"))
+                                .size([theme::SIZE_PAD, theme::SIZE_KEY])
+                                .selected(p.gobo == g),
                         )
                         .clicked()
                     {
@@ -409,16 +419,14 @@ fn beam_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::BeamParams) {
 
 fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) {
     ui.vertical(|ui| {
-        ui.label(egui::RichText::new("EFFECT").weak().size(9.0));
+        caption(ui, "EFFECT");
+        ui.add_space(theme::SPACE_6);
         egui::ScrollArea::vertical()
             .id_salt("pixel_fx_list")
             .max_height(118.0)
             .show(ui, |ui| {
                 for (i, name) in PIXEL_EFFECTS.iter().enumerate() {
-                    if ui
-                        .selectable_label(p.effect == i, egui::RichText::new(*name).size(10.0))
-                        .clicked()
-                    {
+                    if ui.selectable_label(p.effect == i, *name).clicked() {
                         p.effect = i;
                     }
                 }
@@ -426,8 +434,8 @@ fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) 
     });
     ui.add_space(10.0);
     ui.vertical(|ui| {
-        ui.label(egui::RichText::new("COLOR").weak().size(9.0));
-        ui.add_space(2.0);
+        caption(ui, "COLOR");
+        ui.add_space(theme::SPACE_6);
         egui::Grid::new("pixel_colors")
             .spacing([4.0, 4.0])
             .min_col_width(18.0)
@@ -446,12 +454,12 @@ fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) 
             });
         ui.add_space(6.0);
         ui.label(
-            egui::RichText::new(format!(
-                "{} · {}",
-                PIXEL_EFFECTS[p.effect], COLOR_PRESETS[p.color].0
-            ))
-            .weak()
-            .size(9.0),
+            theme::NOTE_TEXT
+                .rich(format!(
+                    "{} · {}",
+                    PIXEL_EFFECTS[p.effect], COLOR_PRESETS[p.color].0
+                ))
+                .color(theme::TEXT_MUTED),
         );
     });
 }
@@ -460,117 +468,93 @@ fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) 
 fn effect_panel(ui: &mut egui::Ui, cfg: &mut EffectConfig, accent: egui::Color32, beat_t: f64) {
     // The panel is embedded in a horizontal row; force its own content
     // back to a vertical stack.
-    egui::Frame::group(ui.style())
-        .inner_margin(6.0)
-        .show(ui, |ui| {
-            ui.vertical(|ui| {
-                ui.set_width(216.0);
-                ui.label(egui::RichText::new("EFFECT").weak().size(9.0));
-                ui.horizontal(|ui| {
-                    for (wf, label) in ALL_WAVEFORMS {
-                        if ui
-                            .selectable_label(
-                                cfg.waveform == wf,
-                                egui::RichText::new(label).size(9.0),
-                            )
-                            .clicked()
-                        {
-                            cfg.waveform = wf;
-                        }
+    theme::well(ui, theme::SPACE_8, |ui| {
+        ui.vertical(|ui| {
+            ui.set_width(EFFECT_W);
+            ui.spacing_mut().item_spacing = egui::vec2(theme::SPACE_4, theme::SPACE_6);
+            caption(ui, "EFFECT");
+            ui.horizontal_wrapped(|ui| {
+                for (wf, label) in ALL_WAVEFORMS {
+                    if choice(ui, cfg.waveform == wf, label).clicked() {
+                        cfg.waveform = wf;
                     }
-                });
-                ui.horizontal(|ui| {
-                    for (iv, label) in ALL_INTERVALS {
-                        if ui
-                            .selectable_label(
-                                cfg.interval == iv,
-                                egui::RichText::new(label).size(9.0),
-                            )
-                            .clicked()
-                        {
-                            cfg.interval = iv;
-                        }
-                    }
-                });
-                ui.spacing_mut().slider_width = 100.0;
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("RATIO").weak().size(9.0));
-                    ui.add(
-                        egui::Slider::new(&mut cfg.ratio, 0.0..=2.0)
-                            .fixed_decimals(2)
-                            .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.5 }),
-                    );
-                });
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("PHASE").weak().size(9.0));
-                    ui.add(
-                        egui::Slider::new(&mut cfg.phase_deg, 0.0..=360.0)
-                            .fixed_decimals(0)
-                            .suffix("°")
-                            .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.5 }),
-                    );
-                });
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("DIST").weak().size(9.0));
-                    let is_all = cfg.distribution == Distribution::All;
-                    if ui
-                        .selectable_label(is_all, egui::RichText::new("ALL").size(9.0))
-                        .clicked()
-                    {
-                        cfg.distribution = Distribution::All;
-                    }
-                    let is_step = matches!(cfg.distribution, Distribution::Step(_));
-                    if ui
-                        .selectable_label(is_step, egui::RichText::new("STEP").size(9.0))
-                        .clicked()
-                    {
-                        cfg.distribution = Distribution::Step(2);
-                    }
-                    let is_wave = matches!(cfg.distribution, Distribution::Wave(_));
-                    if ui
-                        .selectable_label(is_wave, egui::RichText::new("WAVE").size(9.0))
-                        .clicked()
-                    {
-                        cfg.distribution = Distribution::Wave(45);
-                    }
-                    match &mut cfg.distribution {
-                        Distribution::Step(n) => {
-                            ui.add(egui::DragValue::new(n).range(1..=32));
-                        }
-                        Distribution::Wave(offset) => {
-                            ui.add(egui::DragValue::new(offset).range(0..=360).suffix("°"));
-                        }
-                        Distribution::All => {}
-                    }
-                });
-                ui.add_space(4.0);
-                effect_preview(ui, cfg, accent, beat_t);
-                ui.add_space(4.0);
-                let apply = egui::Button::new(
-                    egui::RichText::new(if cfg.applied { "APPLIED" } else { "APPLY" })
-                        .size(10.0)
-                        .strong()
-                        .color(if cfg.applied {
-                            egui::Color32::from_rgb(15, 15, 18)
-                        } else {
-                            egui::Color32::from_rgb(220, 220, 225)
-                        }),
-                )
-                .fill(if cfg.applied {
-                    accent
-                } else {
-                    egui::Color32::from_rgb(42, 42, 46)
-                });
-                if ui
-                    .add_sized([ui.available_width(), 20.0], apply)
-                    .on_hover_text("Latch this effect (visual-only until the fixture engine lands)")
-                    .clicked()
-                {
-                    cfg.applied = !cfg.applied;
                 }
             });
+            ui.horizontal_wrapped(|ui| {
+                for (iv, label) in ALL_INTERVALS {
+                    if choice(ui, cfg.interval == iv, label).clicked() {
+                        cfg.interval = iv;
+                    }
+                }
+            });
+            ui.spacing_mut().slider_width = 100.0;
+            ui.horizontal(|ui| {
+                caption(ui, "RATIO");
+                ui.add(
+                    egui::Slider::new(&mut cfg.ratio, 0.0..=2.0)
+                        .fixed_decimals(2)
+                        .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.5 }),
+                );
+            });
+            ui.horizontal(|ui| {
+                caption(ui, "PHASE");
+                ui.add(
+                    egui::Slider::new(&mut cfg.phase_deg, 0.0..=360.0)
+                        .fixed_decimals(0)
+                        .suffix("°")
+                        .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.5 }),
+                );
+            });
+            ui.horizontal(|ui| {
+                caption(ui, "DIST");
+                let is_all = cfg.distribution == Distribution::All;
+                if choice(ui, is_all, "ALL").clicked() {
+                    cfg.distribution = Distribution::All;
+                }
+                let is_step = matches!(cfg.distribution, Distribution::Step(_));
+                if choice(ui, is_step, "STEP").clicked() {
+                    cfg.distribution = Distribution::Step(2);
+                }
+                let is_wave = matches!(cfg.distribution, Distribution::Wave(_));
+                if choice(ui, is_wave, "WAVE").clicked() {
+                    cfg.distribution = Distribution::Wave(45);
+                }
+                match &mut cfg.distribution {
+                    Distribution::Step(n) => {
+                        ui.add(egui::DragValue::new(n).range(1..=32));
+                    }
+                    Distribution::Wave(offset) => {
+                        ui.add(egui::DragValue::new(offset).range(0..=360).suffix("°"));
+                    }
+                    Distribution::All => {}
+                }
+            });
+            effect_preview(ui, cfg, accent, beat_t);
+            // A latch: an LED in the effect's colour; the label is the
+            // state.
+            let label = if cfg.applied { "APPLIED" } else { "APPLY" };
+            if ui
+                .add(
+                    Key::new(label)
+                        .width(EFFECT_W)
+                        .led(cfg.applied, accent)
+                        .label_color(if cfg.applied {
+                            theme::TEXT_STRONG
+                        } else {
+                            theme::TEXT_UNLIT
+                        }),
+                )
+                .on_hover_text("Latch this effect (visual-only until the fixture engine lands)")
+                .clicked()
+            {
+                cfg.applied = !cfg.applied;
+            }
         });
+    });
 }
+
+/// Width of the effect panel's content.
+const EFFECT_W: f32 = 232.0;
 
 /// Musical window the preview shows, in intervals. A few cycles at once
 /// keeps the "now" dot travelling calmly (once per bar at the default
@@ -582,15 +566,16 @@ const PREVIEW_SPAN: f64 = 4.0;
 /// spread.
 fn effect_preview(ui: &mut egui::Ui, cfg: &EffectConfig, accent: egui::Color32, beat_t: f64) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width().min(204.0), 44.0),
+        egui::vec2(ui.available_width().min(EFFECT_W), 44.0),
         egui::Sense::hover(),
     );
-    let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 3.0, egui::Color32::from_rgb(12, 12, 16));
+    let painter = ui.painter_at(rect.expand(1.0));
+    // A content well inside the effect tray, on the lanes' ground.
+    theme::paint_content_well(&painter, rect, theme::LANE_GROUND);
     let mid = rect.center().y;
     painter.line_segment(
         [egui::pos2(rect.left(), mid), egui::pos2(rect.right(), mid)],
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(30, 30, 38)),
+        egui::Stroke::new(1.0_f32, theme::LANE_SEPARATOR),
     );
     let inset = rect.shrink2(egui::vec2(3.0, 4.0));
     let y_of = |v: f32| inset.bottom() - v * inset.height();
@@ -627,7 +612,7 @@ fn effect_preview(ui: &mut egui::Ui, cfg: &EffectConfig, accent: egui::Color32, 
         inset.left() + inset.width() * (t_now / PREVIEW_SPAN) as f32,
         y_of(effect_value(cfg, t_now)),
     );
-    painter.circle_filled(dot, 3.0, egui::Color32::WHITE);
+    painter.circle_filled(dot, 3.0, theme::TEXT_STRONG);
 }
 
 /// CLEAR / STORE / PREVIEW / HIGHLIGHT, stacked on the panel's right edge.
@@ -635,33 +620,24 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
     let mut store = false;
     ui.vertical(|ui| {
         ui.set_width(ACTION_COL_W);
+        ui.spacing_mut().item_spacing.y = theme::SPACE_8;
+        // CLEAR lights amber while any lane is latched: there's something
+        // live to release.
         let armed = programmer::any_latched(cx.overrides);
-        let clear_btn = egui::Button::new(egui::RichText::new("CLEAR").size(12.0).strong().color(
-            if armed {
-                egui::Color32::WHITE
-            } else {
-                egui::Color32::from_rgb(200, 200, 205)
-            },
-        ))
-        .fill(if armed {
-            egui::Color32::from_rgb(130, 32, 32)
-        } else {
-            egui::Color32::from_rgb(42, 42, 46)
-        });
         if ui
-            .add_sized([ACTION_COL_W, 26.0], clear_btn)
+            .add(
+                Key::new("CLEAR")
+                    .width(ACTION_COL_W)
+                    .lit(armed.then_some(Lit::Accent)),
+            )
             .on_hover_text("Release all latched lanes (Esc)")
             .clicked()
         {
             programmer::clear(cx.overrides);
         }
-        ui.add_space(4.0);
         ui.add_enabled_ui(cx.can_store, |ui| {
             if ui
-                .add_sized(
-                    [ACTION_COL_W, 26.0],
-                    egui::Button::new(egui::RichText::new("STORE").size(12.0)),
-                )
+                .add(Key::new("STORE").width(ACTION_COL_W))
                 .on_hover_text(format!(
                     "Write the active lanes into deck {}'s track as cues at the current bar",
                     cx.deck_name
@@ -671,9 +647,7 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                 store = true;
             }
         });
-        ui.add_space(8.0);
-        ui.separator();
-        ui.add_space(8.0);
+        ui.add_space(theme::SPACE_8);
         for (value, label, hint) in [
             (
                 &mut cx.params.preview,
@@ -686,23 +660,22 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                 "Snap the selected fixtures to full white for identification",
             ),
         ] {
-            if ui
-                .add_sized(
-                    [ACTION_COL_W, 22.0],
-                    egui::SelectableLabel::new(*value, egui::RichText::new(label).size(10.0)),
-                )
-                .on_hover_text(hint)
-                .clicked()
-            {
+            let key = Key::new(label)
+                .width(ACTION_COL_W)
+                .led(*value, theme::ACCENT)
+                .label_color(if *value {
+                    theme::TEXT_STRONG
+                } else {
+                    theme::TEXT_UNLIT
+                });
+            if ui.add(key).on_hover_text(hint).clicked() {
                 *value = !*value;
             }
-            ui.add_space(4.0);
         }
-        ui.add_space(2.0);
         ui.label(
-            egui::RichText::new(format!("out: deck {}", cx.deck_name))
-                .weak()
-                .size(9.0),
+            theme::NOTE_TEXT
+                .rich(format!("out: deck {}", cx.deck_name))
+                .color(theme::TEXT_MUTED),
         );
     });
     store
@@ -712,25 +685,28 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
 /// momentary FLASH, intensity knob.
 fn lane_controls(ui: &mut egui::Ui, o: &mut halo_light::programmer::LaneOverride, i: usize) {
     let (_, label, color) = crate::waveform::LANES[i];
+    // The lane's code lights in its colour while the lane is overridden.
     ui.label(
-        egui::RichText::new(label)
-            .monospace()
-            .size(10.0)
-            .color(if o.active() {
-                color
-            } else {
-                color.gamma_multiply(0.5)
-            }),
+        theme::CAPTION
+            .rich(label)
+            .color(if o.active() { color } else { theme::TEXT_MUTED }),
     );
+    let latch = Key::new("ON")
+        .led(o.latched, color)
+        .label_color(if o.latched {
+            theme::TEXT_STRONG
+        } else {
+            theme::TEXT_UNLIT
+        });
     if ui
-        .selectable_label(o.latched, egui::RichText::new("ON").size(10.0))
+        .add(latch)
         .on_hover_text("Latch this lane on until CLEAR")
         .clicked()
     {
         o.latched = !o.latched;
     }
     let flash = ui
-        .add(egui::Button::new(egui::RichText::new("FLASH").size(10.0)))
+        .add(Key::new("FLASH").lit_when_held(Lit::Accent))
         .on_hover_text("Active while held");
     if flash.is_pointer_button_down_on() {
         o.flash_held = true;
@@ -741,7 +717,7 @@ fn lane_controls(ui: &mut egui::Ui, o: &mut halo_light::programmer::LaneOverride
             Knob::new(&mut v, 0.0..=1.0, color)
                 .arc(KnobArc::Unipolar)
                 .default_value(1.0)
-                .diameter(18.0),
+                .diameter(theme::SIZE_KEY),
         )
         .on_hover_text(format!("Intensity: {:.0}%", o.intensity * 100.0))
         .changed()
@@ -790,36 +766,37 @@ pub fn fixture_grid(
         let [r, g, b] = f.kind.color();
         painter.rect_filled(
             cell,
-            4.0,
+            theme::RADIUS_CONTROL,
             egui::Color32::from_rgb(r, g, b).gamma_multiply(alpha),
         );
         if out.source == LaneSource::Programmer {
             painter.rect_stroke(
                 cell.shrink(1.5),
-                3.0,
-                egui::Stroke::new(1.0_f32, egui::Color32::WHITE.gamma_multiply(0.55)),
+                2.0,
+                egui::Stroke::new(1.0_f32, theme::TEXT_STRONG.gamma_multiply(0.55)),
                 egui::StrokeKind::Inside,
             );
         }
         if selected {
             painter.rect_stroke(
                 cell,
-                4.0,
-                egui::Stroke::new(1.5_f32, egui::Color32::WHITE),
+                theme::RADIUS_CONTROL,
+                egui::Stroke::new(1.5_f32, theme::TEXT_STRONG),
                 egui::StrokeKind::Outside,
             );
         }
         // Bright fills (strobes glowing white, smoke grey) need dark text.
         let bright = matches!(f.kind, FixtureKind::Strobe | FixtureKind::Smoke) && alpha > 0.5;
-        painter.text(
+        theme::paint_text(
+            &painter,
             cell.center(),
             egui::Align2::CENTER_CENTER,
             &f.label,
-            egui::FontId::monospace(9.0),
+            theme::PAD_NUMBER.sized(10.0),
             if bright {
-                egui::Color32::from_rgb(20, 20, 24)
+                theme::WELL
             } else {
-                egui::Color32::from_rgb(230, 230, 235)
+                theme::TEXT_STRONG
             },
         );
 

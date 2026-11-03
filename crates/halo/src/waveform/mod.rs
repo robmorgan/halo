@@ -38,49 +38,54 @@ use eframe::egui;
 
 /// CDJ-3000-flavored palette shared by the deck painters.
 pub(crate) mod palette {
+    // The waveform's and the show's colours: the design system's content
+    // tokens under the names the painters use.
     use eframe::egui::Color32;
 
-    /// Panel background, near-black.
-    pub const BACKGROUND: Color32 = Color32::from_rgb(10, 10, 15);
+    use crate::theme;
+
+    /// Waveform ground, near-black.
+    pub const BACKGROUND: Color32 = theme::WAVE_GROUND;
     /// Low band (kick/bass): blue.
-    pub const BAND_LOW: Color32 = Color32::from_rgb(40, 90, 220);
+    pub const BAND_LOW: Color32 = theme::WAVE_LOW;
     /// Mid band: amber.
-    pub const BAND_MID: Color32 = Color32::from_rgb(230, 150, 40);
+    pub const BAND_MID: Color32 = theme::WAVE_MID;
     /// High band (hats/air): near-white.
-    pub const BAND_HIGH: Color32 = Color32::from_rgb(235, 235, 240);
+    pub const BAND_HIGH: Color32 = theme::WAVE_HIGH;
     /// Zoomed-view playhead.
-    pub const PLAYHEAD: Color32 = Color32::from_rgb(230, 40, 40);
+    pub const PLAYHEAD: Color32 = theme::PLAYHEAD;
     /// Cue point / hot cue markers on the zoomed view.
     pub const CUE_MARKER: Color32 = PLAYHEAD;
     /// Overview position cursor.
     pub const CURSOR: Color32 = Color32::WHITE;
     /// Regular beat tick.
-    pub const TICK_BEAT: Color32 = Color32::from_rgba_premultiplied(200, 200, 205, 200);
+    pub const TICK_BEAT: Color32 = theme::BEAT_TICK;
     /// Downbeat (bar start) tick.
-    pub const TICK_DOWNBEAT: Color32 = Color32::from_rgb(230, 40, 40);
+    pub const TICK_DOWNBEAT: Color32 = theme::PLAYHEAD;
     /// Loop region fill.
-    pub const LOOP_FILL: Color32 = Color32::from_rgba_premultiplied(60, 40, 8, 60);
+    pub const LOOP_FILL: Color32 = theme::LOOP_FILL;
     /// Loop in/out boundary lines and staged loop-in marker.
-    pub const LOOP_EDGE: Color32 = Color32::from_rgb(235, 160, 40);
-    /// Placeholder / secondary text.
-    pub const TEXT_DIM: Color32 = Color32::from_rgb(100, 100, 120);
+    pub const LOOP_EDGE: Color32 = theme::LOOP_EDGE;
+    /// Annotations and placeholder text (`wave-annotation`, 5.9:1 on the
+    /// waveform ground).
+    pub const TEXT_DIM: Color32 = theme::WAVE_ANNOTATION;
     /// Grey multiply tint that dims the played part of the overview.
-    pub const PLAYED_TINT: Color32 = Color32::from_rgb(110, 110, 118);
-    /// Trigger-lane strip background, a step above BACKGROUND so bars pop.
-    pub const LANE_BG: Color32 = Color32::from_rgb(16, 16, 22);
+    pub const PLAYED_TINT: Color32 = theme::WAVE_PLAYED;
+    /// Trigger-lane strip ground, a step above BACKGROUND so bars pop.
+    pub const LANE_BG: Color32 = theme::LANE_GROUND;
     /// Hairline between lane rows.
-    pub const LANE_SEPARATOR: Color32 = Color32::from_rgb(28, 28, 36);
+    pub const LANE_SEPARATOR: Color32 = theme::LANE_SEPARATOR;
     /// Lighting lane + active-lighting badge: sky blue, deliberately
     /// lighter than BAND_LOW so it reads on the darker lane background.
-    pub const LANE_LIGHTING: Color32 = Color32::from_rgb(80, 165, 255);
+    pub const LANE_LIGHTING: Color32 = theme::LANE_LIGHTING;
     /// Pixels lane.
-    pub const LANE_PIXELS: Color32 = Color32::from_rgb(240, 95, 175);
+    pub const LANE_PIXELS: Color32 = theme::LANE_PIXELS;
     /// FX (smoke/pyro) lane: green — amber is the accent, red the playhead.
-    pub const LANE_FX: Color32 = Color32::from_rgb(70, 210, 130);
+    pub const LANE_FX: Color32 = theme::LANE_FX;
     /// L3 energy envelope: amber, matching the loop/accent family.
-    pub const ENERGY: Color32 = Color32::from_rgb(235, 175, 50);
+    pub const ENERGY: Color32 = theme::ENERGY;
     /// L3 accent one-shots: near-white so they read as hits, not a hue.
-    pub const ACCENT: Color32 = Color32::from_rgb(238, 238, 244);
+    pub const ACCENT: Color32 = theme::LANE_ACCENTS;
 }
 
 /// Center-playhead frame→x mapping shared by the zoomed view and the
@@ -400,11 +405,12 @@ pub(crate) fn overlay_plan(width_px: f32, beat_count: usize, downbeat_count: usi
 
 /// Paint the "load a file" placeholder shared by both waveform panels.
 pub(crate) fn paint_placeholder(painter: &egui::Painter, rect: egui::Rect) {
-    painter.text(
+    crate::theme::paint_text(
+        painter,
         rect.center(),
         egui::Align2::CENTER_CENTER,
         "Load an audio file to see waveform",
-        egui::FontId::proportional(14.0),
+        crate::theme::BODY_TEXT,
         palette::TEXT_DIM,
     );
 }
