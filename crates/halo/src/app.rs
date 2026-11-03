@@ -2517,137 +2517,106 @@ impl eframe::App for HaloApp {
         let global_bpm = self.global_bpm();
         let master_src = self.master_source();
         let mixer_cx = self.mixer_center_x;
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-            ui.add_space(6.0);
-            let toolbar_row = ui
-                .horizontal(|ui| {
-                    ui.heading(egui::RichText::new("HALO").color(ACCENT).strong());
-                    ui.add_space(10.0);
-                    for (v, label) in [
-                        (View::Perform, "PERFORM"),
-                        (View::Prepare, "PREPARE"),
-                        (View::Patch, "PATCH"),
-                    ] {
-                        if ui
-                            .selectable_label(self.view == v, egui::RichText::new(label).size(11.0))
-                            .on_hover_text("Switch view (V) — playback is unaffected")
-                            .clicked()
-                        {
-                            self.view = v;
-                        }
-                    }
-                    // The audition player keeps playing across view
-                    // switches; outside Prepare it has no other UI, so
-                    // surface it with a pause chip.
-                    if self.view != View::Prepare
-                        && self.prepare.audition.deck.shared.transport() == Transport::Playing
-                        && ui
-                            .button(egui::RichText::new("AUDITION ▶").size(11.0).color(ACCENT))
-                            .on_hover_text(
-                                "The Prepare audition player is running — click to pause",
-                            )
-                            .clicked()
-                    {
-                        self.prepare.audition.toggle_play();
-                    }
-                    ui.separator();
-                    lighting_leds(ui, &lighting);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("⚙").on_hover_text("Audio settings").clicked() {
-                            self.settings_open = !self.settings_open;
-                            if self.settings_open {
-                                self.available_devices = list_output_devices();
+        egui::TopBottomPanel::top("toolbar")
+            .frame(theme::ground_frame(0.0).inner_margin(egui::Margin {
+                left: 8,
+                right: 8,
+                top: 8,
+                bottom: 0,
+            }))
+            .show(ctx, |ui| {
+                let margin = egui::Margin::symmetric(theme::SPACE_16 as i8, theme::SPACE_8 as i8);
+                let toolbar_row = theme::panel(ui, margin, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.set_min_height(TOOLBAR_ROW_H);
+                        ui.spacing_mut().item_spacing.x = theme::SPACE_8;
+                        ui.label(theme::WORDMARK.rich("HALO").color(ACCENT));
+                        ui.add_space(theme::SPACE_8);
+                        for (v, label) in [
+                            (View::Perform, "PERFORM"),
+                            (View::Prepare, "PREPARE"),
+                            (View::Patch, "PATCH"),
+                        ] {
+                            if ui
+                                .add(Key::new(label).small().selected(self.view == v))
+                                .on_hover_text("Switch view (V) — playback is unaffected")
+                                .clicked()
+                            {
+                                self.view = v;
                             }
                         }
-                        ui.separator();
-                        cpu_meter(ui, self.audio_load(), self.dsp_display.1, self.cpu_sample.2);
-                        ui.separator();
-                        // Right-to-left layout: the output bar lands between
-                        // the DSP cluster and the master knob, i.e. just to
-                        // the knob's right.
-                        master_level_meter(ui, self.mixer.master_meter.load());
-                        ui.add_space(6.0);
-                        let mut master = self.mixer.master.load();
-                        if ui
-                            .add(
-                                Knob::new(&mut master, 0.0..=1.0, ACCENT)
-                                    .arc(KnobArc::Unipolar)
-                                    .default_value(1.0)
-                                    .diameter(theme::SIZE_KNOB_SMALL),
-                            )
-                            .on_hover_text(format!("Master: {:.0}%", master * 100.0))
-                            .changed()
+                        // The audition player keeps playing across view
+                        // switches; outside Prepare it has no other UI, so
+                        // surface it with a lit pause chip.
+                        if self.view != View::Prepare
+                            && self.prepare.audition.deck.shared.transport() == Transport::Playing
+                            && ui
+                                .add(Key::new("AUDITION ▶").small().lit(Some(Lit::Audition)))
+                                .on_hover_text(
+                                    "The Prepare audition player is running — click to pause",
+                                )
+                                .clicked()
                         {
-                            self.mixer.master.store(master);
+                            self.prepare.audition.toggle_play();
                         }
-                        ui.label(egui::RichText::new("Master").weak().size(11.0));
-                    });
+                        group_divider(ui, theme::SIZE_KEY_SMALL);
+                        lighting_leds(ui, &lighting);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(Key::new("⚙").small().text_style(theme::BODY_TEXT))
+                                .on_hover_text("Audio settings")
+                                .clicked()
+                            {
+                                self.settings_open = !self.settings_open;
+                                if self.settings_open {
+                                    self.available_devices = list_output_devices();
+                                }
+                            }
+                            group_divider(ui, theme::SIZE_KEY_SMALL);
+                            cpu_meter(ui, self.audio_load(), self.dsp_display.1, self.cpu_sample.2);
+                            group_divider(ui, theme::SIZE_KEY_SMALL);
+                            // Right-to-left layout: the output bar lands
+                            // between the DSP cluster and the master knob,
+                            // i.e. just to the knob's right.
+                            master_level_meter(ui, self.mixer.master_meter.load());
+                            let mut master = self.mixer.master.load();
+                            if ui
+                                .add(
+                                    Knob::new(&mut master, 0.0..=1.0, ACCENT)
+                                        .arc(KnobArc::Unipolar)
+                                        .default_value(1.0)
+                                        .diameter(theme::SIZE_KNOB_SMALL),
+                                )
+                                .on_hover_text(format!("Master: {:.0}%", master * 100.0))
+                                .changed()
+                            {
+                                self.mixer.master.store(master);
+                            }
+                            ui.label(theme::CAPTION.rich("MASTER").color(theme::TEXT_MUTED));
+                        });
+                    })
+                    .response
+                    .rect
                 })
-                .response
-                .rect;
-            ui.add_space(6.0);
+                .inner;
 
-            // Global/master BPM, centered over the mixer. Uses the mixer's
-            // actual center-x captured last frame in the central panel (egui
-            // rects are absolute screen coords); falls back to the panel
-            // mid-x until measured. Painted, not laid out, to dodge egui's
-            // horizontal-centering quirks.
-            let cx = if mixer_cx > 0.0 {
-                mixer_cx
-            } else {
-                ui.max_rect().center().x
-            };
-            let cy = toolbar_row.center().y;
-            let bpm_text = if global_bpm > 0.0 {
-                format!("{global_bpm:.1}")
-            } else {
-                "—".to_string()
-            };
-            // Boxed readout: "A  MASTER BPM / value  B". A/B light blue for
-            // the deck the master BPM (and lighting rig) is sourced from —
-            // automatic, not clickable.
-            let border = ui.visuals().widgets.noninteractive.bg_stroke.color;
-            let dim = ui.visuals().weak_text_color().gamma_multiply(0.6);
-            let lit = crate::waveform::palette::LANE_LIGHTING;
-            let box_rect =
-                egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(132.0, 30.0));
-            let painter = ui.painter();
-            painter.rect_stroke(
-                box_rect,
-                4.0,
-                egui::Stroke::new(1.0, border),
-                egui::StrokeKind::Outside,
-            );
-            painter.text(
-                egui::pos2(cx, box_rect.top() + 7.0),
-                egui::Align2::CENTER_CENTER,
-                "MASTER BPM",
-                egui::FontId::proportional(8.0),
-                dim,
-            );
-            let vy = box_rect.top() + 20.0;
-            painter.text(
-                egui::pos2(box_rect.left() + 13.0, vy),
-                egui::Align2::CENTER_CENTER,
-                "A",
-                egui::FontId::proportional(13.0),
-                if master_src == 0 { lit } else { dim },
-            );
-            painter.text(
-                egui::pos2(cx, vy),
-                egui::Align2::CENTER_CENTER,
-                bpm_text,
-                egui::FontId::monospace(18.0),
-                egui::Color32::WHITE,
-            );
-            painter.text(
-                egui::pos2(box_rect.right() - 13.0, vy),
-                egui::Align2::CENTER_CENTER,
-                "B",
-                egui::FontId::proportional(13.0),
-                if master_src == 1 { lit } else { dim },
-            );
-        });
+                // Global/master BPM, centered over the mixer. Uses the mixer's
+                // actual center-x captured last frame in the central panel (egui
+                // rects are absolute screen coords); falls back to the panel
+                // mid-x until measured. Painted, not laid out, to dodge egui's
+                // horizontal-centering quirks.
+                let cx = if mixer_cx > 0.0 {
+                    mixer_cx
+                } else {
+                    ui.max_rect().center().x
+                };
+                paint_master_bpm(
+                    ui,
+                    egui::pos2(cx, toolbar_row.center().y),
+                    global_bpm,
+                    master_src,
+                );
+            });
 
         self.settings_window(ctx);
         self.remove_confirm_window(ctx);
@@ -3336,12 +3305,37 @@ fn lighting_leds(ui: &mut egui::Ui, outputs: &[LaneOutput; LANE_COUNT]) {
     let painter = ui.painter();
     for (i, out) in outputs.iter().enumerate() {
         let (_, _, color) = crate::waveform::LANES[i];
+        let level = out.level.clamp(0.0, 1.0);
         let c = egui::pos2(rect.left() + 8.0 + i as f32 * 18.0, rect.center().y);
-        painter.circle_filled(c, 5.0, color.gamma_multiply(0.15 + 0.85 * out.level));
+        // A well bezel with a 1px edge; the lens lights in its lane colour
+        // at 15% + 85% × level, with a glow that grows with the level.
+        painter.circle(c, 6.5, theme::WELL, egui::Stroke::new(1.0, theme::EDGE));
+        if level > 0.02 {
+            theme::paint_glow(
+                painter,
+                egui::Rect::from_center_size(c, egui::vec2(10.0, 10.0)),
+                5.0,
+                4.4,
+                color.gamma_multiply(0.75 * level),
+            );
+        }
+        let lens = lerp_color(theme::LED_OFF, color, 0.15 + 0.85 * level);
+        painter.circle_filled(c, 4.5, lens);
+        painter.circle_filled(
+            c + egui::vec2(-1.4, -1.4),
+            1.3,
+            egui::Color32::WHITE.gamma_multiply(0.15 + 0.35 * level),
+        );
         if out.source == LaneSource::Programmer {
-            painter.circle_stroke(c, 6.5, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
+            painter.circle_stroke(c, 7.25, egui::Stroke::new(1.5, theme::TEXT_STRONG));
         }
     }
+}
+
+/// Mix two opaque colours in gamma space (CSS `color-mix in srgb`).
+fn lerp_color(a: egui::Color32, b: egui::Color32, k: f32) -> egui::Color32 {
+    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * k).round() as u8;
+    egui::Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
 }
 
 /// Apply a zoomed-waveform drag gesture to a deck's scrub state: grab the
@@ -3465,129 +3459,111 @@ fn deck_panel(
 
     // Header: artwork | title/artist/key | elapsed + remaining readouts.
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
         let art_size = egui::vec2(ARTWORK_SIZE, ARTWORK_SIZE);
         match &deck_ui.artwork {
             Some(tex) => {
                 ui.add(
                     egui::Image::new((tex.id(), art_size))
-                        .corner_radius(4.0)
+                        .corner_radius(theme::RADIUS_CONTROL)
                         .fit_to_exact_size(art_size),
                 );
             }
             None => {
+                // Empty artwork: a well holding the track glyph.
                 let (rect, _) = ui.allocate_exact_size(art_size, egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(rect, 4.0, egui::Color32::from_rgb(28, 28, 32));
+                theme::paint_well(ui.painter(), rect, theme::RADIUS_CONTROL);
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     "♪",
                     egui::FontId::proportional(24.0),
-                    egui::Color32::from_rgb(80, 80, 90),
+                    theme::TEXT_MUTED,
                 );
             }
         }
-        ui.add_space(4.0);
-        // Fixed value-column widths, sized to the widest values so the digits
-        // don't jitter the layout (the "-" prefix only shows on REMAINING).
-        let value_w = |text: &str| {
-            ui.fonts(|f| {
-                f.layout_no_wrap(
-                    text.to_owned(),
-                    egui::FontId::monospace(20.0),
-                    egui::Color32::WHITE,
-                )
-                .size()
-                .x
-            })
-        };
-        let time_value_w = value_w("-88:88.8");
-        let bpm_value_w = value_w("888.8");
+        ui.add_space(theme::SPACE_12);
+        // Readout widths: digit cells for the widest values ("−88:88.8",
+        // "888.8"), so the digits never jitter the layout.
+        let ctx = ui.ctx().clone();
+        let digit = theme::NUMERALS_XL.width(&ctx, "0");
+        let readout_w = |cells: f32| cells * digit + 2.0 * theme::SPACE_12;
+        let stopwatch_w = theme::SIZE_KEY_SMALL + 2.0 * theme::SPACE_8;
         // Title/artist, width-constrained and truncated so a long name can't
         // grow into (and overlap) the right-aligned time + BPM readouts.
-        let title_w = (ui.available_width() - time_value_w - bpm_value_w - 72.0).max(60.0);
+        let readouts_w = readout_w(8.0) + readout_w(5.0) + stopwatch_w;
+        let title_w = (ui.available_width() - readouts_w - theme::SPACE_12).max(60.0);
         ui.allocate_ui_with_layout(
-            egui::vec2(title_w, ARTWORK_SIZE),
+            egui::vec2(title_w, theme::READOUT_H),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
-                ui.add_space(4.0);
+                ui.spacing_mut().item_spacing.y = theme::SPACE_2;
                 if has_track {
                     ui.add(
-                        egui::Label::new(egui::RichText::new(&deck_ui.title).strong().size(13.0))
+                        egui::Label::new(
+                            theme::TRACK_TITLE
+                                .rich(&deck_ui.title)
+                                .color(theme::TEXT_STRONG),
+                        )
+                        .truncate(),
+                    );
+                    let artist = deck_ui.artist.as_deref().unwrap_or("—");
+                    ui.add(
+                        egui::Label::new(theme::BODY_TEXT.rich(artist).color(theme::TEXT_MUTED))
                             .truncate(),
                     );
-                    if let Some(artist) = &deck_ui.artist {
-                        ui.add(egui::Label::new(egui::RichText::new(artist).weak()).truncate());
-                    }
-                    if let Some(key) = &deck_ui.key {
-                        ui.add_space(2.0);
-                        key_badge(ui, key);
-                    }
+                    ui.add_space(theme::SPACE_4);
+                    key_badge(ui, deck_ui.key.as_deref().unwrap_or("—"));
                 } else {
-                    ui.label(egui::RichText::new("No track loaded").weak().size(13.0));
+                    ui.label(
+                        theme::BODY_TEXT
+                            .rich("No track loaded")
+                            .color(theme::TEXT_MUTED),
+                    );
                 }
             },
         );
-        // Right side (right-to-left): BPM readout rightmost, then the time
-        // readout with the ⏱ button toggling elapsed/remaining. Each value is
-        // a small caption over a big monospace number. BPM is amber while this
-        // deck is the master tempo reference, white otherwise.
+        // Right side (right-to-left): BPM readout rightmost, then the ⏱ key
+        // toggling elapsed/remaining, then the time readout. BPM is amber
+        // while this deck is the master tempo reference.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let value_label = |ui: &mut egui::Ui, w: f32, caption: &str, value: String, color| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(w, ARTWORK_SIZE),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.add_space(10.0);
-                        section_caption(ui, caption);
-                        ui.label(
-                            egui::RichText::new(value)
-                                .color(color)
-                                .strong()
-                                .monospace()
-                                .size(20.0),
-                        );
-                    },
-                );
-            };
-
-            ui.add_space(8.0);
+            ui.spacing_mut().item_spacing.x = 0.0;
             let bpm_text = if deck_ui.bpm > 0.0 && has_track {
                 format!("{:.1}", deck_ui.bpm * tempo_rate)
             } else {
-                "0.0".to_string()
+                "—".to_string()
             };
             let bpm_color = if is_master {
                 ACCENT
             } else {
-                egui::Color32::WHITE
+                theme::TEXT_STRONG
             };
-            value_label(ui, bpm_value_w, "BPM", bpm_text, bpm_color);
+            theme::paint_readout(ui, "BPM", &bpm_text, bpm_color, 5);
 
-            ui.add_space(12.0);
+            ui.add_space(theme::SPACE_8);
             if ui
-                .small_button("⏱")
+                .add(Key::new("⏱").small().text_style(theme::BODY_TEXT))
                 .on_hover_text("Toggle elapsed / remaining")
                 .clicked()
             {
                 deck_ui.show_remaining = !deck_ui.show_remaining;
             }
-            ui.add_space(4.0);
+            ui.add_space(theme::SPACE_8);
             let (caption, value) = if deck_ui.show_remaining {
                 (
                     "REMAINING",
                     format!(
-                        "-{}",
+                        "−{}",
                         format_time(total.saturating_sub(playhead), sample_rate)
                     ),
                 )
             } else {
                 ("ELAPSED", format_time(playhead, sample_rate))
             };
-            value_label(ui, time_value_w, caption, value, egui::Color32::WHITE);
+            theme::paint_readout(ui, caption, &value, theme::TEXT_STRONG, 8);
         });
     });
-    ui.add_space(6.0);
+    ui.add_space(theme::SPACE_12);
 
     // Waveform on the left; the BPM / keylock / master-sync / pitch sidebar
     // carves out a fixed column on the right (like a hardware deck's pitch
@@ -3681,15 +3657,15 @@ fn deck_panel(
             ui.horizontal(|ui| {
                 paint_beat_counter(ui, &deck_ui.marks, display_pos);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("+").clicked() {
+                    if ui.add(Key::new("+").small()).clicked() {
                         deck_ui.zoom.zoom_in();
                     }
                     ui.label(
-                        egui::RichText::new(deck_ui.zoom.label(deck_ui.marks.is_usable()))
-                            .weak()
-                            .size(11.0),
+                        theme::CAPTION
+                            .rich(deck_ui.zoom.label(deck_ui.marks.is_usable()))
+                            .color(theme::TEXT_MUTED),
                     );
-                    if ui.small_button("−").clicked() {
+                    if ui.add(Key::new("−").small()).clicked() {
                         deck_ui.zoom.zoom_out();
                     }
                 });
@@ -4012,11 +3988,8 @@ fn deck_sidebar(
         ui.add_space(6.0);
         ui.vertical_centered(|ui| {
             section_caption(ui, "PITCH");
-            ui.label(
-                egui::RichText::new(format!("{:+.1}%", deck_ui.pitch_percent))
-                    .monospace()
-                    .size(11.0),
-            );
+            let pitch = format!("{:+.1}%", deck_ui.pitch_percent).replace('-', "−");
+            ui.label(theme::NUMERALS_SM.rich(pitch).color(theme::TEXT_STRONG));
         });
         // Size the fader so the sidebar spans the waveform stack: subtract
         // what the column has consumed so far (measured from its absolute
@@ -4092,7 +4065,7 @@ fn deck_sidebar(
             }
             if has_track {
                 let shared = &deck_ui.deck.shared;
-                ui.label(egui::RichText::new(format!("{:.0} ms", shared.control_latency.load() * 1000.0)).weak().size(10.0))
+                ui.label(theme::NOTE_TEXT.rich(format!("{:.0} ms", shared.control_latency.load() * 1000.0)).color(theme::TEXT_MUTED))
                     .on_hover_text(format!(
                         "Control response estimate, including pending audio. Output reserve: {:.0} ms. \
                          Worker: {:.1}%. Underrun frames: {}. Applied tempo: {:.4}x. Device latency is additional.",
@@ -4350,65 +4323,133 @@ fn deck_lufs_meter(
     }
 }
 
+/// Height of the toolbar's control row: the MASTER BPM caption over its
+/// well.
+const TOOLBAR_ROW_H: f32 = 46.0;
+
+/// The master tempo: a MASTER BPM caption over a 132×30 well holding the
+/// tempo, with A and B at either end. The source deck's letter lights
+/// `lane-lighting` with a soft glow (the rig follows the same deck); it is
+/// chosen automatically, so this is a readout, not a control.
+fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) {
+    let ctx = ui.ctx();
+    let painter = ui.painter();
+    let caption = theme::CAPTION.galley(ctx, "MASTER BPM", theme::TEXT_MUTED);
+    let well_size = egui::vec2(132.0, 30.0);
+    let total_h = caption.size().y + theme::SPACE_4 + well_size.y;
+    let top = center.y - total_h / 2.0;
+    let cap_w = caption.size().x - theme::CAPTION.spacing;
+    painter.galley(
+        egui::pos2(center.x - cap_w / 2.0, top),
+        caption,
+        theme::TEXT_MUTED,
+    );
+    let well = egui::Rect::from_min_size(
+        egui::pos2(center.x - well_size.x / 2.0, top + total_h - well_size.y),
+        well_size,
+    );
+    theme::paint_well(painter, well, theme::RADIUS_CONTROL);
+
+    let text = if bpm > 0.0 {
+        format!("{bpm:.1}")
+    } else {
+        "—".to_string()
+    };
+    let value = theme::NUMERALS_MD.galley(ctx, &text, theme::TEXT_STRONG);
+    painter.galley(
+        well.center() - value.size() / 2.0,
+        value,
+        theme::TEXT_STRONG,
+    );
+    for (i, letter) in DECK_NAMES.iter().enumerate() {
+        let lit = i == source;
+        let color = if lit {
+            theme::LANE_LIGHTING
+        } else {
+            theme::TEXT_MUTED
+        };
+        let g = theme::KEY_LABEL.galley(ctx, letter, color);
+        let w = g.size().x - theme::KEY_LABEL.spacing;
+        let x = if i == 0 {
+            well.left() + 10.0
+        } else {
+            well.right() - 10.0 - w
+        };
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(x, well.center().y - g.size().y / 2.0),
+            egui::vec2(w, g.size().y),
+        );
+        if lit {
+            theme::paint_glow(
+                painter,
+                rect.shrink2(egui::vec2(0.0, 2.0)),
+                3.0,
+                8.0,
+                theme::LANE_LIGHTING.gamma_multiply(0.7),
+            );
+        }
+        painter.galley(rect.min, g, color);
+    }
+}
+
 /// Toolbar master output meter, styled like the DSP load bar: the summed
 /// stream level measured post-master / post-limiter, so pulling the master
 /// knob down visibly limits it. Red = pinned near the ceiling (limiting).
 fn master_level_meter(ui: &mut egui::Ui, level: f32) {
-    let color = if level < 0.7 {
-        egui::Color32::from_rgb(110, 200, 110)
-    } else if level < 0.95 {
-        ACCENT
-    } else {
-        egui::Color32::from_rgb(230, 80, 80)
-    };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(64.0, 10.0), egui::Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(theme::STEPS_SIZE, egui::Sense::hover());
     response.on_hover_text(format!("Output: {:.0}%", level.clamp(0.0, 1.0) * 100.0));
-    ui.painter()
-        .rect_filled(rect, 2.0, egui::Color32::from_rgb(30, 30, 34));
-    let fill = rect.width() * level.clamp(0.0, 1.0);
-    if fill > 0.0 {
-        ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min, egui::vec2(fill, rect.height())),
-            2.0,
-            color,
-        );
-    }
+    theme::paint_steps(ui.painter(), rect, level, None);
 }
 
 /// Toolbar meter: DSP = audio-callback load (render time ÷ buffer time,
-/// the number that matters for dropouts) with a bar; CPU = whole-process
-/// usage. The bar fill tracks `dsp_load` live; the percentage text and
-/// color use `dsp_latched` (updated ~2×/s) so the readout is legible.
+/// the number that matters for dropouts) as LED steps; CPU = whole-process
+/// usage. The steps track `dsp_load` live; the percentage digits and zone
+/// colour use `dsp_latched` (updated ~2×/s) so the readout is legible.
 fn cpu_meter(ui: &mut egui::Ui, dsp_load: f32, dsp_latched: f32, process_pct: f32) {
     let dsp_pct = (dsp_latched * 100.0).clamp(0.0, 999.0);
-    let color = if dsp_pct < 50.0 {
-        egui::Color32::from_rgb(110, 200, 110)
+    let zone = if dsp_pct < 50.0 {
+        theme::METER_GREEN
     } else if dsp_pct < 80.0 {
-        ACCENT
+        theme::ACCENT
     } else {
-        egui::Color32::from_rgb(230, 80, 80)
+        theme::METER_RED
     };
-    // Right-to-left layout: process CPU, then the DSP bar + label.
-    ui.label(
-        egui::RichText::new(format!("CPU {process_pct:>4.1}%"))
-            .weak()
-            .monospace(),
+    // Padded with figure spaces (as wide as a tabular digit) so the digits
+    // never shift.
+    let pad = |pct: f32| format!("{pct:>4.1}").replace(' ', "\u{2007}");
+    let ctx = ui.ctx().clone();
+    let dsp = theme::NUMERALS_SM.galley(&ctx, &format!("DSP {}%", pad(dsp_pct)), zone);
+    let cpu = theme::NUMERALS_SM.galley(
+        &ctx,
+        &format!("CPU {}%", pad(process_pct)),
+        theme::TEXT_MUTED,
     );
-    ui.separator();
-    ui.label(
-        egui::RichText::new(format!("DSP {dsp_pct:>4.1}%"))
-            .color(color)
-            .monospace(),
-    ).on_hover_text("Busiest audio processing thread: stretching or output delivery. Per-deck details appear in the latency readout.");
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(64.0, 10.0), egui::Sense::hover());
-    ui.painter()
-        .rect_filled(rect, 2.0, egui::Color32::from_rgb(30, 30, 34));
-    let fill = rect.width() * (dsp_load.clamp(0.0, 1.0));
-    ui.painter().rect_filled(
-        egui::Rect::from_min_size(rect.min, egui::vec2(fill, rect.height())),
-        2.0,
-        color,
+    // Right-to-left layout: the readout well, then the live steps.
+    // 8 | DSP | 8 | groove | 8 | CPU | 8
+    let well_size = egui::vec2(
+        dsp.size().x + cpu.size().x + 2.0 + 4.0 * theme::SPACE_8,
+        22.0,
     );
+    let (well, response) = ui.allocate_exact_size(well_size, egui::Sense::hover());
+    response.on_hover_text(
+        "Busiest audio processing thread: stretching or output delivery. Per-deck details \
+         appear in the latency readout.",
+    );
+    let painter = ui.painter();
+    theme::paint_well(painter, well, theme::RADIUS_CONTROL);
+    let y = well.center().y - dsp.size().y / 2.0;
+    let mut x = well.left() + theme::SPACE_8;
+    let dsp_w = dsp.size().x;
+    painter.galley(egui::pos2(x, y), dsp, zone);
+    x += dsp_w + theme::SPACE_8;
+    let groove = egui::Rangef::new(well.center().y - 6.0, well.center().y + 6.0);
+    painter.vline(x + 0.5, groove, egui::Stroke::new(1.0, theme::EDGE));
+    painter.vline(x + 1.5, groove, egui::Stroke::new(1.0, theme::LIP));
+    x += 2.0 + theme::SPACE_8;
+    painter.galley(egui::pos2(x, y), cpu, theme::TEXT_MUTED);
+
+    let (steps, _) = ui.allocate_exact_size(theme::STEPS_SIZE, egui::Sense::hover());
+    theme::paint_steps(ui.painter(), steps, dsp_load, Some(zone));
 }
 
 /// Cumulative user+system CPU time of this process, in seconds.
@@ -4506,23 +4547,15 @@ fn outlined_toggle(
     ui.add(key)
 }
 
-/// Musical-key badge in the deck header: a bordered blue chip around the
-/// raw tag string.
+/// Musical-key badge under the deck title: the raw tag string in
+/// `musical-key` blue, in a small well 20 high with 7 either side.
 fn key_badge(ui: &mut egui::Ui, key: &str) {
-    const KEY_BLUE: egui::Color32 = egui::Color32::from_rgb(120, 190, 255);
-    let galley =
-        ui.painter()
-            .layout_no_wrap(key.to_owned(), egui::FontId::proportional(10.0), KEY_BLUE);
-    let (rect, _) =
-        ui.allocate_exact_size(galley.size() + egui::vec2(10.0, 4.0), egui::Sense::hover());
-    ui.painter().rect_stroke(
-        rect,
-        3.0,
-        egui::Stroke::new(1.0, KEY_BLUE),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter()
-        .galley(rect.center() - galley.size() / 2.0, galley, KEY_BLUE);
+    let galley = theme::KEY_LABEL.galley(ui.ctx(), key, theme::MUSICAL_KEY);
+    let text_w = galley.size().x - theme::KEY_LABEL.spacing;
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(text_w + 14.0, 20.0), egui::Sense::hover());
+    theme::paint_well(ui.painter(), rect, theme::RADIUS_CONTROL);
+    let pos = egui::pos2(rect.left() + 7.0, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(pos, galley, theme::MUSICAL_KEY);
 }
 
 fn apply_theme(ctx: &egui::Context) {

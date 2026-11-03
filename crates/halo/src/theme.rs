@@ -502,6 +502,65 @@ pub fn paint_led(painter: &Painter, center: Pos2, on: bool, color: Color32) {
     }
 }
 
+// ---------------------------------------------------------------- meters
+
+/// Size of an LED step bar (the output level and DSP meters).
+pub const STEPS_SIZE: Vec2 = Vec2::new(64.0, 10.0);
+
+/// Fifteen 3×6 LED steps in an edged well, lit up to `level` (0..1).
+/// `zone` colours every lit step alike (the DSP meter); `None` zones them
+/// by position: `meter-green` to 70%, `accent` to 95%, `meter-red` above.
+pub fn paint_steps(painter: &Painter, rect: Rect, level: f32, zone: Option<Color32>) {
+    const STEPS: usize = 15;
+    let level = level.clamp(0.0, 1.0);
+    paint_well_edged(painter, rect.shrink(0.5), 2);
+    for i in 0..STEPS {
+        let t = (i as f32 + 0.5) / STEPS as f32;
+        let color = if t > level {
+            SEGMENT_OFF
+        } else if let Some(zone) = zone {
+            zone
+        } else if t < 0.7 {
+            METER_GREEN
+        } else if t < 0.95 {
+            ACCENT
+        } else {
+            METER_RED
+        };
+        let step = Rect::from_min_size(
+            rect.min + egui::vec2(2.0 + i as f32 * 4.0, 2.0),
+            egui::vec2(3.0, 6.0),
+        );
+        painter.rect_filled(step, 0.0, color);
+    }
+}
+
+/// A deck readout: a well with a spaced caption over `numerals-xl`, 9 and
+/// 12 inside. `cells` sizes the value column in digit widths so nothing
+/// moves while it plays.
+pub fn paint_readout(ui: &mut egui::Ui, caption: &str, value: &str, color: Color32, cells: usize) {
+    let ctx = ui.ctx().clone();
+    let digit = NUMERALS_XL.width(&ctx, "0");
+    let size = egui::vec2(cells as f32 * digit + 2.0 * SPACE_12, READOUT_H);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let painter = ui.painter();
+    paint_well(painter, rect, RADIUS_CONTROL);
+    let cap = CAPTION.galley(&ctx, caption, TEXT_MUTED);
+    let cap_h = cap.size().y;
+    painter.galley(rect.min + egui::vec2(SPACE_12, 9.0), cap, TEXT_MUTED);
+    let val = NUMERALS_XL.galley(&ctx, value, color);
+    // Numerals sit on a 30px line under the caption, 7 below it.
+    let line_top = rect.top() + 9.0 + cap_h + 7.0;
+    let y = line_top + (SIZE_NUMERALS - val.size().y) / 2.0;
+    painter.galley(egui::pos2(rect.left() + SPACE_12, y), val, color);
+}
+
+/// Height of a deck readout well.
+pub const READOUT_H: f32 = 67.0;
+
 // ---------------------------------------------------------------- panels
 
 /// A panel's surface in `rect`: `face-panel` with `shadow-panel`. Its soft
@@ -541,11 +600,11 @@ pub fn panel_shapes(ctx: &egui::Context, rect: Rect) -> Vec<egui::Shape> {
     shapes
 }
 
-/// Lay `content` out on a panel: `face-panel` with `shadow-panel`, `space-16`
+/// Lay `content` out on a panel (`face-panel` with `shadow-panel`), `margin`
 /// inside. The surface is painted behind the content once its size is known.
 pub fn panel<R>(
     ui: &mut egui::Ui,
-    margin: f32,
+    margin: impl Into<egui::Margin>,
     content: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::InnerResponse<R> {
     let background = ui.painter().add(egui::Shape::Noop);

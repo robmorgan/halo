@@ -63,6 +63,7 @@ pub struct Key {
     color: Option<Color32>,
     led: Option<(bool, Color32)>,
     pressed: bool,
+    selected: bool,
 }
 
 impl Key {
@@ -78,6 +79,7 @@ impl Key {
             color: None,
             led: None,
             pressed: false,
+            selected: false,
         }
     }
 
@@ -126,6 +128,13 @@ impl Key {
     /// Draw it held regardless of the pointer.
     pub fn pressed(mut self, pressed: bool) -> Self {
         self.pressed = pressed;
+        self
+    }
+
+    /// The current choice of a set (the view tab): a `selection` wash over
+    /// the face under a `text-strong` label.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
         self
     }
 
@@ -202,7 +211,10 @@ impl Widget for Key {
             } else {
                 theme::paint_raised(painter, rect, radius, Face::Key);
             }
-            self.color.unwrap_or(if held || hovered {
+            if self.selected {
+                painter.rect_filled(rect, radius, theme::SELECTION);
+            }
+            self.color.unwrap_or(if held || hovered || self.selected {
                 theme::TEXT_STRONG
             } else {
                 theme::TEXT
