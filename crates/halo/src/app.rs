@@ -17,12 +17,14 @@ use crate::deck::Deck;
 use crate::decoder::decode_file;
 use crate::dmx;
 use crate::fader::{Fader, Notches};
+use crate::key::{Key, Lit};
 use crate::knob::{Knob, KnobArc};
 use crate::library::{Library, PlaylistRow, SortColumn, TrackRow};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
 use crate::show::simulate_show_l3;
 use crate::show_preview::{LOOK_PALETTE, LookId, ShowPreview, ShowSel};
 use crate::state::{MixerShared, ScrubPhase, Transport};
+use crate::theme::{self, ACCENT};
 use crate::waveform::{
     BandPeaks, GhostPlayhead, GridMarks, OverviewParams, OverviewTexture, ScrubGesture,
     ShowEditorInteraction, ShowEditorParams, ShowStripParams, ZoomSpan, ZoomedParams,
@@ -30,13 +32,13 @@ use crate::waveform::{
 };
 use crate::worker::{WorkerEvent, spawn_analysis_worker, spawn_folder_import};
 
-/// Halo accent color (amber, CDJ-style).
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(255, 170, 40);
 const DECK_NAMES: [&str; 2] = ["A", "B"];
 /// Longest edge of the artwork texture.
 const ARTWORK_MAX_PX: u32 = 256;
 /// Artwork display size in the deck header.
 const ARTWORK_SIZE: f32 = 56.0;
+/// Padding inside the Perform view's deck and mixer panels (`space-16`).
+const PERFORM_PANEL_PAD: f32 = theme::SPACE_16;
 
 /// Everything the decode thread produces for a track load.
 struct LoadedData {
@@ -2650,11 +2652,11 @@ impl eframe::App for HaloApp {
         self.settings_window(ctx);
         self.remove_confirm_window(ctx);
 
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new(&self.status).weak());
-            ui.add_space(4.0);
-        });
+        egui::TopBottomPanel::bottom("status")
+            .frame(theme::ground_frame(theme::SPACE_8).inner_margin(egui::Margin::symmetric(12, 6)))
+            .show(ctx, |ui| {
+                ui.label(theme::NOTE_TEXT.rich(&self.status).color(theme::TEXT_MUTED));
+            });
 
         // The patch sheet gets the whole window: no slide-up footer there.
         if self.view != View::Patch && self.footer_panel(ctx, &lighting) {
@@ -2676,78 +2678,94 @@ impl eframe::App for HaloApp {
             return;
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let full_width = ui.available_width();
-            // Sized to just fit the mixer content (131 px strip cluster) with
-            // ~6 px breathing room each side, rather than a wide centered panel.
-            let mixer_width = 144.0;
-            // The row holds 5 children (deck | sep | mixer | sep | deck):
-            // 4 item-spacing gaps plus 2 separators (6 pt each in egui).
-            let spacing = ui.spacing().item_spacing.x;
-            let chrome = 4.0 * spacing + 2.0 * 6.0;
-            let deck_width = ((full_width - mixer_width - chrome) / 2.0)
-                .floor()
-                .max(280.0);
+        egui::CentralPanel::default()
+            .frame(theme::ground_frame(theme::SPACE_8))
+            .show(ctx, |ui| {
+                let full_width = ui.available_width();
+                // Sized to just fit the mixer content (131 px strip cluster) with
+                // ~6 px breathing room each side, rather than a wide centered panel.
+                let mixer_width = 144.0;
+                // Three panels on the ground (deck | mixer | deck), `space-8`
+                // apart, each with `space-16` inside.
+                let gap = theme::SPACE_8;
+                let chrome = 2.0 * gap + 6.0 * PERFORM_PANEL_PAD;
+                let deck_width = ((full_width - mixer_width - chrome) / 2.0)
+                    .floor()
+                    .max(280.0);
+                // Panels in the row share one height: the tallest content of the
+                // previous frame.
+                let row_h_id = egui::Id::new("perform-row-height");
+                let row_h = ui.data(|d| d.get_temp::<f32>(row_h_id)).unwrap_or(0.0);
+                let mut tallest = 0.0_f32;
 
-            let sample_rate = self.device_rate();
-            let master = self.master_source();
-            let lighting_deck = self.lighting_deck;
-            let has_audio = self.audio.is_some();
-            let mut responses: [DeckPanelResponse; 2] = Default::default();
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(deck_width);
-                    responses[0] = deck_panel(
-                        ui,
-                        &mut self.decks[0],
-                        0,
-                        sample_rate,
-                        master == 0,
-                        (lighting_deck == 0).then_some(&lighting),
-                        has_audio,
-                    );
-                });
-                ui.separator();
-                let mixer_rect = ui
-                    .vertical(|ui| {
-                        ui.set_width(mixer_width);
+                let sample_rate = self.device_rate();
+                let master = self.master_source();
+                let lighting_deck = self.lighting_deck;
+                let has_audio = self.audio.is_some();
+                let mut responses: [DeckPanelResponse; 2] = Default::default();
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    let mut card =
+                        |ui: &mut egui::Ui, width: f32, content: &mut dyn FnMut(&mut egui::Ui)| {
+                            theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
+                                ui.set_width(width);
+                                let top = ui.cursor().top();
+                                ui.vertical(|ui| content(ui));
+                                tallest = tallest.max(ui.cursor().top() - top);
+                                ui.set_min_height(row_h);
+                            })
+                            .response
+                            .rect
+                        };
+                    card(ui, deck_width, &mut |ui| {
+                        responses[0] = deck_panel(
+                            ui,
+                            &mut self.decks[0],
+                            0,
+                            sample_rate,
+                            master == 0,
+                            (lighting_deck == 0).then_some(&lighting),
+                            has_audio,
+                        );
+                    });
+                    let mixer_rect = card(ui, mixer_width, &mut |ui| {
                         mixer_panel(ui, &self.mixer, &self.decks);
-                    })
-                    .response
-                    .rect;
-                self.mixer_center_x = mixer_rect.center().x;
-                ui.separator();
-                ui.vertical(|ui| {
-                    ui.set_width(deck_width);
-                    responses[1] = deck_panel(
-                        ui,
-                        &mut self.decks[1],
-                        1,
-                        sample_rate,
-                        master == 1,
-                        (lighting_deck == 1).then_some(&lighting),
-                        has_audio,
-                    );
+                    });
+                    self.mixer_center_x = mixer_rect.center().x;
+                    card(ui, deck_width, &mut |ui| {
+                        responses[1] = deck_panel(
+                            ui,
+                            &mut self.decks[1],
+                            1,
+                            sample_rate,
+                            master == 1,
+                            (lighting_deck == 1).then_some(&lighting),
+                            has_audio,
+                        );
+                    });
                 });
+                if tallest != row_h {
+                    ui.data_mut(|d| d.insert_temp(row_h_id, tallest));
+                    ui.ctx().request_repaint();
+                }
+                for (i, resp) in responses.into_iter().enumerate() {
+                    if resp.master_clicked {
+                        let request = self.mixer.master_request.load(Ordering::Relaxed);
+                        self.mixer
+                            .master_request
+                            .store((request & !1) + 2 + i as u64, Ordering::Release);
+                    }
+                    if resp.play_toggled {
+                        self.toggle_play_synced(i);
+                    }
+                    if let Some(path) = resp.load_path {
+                        self.import_and_load(i, path);
+                    }
+                    if let Some(track_id) = resp.load_track_id {
+                        self.load_track_row(i, track_id);
+                    }
+                }
             });
-            for (i, resp) in responses.into_iter().enumerate() {
-                if resp.master_clicked {
-                    let request = self.mixer.master_request.load(Ordering::Relaxed);
-                    self.mixer
-                        .master_request
-                        .store((request & !1) + 2 + i as u64, Ordering::Release);
-                }
-                if resp.play_toggled {
-                    self.toggle_play_synced(i);
-                }
-                if let Some(path) = resp.load_path {
-                    self.import_and_load(i, path);
-                }
-                if let Some(track_id) = resp.load_track_id {
-                    self.load_track_row(i, track_id);
-                }
-            }
-        });
     }
 }
 
@@ -3411,8 +3429,6 @@ fn deck_panel(
     let is_lighting = lighting_outputs.is_some();
     let mut response = DeckPanelResponse::default();
 
-    ui.add_space(8.0);
-
     let shared = deck_ui.deck.shared.clone();
     let has_track = deck_ui.deck.track.is_some();
     let total = shared.total();
@@ -3577,10 +3593,11 @@ fn deck_panel(
     // strip).
     let loop_region = shared.loop_region();
     ui.horizontal(|ui| {
-        const RIGHT_W: f32 = 60.0;
+        // As wide as the widest sidebar toggle (KEYLOCK, with its LED).
+        let right_w = led_key_width(ui.ctx(), "KEYLOCK");
         let total_w = ui.available_width();
         let wave = ui.vertical(|ui| {
-            ui.set_width((total_w - RIGHT_W - 8.0).max(200.0));
+            ui.set_width((total_w - right_w - 8.0).max(200.0));
 
             // Zoomed scrolling waveform. Dragging grabs the platter: the
             // audio callback's varispeed voice audibly chases the hand
@@ -3679,7 +3696,7 @@ fn deck_panel(
         });
         let wave_h = wave.response.rect.height();
         ui.vertical(|ui| {
-            ui.set_width(RIGHT_W);
+            ui.set_width(right_w);
             deck_sidebar(
                 ui,
                 deck_ui,
@@ -3695,37 +3712,34 @@ fn deck_panel(
     ui.add_space(8.0);
     ui.add_enabled_ui(has_track, |ui| {
         // Row 1: captioned groups — transport (play / cue), nudge, loops —
-        // all buttons at one consistent height.
-        const GROUP_H: f32 = 50.0;
+        // all keys at one height.
+        const GROUP_H: f32 = 48.0;
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
             control_group(ui, "TRANSPORT", |ui| {
-                // PLAY/PAUSE — green accents.
+                // PLAY/PAUSE: a green triangle; the whole face lights green
+                // while playing.
                 let play_label = if playing { "⏸" } else { "▶" };
                 if ui
-                    .add_sized(
-                        [70.0, 30.0],
-                        egui::Button::new(
-                            egui::RichText::new(play_label)
-                                .size(18.0)
-                                .color(egui::Color32::from_rgb(90, 220, 120)),
-                        )
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            egui::Color32::from_rgb(90, 220, 120),
-                        ))
-                        .fill(egui::Color32::from_rgb(32, 56, 40)),
+                    .add(
+                        Key::new(play_label)
+                            .size([theme::SIZE_TRANSPORT, theme::SIZE_KEY])
+                            .text_style(theme::KEY_LABEL.sized(16.0))
+                            .label_color(theme::PLAY)
+                            .lit(playing.then_some(Lit::Play)),
                     )
                     .clicked()
                 {
                     response.play_toggled = true;
                 }
 
-                // CUE — CDJ semantics on press/release edges; amber outline.
-                let cue_resp = ui.add_sized(
-                    [70.0, 30.0],
-                    egui::Button::new(egui::RichText::new("CUE").size(15.0).color(ACCENT))
-                        .stroke(egui::Stroke::new(1.0, ACCENT))
-                        .fill(ACCENT_FILL),
+                // CUE — CDJ semantics on press/release edges; an amber label
+                // that lights the face amber while held.
+                let cue_resp = ui.add(
+                    Key::new("CUE")
+                        .size([theme::SIZE_TRANSPORT, theme::SIZE_KEY])
+                        .label_color(ACCENT)
+                        .lit_when_held(Lit::Accent),
                 );
                 let cue_down = cue_resp.is_pointer_button_down_on();
                 let pressed = cue_down && !deck_ui.cue_was_down;
@@ -3740,16 +3754,15 @@ fn deck_panel(
                 }
             });
 
+            ui.add_space(theme::SPACE_12);
             group_divider(ui, GROUP_H);
+            ui.add_space(theme::SPACE_12);
 
             control_group(ui, "NUDGE", |ui| {
                 // Pitch bend: momentary ±4% while held.
-                let bend_minus = ui
-                    .add_sized([28.0, 30.0], egui::Button::new("−"))
-                    .is_pointer_button_down_on();
-                let bend_plus = ui
-                    .add_sized([28.0, 30.0], egui::Button::new("+"))
-                    .is_pointer_button_down_on();
+                let nudge = |label| Key::new(label).width(theme::SIZE_KEY);
+                let bend_minus = ui.add(nudge("−")).is_pointer_button_down_on();
+                let bend_plus = ui.add(nudge("+")).is_pointer_button_down_on();
                 deck_ui.bend = if bend_minus {
                     0.96
                 } else if bend_plus {
@@ -3762,20 +3775,21 @@ fn deck_panel(
                 }
             });
 
+            ui.add_space(theme::SPACE_12);
             group_divider(ui, GROUP_H);
+            ui.add_space(theme::SPACE_12);
 
             control_group(ui, "LOOP", |ui| {
                 // Loops: manual in/out, quantized autoloop at the shown
                 // length, halve/double between 1/16 and 16 beats (gapless
-                // session loop transaction). Every button is a fixed 45×30 to
-                // match the play/cue height; only the 4 BEATS chip is wider.
+                // session loop transaction). IN / OUT / ÷2 / ×2 are fixed
+                // 45×30 keys; EXIT and the length chip size to their labels.
                 let has_loop = loop_region.is_some();
                 let grid_ok = deck_ui.marks.is_usable();
                 let btn = |ui: &mut egui::Ui, txt: &str, enabled: bool| {
-                    ui.add_enabled_ui(enabled, |ui| {
-                        ui.add_sized([45.0, 30.0], egui::Button::new(txt.to_string()))
-                    })
-                    .inner
+                    let key = Key::new(txt);
+                    let key = if txt == "EXIT" { key } else { key.width(45.0) };
+                    ui.add_enabled_ui(enabled, |ui| ui.add(key)).inner
                 };
 
                 if btn(ui, "IN", true).clicked() && has_track {
@@ -3812,7 +3826,10 @@ fn deck_panel(
                 let chip = ui
                     .add_enabled_ui(grid_ok && has_track, |ui| {
                         let label = format!("{} BEATS", format_beats(deck_ui.loop_beats));
-                        outlined_toggle(ui, has_loop, &label, [72.0, 30.0])
+                        // Sized to the widest length so halving never
+                        // shifts the row.
+                        let width = led_key_width(ui.ctx(), "1/16 BEATS");
+                        outlined_toggle(ui, has_loop, &label, Some(width))
                     })
                     .inner;
                 if chip.on_hover_text("Autoloop at this length").clicked() {
@@ -3835,31 +3852,35 @@ fn deck_panel(
         // Row 2: hot-cue pads (8) + GATE / Q. Normal mode: empty = set at the
         // (quantized) playhead, occupied = jump and play, right-click deletes.
         // Gated mode: plays from the cue while held, pauses on release.
-        ui.add_space(6.0);
+        ui.add_space(theme::SPACE_12);
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
             // The pads shrink when the deck column is narrow so the row
-            // (8 pads + divider + GATE/QUANTIZE/AUTO CUE, ~175 pt of tail)
-            // never widens the panel — at the minimum window size that
-            // overflow would push deck B past the right edge and wrap the
-            // AUTO CUE caption.
-            let gap = ui.spacing().item_spacing.x;
-            let pad_w = ((ui.available_width() - 175.0 - 8.0 * gap) / 8.0).clamp(18.0, 40.0);
+            // (8 pads + divider + GATE/QUANTIZE/AUTO CUE) never widens the
+            // panel — at the minimum window size that overflow would push
+            // deck B past the right edge and wrap the AUTO CUE caption.
+            let ctx = ui.ctx().clone();
+            let toggle_w = led_key_width(&ctx, "OFF");
+            let tail: f32 = ["GATE", "QUANTIZE", "AUTO CUE"]
+                .iter()
+                .map(|c| theme::CAPTION.width(&ctx, c).max(toggle_w))
+                .sum::<f32>()
+                + 2.0 * theme::SPACE_12
+                + GROUP_DIVIDER_W
+                + 2.0 * theme::SPACE_16;
+            let pad_w = ((ui.available_width() - tail - 7.0 * theme::SPACE_8) / 8.0)
+                .floor()
+                .clamp(18.0, theme::SIZE_PAD);
             control_group(ui, "HOT CUES", |ui| {
                 for i in 0..8 {
                     let set = deck_ui.hot_cues[i].is_some();
-                    let mut button = egui::Button::new(
-                        egui::RichText::new(format!("{}", i + 1))
-                            .size(13.0)
-                            .color(if set {
-                                egui::Color32::BLACK
-                            } else {
-                                egui::Color32::from_rgb(140, 140, 150)
-                            }),
+                    let resp = ui.add(
+                        Key::new(format!("{}", i + 1))
+                            .size([pad_w, theme::SIZE_KEY])
+                            .text_style(theme::PAD_NUMBER)
+                            .label_color(theme::TEXT_UNLIT)
+                            .lit(set.then_some(Lit::Accent)),
                     );
-                    if set {
-                        button = button.fill(ACCENT);
-                    }
-                    let resp = ui.add_sized([pad_w, 30.0], button);
                     let down = resp.is_pointer_button_down_on();
                     let pressed = down && !deck_ui.hotcue_was_down[i];
                     deck_ui.hotcue_was_down[i] = down;
@@ -3881,18 +3902,22 @@ fn deck_panel(
                 }
             });
 
-            group_divider(ui, 44.0);
+            ui.add_space(theme::SPACE_12);
+            group_divider(ui, GROUP_H);
+            ui.add_space(theme::SPACE_12);
 
             control_group(ui, "GATE", |ui| {
-                state_toggle(ui, &mut deck_ui.gated, [40.0, 30.0])
+                state_toggle(ui, &mut deck_ui.gated)
                     .on_hover_text("Gated hot cues: play while held, stop on release");
             });
+            ui.add_space(theme::SPACE_16);
             control_group(ui, "QUANTIZE", |ui| {
-                state_toggle(ui, &mut deck_ui.quantize, [40.0, 30.0])
+                state_toggle(ui, &mut deck_ui.quantize)
                     .on_hover_text("Quantize hot cues and loops to the beat grid");
             });
+            ui.add_space(theme::SPACE_16);
             control_group(ui, "AUTO CUE", |ui| {
-                state_toggle(ui, &mut deck_ui.auto_cue, [40.0, 30.0]).on_hover_text(
+                state_toggle(ui, &mut deck_ui.auto_cue).on_hover_text(
                     "On load, set the cue to the first detected beat and park the deck there",
                 );
             });
@@ -3948,14 +3973,17 @@ fn deck_sidebar(
     let full = ui.available_width();
 
     ui.add_enabled_ui(has_track, |ui| {
-        ui.add_space(4.0);
-        ui.vertical_centered(|ui| section_caption(ui, "KEYLOCK"));
-        state_toggle(ui, &mut deck_ui.keylock, [full, 20.0])
-            .on_hover_text("Keylock: keep pitch constant while tempo changes");
-        ui.add_space(4.0);
+        ui.spacing_mut().item_spacing.y = theme::SPACE_8;
+        // The toggle's label names the setting; its LED is the state.
+        if outlined_toggle(ui, deck_ui.keylock, "KEYLOCK", Some(full))
+            .on_hover_text("Keylock: keep pitch constant while tempo changes")
+            .clicked()
+        {
+            deck_ui.keylock = !deck_ui.keylock;
+        }
         // A master leads rather than follows. Retain its stored Sync intent
         // for a later handoff, but show only the currently active role.
-        if outlined_toggle(ui, is_master, "MASTER", [full, 20.0])
+        if outlined_toggle(ui, is_master, "MASTER", Some(full))
             .on_hover_text("Make this deck the tempo reference")
             .clicked()
             && !is_master
@@ -3964,7 +3992,7 @@ fn deck_sidebar(
         }
         let following = deck_ui.synced && !is_master;
         let sync = ui.add_enabled_ui(!is_master, |ui| {
-            outlined_toggle(ui, following, "SYNC", [full, 20.0])
+            outlined_toggle(ui, following, "SYNC", Some(full))
                 .on_hover_text("Match the master BPM; Play keeps the parked position and waits for the next matching beat phase")
         }).inner;
         if sync.clicked() {
@@ -3975,7 +4003,9 @@ fn deck_sidebar(
             let state = crate::sync::SyncState::load(&deck_ui.deck.shared);
             let label = if deck_ui.deck.shared.transport() != Transport::Playing
                 && state != crate::sync::SyncState::Unavailable { "ARMED" } else { state.label() };
-            ui.label(egui::RichText::new(label).size(9.0).weak());
+            ui.vertical_centered(|ui| {
+                ui.label(theme::CAPTION.rich(label).color(theme::TEXT_MUTED))
+            });
         }
 
         ui.add_space(6.0);
@@ -4385,73 +4415,86 @@ fn process_cpu_secs() -> f64 {
     }
 }
 
-/// Small uppercase weak caption above a control group ("TRANSPORT", …).
+/// Spaced uppercase caption over a control group ("TRANSPORT", …):
+/// `caption` in `text-muted`, dimmed to `text-disabled` when the enclosing
+/// scope is disabled (no track loaded).
 fn section_caption(ui: &mut egui::Ui, text: &str) {
-    // Lighter grey when the deck is live; falls back to the dim weak color
-    // when the enclosing scope is disabled (no track loaded).
-    let text = egui::RichText::new(text).size(9.0);
-    let text = if ui.is_enabled() {
-        text.color(egui::Color32::from_gray(170))
+    let color = if ui.is_enabled() {
+        theme::TEXT_MUTED
     } else {
-        text.weak()
+        theme::TEXT_DISABLED
     };
-    ui.label(text);
+    ui.label(theme::CAPTION.rich(text).color(color));
 }
 
-/// Caption above a horizontal control row; returns the row's inner value.
+/// Caption over a horizontal control row, `space-6` under the caption and
+/// `space-8` between controls; returns the row's inner value.
 fn control_group<R>(
     ui: &mut egui::Ui,
     caption: &str,
     content: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
         section_caption(ui, caption);
-        ui.add_space(2.0);
-        ui.horizontal(content).inner
+        ui.add_space(theme::SPACE_6);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = theme::SPACE_8;
+            content(ui)
+        })
+        .inner
     })
     .inner
 }
 
-/// Faint vertical divider between captioned control groups.
+/// Width `group_divider` occupies: 3 before the groove, 2 for it, 4 after.
+const GROUP_DIVIDER_W: f32 = 9.0;
+
+/// The groove between captioned control groups: a 1px `edge` line with a
+/// 1px `lip` of light beside it.
 fn group_divider(ui: &mut egui::Ui, height: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(7.0, height), egui::Sense::hover());
-    let x = rect.center().x;
-    ui.painter().line_segment(
-        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
-        ui.visuals().widgets.noninteractive.bg_stroke,
-    );
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(GROUP_DIVIDER_W, height), egui::Sense::hover());
+    let x = rect.left() + 3.5;
+    let painter = ui.painter();
+    painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, theme::EDGE));
+    painter.vline(x + 1.0, rect.y_range(), egui::Stroke::new(1.0, theme::LIP));
 }
 
-/// Fill behind amber-outlined controls: a dark amber wash.
-const ACCENT_FILL: egui::Color32 = egui::Color32::from_rgb(46, 36, 16);
-
-/// ON/OFF toggle whose label is the state; amber-outlined when on.
-fn state_toggle(ui: &mut egui::Ui, on: &mut bool, size: [f32; 2]) -> egui::Response {
-    let resp = outlined_toggle(ui, *on, if *on { "ON" } else { "OFF" }, size);
+/// ON/OFF toggle whose label is the state, with an LED before it. Sized to
+/// the wider "OFF" so flipping it never shifts the row.
+fn state_toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
+    let width = led_key_width(ui.ctx(), "OFF");
+    let resp = outlined_toggle(ui, *on, if *on { "ON" } else { "OFF" }, Some(width));
     if resp.clicked() {
         *on = !*on;
     }
     resp
 }
 
-/// Latching button with an amber outline when active (MASTER / SYNC / the
-/// loop-length chip).
-fn outlined_toggle(ui: &mut egui::Ui, active: bool, label: &str, size: [f32; 2]) -> egui::Response {
-    let (color, stroke, fill) = if active {
-        (ACCENT, egui::Stroke::new(1.0, ACCENT), ACCENT_FILL)
+/// Width of an LED key holding `label`: 12 | LED | 8 | label | 12.
+fn led_key_width(ctx: &egui::Context, label: &str) -> f32 {
+    theme::KEY_LABEL.width(ctx, label) + theme::SIZE_LED + theme::SPACE_8 + 2.0 * theme::SPACE_12
+}
+
+/// Latching key with an LED before its label that lights amber when active
+/// (KEYLOCK / MASTER / SYNC / the loop-length chip). Off, the LED is dark
+/// and the label `text-unlit`. `width: None` sizes it to the label.
+fn outlined_toggle(
+    ui: &mut egui::Ui,
+    active: bool,
+    label: &str,
+    width: Option<f32>,
+) -> egui::Response {
+    let mut key = Key::new(label).led(active, ACCENT).label_color(if active {
+        theme::TEXT_STRONG
     } else {
-        (
-            ui.visuals().weak_text_color(),
-            ui.visuals().widgets.inactive.bg_stroke,
-            ui.visuals().widgets.inactive.weak_bg_fill,
-        )
-    };
-    ui.add_sized(
-        size,
-        egui::Button::new(egui::RichText::new(label).size(10.0).color(color))
-            .stroke(stroke)
-            .fill(fill),
-    )
+        theme::TEXT_UNLIT
+    });
+    if let Some(width) = width {
+        key = key.width(width);
+    }
+    ui.add(key)
 }
 
 /// Musical-key badge in the deck header: a bordered blue chip around the
@@ -4478,13 +4521,79 @@ fn apply_theme(ctx: &egui::Context) {
     // styles the active theme, so following the system would fall back to
     // egui's stock light visuals.
     ctx.set_theme(egui::ThemePreference::Dark);
+    theme::install(ctx);
+
     let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = egui::Color32::from_rgb(16, 16, 18);
-    visuals.window_fill = egui::Color32::from_rgb(16, 16, 18);
-    visuals.extreme_bg_color = egui::Color32::from_rgb(8, 8, 10);
-    visuals.selection.bg_fill = ACCENT.linear_multiply(0.4);
+    // Panels add their own face on top of panel-deep; wells are the
+    // deepest surface.
+    visuals.panel_fill = theme::PANEL_DEEP;
+    visuals.window_fill = theme::PANEL_DEEP;
+    visuals.window_stroke = egui::Stroke::new(1.0, theme::EDGE_PANEL);
+    visuals.window_corner_radius = theme::RADIUS_WINDOW.into();
+    visuals.menu_corner_radius = theme::RADIUS_PANEL.into();
+    visuals.extreme_bg_color = theme::WELL;
+    visuals.code_bg_color = theme::WELL;
+    visuals.faint_bg_color = theme::PANEL;
+    visuals.warn_fg_color = theme::WARN;
+    visuals.error_fg_color = theme::WARN;
+    visuals.hyperlink_color = theme::ACCENT;
+    visuals.selection.bg_fill = theme::SELECTION;
+    visuals.selection.stroke = egui::Stroke::new(1.0, theme::TEXT_STRONG);
+    visuals.text_cursor.stroke = egui::Stroke::new(2.0, theme::ACCENT);
     visuals.slider_trailing_fill = true;
+
+    // Stock widgets (tabs, combo boxes, scroll bars, menus) take the key's
+    // colours and the dark edge. Nothing grows on hover.
+    let edge = egui::Stroke::new(1.0, theme::EDGE);
+    let w = &mut visuals.widgets;
+    w.noninteractive.bg_fill = theme::PANEL_DEEP;
+    // egui derives "weak" text by tinting halfway towards this colour;
+    // cap-hi lands it at text-muted against the panels.
+    w.noninteractive.weak_bg_fill = theme::CAP_HI;
+    w.noninteractive.bg_stroke = edge;
+    w.noninteractive.fg_stroke = egui::Stroke::new(1.0, theme::TEXT);
+    w.inactive.bg_fill = theme::KEY;
+    w.inactive.weak_bg_fill = theme::KEY;
+    w.inactive.bg_stroke = edge;
+    w.inactive.fg_stroke = egui::Stroke::new(1.0, theme::TEXT);
+    w.hovered.bg_fill = theme::KEY_HI;
+    w.hovered.weak_bg_fill = theme::KEY_HI;
+    w.hovered.bg_stroke = edge;
+    w.hovered.fg_stroke = egui::Stroke::new(1.0, theme::TEXT_STRONG);
+    w.active.bg_fill = theme::KEY_DOWN;
+    w.active.weak_bg_fill = theme::KEY_DOWN;
+    w.active.bg_stroke = edge;
+    w.active.fg_stroke = egui::Stroke::new(1.0, theme::TEXT_STRONG);
+    w.open.bg_fill = theme::KEY_DOWN;
+    w.open.weak_bg_fill = theme::KEY_DOWN;
+    w.open.bg_stroke = edge;
+    w.open.fg_stroke = egui::Stroke::new(1.0, theme::TEXT_STRONG);
+    for v in [
+        &mut w.noninteractive,
+        &mut w.inactive,
+        &mut w.hovered,
+        &mut w.active,
+        &mut w.open,
+    ] {
+        v.expansion = 0.0;
+        v.corner_radius = theme::RADIUS_CONTROL.into();
+    }
     ctx.set_visuals(visuals);
+
+    ctx.style_mut(|style| {
+        use egui::TextStyle;
+        style.text_styles = [
+            (TextStyle::Heading, theme::TRACK_TITLE.font_id()),
+            (TextStyle::Body, theme::BODY_TEXT.font_id()),
+            (TextStyle::Button, theme::BODY_TEXT.font_id()),
+            (TextStyle::Small, theme::NOTE_TEXT.font_id()),
+            (TextStyle::Monospace, theme::MONO_TEXT.font_id()),
+        ]
+        .into();
+        // Stock buttons and combo boxes are small keys.
+        style.spacing.interact_size.y = theme::SIZE_KEY_SMALL;
+        style.spacing.button_padding = egui::vec2(theme::SPACE_8, 2.0);
+    });
 }
 
 /// Seek, exiting any active loop the target falls outside of (otherwise
