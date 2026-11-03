@@ -501,9 +501,10 @@ pub struct HaloApp {
     kb_prev: [[bool; 8]; 2],
     /// Process CPU sampling: (last wall instant, last cpu seconds, percent).
     cpu_sample: (std::time::Instant, f64, f32),
-    /// DSP percentage latched for the toolbar readout: (last update, value).
-    /// The number would be unreadable at frame rate; the bar stays live.
-    dsp_display: (std::time::Instant, f32),
+    /// DSP load latched for the toolbar readout, on the same once-a-second
+    /// tick as the CPU figure. The number would be unreadable at frame rate;
+    /// the bar stays live.
+    dsp_display: f32,
     status: String,
     /// Absolute x of the mixer column's center, captured while rendering the
     /// central panel and read a frame later by the toolbar to center the
@@ -657,7 +658,7 @@ impl HaloApp {
             available_devices: Vec::new(),
             kb_prev: [[false; 8]; 2],
             cpu_sample: (std::time::Instant::now(), process_cpu_secs(), 0.0),
-            dsp_display: (std::time::Instant::now(), 0.0),
+            dsp_display: 0.0,
             status,
             mixer_center_x: 0.0,
         };
@@ -1646,7 +1647,7 @@ impl HaloApp {
     }
 
     /// Sample process-wide CPU roughly once a second, and latch the DSP
-    /// readout a couple of times a second.
+    /// readout on the same tick.
     fn audio_load(&self) -> f32 {
         self.decks
             .iter()
@@ -1663,9 +1664,7 @@ impl HaloApp {
             let cpu_now = process_cpu_secs();
             let pct = ((cpu_now - last_cpu) / elapsed * 100.0) as f32;
             self.cpu_sample = (std::time::Instant::now(), cpu_now, pct.max(0.0));
-        }
-        if self.dsp_display.0.elapsed().as_secs_f32() >= 0.5 {
-            self.dsp_display = (std::time::Instant::now(), self.audio_load());
+            self.dsp_display = self.audio_load();
         }
     }
 
@@ -2651,7 +2650,7 @@ impl eframe::App for HaloApp {
                                 }
                             }
                             group_divider(ui, theme::SIZE_KEY_SMALL);
-                            cpu_meter(ui, self.audio_load(), self.dsp_display.1, self.cpu_sample.2);
+                            cpu_meter(ui, self.audio_load(), self.dsp_display, self.cpu_sample.2);
                             group_divider(ui, theme::SIZE_KEY_SMALL);
                             // Right-to-left layout: the output bar lands
                             // between the DSP cluster and the master knob,
@@ -4529,7 +4528,8 @@ fn master_level_meter(ui: &mut egui::Ui, level: f32) {
 /// Toolbar meter: DSP = audio-callback load (render time ÷ buffer time,
 /// the number that matters for dropouts) as LED steps; CPU = whole-process
 /// usage. The steps track `dsp_load` live; the percentage digits and zone
-/// colour use `dsp_latched` (updated ~2×/s) so the readout is legible.
+/// colour use `dsp_latched` (updated with the CPU figure, once a second) so
+/// the readout is legible.
 fn cpu_meter(ui: &mut egui::Ui, dsp_load: f32, dsp_latched: f32, process_pct: f32) {
     let dsp_pct = (dsp_latched * 100.0).clamp(0.0, 999.0);
     let zone = if dsp_pct < 50.0 {
