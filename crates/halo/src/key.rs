@@ -6,13 +6,18 @@
 //! a state colour (set hot cues, a held CUE, a playing PLAY) or carry an
 //! LED before its label (latched toggles).
 //!
+//! Keys can also be joined into one strip with [`segmented`].
+//!
 //! The widget only draws: it allocates a click-sensing rect and returns the
 //! plain `Response`, so callers keep their own press / release / right-click
 //! handling exactly as with `egui::Button`.
 
-use eframe::egui::{self, Color32, Response, Sense, Ui, Vec2, Widget, WidgetInfo, WidgetType};
+use eframe::egui::{
+    self, Color32, CornerRadius, Rect, Response, Sense, Stroke, Ui, Vec2, Widget, WidgetInfo,
+    WidgetType,
+};
 
-use crate::theme::{self, Face, TypeStyle};
+use crate::theme::{self, Face, Top, TypeStyle};
 
 /// A state colour a key's face lights in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +64,17 @@ pub struct Key {
     color: Option<Color32>,
     led: Option<(bool, Color32)>,
     selected: bool,
+    pressed: bool,
+    enabled: bool,
+    joint: Option<Joint>,
+}
+
+/// Where a key sits in a joined strip: which ends it rounds, and whether a
+/// seam separates it from the key before it.
+#[derive(Clone, Copy, Debug)]
+struct Joint {
+    first: bool,
+    last: bool,
 }
 
 impl Key {
@@ -74,6 +90,9 @@ impl Key {
             color: None,
             led: None,
             selected: false,
+            pressed: false,
+            enabled: true,
+            joint: None,
         }
     }
 
@@ -126,6 +145,19 @@ impl Key {
         self
     }
 
+    /// Keep the key pushed in (`face-key-down` with `shade`): the chosen
+    /// segment of a choice, such as the current view.
+    pub fn pressed(mut self, pressed: bool) -> Self {
+        self.pressed = pressed;
+        self
+    }
+
+    /// Whether the key takes clicks; disabled it draws flat `key-lo`.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
     /// The label's type style (default `key-label`).
     pub fn text_style(mut self, style: TypeStyle) -> Self {
         self.style = style;
@@ -135,6 +167,15 @@ impl Key {
 
 impl Widget for Key {
     fn ui(self, ui: &mut Ui) -> Response {
+        if !self.enabled {
+            return ui.add_enabled(
+                false,
+                Key {
+                    enabled: true,
+                    ..self
+                },
+            );
+        }
         let (height, side, gap) = if self.small {
             (theme::SIZE_KEY_SMALL, theme::SPACE_8, theme::SPACE_6)
         } else {
@@ -173,41 +214,68 @@ impl Widget for Key {
         } else {
             self.lit
         };
-        let radius = theme::RADIUS_CONTROL;
+        // On its own a key is rounded all round with its own edge; in a
+        // strip it rounds only the strip's ends, and the strip draws one
+        // edge round every key.
+        let r = theme::RADIUS_CONTROL;
+        let corners = match self.joint {
+            None => CornerRadius::same(r),
+            Some(Joint { first, last }) => {
+                let (w, e) = (if first { r } else { 0 }, if last { r } else { 0 });
+                CornerRadius {
+                    nw: w,
+                    sw: w,
+                    ne: e,
+                    se: e,
+                }
+            }
+        };
         let painter = ui.painter();
+        if self.joint.is_none() {
+            theme::paint_edge(painter, rect, corners, theme::EDGE);
+        }
+        let face = |face, tint, top| theme::paint_key_face(painter, rect, corners, face, tint, top);
 
         let label_color = if !enabled {
-            painter.rect_filled(rect, radius, theme::KEY_LO);
-            theme::paint_edge(painter, rect, radius, theme::EDGE);
+            painter.rect_filled(rect, corners, theme::KEY_LO);
             theme::TEXT_DISABLED
         } else if let Some(lit) = lit {
-            if held {
-                theme::paint_pressed(painter, rect, radius, lit.face(), LIT_HELD_TINT);
+            if held || self.pressed {
+                face(lit.face(), LIT_HELD_TINT, Top::Shade);
             } else {
-                theme::paint_lit(painter, rect, radius, lit.face(), Color32::WHITE);
+                face(lit.face(), Color32::WHITE, Top::SheenLit);
                 if hovered {
                     // brightness(1.05): the faintest lift of light.
-                    painter.rect_filled(rect, radius, theme::LIP);
+                    painter.rect_filled(rect, corners, theme::LIP);
                 }
             }
             lit.on()
         } else {
-            if held {
-                theme::paint_pressed(painter, rect, radius, Face::KeyDown, Color32::WHITE);
+            if held || self.pressed {
+                face(Face::KeyDown, Color32::WHITE, Top::Shade);
             } else if hovered {
-                theme::paint_raised(painter, rect, radius, Face::KeyHover);
+                face(Face::KeyHover, Color32::WHITE, Top::Sheen);
             } else {
-                theme::paint_raised(painter, rect, radius, Face::Key);
+                face(Face::Key, Color32::WHITE, Top::Sheen);
             }
             if self.selected {
-                painter.rect_filled(rect, radius, theme::SELECTION);
+                painter.rect_filled(rect, corners, theme::SELECTION);
             }
-            self.color.unwrap_or(if held || hovered || self.selected {
-                theme::TEXT_STRONG
-            } else {
-                theme::TEXT
-            })
+            self.color
+                .unwrap_or(if held || hovered || self.selected || self.pressed {
+                    theme::TEXT_STRONG
+                } else {
+                    theme::TEXT
+                })
         };
+
+        // The seam before every key but a strip's first: a 1px `edge` line
+        // with a 1px `lip` of light beside it.
+        if let Some(Joint { first: false, .. }) = self.joint {
+            let x = rect.left();
+            painter.vline(x + 0.5, rect.y_range(), Stroke::new(1.0, theme::EDGE));
+            painter.vline(x + 1.5, rect.y_range(), Stroke::new(1.0, theme::LIP));
+        }
 
         let mut x = rect.center().x - content_w / 2.0;
         if let Some((on, color)) = self.led {
@@ -222,4 +290,32 @@ impl Widget for Key {
         }
         response
     }
+}
+
+/// Keys joined into one strip (SegmentedButton): one `edge` round the
+/// whole row, `radius-control` at its two ends only, and a seam between
+/// neighbours. Each key keeps its own states (rest, hover, held, lit,
+/// pressed, disabled) and its own `Response`, in order.
+pub fn segmented<const N: usize>(ui: &mut Ui, keys: [Key; N]) -> [Response; N] {
+    let responses = ui
+        .scope(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let mut i = 0;
+            keys.map(|mut key| {
+                key.joint = Some(Joint {
+                    first: i == 0,
+                    last: i + 1 == N,
+                });
+                i += 1;
+                ui.add(key)
+            })
+        })
+        .inner;
+    let strip = responses
+        .iter()
+        .fold(Rect::NOTHING, |strip, r| strip.union(r.rect));
+    if ui.is_rect_visible(strip) {
+        theme::paint_edge(ui.painter(), strip, theme::RADIUS_CONTROL, theme::EDGE);
+    }
+    responses
 }

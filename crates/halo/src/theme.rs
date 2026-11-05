@@ -450,16 +450,22 @@ fn face_uv() -> Rect {
 }
 
 /// Fill `rect` with a gradient face; `tint` multiplies it (white = as is).
-pub fn paint_face(painter: &Painter, rect: Rect, radius: u8, face: Face, tint: Color32) {
+pub fn paint_face(
+    painter: &Painter,
+    rect: Rect,
+    corners: impl Into<CornerRadius>,
+    face: Face,
+    tint: Color32,
+) {
     let tex = face_texture(painter.ctx(), face);
-    painter.add(RectShape::filled(rect, radius, tint).with_texture(tex, face_uv()));
+    painter.add(RectShape::filled(rect, corners, tint).with_texture(tex, face_uv()));
 }
 
-/// A 1px line along the top inside edge of a rounded rect.
-fn top_line(painter: &Painter, rect: Rect, radius: u8, y_offset: f32, color: Color32) {
-    let inset = radius as f32 * 0.6;
+/// A 1px line along the top inside edge of a rounded rect, kept clear of
+/// its top corners.
+fn top_line(painter: &Painter, rect: Rect, corners: CornerRadius, y_offset: f32, color: Color32) {
     painter.hline(
-        (rect.left() + inset)..=(rect.right() - inset),
+        (rect.left() + corners.nw as f32 * 0.6)..=(rect.right() - corners.ne as f32 * 0.6),
         rect.top() + y_offset + 0.5,
         Stroke::new(1.0, color),
     );
@@ -467,51 +473,53 @@ fn top_line(painter: &Painter, rect: Rect, radius: u8, y_offset: f32, color: Col
 
 /// Inner shade along the top of a pushed-in or recessed rect: the
 /// `inset 0 1px 3px` of `shade`, fading over three rows.
-fn top_shade(painter: &Painter, rect: Rect, radius: u8) {
+fn top_shade(painter: &Painter, rect: Rect, corners: CornerRadius) {
     for (row, k) in [(0.0, 1.0), (1.0, 0.45), (2.0, 0.15)] {
-        top_line(painter, rect, radius, row, SHADE.gamma_multiply(k));
+        top_line(painter, rect, corners, row, SHADE.gamma_multiply(k));
     }
 }
 
 /// The 1px dark edge outside a shape.
-pub fn paint_edge(painter: &Painter, rect: Rect, radius: u8, color: Color32) {
-    painter.rect_stroke(
-        rect,
-        CornerRadius::same(radius),
-        Stroke::new(1.0, color),
-        StrokeKind::Outside,
-    );
+pub fn paint_edge(painter: &Painter, rect: Rect, corners: impl Into<CornerRadius>, color: Color32) {
+    painter.rect_stroke(rect, corners, Stroke::new(1.0, color), StrokeKind::Outside);
 }
 
-/// A raised face: gradient, 1px `edge` around it, 1px `sheen` on top
-/// (`face-*` + `shadow-key`).
-pub fn paint_raised(painter: &Painter, rect: Rect, radius: u8, face: Face) {
-    paint_edge(painter, rect, radius, EDGE);
-    paint_face(painter, rect, radius, face, Color32::WHITE);
-    top_line(painter, rect, radius, 0.0, SHEEN);
+/// What lines the top of a key's face.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Top {
+    /// `sheen`: a raised key.
+    Sheen,
+    /// `sheen-lit`: a lit key.
+    SheenLit,
+    /// The pushed-in `shade`: a held or chosen key.
+    Shade,
 }
 
-/// A lit face: a state gradient with `sheen-lit` on top (`shadow-lit`).
-/// `tint` dims it while held.
-pub fn paint_lit(painter: &Painter, rect: Rect, radius: u8, face: Face, tint: Color32) {
-    paint_edge(painter, rect, radius, EDGE);
-    paint_face(painter, rect, radius, face, tint);
-    top_line(painter, rect, radius, 0.0, SHEEN_LIT);
-}
-
-/// A pushed-in face: `face-key-down` (or a dimmed lit face) with shade
-/// replacing the sheen (`shadow-key-down`).
-pub fn paint_pressed(painter: &Painter, rect: Rect, radius: u8, face: Face, tint: Color32) {
-    paint_edge(painter, rect, radius, EDGE);
-    paint_face(painter, rect, radius, face, tint);
-    top_shade(painter, rect, radius);
+/// A key's face and its top line, without the edge: the part each key of
+/// a joined strip (SegmentedButton) keeps, the strip drawing one edge
+/// round them all.
+pub fn paint_key_face(
+    painter: &Painter,
+    rect: Rect,
+    corners: impl Into<CornerRadius>,
+    face: Face,
+    tint: Color32,
+    top: Top,
+) {
+    let corners = corners.into();
+    paint_face(painter, rect, corners, face, tint);
+    match top {
+        Top::Sheen => top_line(painter, rect, corners, 0.0, SHEEN),
+        Top::SheenLit => top_line(painter, rect, corners, 0.0, SHEEN_LIT),
+        Top::Shade => top_shade(painter, rect, corners),
+    }
 }
 
 /// A recessed well: flat `well`, shade inside the top, a 1px `lip` of
 /// light under the bottom (`shadow-well`).
 pub fn paint_well(painter: &Painter, rect: Rect, radius: u8) {
     painter.rect_filled(rect, radius, WELL);
-    top_shade(painter, rect, radius);
+    top_shade(painter, rect, CornerRadius::same(radius));
     let inset = radius as f32 * 0.6;
     painter.hline(
         (rect.left() + inset)..=(rect.right() - inset),
@@ -524,7 +532,7 @@ pub fn paint_well(painter: &Painter, rect: Rect, radius: u8) {
 /// the well's shade and lip.
 pub fn paint_content_well(painter: &Painter, rect: Rect, ground: Color32) {
     painter.rect_filled(rect, RADIUS_CONTROL, ground);
-    top_shade(painter, rect, RADIUS_CONTROL);
+    top_shade(painter, rect, CornerRadius::same(RADIUS_CONTROL));
     let inset = RADIUS_CONTROL as f32 * 0.6;
     painter.hline(
         (rect.left() + inset)..=(rect.right() - inset),
@@ -572,13 +580,13 @@ pub fn paint_led(painter: &Painter, center: Pos2, on: bool, color: Color32) {
 
 // ---------------------------------------------------------------- meters
 
-/// Size of an LED step bar (the output level and DSP meters).
+/// Size of an LED step bar (the master output meter).
 pub const STEPS_SIZE: Vec2 = Vec2::new(64.0, 10.0);
 
-/// Fifteen 3×6 LED steps in an edged well, lit up to `level` (0..1).
-/// `zone` colours every lit step alike (the DSP meter); `None` zones them
-/// by position: `meter-green` to 70%, `accent` to 95%, `meter-red` above.
-pub fn paint_steps(painter: &Painter, rect: Rect, level: f32, zone: Option<Color32>) {
+/// Fifteen 3×6 LED steps in an edged well, lit up to `level` (0..1) and
+/// zoned by position: `meter-green` to 70%, `accent` to 95%, `meter-red`
+/// above.
+pub fn paint_steps(painter: &Painter, rect: Rect, level: f32) {
     const STEPS: usize = 15;
     let level = level.clamp(0.0, 1.0);
     paint_well_edged(painter, rect.shrink(0.5), 2);
@@ -586,8 +594,6 @@ pub fn paint_steps(painter: &Painter, rect: Rect, level: f32, zone: Option<Color
         let t = (i as f32 + 0.5) / STEPS as f32;
         let color = if t > level {
             SEGMENT_OFF
-        } else if let Some(zone) = zone {
-            zone
         } else if t < 0.7 {
             METER_GREEN
         } else if t < 0.95 {

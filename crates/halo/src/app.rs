@@ -17,7 +17,7 @@ use crate::deck::Deck;
 use crate::decoder::decode_file;
 use crate::dmx;
 use crate::fader::{Fader, Notches};
-use crate::key::{Key, Lit};
+use crate::key::{self, Key, Lit};
 use crate::knob::{Knob, KnobArc};
 use crate::library::{Library, PlaylistRow, SortColumn, TrackRow};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
@@ -39,6 +39,9 @@ const ARTWORK_MAX_PX: u32 = 256;
 const ARTWORK_SIZE: f32 = 56.0;
 /// Padding inside the Perform view's deck and mixer panels (`space-16`).
 const PERFORM_PANEL_PAD: f32 = theme::SPACE_16;
+/// Ground between the window's panels (toolbar, decks, mixer, footer) and
+/// round the window's edge (`space-2`): the sections sit almost touching.
+const SECTION_GAP: f32 = theme::SPACE_2;
 
 /// Everything the decode thread produces for a track load.
 struct LoadedData {
@@ -502,8 +505,7 @@ pub struct HaloApp {
     /// Process CPU sampling: (last wall instant, last cpu seconds, percent).
     cpu_sample: (std::time::Instant, f64, f32),
     /// DSP load latched for the toolbar readout, on the same once-a-second
-    /// tick as the CPU figure. The number would be unreadable at frame rate;
-    /// the bar stays live.
+    /// tick as the CPU figure. The number would be unreadable at frame rate.
     dsp_display: f32,
     status: String,
     /// Absolute x of the mixer column's center, captured while rendering the
@@ -1831,72 +1833,78 @@ impl HaloApp {
             .default_height(300.0)
             .min_height(140.0)
             .frame(theme::ground_frame(0.0).inner_margin(egui::Margin {
-                left: 8,
-                right: 8,
-                top: 8,
+                top: 0,
                 bottom: 0,
+                ..egui::Margin::same(SECTION_GAP as i8)
             }))
             .show(ctx, |ui| {
-                // The panel card fills the footer's (resizable) height.
-                let fill_h = ui.available_height() - 2.0 * PERFORM_PANEL_PAD;
-                theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
-                    ui.set_min_size(egui::vec2(ui.available_width(), fill_h));
-                    ui.horizontal(|ui| {
-                        for (tab, label) in [
-                            (FooterTab::Library, "LIBRARY"),
-                            (FooterTab::Programmer, "PROGRAMMER"),
-                        ] {
-                            if ui
-                                .add(Key::new(label).small().selected(self.footer_tab == tab))
-                                .clicked()
-                            {
-                                self.footer_tab = tab;
-                            }
-                        }
-                        group_divider(ui, theme::SIZE_KEY_SMALL);
-                        lighting_leds(ui, lighting);
-                    });
-                    ui.add_space(theme::SPACE_8);
-                    match self.footer_tab {
-                        FooterTab::Library => {
-                            if self.library.is_none() {
-                                ui.centered_and_justified(|ui| {
-                                    ui.label(
-                                        theme::BODY_TEXT
-                                            .rich("Library unavailable")
-                                            .color(theme::TEXT_MUTED),
-                                    );
-                                });
-                                return;
-                            }
-                            let view = self.view;
-                            let body_h = ui.available_height();
-                            ui.horizontal_top(|ui| {
-                                ui.spacing_mut().item_spacing.x = theme::SPACE_8;
-                                theme::well(ui, theme::SPACE_8, |ui| {
-                                    ui.set_width(190.0);
-                                    ui.set_min_height(body_h - 2.0 * theme::SPACE_8);
-                                    ui.vertical(|ui| {
-                                        playlist_tree(ui, &mut self.browser, &mut actions);
-                                    });
-                                });
-                                ui.vertical(|ui| {
-                                    track_table(
-                                        ui,
-                                        &mut self.browser,
-                                        self.library.as_ref(),
-                                        &mut self.waveform_thumbs,
-                                        &mut actions,
-                                        view,
-                                    );
-                                });
-                            });
-                        }
-                        FooterTab::Programmer => {
-                            store = self.programmer_ui(ui, lighting);
+                // The panel card fills the footer's (resizable) height
+                // exactly, and its content lays out in a child that can't
+                // grow the panel: a resizable panel stores the size its
+                // content reached, so overflow would ratchet the footer up
+                // a little every frame until it pushed the decks off screen.
+                let card = ui.available_rect_before_wrap();
+                ui.advance_cursor_after_rect(card);
+                ui.painter().extend(theme::panel_shapes(ui.ctx(), card));
+                let mut body =
+                    ui.new_child(egui::UiBuilder::new().max_rect(card.shrink(PERFORM_PANEL_PAD)));
+                body.set_clip_rect(card.intersect(ui.clip_rect()));
+                let ui = &mut body;
+                ui.horizontal(|ui| {
+                    for (tab, label) in [
+                        (FooterTab::Library, "LIBRARY"),
+                        (FooterTab::Programmer, "PROGRAMMER"),
+                    ] {
+                        if ui
+                            .add(Key::new(label).small().selected(self.footer_tab == tab))
+                            .clicked()
+                        {
+                            self.footer_tab = tab;
                         }
                     }
+                    group_divider(ui, theme::SIZE_KEY_SMALL);
+                    lighting_leds(ui, lighting);
                 });
+                ui.add_space(theme::SPACE_8);
+                match self.footer_tab {
+                    FooterTab::Library => {
+                        if self.library.is_none() {
+                            ui.centered_and_justified(|ui| {
+                                ui.label(
+                                    theme::BODY_TEXT
+                                        .rich("Library unavailable")
+                                        .color(theme::TEXT_MUTED),
+                                );
+                            });
+                            return;
+                        }
+                        let view = self.view;
+                        let body_h = ui.available_height();
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = theme::SPACE_8;
+                            theme::well(ui, theme::SPACE_8, |ui| {
+                                ui.set_width(190.0);
+                                ui.set_min_height(body_h - 2.0 * theme::SPACE_8);
+                                ui.vertical(|ui| {
+                                    playlist_tree(ui, &mut self.browser, &mut actions);
+                                });
+                            });
+                            ui.vertical(|ui| {
+                                track_table(
+                                    ui,
+                                    &mut self.browser,
+                                    self.library.as_ref(),
+                                    &mut self.waveform_thumbs,
+                                    &mut actions,
+                                    view,
+                                );
+                            });
+                        });
+                    }
+                    FooterTab::Programmer => {
+                        store = self.programmer_ui(ui, lighting);
+                    }
+                }
             });
 
         for action in actions {
@@ -2596,10 +2604,8 @@ impl eframe::App for HaloApp {
         let mixer_cx = self.mixer_center_x;
         egui::TopBottomPanel::top("toolbar")
             .frame(theme::ground_frame(0.0).inner_margin(egui::Margin {
-                left: 8,
-                right: 8,
-                top: 8,
                 bottom: 0,
+                ..egui::Margin::same(SECTION_GAP as i8)
             }))
             .show(ctx, |ui| {
                 let margin = egui::Margin::symmetric(theme::SPACE_16 as i8, theme::SPACE_8 as i8);
@@ -2609,13 +2615,16 @@ impl eframe::App for HaloApp {
                         ui.spacing_mut().item_spacing.x = theme::SPACE_8;
                         ui.label(theme::WORDMARK.rich("HALO").color(ACCENT));
                         ui.add_space(theme::SPACE_8);
-                        for (v, label) in [
+                        // The view switcher: one strip, the current view
+                        // pressed in.
+                        let views = [
                             (View::Perform, "PERFORM"),
                             (View::Prepare, "PREPARE"),
                             (View::Patch, "PATCH"),
-                        ] {
-                            if ui
-                                .add(Key::new(label).small().selected(self.view == v))
+                        ];
+                        let keys = views.map(|(v, label)| Key::new(label).pressed(self.view == v));
+                        for ((v, _), resp) in views.into_iter().zip(key::segmented(ui, keys)) {
+                            if resp
                                 .on_hover_text("Switch view (V) — playback is unaffected")
                                 .clicked()
                             {
@@ -2650,7 +2659,7 @@ impl eframe::App for HaloApp {
                                 }
                             }
                             group_divider(ui, theme::SIZE_KEY_SMALL);
-                            cpu_meter(ui, self.audio_load(), self.dsp_display, self.cpu_sample.2);
+                            cpu_meter(ui, self.dsp_display, self.cpu_sample.2);
                             group_divider(ui, theme::SIZE_KEY_SMALL);
                             // Right-to-left layout: the output bar lands
                             // between the DSP cluster and the master knob,
@@ -2677,15 +2686,15 @@ impl eframe::App for HaloApp {
                 })
                 .inner;
 
-                // Global/master BPM, centered over the mixer. Uses the mixer's
-                // actual center-x captured last frame in the central panel (egui
-                // rects are absolute screen coords); falls back to the panel
+                // Master BPM, centered over the mixer. Uses the mixer's actual
+                // center-x captured last frame in the central panel (egui rects
+                // are absolute screen coords); falls back to the toolbar's
                 // mid-x until measured. Painted, not laid out, to dodge egui's
                 // horizontal-centering quirks.
                 let cx = if mixer_cx > 0.0 {
                     mixer_cx
                 } else {
-                    ui.max_rect().center().x
+                    toolbar_row.center().x
                 };
                 paint_master_bpm(
                     ui,
@@ -2711,7 +2720,7 @@ impl eframe::App for HaloApp {
 
         if self.view == View::Prepare {
             egui::CentralPanel::default()
-                .frame(theme::ground_frame(theme::SPACE_8))
+                .frame(theme::ground_frame(SECTION_GAP))
                 .show(ctx, |ui| {
                     theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
                         ui.set_width(ui.available_width());
@@ -2723,7 +2732,7 @@ impl eframe::App for HaloApp {
 
         if self.view == View::Patch {
             egui::CentralPanel::default()
-                .frame(theme::ground_frame(theme::SPACE_8))
+                .frame(theme::ground_frame(SECTION_GAP))
                 .show(ctx, |ui| {
                     let fill = ui.available_size() - egui::Vec2::splat(2.0 * PERFORM_PANEL_PAD);
                     theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
@@ -2735,14 +2744,18 @@ impl eframe::App for HaloApp {
         }
 
         egui::CentralPanel::default()
-            .frame(theme::ground_frame(theme::SPACE_8))
+            .frame(theme::ground_frame(SECTION_GAP))
             .show(ctx, |ui| {
+                // Keep the `space-2` ground above the footer even when the
+                // decks run taller than the room left for them (the 1px
+                // allowance is the cards' outside edge).
+                ui.set_clip_rect(ui.max_rect().expand(1.0).intersect(ui.clip_rect()));
                 let full_width = ui.available_width();
                 // Sized to just fit the mixer's strip cluster.
                 let mixer_width = MIXER_W;
-                // Three panels on the ground (deck | mixer | deck), `space-8`
+                // Three panels on the ground (deck | mixer | deck), `space-2`
                 // apart, each with `space-16` inside.
-                let gap = theme::SPACE_8;
+                let gap = SECTION_GAP;
                 let chrome = 2.0 * gap + 6.0 * PERFORM_PANEL_PAD;
                 let deck_width = ((full_width - mixer_width - chrome) / 2.0)
                     .floor()
@@ -3883,21 +3896,32 @@ fn deck_panel(
             control_group(ui, "LOOP", |ui| {
                 // Loops: manual in/out, quantized autoloop at the shown
                 // length, halve/double between 1/16 and 16 beats (gapless
-                // session loop transaction). IN / OUT / ÷2 / ×2 are fixed
-                // 45×30 keys; EXIT and the length chip size to their labels.
+                // session loop transaction), all one segmented strip. The
+                // length segment is as wide as "1/16 BEATS" so halving
+                // never shifts the row, and lights while a loop plays.
                 let has_loop = loop_region.is_some();
                 let grid_ok = deck_ui.marks.is_usable();
-                let btn = |ui: &mut egui::Ui, txt: &str, enabled: bool| {
-                    let key = Key::new(txt);
-                    let key = if txt == "EXIT" { key } else { key.width(45.0) };
-                    ui.add_enabled_ui(enabled, |ui| ui.add(key)).inner
-                };
+                let length = format!("{} BEATS", format_beats(deck_ui.loop_beats));
+                let [loop_in, loop_out, halve, chip, double, exit] = key::segmented(
+                    ui,
+                    [
+                        Key::new("IN").width(44.0),
+                        Key::new("OUT").width(44.0),
+                        Key::new("÷2").width(40.0).enabled(has_loop),
+                        Key::new(length)
+                            .width(92.0)
+                            .lit(has_loop.then_some(Lit::Accent))
+                            .enabled(grid_ok && has_track),
+                        Key::new("×2").width(40.0).enabled(has_loop),
+                        Key::new("EXIT").width(52.0).enabled(has_loop),
+                    ],
+                );
 
-                if btn(ui, "IN", true).clicked() && has_track {
+                if loop_in.clicked() && has_track {
                     deck_ui.loop_in_staged =
                         Some(quantize_frame(&deck_ui.marks, deck_ui.quantize, playhead));
                 }
-                if btn(ui, "OUT", true).clicked()
+                if loop_out.clicked()
                     && has_track
                     && let Some(start) = deck_ui.loop_in_staged
                 {
@@ -3914,7 +3938,7 @@ fn deck_panel(
                     }
                 }
 
-                if btn(ui, "÷2", has_loop).clicked()
+                if halve.clicked()
                     && let Some((start, _)) = loop_region
                 {
                     deck_ui.loop_beats = (deck_ui.loop_beats / 2.0).max(0.0625);
@@ -3922,29 +3946,18 @@ fn deck_panel(
                     shared.set_loop(Some((start, end.max(start + 1))));
                 }
 
-                // Length chip: autoloop at the shown length; lit while a
-                // loop is active. Sits in the middle, between ÷2 and ×2.
-                let chip = ui
-                    .add_enabled_ui(grid_ok && has_track, |ui| {
-                        let label = format!("{} BEATS", format_beats(deck_ui.loop_beats));
-                        // Sized to the widest length so halving never
-                        // shifts the row.
-                        let width = led_key_width(ui.ctx(), "1/16 BEATS");
-                        outlined_toggle(ui, has_loop, &label, Some(width))
-                    })
-                    .inner;
                 if chip.on_hover_text("Autoloop at this length").clicked() {
                     deck_ui.autoloop(deck_ui.loop_beats);
                 }
 
-                if btn(ui, "×2", has_loop).clicked()
+                if double.clicked()
                     && let Some((start, _)) = loop_region
                 {
                     deck_ui.loop_beats = (deck_ui.loop_beats * 2.0).min(16.0);
                     let end = loop_end_for(&deck_ui.marks, start, deck_ui.loop_beats);
                     shared.set_loop(Some((start, end.max(start + 1))));
                 }
-                if btn(ui, "EXIT", has_loop).clicked() {
+                if exit.clicked() {
                     shared.set_loop(None);
                 }
             });
@@ -4100,14 +4113,6 @@ fn deck_sidebar(
             deck_ui.synced = !deck_ui.synced;
             deck_ui.deck.shared.sync_enabled.store(deck_ui.synced, Ordering::Release);
         }
-        if following {
-            let state = crate::sync::SyncState::load(&deck_ui.deck.shared);
-            let label = if deck_ui.deck.shared.transport() != Transport::Playing
-                && state != crate::sync::SyncState::Unavailable { "ARMED" } else { state.label() };
-            ui.vertical_centered(|ui| {
-                ui.label(theme::CAPTION.rich(label).color(theme::TEXT_MUTED))
-            });
-        }
 
         ui.add_space(6.0);
         ui.vertical_centered(|ui| {
@@ -4186,15 +4191,6 @@ fn deck_sidebar(
                 deck_ui.pitch_percent = deck_ui
                     .pitch_percent
                     .clamp(-deck_ui.pitch_range.min(100.0), deck_ui.pitch_range);
-            }
-            if has_track {
-                let shared = &deck_ui.deck.shared;
-                ui.label(theme::NOTE_TEXT.rich(format!("{:.0} ms", shared.control_latency.load() * 1000.0)).color(theme::TEXT_MUTED))
-                    .on_hover_text(format!(
-                        "Control response estimate, including pending audio. Output reserve: {:.0} ms. \
-                         Worker: {:.1}%. Underrun frames: {}. Applied tempo: {:.4}x. Device latency is additional.",
-                        shared.queue_latency.load() * 1000.0, shared.worker_load.load() * 100.0,
-                        shared.underrun_frames.load(Ordering::Relaxed), shared.achieved_tempo.load()));
             }
         });
     });
@@ -4447,44 +4443,29 @@ fn deck_lufs_meter(
     }
 }
 
-/// Height of the toolbar's control row: the MASTER BPM caption over its
-/// well.
-const TOOLBAR_ROW_H: f32 = 46.0;
+/// Height of the toolbar's control row: the small master knob.
+const TOOLBAR_ROW_H: f32 = theme::SIZE_KNOB_SMALL;
 
-/// The master tempo: a MASTER BPM caption over a 132×30 well holding the
-/// tempo, with A and B at either end. The source deck's letter lights
-/// `lane-lighting` with a soft glow (the rig follows the same deck); it is
-/// chosen automatically, so this is a readout, not a control.
+/// Toolbar master output meter as LED steps: the summed
+/// stream level measured post-master / post-limiter, so pulling the master
+/// knob down visibly limits it. Red = pinned near the ceiling (limiting).
+fn master_level_meter(ui: &mut egui::Ui, level: f32) {
+    let (rect, response) = ui.allocate_exact_size(theme::STEPS_SIZE, egui::Sense::hover());
+    response.on_hover_text(format!("Output: {:.0}%", level.clamp(0.0, 1.0) * 100.0));
+    theme::paint_steps(ui.painter(), rect, level);
+}
+
+/// The master tempo (MasterBpm): a 144×30 well, the tempo in `numerals-md`
+/// with a small BPM unit on its baseline, and A and B at either end, the
+/// source deck lit in `lane-lighting` (the rig follows the same deck).
 fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) {
     let ctx = ui.ctx();
     let painter = ui.painter();
-    let caption = theme::CAPTION.galley(ctx, "MASTER BPM", theme::TEXT_MUTED);
-    let well_size = egui::vec2(132.0, 30.0);
-    let total_h = caption.size().y + theme::SPACE_4 + well_size.y;
-    let top = center.y - total_h / 2.0;
-    let cap_w = caption.size().x - theme::CAPTION.spacing;
-    painter.galley(
-        egui::pos2(center.x - cap_w / 2.0, top),
-        caption,
-        theme::TEXT_MUTED,
-    );
-    let well = egui::Rect::from_min_size(
-        egui::pos2(center.x - well_size.x / 2.0, top + total_h - well_size.y),
-        well_size,
-    );
+    let well = egui::Rect::from_center_size(center, egui::vec2(144.0, theme::SIZE_KEY));
     theme::paint_well(painter, well, theme::RADIUS_CONTROL);
 
-    let text = if bpm > 0.0 {
-        format!("{bpm:.1}")
-    } else {
-        "—".to_string()
-    };
-    let value = theme::NUMERALS_MD.galley(ctx, &text, theme::TEXT_STRONG);
-    painter.galley(
-        well.center() - value.size() / 2.0,
-        value,
-        theme::TEXT_STRONG,
-    );
+    // A and B at the ends, 10 in.
+    let mut ends = [0.0_f32; 2];
     for (i, letter) in DECK_NAMES.iter().enumerate() {
         let lit = i == source;
         let color = if lit {
@@ -4499,6 +4480,7 @@ fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) 
         } else {
             well.right() - 10.0 - w
         };
+        ends[i] = if i == 0 { x + w } else { x };
         let rect = egui::Rect::from_min_size(
             egui::pos2(x, well.center().y - g.size().y / 2.0),
             egui::vec2(w, g.size().y),
@@ -4514,23 +4496,46 @@ fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) 
         }
         painter.galley(rect.min, g, color);
     }
+
+    // The tempo and its unit, 4 apart on one baseline, centred between
+    // the letters.
+    let text = if bpm > 0.0 {
+        format!("{bpm:.1}")
+    } else {
+        "—".to_string()
+    };
+    let value = theme::NUMERALS_MD.galley(ctx, &text, theme::TEXT_STRONG);
+    let unit = theme::CAPTION.galley(ctx, "BPM", theme::TEXT_MUTED);
+    let value_w = value.size().x - theme::NUMERALS_MD.spacing;
+    let unit_w = unit.size().x - theme::CAPTION.spacing;
+    let left = ((ends[0] + ends[1]) - (value_w + theme::SPACE_4 + unit_w)) / 2.0;
+    let value_top = well.center().y - value.size().y / 2.0;
+    let baseline = value_top + first_baseline(&value);
+    let unit_pos = egui::pos2(
+        left + value_w + theme::SPACE_4,
+        baseline - first_baseline(&unit),
+    );
+    painter.galley(
+        egui::pos2(left, value_top).round(),
+        value,
+        theme::TEXT_STRONG,
+    );
+    painter.galley(unit_pos.round(), unit, theme::TEXT_MUTED);
 }
 
-/// Toolbar master output meter, styled like the DSP load bar: the summed
-/// stream level measured post-master / post-limiter, so pulling the master
-/// knob down visibly limits it. Red = pinned near the ceiling (limiting).
-fn master_level_meter(ui: &mut egui::Ui, level: f32) {
-    let (rect, response) = ui.allocate_exact_size(theme::STEPS_SIZE, egui::Sense::hover());
-    response.on_hover_text(format!("Output: {:.0}%", level.clamp(0.0, 1.0) * 100.0));
-    theme::paint_steps(ui.painter(), rect, level, None);
+/// The first row's baseline, down from the galley's top.
+fn first_baseline(galley: &egui::Galley) -> f32 {
+    galley
+        .rows
+        .first()
+        .and_then(|row| row.glyphs.first())
+        .map_or(galley.size().y, |glyph| glyph.pos.y)
 }
 
-/// Toolbar meter: DSP = audio-callback load (render time ÷ buffer time,
-/// the number that matters for dropouts) as LED steps; CPU = whole-process
-/// usage. The steps track `dsp_load` live; the percentage digits and zone
-/// colour use `dsp_latched` (updated with the CPU figure, once a second) so
-/// the readout is legible.
-fn cpu_meter(ui: &mut egui::Ui, dsp_load: f32, dsp_latched: f32, process_pct: f32) {
+/// Toolbar readout: DSP = audio-callback load (render time ÷ buffer time,
+/// the number that matters for dropouts), zone-coloured; CPU = whole-process
+/// usage. Both are latched once a second so the digits are legible.
+fn cpu_meter(ui: &mut egui::Ui, dsp_latched: f32, process_pct: f32) {
     let dsp_pct = (dsp_latched * 100.0).clamp(0.0, 999.0);
     let zone = if dsp_pct < 50.0 {
         theme::METER_GREEN
@@ -4549,17 +4554,13 @@ fn cpu_meter(ui: &mut egui::Ui, dsp_load: f32, dsp_latched: f32, process_pct: f3
         &format!("CPU {}%", pad(process_pct)),
         theme::TEXT_MUTED,
     );
-    // Right-to-left layout: the readout well, then the live steps.
     // 8 | DSP | 8 | groove | 8 | CPU | 8
     let well_size = egui::vec2(
         dsp.size().x + cpu.size().x + 2.0 + 4.0 * theme::SPACE_8,
         22.0,
     );
     let (well, response) = ui.allocate_exact_size(well_size, egui::Sense::hover());
-    response.on_hover_text(
-        "Busiest audio processing thread: stretching or output delivery. Per-deck details \
-         appear in the latency readout.",
-    );
+    response.on_hover_text("Busiest audio processing thread: stretching or output delivery.");
     let painter = ui.painter();
     theme::paint_well(painter, well, theme::RADIUS_CONTROL);
     let y = well.center().y - dsp.size().y / 2.0;
@@ -4572,9 +4573,6 @@ fn cpu_meter(ui: &mut egui::Ui, dsp_load: f32, dsp_latched: f32, process_pct: f3
     painter.vline(x + 1.5, groove, egui::Stroke::new(1.0, theme::LIP));
     x += 2.0 + theme::SPACE_8;
     painter.galley(egui::pos2(x, y), cpu, theme::TEXT_MUTED);
-
-    let (steps, _) = ui.allocate_exact_size(theme::STEPS_SIZE, egui::Sense::hover());
-    theme::paint_steps(ui.painter(), steps, dsp_load, Some(zone));
 }
 
 /// Cumulative user+system CPU time of this process, in seconds.
