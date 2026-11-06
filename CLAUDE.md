@@ -71,9 +71,11 @@ Plain threads + channels/atomics; each session has one owner:
 - `fader.rs` / `knob.rs` — custom egui widgets.
 - `theme.rs` — the Halo design system: tokens by role name, type styles, fonts (Inter + tabular copy,
   JetBrains Mono for DMX addresses), `face-*` gradient textures and raised / lit / well / LED / panel
-  paint helpers. Use its tokens; don't hand-mix colours.
-- `key.rs` — the `Key` widget every performance-surface button is built from (lit faces, LEDs, pressed),
-  and `segmented` strips of keys joined into one (the LOOP row, the view switcher).
+  paint helpers, and `tray` / `tray_divider` for rows of keys sunk in a well. Use its tokens; don't
+  hand-mix colours.
+- `key.rs` — the `Key` widget every performance-surface button is built from (lit faces, LEDs, pressed,
+  the decks' `quiet` skin), `segmented` strips of keys joined into one (the LOOP row, hot cues, the view
+  switcher), and `text_toggle`, the faceless latch (A.CUE, Q).
 
 ### Key modules — `crates/halo-light/src`
 

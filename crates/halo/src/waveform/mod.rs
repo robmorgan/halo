@@ -11,15 +11,28 @@ mod thumbnail;
 mod zoomed;
 
 pub use counter::paint_beat_counter;
-pub use overview::{OverviewParams, OverviewTexture, paint_overview};
+pub use overview::{OverviewParams, OverviewTexture, STACKED_OVERVIEW_H, paint_overview};
 pub use show_editor::{ShowEditorInteraction, ShowEditorParams, show_editor};
-pub use show_strip::{ShowStripParams, paint_show_strip};
+pub use show_strip::{STRIP_HEIGHT, ShowStripParams, paint_show_strip};
 pub use thumbnail::render_thumbnail;
 // The 3-band peaks pyramid moved into the timestretch library (it also
 // serializes them into `.tsa` sidecars); re-exported so the painters and
 // app keep one import path.
 pub use timestretch::BandPeaks;
-pub use zoomed::{GhostPlayhead, ScrubGesture, ZoomSpan, ZoomedParams, paint_zoomed};
+pub use zoomed::{
+    GhostPlayhead, STACKED_ZOOMED_H, ScrubGesture, ZoomSpan, ZoomedParams, paint_zoomed,
+};
+
+/// How a waveform view sits on the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WaveStyle {
+    /// In its own content well, with edge ticks and its own playhead (the
+    /// Prepare view).
+    Welled,
+    /// Flush inside the deck's shared waveform well: full-height grid
+    /// lines, and the deck draws one playhead through the whole stack.
+    Stacked,
+}
 
 /// Label + color per lane, shared by the perform strip, the Prepare
 /// editor, and the programmer UI.

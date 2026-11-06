@@ -115,6 +115,37 @@ pub const FIXTURE_R: Color32 = Color32::from_rgb(0xeb, 0x46, 0x3c);
 pub const FIXTURE_G: Color32 = Color32::from_rgb(0x50, 0xcd, 0x5f);
 pub const FIXTURE_B: Color32 = Color32::from_rgb(0x4b, 0x7d, 0xff);
 pub const FIXTURE_W: Color32 = Color32::from_rgb(0xeb, 0xeb, 0xf0);
+/// Hot cue colours by slot (1–8): the strip under a set pad.
+pub const CUE: [Color32; 8] = [
+    Color32::from_rgb(0xff, 0x82, 0x71),
+    Color32::from_rgb(0xff, 0xb8, 0x33),
+    Color32::from_rgb(0xf8, 0xdc, 0x5c),
+    Color32::from_rgb(0x5b, 0xdd, 0x8d),
+    Color32::from_rgb(0x31, 0xd8, 0xd0),
+    Color32::from_rgb(0x5c, 0xa2, 0xff),
+    Color32::from_rgb(0xa8, 0x82, 0xff),
+    Color32::from_rgb(0xff, 0x75, 0xc6),
+];
+
+// ---------------------------------------------------------------- quiet
+// The decks' quieter skin (F · Quiet): flatter faces, fainter light.
+pub const QUIET_PANEL_HI: Color32 = Color32::from_rgb(0x17, 0x18, 0x1a);
+pub const QUIET_PANEL_LO: Color32 = Color32::from_rgb(0x14, 0x15, 0x17);
+pub const QUIET_KEY_HI: Color32 = Color32::from_rgb(0x27, 0x28, 0x2b);
+pub const QUIET_KEY_LO: Color32 = Color32::from_rgb(0x21, 0x22, 0x25);
+pub const QUIET_HOVER_HI: Color32 = Color32::from_rgb(0x2e, 0x2f, 0x33);
+pub const QUIET_HOVER_LO: Color32 = QUIET_KEY_HI;
+pub const QUIET_KEY_DISABLED: Color32 = Color32::from_rgb(0x1a, 0x1b, 0x1d);
+pub const QUIET_SHEEN: Color32 = rgba(0xff, 0xff, 0xff, 0x0c);
+pub const QUIET_LIP: Color32 = rgba(0xff, 0xff, 0xff, 0x06);
+/// The hairline between the cells of the deck's header tray.
+pub const QUIET_HAIRLINE: Color32 = rgba(0xff, 0xff, 0xff, 0x0a);
+/// Full-height grid lines on the deck's zoomed waveform.
+pub const QUIET_BEAT_LINE: Color32 = rgba(0xff, 0xff, 0xff, 0x0d);
+pub const QUIET_DOWNBEAT_LINE: Color32 = rgba(0xff, 0xff, 0xff, 0x29);
+/// The 1px black seams between the deck's waveform lanes.
+pub const QUIET_SEAM: Color32 = Color32::BLACK;
+pub const QUIET_SIZE_LED: f32 = 5.0;
 
 // ---------------------------------------------------------------- shape
 pub const RADIUS_CONTROL: u8 = 3;
@@ -134,6 +165,8 @@ pub const SPACE_24: f32 = 24.0;
 pub const SIZE_KEY: f32 = 30.0;
 pub const SIZE_KEY_SMALL: f32 = 22.0;
 pub const SIZE_PAD: f32 = 40.0;
+/// The system's transport key width; the quiet decks size theirs wider.
+#[allow(dead_code)]
 pub const SIZE_TRANSPORT: f32 = 52.0;
 pub const SIZE_KNOB: f32 = 60.0;
 pub const SIZE_KNOB_SMALL: f32 = 40.0;
@@ -253,6 +286,13 @@ pub const MONO_TEXT: TypeStyle = TypeStyle::new(12.0, Weight::Mono, 0.0);
 /// Numbers drawn on the waveforms (bar numbers, hot cue numbers):
 /// `numerals-sm` at the performance surface's 10px floor.
 pub const WAVE_NUMBER: TypeStyle = NUMERALS_SM.sized(10.0);
+/// The quiet skin's key labels and captions: 600 weight, tighter spacing.
+pub const QUIET_KEY_LABEL: TypeStyle = TypeStyle::new(11.0, Weight::SemiBold, 0.4);
+pub const QUIET_CAPTION: TypeStyle = TypeStyle::new(10.0, Weight::SemiBold, 0.8);
+/// The deck header's time and BPM.
+pub const QUIET_NUMERALS: TypeStyle = TypeStyle::new(24.0, Weight::Numerals, -0.4);
+/// A text toggle's label (A.CUE, Q).
+pub const TEXT_TOGGLE: TypeStyle = TypeStyle::new(13.0, Weight::Bold, 0.3);
 
 /// Paint one line of `text` in `style` anchored like `Painter::text`,
 /// keeping the style's letter-spacing (which `Painter::text` drops).
@@ -344,10 +384,13 @@ pub enum Face {
     Play,
     Audition,
     Cap,
+    QuietPanel,
+    QuietKey,
+    QuietKeyHover,
 }
 
 impl Face {
-    const ALL: [Face; 8] = [
+    const ALL: [Face; 11] = [
         Face::Panel,
         Face::Key,
         Face::KeyHover,
@@ -356,6 +399,9 @@ impl Face {
         Face::Play,
         Face::Audition,
         Face::Cap,
+        Face::QuietPanel,
+        Face::QuietKey,
+        Face::QuietKeyHover,
     ];
 
     /// Gradient stops, top to bottom, as (offset 0..1, colour).
@@ -373,6 +419,9 @@ impl Face {
             Face::Play => &[(0.0, PLAY_HI), (0.46, PLAY), (1.0, PLAY_LO)],
             Face::Audition => &[(0.0, AUDITION_HI), (0.46, AUDITION), (1.0, AUDITION_LO)],
             Face::Cap => &[(0.0, CAP_HI), (0.55, CAP), (1.0, CAP_LO)],
+            Face::QuietPanel => &[(0.0, QUIET_PANEL_HI), (1.0, QUIET_PANEL_LO)],
+            Face::QuietKey => &[(0.0, QUIET_KEY_HI), (1.0, QUIET_KEY_LO)],
+            Face::QuietKeyHover => &[(0.0, QUIET_HOVER_HI), (1.0, QUIET_HOVER_LO)],
         }
     }
 }
@@ -449,6 +498,43 @@ fn face_uv() -> Rect {
     Rect::from_min_max(egui::pos2(0.5, half), egui::pos2(0.5, 1.0 - half))
 }
 
+/// The surfaces a key or panel is drawn with: the system's own, or the
+/// decks' quieter skin.
+#[derive(Clone, Copy, Debug)]
+pub struct Skin {
+    pub panel: Face,
+    pub key: Face,
+    pub key_hover: Face,
+    /// A disabled key's flat face.
+    pub key_disabled: Color32,
+    pub sheen: Color32,
+    pub lip: Color32,
+    pub led: f32,
+    pub key_label: TypeStyle,
+}
+
+pub const SKIN_SYSTEM: Skin = Skin {
+    panel: Face::Panel,
+    key: Face::Key,
+    key_hover: Face::KeyHover,
+    key_disabled: KEY_LO,
+    sheen: SHEEN,
+    lip: LIP,
+    led: SIZE_LED,
+    key_label: KEY_LABEL,
+};
+
+pub const SKIN_QUIET: Skin = Skin {
+    panel: Face::QuietPanel,
+    key: Face::QuietKey,
+    key_hover: Face::QuietKeyHover,
+    key_disabled: QUIET_KEY_DISABLED,
+    sheen: QUIET_SHEEN,
+    lip: QUIET_LIP,
+    led: QUIET_SIZE_LED,
+    key_label: QUIET_KEY_LABEL,
+};
+
 /// Fill `rect` with a gradient face; `tint` multiplies it (white = as is).
 pub fn paint_face(
     painter: &Painter,
@@ -487,8 +573,8 @@ pub fn paint_edge(painter: &Painter, rect: Rect, corners: impl Into<CornerRadius
 /// What lines the top of a key's face.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Top {
-    /// `sheen`: a raised key.
-    Sheen,
+    /// A raised key, lined in its skin's `sheen`.
+    Sheen(Color32),
     /// `sheen-lit`: a lit key.
     SheenLit,
     /// The pushed-in `shade`: a held or chosen key.
@@ -509,7 +595,7 @@ pub fn paint_key_face(
     let corners = corners.into();
     paint_face(painter, rect, corners, face, tint);
     match top {
-        Top::Sheen => top_line(painter, rect, corners, 0.0, SHEEN),
+        Top::Sheen(sheen) => top_line(painter, rect, corners, 0.0, sheen),
         Top::SheenLit => top_line(painter, rect, corners, 0.0, SHEEN_LIT),
         Top::Shade => top_shade(painter, rect, corners),
     }
@@ -555,15 +641,20 @@ pub fn paint_glow(painter: &Painter, rect: Rect, radius: f32, blur: f32, color: 
 
 /// A 7px LED: lit in `color` with `shadow-led`, or a dark `led-off` lens.
 pub fn paint_led(painter: &Painter, center: Pos2, on: bool, color: Color32) {
-    let r = SIZE_LED / 2.0;
-    let rect = Rect::from_center_size(center, Vec2::splat(SIZE_LED));
+    paint_led_sized(painter, center, on, color, SIZE_LED);
+}
+
+/// [`paint_led`] at another lens size (the quiet skin's 5px LEDs).
+pub fn paint_led_sized(painter: &Painter, center: Pos2, on: bool, color: Color32, size: f32) {
+    let r = size / 2.0;
+    let rect = Rect::from_center_size(center, Vec2::splat(size));
     if on {
         let glow = if color == ACCENT {
             ACCENT_GLOW
         } else {
             Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 0x8c)
         };
-        paint_glow(painter, rect, r, SIZE_LED, glow);
+        paint_glow(painter, rect, r, size, glow);
         painter.circle(center, r, color, Stroke::new(1.0, rgba(0, 0, 0, 0x8c)));
     } else {
         painter.circle_filled(center, r, LED_OFF);
@@ -641,6 +732,11 @@ pub const READOUT_H: f32 = 67.0;
 /// drop (`0 22px 44px -30px black`) needs a negative spread, which a frame
 /// `Shadow` can't express, so it is a blurred rect instead.
 pub fn panel_shapes(ctx: &egui::Context, rect: Rect) -> Vec<egui::Shape> {
+    panel_shapes_with(ctx, rect, Face::Panel)
+}
+
+/// [`panel_shapes`] with another panel face (the quiet skin's).
+pub fn panel_shapes_with(ctx: &egui::Context, rect: Rect, face: Face) -> Vec<egui::Shape> {
     let mut shapes = Vec::new();
     let drop = rect.shrink(30.0).translate(egui::vec2(0.0, 22.0));
     if drop.is_positive() {
@@ -662,7 +758,7 @@ pub fn panel_shapes(ctx: &egui::Context, rect: Rect) -> Vec<egui::Shape> {
     );
     shapes.push(
         RectShape::filled(rect, RADIUS_PANEL, Color32::WHITE)
-            .with_texture(face_texture(ctx, Face::Panel), face_uv())
+            .with_texture(face_texture(ctx, face), face_uv())
             .into(),
     );
     let inset = RADIUS_PANEL as f32 * 0.6;
@@ -681,9 +777,19 @@ pub fn panel<R>(
     margin: impl Into<egui::Margin>,
     content: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::InnerResponse<R> {
+    panel_with(ui, margin, Face::Panel, content)
+}
+
+/// [`panel`] on another panel face (the quiet skin's).
+pub fn panel_with<R>(
+    ui: &mut egui::Ui,
+    margin: impl Into<egui::Margin>,
+    face: Face,
+    content: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
     let background = ui.painter().add(egui::Shape::Noop);
     let inner = egui::Frame::new().inner_margin(margin).show(ui, content);
-    let shapes = panel_shapes(ui.ctx(), inner.response.rect);
+    let shapes = panel_shapes_with(ui.ctx(), inner.response.rect, face);
     ui.painter().set(background, egui::Shape::Vec(shapes));
     inner
 }
@@ -714,6 +820,56 @@ pub fn well<R>(
     ));
     ui.painter().set(background, egui::Shape::Vec(shapes));
     inner
+}
+
+/// Padding inside a [`tray`].
+pub const TRAY_PAD: f32 = 3.0;
+/// A [`tray_divider`]'s line, and the room before and after it.
+const TRAY_DIVIDER: Color32 = rgba(0xff, 0xff, 0xff, 0x1f);
+const TRAY_DIVIDER_BEFORE: f32 = 3.0;
+const TRAY_DIVIDER_AFTER: f32 = 4.0;
+/// The room a [`tray_divider`] takes across.
+pub const TRAY_DIVIDER_W: f32 = TRAY_DIVIDER_BEFORE + 1.0 + TRAY_DIVIDER_AFTER;
+
+/// A row of controls sunk in a [`well`], [`TRAY_PAD`] inside (the decks'
+/// hot cue and key rows). Laid out left to right with no spacing of its
+/// own: callers add their gaps, and [`tray_divider`] between unrelated
+/// groups. The tray is as wide as its row, so a right-to-left group at the
+/// end stretches it across the available width.
+pub fn tray<R>(
+    ui: &mut egui::Ui,
+    content: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    well(ui, TRAY_PAD as i8, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            content(ui)
+        })
+        .inner
+    })
+}
+
+/// A 1px light line between groups in a [`tray`], 3 before it and 4
+/// after (mirrored in a right-to-left group). It runs the height of the
+/// row laid out so far, so it goes after the group it follows. (The dark
+/// `groove` would vanish against the well.)
+pub fn tray_divider(ui: &mut egui::Ui) {
+    let height = ui.min_rect().height();
+    let (before, after) = if ui.layout().prefer_right_to_left() {
+        (TRAY_DIVIDER_AFTER, TRAY_DIVIDER_BEFORE)
+    } else {
+        (TRAY_DIVIDER_BEFORE, TRAY_DIVIDER_AFTER)
+    };
+    ui.add_space(before);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(1.0, height), egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().vline(
+            rect.left() + 0.5,
+            rect.y_range(),
+            Stroke::new(1.0, TRAY_DIVIDER),
+        );
+    }
+    ui.add_space(after);
 }
 
 /// The window behind everything: `ground`, with room around the panels.

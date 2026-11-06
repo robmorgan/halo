@@ -1,11 +1,10 @@
 //! Bar-style fader widget (physical-mixer look) for the channel volume
-//! faders and the crossfader.
+//! faders and the decks' tempo faders.
 //!
 //! A raised cap (`face-cap`, a 1px edge, a line of sheen and an amber
 //! indicator line across its middle) rides a slot cut into the panel.
-//! Channel faders draw evenly spaced notches down the side as a position
-//! scale; the crossfader draws a single center notch and an amber fill from
-//! the center to the cap. Interaction is absolute positioning — the cap
+//! Faders draw evenly spaced notches down the side as a position scale.
+//! Interaction is absolute positioning — the cap
 //! jumps to the pointer, like a real fader — with double-click to reset.
 //!
 //! Pure UI: callers load an atomic into a local `f32`, pass a `&mut`, and
@@ -34,8 +33,6 @@ pub enum Notches {
     None,
     /// `n` evenly-spaced intervals → n+1 ticks across the travel. (channel)
     Even(u32),
-    /// A single tick at the value center. (crossfader)
-    Center,
 }
 
 pub struct Fader<'a> {
@@ -46,9 +43,6 @@ pub struct Fader<'a> {
     notches: Notches,
     default: f32,
     accent: Color32,
-    /// Some(center): draw an accent fill along the groove from `center` to the
-    /// cap as it moves off center (like the bipolar EQ knobs).
-    center_fill: Option<f32>,
     /// Groove thickness across the travel axis.
     groove: f32,
     /// Cap size as (span across the travel axis, thickness along it).
@@ -66,7 +60,6 @@ impl<'a> Fader<'a> {
             notches: Notches::None,
             default,
             accent,
-            center_fill: None,
             groove: GROOVE,
             cap: Vec2::new(CAP_HALF_SPAN * 2.0, CAP_THICKNESS),
         }
@@ -89,11 +82,6 @@ impl<'a> Fader<'a> {
 
     pub fn default_value(mut self, default: f32) -> Self {
         self.default = default;
-        self
-    }
-
-    pub fn center_fill(mut self, center: f32) -> Self {
-        self.center_fill = Some(center);
         self
     }
 
@@ -205,33 +193,10 @@ impl Widget for Fader<'_> {
                         tick(painter, i as f32 / n as f32);
                     }
                 }
-                Notches::Center => tick(painter, 0.5),
             }
 
             let t = self.norm(*self.value);
             let p = lo + (hi - lo) * t;
-
-            // Center-origin fill: an accent bar inside the slot from the
-            // center value to the cap, showing how far it's pushed off
-            // center (like the bipolar EQ knobs).
-            if let Some(c) = self.center_fill {
-                let pc = lo + (hi - lo) * self.norm(c);
-                if (p - pc).abs() > 0.5 {
-                    let inner = (half_groove - 1.0).max(0.5);
-                    let fill = if self.vertical {
-                        Rect::from_two_pos(
-                            egui::pos2(center.x - inner, pc),
-                            egui::pos2(center.x + inner, p),
-                        )
-                    } else {
-                        Rect::from_two_pos(
-                            egui::pos2(pc, center.y - inner),
-                            egui::pos2(p, center.y + inner),
-                        )
-                    };
-                    painter.rect_filled(fill, 0.0, line_col);
-                }
-            }
 
             // The cap: face-cap, a 1px edge, sheen along its top and a 2px
             // indicator line across its middle. Disabled, it fades to 55%.

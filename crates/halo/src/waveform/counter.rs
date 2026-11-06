@@ -14,16 +14,24 @@ const SEGMENTS: u8 = 4;
 /// Padding inside the segments' well.
 const WELL_PAD: f32 = 3.0;
 
-/// Paint the readout + segments. Shows placeholders before the first beat;
-/// paints nothing without a usable grid.
-pub fn paint_beat_counter(ui: &mut egui::Ui, marks: &GridMarks, position_frames: f64) {
+/// Paint the readout + segments, the BAR caption in `caption`. Shows
+/// placeholders before the first beat; paints nothing without a usable
+/// grid. `hint` adds the low-confidence note after the steps (the deck
+/// header has no room for it and shows it as a tooltip instead).
+pub fn paint_beat_counter(
+    ui: &mut egui::Ui,
+    marks: &GridMarks,
+    position_frames: f64,
+    caption: theme::TypeStyle,
+    hint: bool,
+) {
     if !marks.is_usable() {
         return;
     }
     let bar_beat = marks.bar_beat(position_frames);
     let ctx = ui.ctx().clone();
 
-    ui.label(theme::CAPTION.rich("BAR").color(theme::TEXT_MUTED));
+    ui.label(caption.rich("BAR").color(theme::TEXT_MUTED));
 
     // The value right-aligned in a column as wide as "888.8", so the
     // digits never move as bars tick over.
@@ -69,7 +77,7 @@ pub fn paint_beat_counter(ui: &mut egui::Ui, marks: &GridMarks, position_frames:
 
     // Honest-display hint: the waveform ticks are drawn dimmed for this
     // grid, and this says why.
-    if marks.low_confidence() {
+    if hint && marks.low_confidence() {
         ui.label(
             theme::NOTE_TEXT
                 .rich("grid: low confidence")

@@ -26,17 +26,16 @@ use crate::show_preview::{LOOK_PALETTE, LookId, ShowPreview, ShowSel};
 use crate::state::{MixerShared, ScrubPhase, Transport};
 use crate::theme::{self, ACCENT};
 use crate::waveform::{
-    BandPeaks, GhostPlayhead, GridMarks, OverviewParams, OverviewTexture, ScrubGesture,
-    ShowEditorInteraction, ShowEditorParams, ShowStripParams, ZoomSpan, ZoomedParams,
-    paint_beat_counter, paint_overview, paint_show_strip, paint_zoomed, show_editor,
+    BandPeaks, GhostPlayhead, GridMarks, OverviewParams, OverviewTexture, STACKED_OVERVIEW_H,
+    STACKED_ZOOMED_H, STRIP_HEIGHT, ScrubGesture, ShowEditorInteraction, ShowEditorParams,
+    ShowStripParams, WaveStyle, ZoomSpan, ZoomedParams, paint_beat_counter, paint_overview,
+    paint_show_strip, paint_zoomed, show_editor,
 };
 use crate::worker::{WorkerEvent, spawn_analysis_worker, spawn_folder_import};
 
 const DECK_NAMES: [&str; 2] = ["A", "B"];
 /// Longest edge of the artwork texture.
 const ARTWORK_MAX_PX: u32 = 256;
-/// Artwork display size in the deck header.
-const ARTWORK_SIZE: f32 = 56.0;
 /// Padding inside the Perform view's deck and mixer panels (`space-16`).
 const PERFORM_PANEL_PAD: f32 = theme::SPACE_16;
 /// Ground between the window's panels (toolbar, decks, mixer, footer) and
@@ -333,6 +332,8 @@ impl BrowserState {
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct Persisted {
     master_volume: f32,
+    /// No longer restored: the crossfader has no control, so it stays
+    /// centred. Kept so older builds still read this state.
     crossfader: f32,
     trims: [f32; 2],
     keylocks: [bool; 2],
@@ -537,7 +538,6 @@ impl HaloApp {
         // Restore session state before the audio stream starts.
         if persisted.master_volume > 0.0 {
             mixer.master.store(persisted.master_volume);
-            mixer.crossfader.store(persisted.crossfader.clamp(0.0, 1.0));
             for (i, deck_ui) in decks.iter_mut().enumerate() {
                 deck_ui.deck.shared.trim.store(persisted.trims[i]);
                 deck_ui.keylock = persisted.keylocks[i];
@@ -2097,6 +2097,7 @@ impl HaloApp {
                 hot_cues: &[],
                 cue_point: has_track.then(|| shared.cue_point.load(Ordering::Relaxed) as usize),
                 ghost: None,
+                style: WaveStyle::Welled,
             },
             &mut audition.zoom,
         );
@@ -2297,6 +2298,7 @@ impl HaloApp {
                 loop_in: audition.loop_in_staged,
                 hot_cues: &[],
                 marks: &audition.marks,
+                style: WaveStyle::Welled,
             },
         ) && has_track
         {
@@ -2306,7 +2308,7 @@ impl HaloApp {
         ui.add_space(2.0);
         ui.add_space(theme::SPACE_6);
         ui.horizontal(|ui| {
-            paint_beat_counter(ui, &audition.marks, display_pos);
+            paint_beat_counter(ui, &audition.marks, display_pos, theme::CAPTION, true);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add(Key::new("+").small()).clicked() {
                     audition.zoom.zoom_in();
@@ -2754,13 +2756,15 @@ impl eframe::App for HaloApp {
                 // Sized to just fit the mixer's strip cluster.
                 let mixer_width = MIXER_W;
                 // Three panels on the ground (deck | mixer | deck), `space-2`
-                // apart, each with `space-16` inside.
+                // apart: the decks in the quiet skin with `space-6` inside,
+                // the mixer with `space-16` (`space-6` on top, so its
+                // captions line up with the decks' headers).
                 let gap = SECTION_GAP;
-                let chrome = 2.0 * gap + 6.0 * PERFORM_PANEL_PAD;
+                let chrome = 2.0 * gap + 4.0 * DECK_PAD + 2.0 * PERFORM_PANEL_PAD;
                 let deck_width = ((full_width - mixer_width - chrome) / 2.0)
                     .floor()
                     .max(280.0);
-                // Panels in the row share one height: the tallest content of the
+                // Panels in the row share one height: the tallest panel of the
                 // previous frame.
                 let row_h_id = egui::Id::new("perform-row-height");
                 let row_h = ui.data(|d| d.get_temp::<f32>(row_h_id)).unwrap_or(0.0);
@@ -2774,20 +2778,25 @@ impl eframe::App for HaloApp {
                 ui.horizontal_top(|ui| {
                     ui.spacing_mut().item_spacing.x = gap;
                     let mut card =
-                        |ui: &mut egui::Ui, width: f32, content: &mut dyn FnMut(&mut egui::Ui)| {
-                            theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
+                        |ui: &mut egui::Ui,
+                         width: f32,
+                         (face, margin): (theme::Face, egui::Margin),
+                         content: &mut dyn FnMut(&mut egui::Ui)| {
+                            let chrome_h = margin.sum().y;
+                            theme::panel_with(ui, margin, face, |ui| {
                                 ui.set_width(width);
                                 // Measured from the cursor, so set before
                                 // the content.
-                                ui.set_min_height(row_h);
+                                ui.set_min_height(row_h - chrome_h);
                                 let content_h =
                                     ui.vertical(|ui| content(ui)).response.rect.height();
-                                tallest = tallest.max(content_h);
+                                tallest = tallest.max(content_h + chrome_h);
                             })
                             .response
                             .rect
                         };
-                    card(ui, deck_width, &mut |ui| {
+                    let deck_skin = (theme::SKIN_QUIET.panel, egui::Margin::same(DECK_PAD as i8));
+                    card(ui, deck_width, deck_skin, &mut |ui| {
                         responses[0] = deck_panel(
                             ui,
                             &mut self.decks[0],
@@ -2798,11 +2807,22 @@ impl eframe::App for HaloApp {
                             has_audio,
                         );
                     });
-                    let mixer_rect = card(ui, mixer_width, &mut |ui| {
-                        mixer_panel(ui, &self.mixer, &self.decks);
-                    });
+                    let mixer_rect = card(
+                        ui,
+                        mixer_width,
+                        (
+                            theme::Face::Panel,
+                            egui::Margin {
+                                top: DECK_PAD as i8,
+                                ..egui::Margin::same(PERFORM_PANEL_PAD as i8)
+                            },
+                        ),
+                        &mut |ui| {
+                            mixer_panel(ui, &self.decks);
+                        },
+                    );
                     self.mixer_center_x = mixer_rect.center().x;
-                    card(ui, deck_width, &mut |ui| {
+                    card(ui, deck_width, deck_skin, &mut |ui| {
                         responses[1] = deck_panel(
                             ui,
                             &mut self.decks[1],
@@ -3594,446 +3614,350 @@ fn deck_panel(
     };
     let tempo_rate = base_rate * deck_ui.bend as f64;
 
-    // Header: artwork | title/artist/key | elapsed + remaining readouts.
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        let art_size = egui::vec2(ARTWORK_SIZE, ARTWORK_SIZE);
-        match &deck_ui.artwork {
-            Some(tex) => {
-                ui.add(
-                    egui::Image::new((tex.id(), art_size))
-                        .corner_radius(theme::RADIUS_CONTROL)
-                        .fit_to_exact_size(art_size),
-                );
-            }
-            None => {
-                // Empty artwork: a well holding the track glyph.
-                let (rect, _) = ui.allocate_exact_size(art_size, egui::Sense::hover());
-                theme::paint_well(ui.painter(), rect, theme::RADIUS_CONTROL);
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "♪",
-                    egui::FontId::proportional(24.0),
-                    theme::TEXT_MUTED,
-                );
-            }
-        }
-        ui.add_space(theme::SPACE_12);
-        // Readout widths: digit cells for the widest values ("−88:88.8",
-        // "888.8"), so the digits never jitter the layout.
-        let ctx = ui.ctx().clone();
-        let digit = theme::NUMERALS_XL.width(&ctx, "0");
-        let readout_w = |cells: f32| cells * digit + 2.0 * theme::SPACE_12;
-        let stopwatch_w = theme::SIZE_KEY_SMALL + 2.0 * theme::SPACE_8;
-        // Title/artist, width-constrained and truncated so a long name can't
-        // grow into (and overlap) the right-aligned time + BPM readouts.
-        let readouts_w = readout_w(8.0) + readout_w(5.0) + stopwatch_w;
-        let title_w = (ui.available_width() - readouts_w - theme::SPACE_12).max(60.0);
-        ui.allocate_ui_with_layout(
-            egui::vec2(title_w, theme::READOUT_H),
-            egui::Layout::top_down(egui::Align::Min),
-            |ui| {
-                ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-                if has_track {
-                    ui.add(
-                        egui::Label::new(
-                            theme::TRACK_TITLE
-                                .rich(&deck_ui.title)
-                                .color(theme::TEXT_STRONG),
-                        )
-                        .truncate(),
-                    );
-                    let artist = deck_ui.artist.as_deref().unwrap_or("—");
-                    ui.add(
-                        egui::Label::new(theme::BODY_TEXT.rich(artist).color(theme::TEXT_MUTED))
-                            .truncate(),
-                    );
-                    ui.add_space(theme::SPACE_4);
-                    key_badge(ui, deck_ui.key.as_deref().unwrap_or("—"));
-                } else {
-                    ui.label(
-                        theme::BODY_TEXT
-                            .rich("No track loaded")
-                            .color(theme::TEXT_MUTED),
-                    );
-                }
-            },
-        );
-        // Right side (right-to-left): BPM readout rightmost, then the ⏱ key
-        // toggling elapsed/remaining, then the time readout. BPM is amber
-        // while this deck is the master tempo reference.
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            let bpm_text = if deck_ui.bpm > 0.0 && has_track {
-                format!("{:.1}", deck_ui.bpm * tempo_rate)
-            } else {
-                "—".to_string()
-            };
-            let bpm_color = if is_master {
-                ACCENT
-            } else {
-                theme::TEXT_STRONG
-            };
-            theme::paint_readout(ui, "BPM", &bpm_text, bpm_color, 5);
+    let readings = DeckReadings {
+        has_track,
+        is_master,
+        playhead,
+        total,
+        sample_rate,
+        tempo_rate,
+    };
+    ui.spacing_mut().item_spacing = egui::vec2(DECK_GAP, DECK_GAP);
+    deck_header(ui, deck_ui, &readings);
 
-            ui.add_space(theme::SPACE_8);
+    // The waveform well on the left; the tempo rail carves out a fixed
+    // column on the right (like a hardware deck's pitch strip).
+    let loop_region = shared.loop_region();
+    ui.horizontal_top(|ui| {
+        let wave_w = (ui.available_width() - TEMPO_RAIL_W - DECK_GAP).max(0.0);
+        let (well, _) =
+            ui.allocate_exact_size(egui::vec2(wave_w, WAVE_STACK_H), egui::Sense::hover());
+        theme::paint_content_well(ui.painter(), well, theme::WAVE_GROUND);
+        let mut stack = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(well)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        stack.set_clip_rect(well.intersect(ui.clip_rect()));
+        stack.spacing_mut().item_spacing.y = 0.0;
+        let stack = &mut stack;
+
+        // Zoomed scrolling waveform. Dragging grabs the platter: the
+        // audio callback's varispeed voice audibly chases the hand
+        // (both directions); the drop releases the momentum into a
+        // glide that eases back to play speed (or rest), handing off
+        // to a primed session at the predicted landing.
+        let gesture = paint_zoomed(
+            stack,
+            ZoomedParams {
+                peaks: deck_ui.peaks.as_ref(),
+                marks: &deck_ui.marks,
+                position_frames: display_pos,
+                total_frames: total,
+                sample_rate,
+                loop_region,
+                loop_in: deck_ui.loop_in_staged,
+                hot_cues: &deck_ui.hot_cues,
+                cue_point: has_track.then(|| shared.cue_point.load(Ordering::Relaxed) as usize),
+                ghost: (crate::sync::SyncState::load(&shared) == crate::sync::SyncState::Waiting)
+                    .then(|| GhostPlayhead {
+                        offset_frames: -shared.sync_remaining.load(),
+                        alpha: 0.85,
+                    }),
+                style: WaveStyle::Stacked,
+            },
+            &mut deck_ui.zoom,
+        );
+        handle_scrub_gesture(
+            deck_ui,
+            gesture,
+            has_track,
+            has_audio,
+            playing,
+            display_pos,
+            sample_rate,
+        );
+
+        zoom_row(stack, deck_ui, idx, display_pos);
+        wave_stack_gap(stack);
+
+        // L3 show lanes (look / energy / accent), scrolling in
+        // lockstep with the zoomed view above.
+        paint_show_strip(
+            stack,
+            ShowStripParams {
+                show: &deck_ui.show,
+                marks: &deck_ui.marks,
+                position_frames: display_pos,
+                total_frames: total,
+                sample_rate,
+                lighting_active: is_lighting,
+                programmer_override: lighting_outputs
+                    .is_some_and(|o| o.iter().any(|l| l.source == LaneSource::Programmer)),
+            },
+            &deck_ui.zoom,
+        );
+        wave_stack_gap(stack);
+
+        // Full-track overview with click-to-seek.
+        if let Some(frac) = paint_overview(
+            stack,
+            OverviewParams {
+                texture: deck_ui.overview.as_ref(),
+                progress: if total > 0 {
+                    playhead as f32 / total as f32
+                } else {
+                    0.0
+                },
+                total_frames: total,
+                loop_region,
+                loop_in: deck_ui.loop_in_staged,
+                hot_cues: &deck_ui.hot_cues,
+                marks: &deck_ui.marks,
+                style: WaveStyle::Stacked,
+            },
+        ) && has_track
+        {
+            request_seek_guarded(&shared, (frac as f64 * total as f64) as usize);
+        }
+
+        // One playhead, flagged at the top, through the waveform, the zoom
+        // row and the lanes (the overview keeps its own cursor).
+        if deck_ui.peaks.is_some() && total > 0 {
+            let x = well.center().x;
+            let bottom = well.top() + STACKED_ZOOMED_H + ZOOM_ROW_H + WAVE_STACK_GAP + STRIP_HEIGHT;
+            let painter = ui.painter();
+            painter.line_segment(
+                [egui::pos2(x, well.top()), egui::pos2(x, bottom)],
+                egui::Stroke::new(2.0, theme::PLAYHEAD),
+            );
+            painter.add(egui::Shape::convex_polygon(
+                vec![
+                    egui::pos2(x - PLAYHEAD_FLAG.x / 2.0, well.top()),
+                    egui::pos2(x + PLAYHEAD_FLAG.x / 2.0, well.top()),
+                    egui::pos2(x, well.top() + PLAYHEAD_FLAG.y),
+                ],
+                theme::PLAYHEAD,
+                egui::Stroke::NONE,
+            ));
+        }
+
+        ui.vertical(|ui| {
+            ui.set_width(TEMPO_RAIL_W);
+            deck_tempo_rail(ui, deck_ui, idx, is_master, has_track);
+        });
+    });
+
+    ui.add_space(DECK_CONTROLS_GAP - DECK_GAP);
+
+    // Hot-cue pads (8), joined into one strip across a tray. Normal mode:
+    // empty = set at the (quantized) playhead, occupied = jump and play,
+    // right-click deletes. Gated mode: plays from the cue while held,
+    // pauses on release.
+    theme::tray(ui, |ui| {
+        ui.add_enabled_ui(has_track, |ui| {
+            let strip_w = ui.available_width();
+            let edge = |i: usize| (strip_w * i as f32 / 8.0).floor();
+            // A set pad shows its slot colour in a strip along the bottom.
+            let pads: [Key; 8] = std::array::from_fn(|i| {
+                let set = deck_ui.hot_cues[i].is_some();
+                Key::new(format!("{}", i + 1))
+                    .size([edge(i + 1) - edge(i), HOT_CUE_H])
+                    .text_style(theme::PAD_NUMBER)
+                    .label_color(if set {
+                        theme::TEXT_STRONG
+                    } else {
+                        theme::TEXT_MUTED
+                    })
+                    .strip(if set {
+                        theme::CUE[i]
+                    } else {
+                        theme::SEGMENT_OFF
+                    })
+                    .quiet()
+            });
+            for (i, resp) in key::segmented(ui, pads).into_iter().enumerate() {
+                let down = resp.is_pointer_button_down_on();
+                let pressed = down && !deck_ui.hotcue_was_down[i];
+                deck_ui.hotcue_was_down[i] = down;
+
+                if resp.secondary_clicked() {
+                    deck_ui.hot_cues[i] = None;
+                    continue;
+                }
+                if pressed && deck_ui.hot_cue_press(i) && deck_ui.gated {
+                    deck_ui.gated_held = Some(i);
+                }
+            }
+            // Gated release: the held slot's button is no longer down.
+            if let Some(held) = deck_ui.gated_held
+                && !deck_ui.hotcue_was_down[held]
+            {
+                deck_ui.gated_held = None;
+                shared.set_transport(Transport::Paused);
+            }
+        });
+    });
+
+    ui.add_space(DECK_CONTROLS_GAP - DECK_GAP);
+
+    // The key row, in a tray: PLAY, CUE | nudge | LOOP | GATE, GATE under
+    // the tempo rail.
+    theme::tray(ui, |ui| {
+        ui.add_enabled_ui(has_track, |ui| {
+            // PLAY/PAUSE: a green triangle; the whole face lights green
+            // while playing.
+            let play_label = if playing { "⏸" } else { "▶" };
             if ui
-                .add(Key::new("⏱").small().text_style(theme::BODY_TEXT))
-                .on_hover_text("Toggle elapsed / remaining")
+                .add(
+                    Key::new(play_label)
+                        .size([TRANSPORT_W, theme::SIZE_KEY])
+                        .text_style(theme::QUIET_KEY_LABEL.sized(16.0))
+                        .label_color(theme::PLAY)
+                        .lit(playing.then_some(Lit::Play))
+                        .quiet(),
+                )
                 .clicked()
             {
-                deck_ui.show_remaining = !deck_ui.show_remaining;
+                response.play_toggled = true;
             }
-            ui.add_space(theme::SPACE_8);
-            let (caption, value) = if deck_ui.show_remaining {
-                (
-                    "REMAINING",
-                    format!(
-                        "−{}",
-                        format_time(total.saturating_sub(playhead), sample_rate)
-                    ),
-                )
+
+            ui.add_space(TRANSPORT_GAP);
+
+            // CUE — CDJ semantics on press/release edges; an amber label
+            // that lights the face amber while held.
+            let cue_resp = ui.add(
+                Key::new("CUE")
+                    .size([TRANSPORT_W, theme::SIZE_KEY])
+                    .label_color(ACCENT)
+                    .lit_when_held(Lit::Accent)
+                    .quiet(),
+            );
+            let cue_down = cue_resp.is_pointer_button_down_on();
+            let pressed = cue_down && !deck_ui.cue_was_down;
+            let released = !cue_down && deck_ui.cue_was_down;
+            deck_ui.cue_was_down = cue_down;
+
+            if pressed {
+                deck_ui.cue_press();
+            }
+            if released {
+                deck_ui.cue_release();
+            }
+            theme::tray_divider(ui);
+
+            // Pitch bend: momentary ±4% while held.
+            let [bend_minus, bend_plus] = key::segmented(
+                ui,
+                [
+                    Key::new("−").width(NUDGE_W).quiet(),
+                    Key::new("+").width(NUDGE_W).quiet(),
+                ],
+            )
+            .map(|r| r.is_pointer_button_down_on());
+            deck_ui.bend = if bend_minus {
+                0.96
+            } else if bend_plus {
+                1.04
             } else {
-                ("ELAPSED", format_time(playhead, sample_rate))
+                1.0
             };
-            theme::paint_readout(ui, caption, &value, theme::TEXT_STRONG, 8);
-        });
-    });
-    ui.add_space(theme::SPACE_12);
+            if bend_minus || bend_plus {
+                ui.ctx().request_repaint();
+            }
+            theme::tray_divider(ui);
 
-    // Waveform on the left; the BPM / keylock / master-sync / pitch sidebar
-    // carves out a fixed column on the right (like a hardware deck's pitch
-    // strip).
-    let loop_region = shared.loop_region();
-    ui.horizontal(|ui| {
-        // As wide as the widest sidebar toggle (KEYLOCK, with its LED).
-        let right_w = led_key_width(ui.ctx(), "KEYLOCK");
-        let total_w = ui.available_width();
-        let wave = ui.vertical(|ui| {
-            ui.set_width((total_w - right_w - 8.0).max(200.0));
-
-            // Zoomed scrolling waveform. Dragging grabs the platter: the
-            // audio callback's varispeed voice audibly chases the hand
-            // (both directions); the drop releases the momentum into a
-            // glide that eases back to play speed (or rest), handing off
-            // to a primed session at the predicted landing.
-            let gesture = paint_zoomed(
+            // Loops: manual in/out, quantized autoloop at the shown
+            // length, halve/double between 1/16 and 16 beats (gapless
+            // session loop transaction), all one segmented strip. The
+            // length segment is as wide as "1/16 BEATS" so halving
+            // never shifts the row, and lights while a loop plays. The
+            // strip fills the room up to GATE's divider, so GATE stays
+            // under the tempo rail at any deck width: on a narrow deck
+            // every segment scales down, and the length segment takes
+            // what's left over.
+            let has_loop = loop_region.is_some();
+            let grid_ok = deck_ui.marks.is_usable();
+            let room = (ui.available_width() - theme::TRAY_DIVIDER_W - GATE_W).max(0.0);
+            let scale = (room / LOOP_WIDTHS.iter().sum::<f32>()).min(1.0);
+            let mut widths = LOOP_WIDTHS.map(|w| (w * scale).floor());
+            widths[LOOP_LENGTH] += room - widths.iter().sum::<f32>();
+            let [w_in, w_out, w_halve, w_chip, w_double, w_exit] = widths;
+            let length = format!("{} BEATS", format_beats(deck_ui.loop_beats));
+            let [loop_in, loop_out, halve, chip, double, exit] = key::segmented(
                 ui,
-                ZoomedParams {
-                    peaks: deck_ui.peaks.as_ref(),
-                    marks: &deck_ui.marks,
-                    position_frames: display_pos,
-                    total_frames: total,
-                    sample_rate,
-                    loop_region,
-                    loop_in: deck_ui.loop_in_staged,
-                    hot_cues: &deck_ui.hot_cues,
-                    cue_point: has_track.then(|| shared.cue_point.load(Ordering::Relaxed) as usize),
-                    ghost: (crate::sync::SyncState::load(&shared)
-                        == crate::sync::SyncState::Waiting)
-                        .then(|| GhostPlayhead {
-                            offset_frames: -shared.sync_remaining.load(),
-                            alpha: 0.85,
-                        }),
-                },
-                &mut deck_ui.zoom,
-            );
-            handle_scrub_gesture(
-                deck_ui,
-                gesture,
-                has_track,
-                has_audio,
-                playing,
-                display_pos,
-                sample_rate,
+                [
+                    Key::new("IN").width(w_in).quiet(),
+                    Key::new("OUT").width(w_out).quiet(),
+                    Key::new("÷2").width(w_halve).enabled(has_loop).quiet(),
+                    Key::new(length)
+                        .width(w_chip)
+                        .lit(has_loop.then_some(Lit::Accent))
+                        .enabled(grid_ok && has_track)
+                        .quiet(),
+                    Key::new("×2").width(w_double).enabled(has_loop).quiet(),
+                    Key::new("EXIT").width(w_exit).enabled(has_loop).quiet(),
+                ],
             );
 
-            // L3 show lanes (look / energy / accent), scrolling in
-            // lockstep with the zoomed view above.
-            ui.add_space(2.0);
-            paint_show_strip(
-                ui,
-                ShowStripParams {
-                    show: &deck_ui.show,
-                    marks: &deck_ui.marks,
-                    position_frames: display_pos,
-                    total_frames: total,
-                    sample_rate,
-                    lighting_active: is_lighting,
-                    programmer_override: lighting_outputs
-                        .is_some_and(|o| o.iter().any(|l| l.source == LaneSource::Programmer)),
-                },
-                &deck_ui.zoom,
-            );
-            ui.add_space(4.0);
-
-            // Full-track overview with click-to-seek.
-            if let Some(frac) = paint_overview(
-                ui,
-                OverviewParams {
-                    texture: deck_ui.overview.as_ref(),
-                    progress: if total > 0 {
-                        playhead as f32 / total as f32
-                    } else {
-                        0.0
-                    },
-                    total_frames: total,
-                    loop_region,
-                    loop_in: deck_ui.loop_in_staged,
-                    hot_cues: &deck_ui.hot_cues,
-                    marks: &deck_ui.marks,
-                },
-            ) && has_track
+            if loop_in.clicked() && has_track {
+                deck_ui.loop_in_staged =
+                    Some(quantize_frame(&deck_ui.marks, deck_ui.quantize, playhead));
+            }
+            if loop_out.clicked()
+                && has_track
+                && let Some(start) = deck_ui.loop_in_staged
             {
-                request_seek_guarded(&shared, (frac as f64 * total as f64) as usize);
+                let end = quantize_frame(&deck_ui.marks, deck_ui.quantize, playhead);
+                if end > start {
+                    shared.set_loop(Some((start, end)));
+                    let median = deck_ui.marks.median_beat_frames();
+                    deck_ui.loop_beats = if median > 0.0 {
+                        ((end - start) as f64 / median).clamp(0.25, 64.0)
+                    } else {
+                        4.0
+                    };
+                    deck_ui.loop_in_staged = None;
+                }
             }
 
-            // Beat counter | zoom | time readouts.
-            ui.add_space(2.0);
-            ui.horizontal(|ui| {
-                paint_beat_counter(ui, &deck_ui.marks, display_pos);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(Key::new("+").small()).clicked() {
-                        deck_ui.zoom.zoom_in();
-                    }
-                    ui.label(
-                        theme::CAPTION
-                            .rich(deck_ui.zoom.label(deck_ui.marks.is_usable()))
-                            .color(theme::TEXT_MUTED),
-                    );
-                    if ui.add(Key::new("−").small()).clicked() {
-                        deck_ui.zoom.zoom_out();
-                    }
-                });
-            });
-        });
-        let wave_h = wave.response.rect.height();
-        ui.vertical(|ui| {
-            ui.set_width(right_w);
-            deck_sidebar(
-                ui,
-                deck_ui,
-                idx,
-                is_master,
-                has_track,
-                wave_h,
-                &mut response,
-            );
-        });
-    });
+            if halve.clicked()
+                && let Some((start, _)) = loop_region
+            {
+                deck_ui.loop_beats = (deck_ui.loop_beats / 2.0).max(0.0625);
+                let end = loop_end_for(&deck_ui.marks, start, deck_ui.loop_beats);
+                shared.set_loop(Some((start, end.max(start + 1))));
+            }
 
-    ui.add_space(8.0);
-    ui.add_enabled_ui(has_track, |ui| {
-        // Row 1: captioned groups — transport (play / cue), nudge, loops —
-        // all keys at one height.
-        const GROUP_H: f32 = 48.0;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            control_group(ui, "TRANSPORT", |ui| {
-                // PLAY/PAUSE: a green triangle; the whole face lights green
-                // while playing.
-                let play_label = if playing { "⏸" } else { "▶" };
+            if chip.on_hover_text("Autoloop at this length").clicked() {
+                deck_ui.autoloop(deck_ui.loop_beats);
+            }
+
+            if double.clicked()
+                && let Some((start, _)) = loop_region
+            {
+                deck_ui.loop_beats = (deck_ui.loop_beats * 2.0).min(16.0);
+                let end = loop_end_for(&deck_ui.marks, start, deck_ui.loop_beats);
+                shared.set_loop(Some((start, end.max(start + 1))));
+            }
+            if exit.clicked() {
+                shared.set_loop(None);
+            }
+
+            // GATE, right-aligned under the tempo rail.
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add(
-                        Key::new(play_label)
-                            .size([theme::SIZE_TRANSPORT, theme::SIZE_KEY])
-                            .text_style(theme::KEY_LABEL.sized(16.0))
-                            .label_color(theme::PLAY)
-                            .lit(playing.then_some(Lit::Play)),
+                        outlined_key(deck_ui.gated, "GATE")
+                            .size([GATE_W, theme::SIZE_KEY])
+                            .quiet(),
                     )
+                    .on_hover_text("Gated hot cues: play while held, stop on release")
                     .clicked()
                 {
-                    response.play_toggled = true;
+                    deck_ui.gated = !deck_ui.gated;
                 }
-
-                // CUE — CDJ semantics on press/release edges; an amber label
-                // that lights the face amber while held.
-                let cue_resp = ui.add(
-                    Key::new("CUE")
-                        .size([theme::SIZE_TRANSPORT, theme::SIZE_KEY])
-                        .label_color(ACCENT)
-                        .lit_when_held(Lit::Accent),
-                );
-                let cue_down = cue_resp.is_pointer_button_down_on();
-                let pressed = cue_down && !deck_ui.cue_was_down;
-                let released = !cue_down && deck_ui.cue_was_down;
-                deck_ui.cue_was_down = cue_down;
-
-                if pressed {
-                    deck_ui.cue_press();
-                }
-                if released {
-                    deck_ui.cue_release();
-                }
-            });
-
-            ui.add_space(theme::SPACE_12);
-            group_divider(ui, GROUP_H);
-            ui.add_space(theme::SPACE_12);
-
-            control_group(ui, "NUDGE", |ui| {
-                // Pitch bend: momentary ±4% while held.
-                let nudge = |label| Key::new(label).width(theme::SIZE_KEY);
-                let bend_minus = ui.add(nudge("−")).is_pointer_button_down_on();
-                let bend_plus = ui.add(nudge("+")).is_pointer_button_down_on();
-                deck_ui.bend = if bend_minus {
-                    0.96
-                } else if bend_plus {
-                    1.04
-                } else {
-                    1.0
-                };
-                if bend_minus || bend_plus {
-                    ui.ctx().request_repaint();
-                }
-            });
-
-            ui.add_space(theme::SPACE_12);
-            group_divider(ui, GROUP_H);
-            ui.add_space(theme::SPACE_12);
-
-            control_group(ui, "LOOP", |ui| {
-                // Loops: manual in/out, quantized autoloop at the shown
-                // length, halve/double between 1/16 and 16 beats (gapless
-                // session loop transaction), all one segmented strip. The
-                // length segment is as wide as "1/16 BEATS" so halving
-                // never shifts the row, and lights while a loop plays.
-                let has_loop = loop_region.is_some();
-                let grid_ok = deck_ui.marks.is_usable();
-                let length = format!("{} BEATS", format_beats(deck_ui.loop_beats));
-                let [loop_in, loop_out, halve, chip, double, exit] = key::segmented(
-                    ui,
-                    [
-                        Key::new("IN").width(44.0),
-                        Key::new("OUT").width(44.0),
-                        Key::new("÷2").width(40.0).enabled(has_loop),
-                        Key::new(length)
-                            .width(92.0)
-                            .lit(has_loop.then_some(Lit::Accent))
-                            .enabled(grid_ok && has_track),
-                        Key::new("×2").width(40.0).enabled(has_loop),
-                        Key::new("EXIT").width(52.0).enabled(has_loop),
-                    ],
-                );
-
-                if loop_in.clicked() && has_track {
-                    deck_ui.loop_in_staged =
-                        Some(quantize_frame(&deck_ui.marks, deck_ui.quantize, playhead));
-                }
-                if loop_out.clicked()
-                    && has_track
-                    && let Some(start) = deck_ui.loop_in_staged
-                {
-                    let end = quantize_frame(&deck_ui.marks, deck_ui.quantize, playhead);
-                    if end > start {
-                        shared.set_loop(Some((start, end)));
-                        let median = deck_ui.marks.median_beat_frames();
-                        deck_ui.loop_beats = if median > 0.0 {
-                            ((end - start) as f64 / median).clamp(0.25, 64.0)
-                        } else {
-                            4.0
-                        };
-                        deck_ui.loop_in_staged = None;
-                    }
-                }
-
-                if halve.clicked()
-                    && let Some((start, _)) = loop_region
-                {
-                    deck_ui.loop_beats = (deck_ui.loop_beats / 2.0).max(0.0625);
-                    let end = loop_end_for(&deck_ui.marks, start, deck_ui.loop_beats);
-                    shared.set_loop(Some((start, end.max(start + 1))));
-                }
-
-                if chip.on_hover_text("Autoloop at this length").clicked() {
-                    deck_ui.autoloop(deck_ui.loop_beats);
-                }
-
-                if double.clicked()
-                    && let Some((start, _)) = loop_region
-                {
-                    deck_ui.loop_beats = (deck_ui.loop_beats * 2.0).min(16.0);
-                    let end = loop_end_for(&deck_ui.marks, start, deck_ui.loop_beats);
-                    shared.set_loop(Some((start, end.max(start + 1))));
-                }
-                if exit.clicked() {
-                    shared.set_loop(None);
-                }
-            });
-        });
-
-        // Row 2: hot-cue pads (8) + GATE / Q. Normal mode: empty = set at the
-        // (quantized) playhead, occupied = jump and play, right-click deletes.
-        // Gated mode: plays from the cue while held, pauses on release.
-        ui.add_space(theme::SPACE_12);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            // The pads shrink when the deck column is narrow so the row
-            // (8 pads + divider + GATE/QUANTIZE/AUTO CUE) never widens the
-            // panel — at the minimum window size that overflow would push
-            // deck B past the right edge and wrap the AUTO CUE caption.
-            let ctx = ui.ctx().clone();
-            let toggle_w = led_key_width(&ctx, "OFF");
-            let tail: f32 = ["GATE", "QUANTIZE", "AUTO CUE"]
-                .iter()
-                .map(|c| theme::CAPTION.width(&ctx, c).max(toggle_w))
-                .sum::<f32>()
-                + 2.0 * theme::SPACE_12
-                + GROUP_DIVIDER_W
-                + 2.0 * theme::SPACE_16;
-            let pad_w = ((ui.available_width() - tail - 7.0 * theme::SPACE_8) / 8.0)
-                .floor()
-                .clamp(18.0, theme::SIZE_PAD);
-            control_group(ui, "HOT CUES", |ui| {
-                for i in 0..8 {
-                    let set = deck_ui.hot_cues[i].is_some();
-                    let resp = ui.add(
-                        Key::new(format!("{}", i + 1))
-                            .size([pad_w, theme::SIZE_KEY])
-                            .text_style(theme::PAD_NUMBER)
-                            .label_color(theme::TEXT_UNLIT)
-                            .lit(set.then_some(Lit::Accent)),
-                    );
-                    let down = resp.is_pointer_button_down_on();
-                    let pressed = down && !deck_ui.hotcue_was_down[i];
-                    deck_ui.hotcue_was_down[i] = down;
-
-                    if resp.secondary_clicked() {
-                        deck_ui.hot_cues[i] = None;
-                        continue;
-                    }
-                    if pressed && deck_ui.hot_cue_press(i) && deck_ui.gated {
-                        deck_ui.gated_held = Some(i);
-                    }
-                }
-                // Gated release: the held slot's button is no longer down.
-                if let Some(held) = deck_ui.gated_held
-                    && !deck_ui.hotcue_was_down[held]
-                {
-                    deck_ui.gated_held = None;
-                    shared.set_transport(Transport::Paused);
-                }
-            });
-
-            ui.add_space(theme::SPACE_12);
-            group_divider(ui, GROUP_H);
-            ui.add_space(theme::SPACE_12);
-
-            control_group(ui, "GATE", |ui| {
-                state_toggle(ui, &mut deck_ui.gated)
-                    .on_hover_text("Gated hot cues: play while held, stop on release");
-            });
-            ui.add_space(theme::SPACE_16);
-            control_group(ui, "QUANTIZE", |ui| {
-                state_toggle(ui, &mut deck_ui.quantize)
-                    .on_hover_text("Quantize hot cues and loops to the beat grid");
-            });
-            ui.add_space(theme::SPACE_16);
-            control_group(ui, "AUTO CUE", |ui| {
-                state_toggle(ui, &mut deck_ui.auto_cue).on_hover_text(
-                    "On load, set the cue to the first detected beat and park the deck there",
-                );
+                theme::tray_divider(ui);
             });
         });
     });
@@ -4059,151 +3983,599 @@ fn deck_panel(
     response
 }
 
-/// Right-of-waveform sidebar: big BPM readout, keylock, Master/Sync,
-/// pitch readout + vertical tempo fader with a labeled scale, and the
-/// range selector. `height` is the waveform stack height, used to size the
-/// fader so the column spans it.
-#[allow(clippy::too_many_arguments)]
-fn deck_sidebar(
+// ---------------------------------------------------------------- deck (F · Quiet)
+
+/// Padding inside a deck panel, and between its rows and columns.
+const DECK_PAD: f32 = theme::SPACE_6;
+const DECK_GAP: f32 = theme::SPACE_4;
+/// Above and below the hot cues: between them and the waveform well,
+/// and between them and the key row.
+const DECK_CONTROLS_GAP: f32 = theme::SPACE_12;
+/// The header tray and its fixed cells; the title takes the rest.
+const DECK_HEADER_H: f32 = 52.0;
+const HEADER_ART_W: f32 = DECK_HEADER_H;
+const HEADER_TOGGLES_W: f32 = 58.0;
+const HEADER_TIME_W: f32 = 118.0;
+const HEADER_BPM_W: f32 = 88.0;
+const HEADER_KEY_W: f32 = 44.0;
+/// PITCH ends the header, over the tempo rail and as wide as it.
+const HEADER_PITCH_W: f32 = TEMPO_RAIL_W;
+/// A header reading: its caption on a 14-high line over its value on a
+/// 25-high line, the pair centred in the header's height.
+const HEADER_CAPTION_H: f32 = 14.0;
+const HEADER_VALUE_H: f32 = 25.0;
+const HEADER_CAPTION_TOP: f32 = (DECK_HEADER_H - HEADER_CAPTION_H - HEADER_VALUE_H) / 2.0;
+/// Inside the time, BPM and PITCH cells, and the narrower KEY cell.
+const HEADER_CELL_PAD: f32 = 10.0;
+const HEADER_KEY_PAD: f32 = 8.0;
+/// Inside the title cell, left and right.
+const HEADER_TITLE_PAD_L: f32 = 10.0;
+const HEADER_TITLE_PAD_R: f32 = 8.0;
+/// The note glyph in an empty artwork cell.
+const HEADER_ART_GLYPH: f32 = 20.0;
+/// The zoom row under the zoomed waveform, the space above its line
+/// (clear of the waveform's beat ticks), its − / + targets, and the
+/// space before the BAR counter at its left (in line with the lane
+/// captions under it).
+const ZOOM_ROW_H: f32 = 26.0;
+const ZOOM_ROW_TOP: f32 = 6.0;
+const ZOOM_KEY_W: f32 = 22.0;
+const ZOOM_COUNTER_PAD: f32 = 8.0;
+/// The blank row between the waveform and the show lanes, and between
+/// the lanes and the overview.
+const WAVE_STACK_GAP: f32 = 12.0;
+/// Waveform, zoom row, show lanes and overview, stacked in one well.
+const WAVE_STACK_H: f32 = STACKED_ZOOMED_H
+    + ZOOM_ROW_H
+    + WAVE_STACK_GAP
+    + STRIP_HEIGHT
+    + WAVE_STACK_GAP
+    + STACKED_OVERVIEW_H;
+/// The playhead's flag at the top of the stack.
+const PLAYHEAD_FLAG: egui::Vec2 = egui::vec2(10.0, 6.0);
+/// The tempo rail: SYNC, the tempo fader, RANGE.
+const TEMPO_RAIL_W: f32 = 84.0;
+const TEMPO_FADER_W: f32 = 38.0;
+const TEMPO_FADER_SLOT: f32 = 6.0;
+const TEMPO_FADER_CAP: egui::Vec2 = egui::vec2(36.0, 15.0);
+/// Gaps between the tempo fader's notches: five notches.
+const TEMPO_FADER_NOTCH_GAPS: u32 = 4;
+/// The keylock radio left of the fader: an 18px well, an 8px amber dot,
+/// in a 22-wide target with 4 above and below.
+const KEYLOCK_RADIO: f32 = 18.0;
+const KEYLOCK_DOT: f32 = 8.0;
+const KEYLOCK_HIT: egui::Vec2 = egui::vec2(22.0, KEYLOCK_RADIO + 8.0);
+/// The hot cue strip and the key row under it, each in a tray.
+const HOT_CUE_H: f32 = theme::SIZE_PAD;
+/// PLAY and CUE, and the gap between them.
+const TRANSPORT_W: f32 = 64.0;
+const TRANSPORT_GAP: f32 = theme::SPACE_4;
+const NUDGE_W: f32 = 30.0;
+/// GATE ends at the tray's padding, so its left edge lines up with the
+/// tempo rail's.
+const GATE_W: f32 = TEMPO_RAIL_W - theme::TRAY_PAD;
+/// The LOOP strip's segments at full width: IN, OUT, ÷2, length, ×2, EXIT.
+const LOOP_WIDTHS: [f32; 6] = [52.0, 54.0, 46.0, 94.0, 46.0, 68.0];
+/// The length segment, which takes the strip's leftover width.
+const LOOP_LENGTH: usize = 3;
+
+/// What the deck's header reads, measured once per frame by `deck_panel`.
+struct DeckReadings {
+    has_track: bool,
+    is_master: bool,
+    playhead: usize,
+    total: usize,
+    sample_rate: u32,
+    /// Displayed tempo as a multiple of the track's own BPM.
+    tempo_rate: f64,
+}
+
+/// The deck's header: one well split by hairlines into artwork | title
+/// | A.CUE over Q | time | BPM | KEY | PITCH.
+fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
+    let ctx = ui.ctx().clone();
+    let (tray, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), DECK_HEADER_H),
+        egui::Sense::hover(),
+    );
+    theme::paint_well(ui.painter(), tray, theme::RADIUS_CONTROL);
+
+    let fixed = HEADER_ART_W
+        + HEADER_TOGGLES_W
+        + HEADER_TIME_W
+        + HEADER_BPM_W
+        + HEADER_KEY_W
+        + HEADER_PITCH_W;
+    let mut x = tray.left();
+    let mut cell = |w: f32| {
+        let rect =
+            egui::Rect::from_min_size(egui::pos2(x, tray.top()), egui::vec2(w, tray.height()));
+        x += w;
+        rect
+    };
+    let art = cell(HEADER_ART_W);
+    let title = cell((tray.width() - fixed).max(0.0));
+    let toggles = cell(HEADER_TOGGLES_W);
+    let time = cell(HEADER_TIME_W);
+    let bpm = cell(HEADER_BPM_W);
+    let key = cell(HEADER_KEY_W);
+    let pitch = cell(HEADER_PITCH_W);
+    for c in [title, toggles, time, bpm, key, pitch] {
+        ui.painter().vline(
+            c.left() + 0.5,
+            c.y_range(),
+            egui::Stroke::new(1.0, theme::QUIET_HAIRLINE),
+        );
+    }
+
+    // Artwork, or the note glyph.
+    let r_art = theme::RADIUS_CONTROL;
+    match &deck_ui.artwork {
+        Some(tex) => {
+            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+            ui.painter().add(
+                egui::epaint::RectShape::filled(
+                    art,
+                    egui::CornerRadius {
+                        nw: r_art,
+                        sw: r_art,
+                        ne: 0,
+                        se: 0,
+                    },
+                    egui::Color32::WHITE,
+                )
+                .with_texture(tex.id(), uv),
+            );
+        }
+        None => {
+            ui.painter().text(
+                art.center(),
+                egui::Align2::CENTER_CENTER,
+                "♪",
+                egui::FontId::proportional(HEADER_ART_GLYPH),
+                theme::TEXT_DISABLED,
+            );
+        }
+    }
+
+    // The title, centred in the tray.
+    let inner = egui::Rect::from_min_max(
+        egui::pos2(title.left() + HEADER_TITLE_PAD_L, title.top()),
+        egui::pos2(title.right() - HEADER_TITLE_PAD_R, title.bottom()),
+    );
+    let mut text = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    text.set_clip_rect(inner.intersect(ui.clip_rect()));
+    if r.has_track {
+        let title_h = theme::TRACK_TITLE
+            .galley(&ctx, "Ag", theme::TEXT_STRONG)
+            .size()
+            .y;
+        text.add_space(((DECK_HEADER_H - title_h) / 2.0).max(0.0));
+        text.add(
+            egui::Label::new(
+                theme::TRACK_TITLE
+                    .rich(&deck_ui.title)
+                    .color(theme::TEXT_STRONG),
+            )
+            .truncate(),
+        );
+    } else {
+        let body_h = theme::BODY_TEXT
+            .galley(&ctx, "Ag", theme::TEXT_MUTED)
+            .size()
+            .y;
+        text.add_space((DECK_HEADER_H - body_h) / 2.0);
+        text.label(
+            theme::BODY_TEXT
+                .rich("No track loaded")
+                .color(theme::TEXT_MUTED),
+        );
+    }
+
+    // A.CUE over Q.
+    let mut latches = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(toggles)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    latches.spacing_mut().item_spacing.y = 0.0;
+    latches.add_enabled_ui(r.has_track, |ui| {
+        key::text_toggle(ui, &mut deck_ui.auto_cue, "A.CUE", HEADER_TOGGLES_W).on_hover_text(
+            "Auto cue: on load, set the cue to the first detected beat and park the deck there",
+        );
+        key::text_toggle(ui, &mut deck_ui.quantize, "Q", HEADER_TOGGLES_W)
+            .on_hover_text("Quantize hot cues and loops to the beat grid");
+    });
+
+    // Time: clicking it switches elapsed and remaining.
+    let time_resp = ui
+        .interact(time, ui.id().with("deck-time"), egui::Sense::click())
+        .on_hover_text(if deck_ui.show_remaining {
+            "Show elapsed time"
+        } else {
+            "Show remaining time"
+        });
+    if time_resp.clicked() {
+        deck_ui.show_remaining = !deck_ui.show_remaining;
+    }
+    let (caption, value) = if deck_ui.show_remaining {
+        (
+            "REMAINING",
+            format!(
+                "−{}",
+                format_time(r.total.saturating_sub(r.playhead), r.sample_rate)
+            ),
+        )
+    } else {
+        ("ELAPSED", format_time(r.playhead, r.sample_rate))
+    };
+    let caption_color = if time_resp.hovered() {
+        theme::TEXT
+    } else {
+        theme::TEXT_MUTED
+    };
+    let painter = ui.painter();
+    header_reading(
+        painter,
+        time,
+        HEADER_CELL_PAD,
+        (caption, caption_color),
+        (&value, theme::QUIET_NUMERALS, theme::TEXT_STRONG),
+    );
+
+    // BPM: amber while this deck is the tempo master.
+    let bpm_text = if deck_ui.bpm > 0.0 && r.has_track {
+        format!("{:.1}", deck_ui.bpm * r.tempo_rate)
+    } else {
+        "—".to_string()
+    };
+    let bpm_color = if r.is_master {
+        ACCENT
+    } else {
+        theme::TEXT_STRONG
+    };
+    header_reading(
+        painter,
+        bpm,
+        HEADER_CELL_PAD,
+        ("BPM", theme::TEXT_MUTED),
+        (&bpm_text, theme::QUIET_NUMERALS, bpm_color),
+    );
+
+    let key_text = match (&deck_ui.key, r.has_track) {
+        (Some(k), true) => k.as_str(),
+        _ => "—",
+    };
+    header_reading(
+        painter,
+        key,
+        HEADER_KEY_PAD,
+        ("KEY", theme::TEXT_MUTED),
+        (key_text, theme::NUMERALS_MD, theme::MUSICAL_KEY),
+    );
+
+    let pitch_text = format!("{:+.1}%", deck_ui.pitch_percent).replace('-', "−");
+    header_reading(
+        painter,
+        pitch,
+        HEADER_CELL_PAD,
+        ("PITCH", theme::TEXT_MUTED),
+        (&pitch_text, theme::NUMERALS_MD, theme::TEXT),
+    );
+}
+
+/// One header reading in `cell`: its caption over its value, both at the
+/// left, `pad` in from it.
+fn header_reading(
+    painter: &egui::Painter,
+    cell: egui::Rect,
+    pad: f32,
+    (caption, caption_color): (&str, egui::Color32),
+    (value, style, color): (&str, theme::TypeStyle, egui::Color32),
+) {
+    let x = cell.left() + pad;
+    let caption_y = cell.top() + HEADER_CAPTION_TOP + HEADER_CAPTION_H / 2.0;
+    let value_y = cell.top() + HEADER_CAPTION_TOP + HEADER_CAPTION_H + HEADER_VALUE_H / 2.0;
+    theme::paint_text(
+        painter,
+        egui::pos2(x, caption_y),
+        egui::Align2::LEFT_CENTER,
+        caption,
+        theme::QUIET_CAPTION,
+        caption_color,
+    );
+    theme::paint_text(
+        painter,
+        egui::pos2(x, value_y),
+        egui::Align2::LEFT_CENTER,
+        value,
+        style,
+        color,
+    );
+}
+
+/// A [`WAVE_STACK_GAP`] across the waveform stack, blank on the
+/// waveform's ground.
+fn wave_stack_gap(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), WAVE_STACK_GAP),
+        egui::Sense::hover(),
+    );
+    ui.painter().rect_filled(rect, 0.0, theme::WAVE_GROUND);
+}
+
+/// The zoom row under the zoomed waveform: the BAR counter at the left,
+/// "− 4 BARS +" in quiet muted captions at the right, each sign a click
+/// target.
+fn zoom_row(ui: &mut egui::Ui, deck_ui: &mut DeckUi, idx: usize, display_pos: f64) {
+    let (row, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), ZOOM_ROW_H),
+        egui::Sense::hover(),
+    );
+    let row = row.with_min_y(row.top() + ZOOM_ROW_TOP);
+
+    let mut counter = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(row.with_min_x(row.left() + ZOOM_COUNTER_PAD))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    counter.spacing_mut().item_spacing.x = theme::SPACE_8;
+    paint_beat_counter(
+        &mut counter,
+        &deck_ui.marks,
+        display_pos,
+        theme::QUIET_CAPTION,
+        false,
+    );
+    if deck_ui.marks.low_confidence() {
+        ui.interact(
+            counter.min_rect(),
+            egui::Id::new(("deck-counter", idx)),
+            egui::Sense::hover(),
+        )
+        .on_hover_text("Beat grid: low confidence");
+    }
+
+    let label = deck_ui.zoom.label(deck_ui.marks.is_usable());
+    let label_w = theme::QUIET_CAPTION.width(ui.ctx(), &label);
+    let span = |right: f32, w: f32| {
+        egui::Rect::from_min_max(
+            egui::pos2(right - w, row.top()),
+            egui::pos2(right, row.bottom()),
+        )
+    };
+    let plus = span(row.right(), ZOOM_KEY_W);
+    let text = span(plus.left(), label_w);
+    let minus = span(text.left(), ZOOM_KEY_W);
+    theme::paint_text(
+        ui.painter(),
+        text.center(),
+        egui::Align2::CENTER_CENTER,
+        &label,
+        theme::QUIET_CAPTION,
+        theme::TEXT_MUTED,
+    );
+    for (rect, sign, hint, zoom_in) in [
+        (minus, "−", "Zoom out", false),
+        (plus, "+", "Zoom in", true),
+    ] {
+        let resp = ui
+            .interact(
+                rect,
+                egui::Id::new(("deck-zoom", idx, zoom_in)),
+                egui::Sense::click(),
+            )
+            .on_hover_text(hint);
+        let color = if resp.hovered() {
+            theme::TEXT
+        } else {
+            theme::TEXT_MUTED
+        };
+        theme::paint_text(
+            ui.painter(),
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            sign,
+            theme::QUIET_CAPTION,
+            color,
+        );
+        if resp.clicked() {
+            if zoom_in {
+                deck_ui.zoom.zoom_in();
+            } else {
+                deck_ui.zoom.zoom_out();
+            }
+        }
+    }
+}
+
+/// The tempo rail beside the waveform well: SYNC, the tempo fader with the
+/// keylock radio level with its middle, and the RANGE selector, spanning
+/// the well's height.
+fn deck_tempo_rail(
     ui: &mut egui::Ui,
     deck_ui: &mut DeckUi,
     deck_idx: usize,
     is_master: bool,
     has_track: bool,
-    height: f32,
-    response: &mut DeckPanelResponse,
 ) {
-    // Faint divider between the waveform stack and the sidebar.
-    let left_x = ui.max_rect().left() - 4.0;
-    let top_y = ui.cursor().top();
-    ui.painter().line_segment(
-        [
-            egui::pos2(left_x, top_y),
-            egui::pos2(left_x, top_y + height),
-        ],
-        ui.visuals().widgets.noninteractive.bg_stroke,
-    );
-
-    let full = ui.available_width();
-
     ui.add_enabled_ui(has_track, |ui| {
-        ui.spacing_mut().item_spacing.y = theme::SPACE_8;
-        // The toggle's label names the setting; its LED is the state.
-        if outlined_toggle(ui, deck_ui.keylock, "KEYLOCK", Some(full))
-            .on_hover_text("Keylock: keep pitch constant while tempo changes")
-            .clicked()
-        {
-            deck_ui.keylock = !deck_ui.keylock;
-        }
+        ui.spacing_mut().item_spacing.y = DECK_GAP;
         // A master leads rather than follows. Retain its stored Sync intent
         // for a later handoff, but show only the currently active role.
-        if outlined_toggle(ui, is_master, "MASTER", Some(full))
-            .on_hover_text("Make this deck the tempo reference")
-            .clicked()
-            && !is_master
-        {
-            response.master_clicked = true;
-        }
         let following = deck_ui.synced && !is_master;
-        let sync = ui.add_enabled_ui(!is_master, |ui| {
-            outlined_toggle(ui, following, "SYNC", Some(full))
-                .on_hover_text("Match the master BPM; Play keeps the parked position and waits for the next matching beat phase")
-        }).inner;
+        let sync = ui
+            .add(
+                outlined_key(following, "SYNC")
+                    .size([TEMPO_RAIL_W, theme::SIZE_KEY])
+                    .enabled(!is_master)
+                    .quiet(),
+            )
+            .on_hover_text(
+                "Match the master BPM; Play keeps the parked position and waits for the next \
+                 matching beat phase",
+            );
         if sync.clicked() {
             deck_ui.synced = !deck_ui.synced;
-            deck_ui.deck.shared.sync_enabled.store(deck_ui.synced, Ordering::Release);
+            deck_ui
+                .deck
+                .shared
+                .sync_enabled
+                .store(deck_ui.synced, Ordering::Release);
         }
 
-        ui.add_space(6.0);
-        ui.vertical_centered(|ui| {
-            section_caption(ui, "PITCH");
-            let pitch = format!("{:+.1}%", deck_ui.pitch_percent).replace('-', "−");
-            ui.label(theme::NUMERALS_SM.rich(pitch).color(theme::TEXT_STRONG));
-        });
-        // Size the fader so the sidebar spans the waveform stack: subtract
-        // what the column has consumed so far (measured from its absolute
-        // top) and the RANGE caption + combo below.
-        let used = ui.cursor().top() - top_y;
-        let fader_h = (height - used - 56.0).max(80.0);
+        let fader_h = WAVE_STACK_H - 2.0 * (theme::SIZE_KEY + DECK_GAP);
+        let (area, _) =
+            ui.allocate_exact_size(egui::vec2(TEMPO_RAIL_W, fader_h), egui::Sense::hover());
+
+        // Keylock: a radio left of the fader, level with its middle.
+        let radio = egui::Rect::from_min_size(
+            egui::pos2(area.left(), area.center().y - KEYLOCK_HIT.y / 2.0),
+            KEYLOCK_HIT,
+        );
+        let keylock = ui
+            .interact(radio, ui.id().with("keylock"), egui::Sense::click())
+            .on_hover_text("Keylock: keep pitch constant while tempo changes");
+        if keylock.clicked() {
+            deck_ui.keylock = !deck_ui.keylock;
+        }
+        paint_radio(
+            ui.painter(),
+            radio.center(),
+            deck_ui.keylock,
+            keylock.enabled(),
+        );
+
+        // Absolute-position fader: `.changed()` only fires on a real
+        // grab, so touching it hands control back and drops sync
+        // (matching the old slider). While synced, update_tempo keeps
+        // writing pitch_percent and the fader just displays it.
         let range = deck_ui.pitch_range;
         let mut pct = deck_ui.pitch_percent;
-        ui.vertical_centered(|ui| {
-            // Absolute-position fader: `.changed()` only fires on a real
-            // grab, so touching it hands control back and drops sync
-            // (matching the old slider). While synced, update_tempo keeps
-            // writing pitch_percent and the fader just displays it.
-            // Pitch-strip look: dark slot, chunky cap, dense tick ladder.
-            let fader = ui.add(
+        let fader_rect =
+            egui::Rect::from_center_size(area.center(), egui::vec2(TEMPO_FADER_W, fader_h));
+        let fader = ui
+            .new_child(egui::UiBuilder::new().max_rect(fader_rect))
+            .add(
                 Fader::new(&mut pct, -range.min(100.0)..=range, ACCENT)
                     .vertical(true)
-                    .size([32.0, fader_h])
-                    .groove_width(8.0)
-                    .cap_size(30.0, 12.0)
-                    .notches(Notches::Even(16))
+                    .size([TEMPO_FADER_W, fader_h])
+                    .groove_width(TEMPO_FADER_SLOT)
+                    .cap_size(TEMPO_FADER_CAP.x, TEMPO_FADER_CAP.y)
+                    .notches(Notches::Even(TEMPO_FADER_NOTCH_GAPS))
                     .default_value(0.0),
             );
-            if fader.changed() {
-                deck_ui.pitch_percent = ((legal_tempo(1.0 + pct as f64 / 100.0, deck_ui.keylock) - 1.0) * 100.0) as f32;
-                deck_ui.synced = false;
-                deck_ui.deck.shared.sync_enabled.store(false, Ordering::Release);
-            }
-        });
-        ui.vertical_centered(|ui| {
-            ui.add_space(6.0);
-            section_caption(ui, "RANGE");
-            let prev_range = deck_ui.pitch_range;
-            let prev_wide = deck_ui.wide;
-            let selected = if deck_ui.wide {
-                "WIDE".to_string()
-            } else {
-                format!("±{prev_range:.0}%")
-            };
-            egui::ComboBox::from_id_salt(("pitch-range", deck_idx))
-                .selected_text(selected)
-                .width(full)
-                .show_ui(ui, |ui| {
-                    for r in [8.0_f32, 16.0, 50.0] {
-                        if ui
-                            .selectable_label(
-                                !deck_ui.wide && deck_ui.pitch_range == r,
-                                format!("±{r:.0}%"),
-                            )
-                            .clicked()
-                        {
-                            deck_ui.wide = false;
-                            deck_ui.pitch_range = r;
-                        }
-                    }
+        if fader.changed() {
+            deck_ui.pitch_percent =
+                ((legal_tempo(1.0 + pct as f64 / 100.0, deck_ui.keylock) - 1.0) * 100.0) as f32;
+            deck_ui.synced = false;
+            deck_ui
+                .deck
+                .shared
+                .sync_enabled
+                .store(false, Ordering::Release);
+        }
+
+        // RANGE: a key opening the range menu.
+        let prev_range = deck_ui.pitch_range;
+        let prev_wide = deck_ui.wide;
+        let selected = if deck_ui.wide {
+            "WIDE".to_string()
+        } else {
+            format!("±{prev_range:.0}%")
+        };
+        let range_key = ui
+            .add(
+                Key::new(format!("{selected} ▼"))
+                    .size([TEMPO_RAIL_W, theme::SIZE_KEY])
+                    .quiet(),
+            )
+            .on_hover_text("Pitch range");
+        let popup = ui.make_persistent_id(("pitch-range", deck_idx));
+        if range_key.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup));
+        }
+        egui::popup::popup_below_widget(
+            ui,
+            popup,
+            &range_key,
+            egui::PopupCloseBehavior::CloseOnClick,
+            |ui| {
+                ui.set_min_width(TEMPO_RAIL_W);
+                for r in [8.0_f32, 16.0, 50.0] {
                     if ui
-                        .selectable_label(deck_ui.wide, "WIDE")
-                        .on_hover_text(
-                            "Full tempo range: down to 1/32 speed with keylock, \
-                             1/4 with linked pitch, up to 4x. Bottom detent stops \
-                             playback; raise the fader to resume.",
+                        .selectable_label(
+                            !deck_ui.wide && deck_ui.pitch_range == r,
+                            format!("±{r:.0}%"),
                         )
                         .clicked()
                     {
-                        deck_ui.wide = true;
-                        deck_ui.pitch_range = 300.0;
+                        deck_ui.wide = false;
+                        deck_ui.pitch_range = r;
                     }
-                });
-            if deck_ui.pitch_range != prev_range || deck_ui.wide != prev_wide {
-                deck_ui.pitch_percent = deck_ui
-                    .pitch_percent
-                    .clamp(-deck_ui.pitch_range.min(100.0), deck_ui.pitch_range);
-            }
-        });
+                }
+                if ui
+                    .selectable_label(deck_ui.wide, "WIDE")
+                    .on_hover_text(
+                        "Full tempo range: down to 1/32 speed with keylock, \
+                         1/4 with linked pitch, up to 4x. Bottom detent stops \
+                         playback; raise the fader to resume.",
+                    )
+                    .clicked()
+                {
+                    deck_ui.wide = true;
+                    deck_ui.pitch_range = 300.0;
+                }
+            },
+        );
+        if deck_ui.pitch_range != prev_range || deck_ui.wide != prev_wide {
+            deck_ui.pitch_percent = deck_ui
+                .pitch_percent
+                .clamp(-deck_ui.pitch_range.min(100.0), deck_ui.pitch_range);
+        }
     });
+}
+
+/// A radio: an 18px round well (edge ring, a lip of sheen under it) holding
+/// an 8px amber dot with a glow when `on`.
+fn paint_radio(painter: &egui::Painter, center: egui::Pos2, on: bool, enabled: bool) {
+    let r = KEYLOCK_RADIO / 2.0;
+    painter.circle_filled(center + egui::vec2(0.0, 1.0), r + 1.0, theme::SHEEN);
+    painter.circle_filled(center, r + 1.0, theme::EDGE);
+    painter.circle_filled(center, r, theme::WELL);
+    // The well's inner shade along its top.
+    painter.circle_stroke(
+        center + egui::vec2(0.0, 0.5),
+        r - 0.5,
+        egui::Stroke::new(1.0, theme::SHADE),
+    );
+    painter.circle_filled(center, r - 1.0, theme::WELL);
+    if on {
+        let dot = egui::Rect::from_center_size(center, egui::Vec2::splat(KEYLOCK_DOT));
+        let fade = if enabled { 1.0 } else { 0.4 };
+        theme::paint_glow(
+            painter,
+            dot,
+            KEYLOCK_DOT / 2.0,
+            KEYLOCK_DOT,
+            theme::ACCENT_GLOW.gamma_multiply(fade),
+        );
+        painter.circle_filled(center, KEYLOCK_DOT / 2.0, ACCENT.gamma_multiply(fade));
+    }
 }
 
 /// One deck's knob strip (Trim/Hi/Mid/Low/Filter) with the volume fader
 /// centered beneath it, in a fixed-width column so the knobs land directly
 /// over the fader. Returns the column rect (used to size the level meter).
 fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> egui::Rect {
-    // Each knob sits `space-6` under its caption, `space-8` from the next.
+    // Each knob sits `space-2` under its caption, `space-8` from the next.
     let caption = |ui: &mut egui::Ui, text: &str| {
         ui.label(theme::CAPTION.rich(text).color(theme::TEXT_MUTED));
-        ui.add_space(theme::SPACE_6);
+        ui.add_space(theme::SPACE_2);
     };
     ui.scope(|ui| {
         ui.set_width(MIXER_STRIP_W);
@@ -4223,7 +4595,8 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
                     .add(
                         Knob::new(&mut v, 0.0..=2.0, ACCENT)
                             .arc(KnobArc::Bipolar { center: 1.0 })
-                            .default_value(1.0),
+                            .default_value(1.0)
+                            .diameter(MIXER_KNOB),
                     )
                     .on_hover_text(format!("{label}: {:+.1} dB", 20.0 * v.max(1e-4).log10()))
                     .changed()
@@ -4242,7 +4615,8 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
                 .add(
                     Knob::new(&mut t, -1.0..=1.0, ACCENT)
                         .arc(KnobArc::Bipolar { center: 0.0 })
-                        .default_value(0.0),
+                        .default_value(0.0)
+                        .diameter(MIXER_KNOB),
                 )
                 .on_hover_text(filter_hint(t))
                 .changed()
@@ -4260,7 +4634,8 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
                 .add(
                     Fader::new(&mut fader, 0.0..=1.0, ACCENT)
                         .vertical(true)
-                        .size([24.0, 120.0])
+                        .size([CHANNEL_FADER_W, 120.0])
+                        .cap_size(CHANNEL_FADER_CAP.x, CHANNEL_FADER_CAP.y)
                         .notches(Notches::Even(10))
                         .default_value(1.0),
                 )
@@ -4274,17 +4649,25 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
     .rect
 }
 
+/// The mixer's channel knobs: well under the system's `size-knob`, so the
+/// mixer column stays nearer the decks' height.
+const MIXER_KNOB: f32 = 43.0;
 /// Width of one mixer channel strip: a knob across.
-const MIXER_STRIP_W: f32 = theme::SIZE_KNOB;
+const MIXER_STRIP_W: f32 = MIXER_KNOB;
+/// The channel volume faders, and their caps: span across the travel
+/// by thickness along it.
+const CHANNEL_FADER_W: f32 = 40.0;
+const CHANNEL_FADER_CAP: egui::Vec2 = egui::vec2(36.0, 12.0);
 /// Both strips with the LUFS ladders between them:
 /// strip + 8 + 12 + 3 + 12 + 8 + strip.
 const MIXER_W: f32 = MIXER_STRIP_W + 8.0 + 12.0 + 3.0 + 12.0 + 8.0 + MIXER_STRIP_W;
 
-fn mixer_panel(ui: &mut egui::Ui, mixer: &MixerShared, decks: &[DeckUi; 2]) {
+fn mixer_panel(ui: &mut egui::Ui, decks: &[DeckUi; 2]) {
     // Two channel strips packed toward the center, with the pair of level
     // meters between them (classic DJ-mixer layout). `vertical_centered` won't
     // center a multi-widget horizontal row (egui seeds it at full width), so
-    // pad-center it to the panel mid-line — the same axis the crossfader uses.
+    // pad-center it to the panel mid-line. No crossfader: the volume faders
+    // set each deck's level, and the crossfader stays centred.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(((ui.available_width() - MIXER_W) * 0.5).max(0.0));
@@ -4305,24 +4688,6 @@ fn mixer_panel(ui: &mut egui::Ui, mixer: &MixerShared, decks: &[DeckUi; 2]) {
             ui.add_space(gap);
         }
         deck_channel_strip(ui, &decks[1].deck.shared);
-    });
-
-    ui.add_space(theme::SPACE_16);
-    ui.vertical_centered(|ui| {
-        let mut xf = mixer.crossfader.load();
-        if ui
-            .add(
-                Fader::new(&mut xf, 0.0..=1.0, ACCENT)
-                    .vertical(false)
-                    .size([120.0, 24.0])
-                    .notches(Notches::Center)
-                    .center_fill(0.5)
-                    .default_value(0.5),
-            )
-            .changed()
-        {
-            mixer.crossfader.store(xf);
-        }
     });
 }
 
@@ -4456,8 +4821,8 @@ fn master_level_meter(ui: &mut egui::Ui, level: f32) {
 }
 
 /// The master tempo (MasterBpm): a 144×30 well, the tempo in `numerals-md`
-/// with a small BPM unit on its baseline, and A and B at either end, the
-/// source deck lit in `lane-lighting` (the rig follows the same deck).
+/// centred between A and B at either end, the source deck lit in
+/// `lane-lighting` (the rig follows the same deck).
 fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) {
     let ctx = ui.ctx();
     let painter = ui.painter();
@@ -4497,39 +4862,21 @@ fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) 
         painter.galley(rect.min, g, color);
     }
 
-    // The tempo and its unit, 4 apart on one baseline, centred between
-    // the letters.
+    // The tempo, centred between the letters.
     let text = if bpm > 0.0 {
         format!("{bpm:.1}")
     } else {
         "—".to_string()
     };
     let value = theme::NUMERALS_MD.galley(ctx, &text, theme::TEXT_STRONG);
-    let unit = theme::CAPTION.galley(ctx, "BPM", theme::TEXT_MUTED);
     let value_w = value.size().x - theme::NUMERALS_MD.spacing;
-    let unit_w = unit.size().x - theme::CAPTION.spacing;
-    let left = ((ends[0] + ends[1]) - (value_w + theme::SPACE_4 + unit_w)) / 2.0;
+    let left = ((ends[0] + ends[1]) - value_w) / 2.0;
     let value_top = well.center().y - value.size().y / 2.0;
-    let baseline = value_top + first_baseline(&value);
-    let unit_pos = egui::pos2(
-        left + value_w + theme::SPACE_4,
-        baseline - first_baseline(&unit),
-    );
     painter.galley(
         egui::pos2(left, value_top).round(),
         value,
         theme::TEXT_STRONG,
     );
-    painter.galley(unit_pos.round(), unit, theme::TEXT_MUTED);
-}
-
-/// The first row's baseline, down from the galley's top.
-fn first_baseline(galley: &egui::Galley) -> f32 {
-    galley
-        .rows
-        .first()
-        .and_then(|row| row.glyphs.first())
-        .map_or(galley.size().y, |glyph| glyph.pos.y)
 }
 
 /// Toolbar readout: DSP = audio-callback load (render time ÷ buffer time,
@@ -4630,40 +4977,29 @@ fn group_divider(ui: &mut egui::Ui, height: f32) {
     painter.vline(x + 1.0, rect.y_range(), egui::Stroke::new(1.0, theme::LIP));
 }
 
-/// ON/OFF toggle whose label is the state, with an LED before it. Sized to
-/// the wider "OFF" so flipping it never shifts the row.
-fn state_toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
-    let width = led_key_width(ui.ctx(), "OFF");
-    let resp = outlined_toggle(ui, *on, if *on { "ON" } else { "OFF" }, Some(width));
-    if resp.clicked() {
-        *on = !*on;
-    }
-    resp
-}
-
-/// Width of an LED key holding `label`: 12 | LED | 8 | label | 12.
-fn led_key_width(ctx: &egui::Context, label: &str) -> f32 {
-    theme::KEY_LABEL.width(ctx, label) + theme::SIZE_LED + theme::SPACE_8 + 2.0 * theme::SPACE_12
-}
-
 /// Latching key with an LED before its label that lights amber when active
-/// (KEYLOCK / MASTER / SYNC / the loop-length chip). Off, the LED is dark
-/// and the label `text-unlit`. `width: None` sizes it to the label.
+/// (SNAP, and the deck's SYNC and GATE). Off, the LED is dark and the
+/// label `text-unlit`. `width: None` sizes it to the label.
 fn outlined_toggle(
     ui: &mut egui::Ui,
     active: bool,
     label: &str,
     width: Option<f32>,
 ) -> egui::Response {
-    let mut key = Key::new(label).led(active, ACCENT).label_color(if active {
-        theme::TEXT_STRONG
-    } else {
-        theme::TEXT_UNLIT
-    });
+    let mut key = outlined_key(active, label);
     if let Some(width) = width {
         key = key.width(width);
     }
     ui.add(key)
+}
+
+/// The key [`outlined_toggle`] adds, for callers that size or skin it.
+fn outlined_key(active: bool, label: &str) -> Key {
+    Key::new(label).led(active, ACCENT).label_color(if active {
+        theme::TEXT_STRONG
+    } else {
+        theme::TEXT_UNLIT
+    })
 }
 
 /// Musical-key badge under the deck title: the raw tag string in

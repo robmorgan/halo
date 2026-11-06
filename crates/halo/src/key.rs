@@ -6,7 +6,9 @@
 //! a state colour (set hot cues, a held CUE, a playing PLAY) or carry an
 //! LED before its label (latched toggles).
 //!
-//! Keys can also be joined into one strip with [`segmented`].
+//! Keys can also be joined into one strip with [`segmented`], and drawn
+//! in the decks' quieter skin with [`Key::quiet`]. [`text_toggle`] is the
+//! faceless latch beside them.
 //!
 //! The widget only draws: it allocates a click-sensing rect and returns the
 //! plain `Response`, so callers keep their own press / release / right-click
@@ -17,7 +19,7 @@ use eframe::egui::{
     WidgetType,
 };
 
-use crate::theme::{self, Face, Top, TypeStyle};
+use crate::theme::{self, Face, Skin, Top, TypeStyle};
 
 /// A state colour a key's face lights in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,11 +53,17 @@ impl Lit {
 
 /// `brightness(0.92)` on a lit face that is held down.
 const LIT_HELD_TINT: Color32 = Color32::from_gray(235);
+/// A [`Key::strip`]: 2 high, 8 in from either side, 4 up from the bottom.
+const STRIP_H: f32 = 2.0;
+const STRIP_INSET: f32 = 8.0;
+const STRIP_BOTTOM: f32 = 4.0;
 
 #[must_use = "add it with `ui.add(...)`"]
 pub struct Key {
     label: String,
-    style: TypeStyle,
+    /// `None`: the skin's key label.
+    style: Option<TypeStyle>,
+    skin: Skin,
     size: Option<Vec2>,
     width: Option<f32>,
     small: bool,
@@ -63,6 +71,7 @@ pub struct Key {
     lit_when_held: Option<Lit>,
     color: Option<Color32>,
     led: Option<(bool, Color32)>,
+    strip: Option<Color32>,
     selected: bool,
     pressed: bool,
     enabled: bool,
@@ -81,7 +90,8 @@ impl Key {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
-            style: theme::KEY_LABEL,
+            style: None,
+            skin: theme::SKIN_SYSTEM,
             size: None,
             width: None,
             small: false,
@@ -89,6 +99,7 @@ impl Key {
             lit_when_held: None,
             color: None,
             led: None,
+            strip: None,
             selected: false,
             pressed: false,
             enabled: true,
@@ -138,6 +149,13 @@ impl Key {
         self
     }
 
+    /// A 2px colour strip along the bottom of the face (a hot cue pad's
+    /// slot colour, `segment-off` when empty).
+    pub fn strip(mut self, color: Color32) -> Self {
+        self.strip = Some(color);
+        self
+    }
+
     /// The current choice of a set (the view tab): a `selection` wash over
     /// the face under a `text-strong` label.
     pub fn selected(mut self, selected: bool) -> Self {
@@ -158,9 +176,16 @@ impl Key {
         self
     }
 
-    /// The label's type style (default `key-label`).
+    /// The label's type style (default: the skin's key label).
     pub fn text_style(mut self, style: TypeStyle) -> Self {
-        self.style = style;
+        self.style = Some(style);
+        self
+    }
+
+    /// Draw in the decks' quieter skin: flatter faces, fainter sheen and
+    /// lip, 600-weight labels and 5px LEDs.
+    pub fn quiet(mut self) -> Self {
+        self.skin = theme::SKIN_QUIET;
         self
     }
 }
@@ -182,13 +207,15 @@ impl Widget for Key {
             (theme::SIZE_KEY, theme::SPACE_12, theme::SPACE_8)
         };
         let ctx = ui.ctx().clone();
+        let skin = self.skin;
+        let style = self.style.unwrap_or(skin.key_label);
         let label_w = if self.label.is_empty() {
             0.0
         } else {
-            self.style.width(&ctx, &self.label)
+            style.width(&ctx, &self.label)
         };
         let led_w = if self.led.is_some() {
-            theme::SIZE_LED + if label_w > 0.0 { gap } else { 0.0 }
+            skin.led + if label_w > 0.0 { gap } else { 0.0 }
         } else {
             0.0
         };
@@ -237,7 +264,7 @@ impl Widget for Key {
         let face = |face, tint, top| theme::paint_key_face(painter, rect, corners, face, tint, top);
 
         let label_color = if !enabled {
-            painter.rect_filled(rect, corners, theme::KEY_LO);
+            painter.rect_filled(rect, corners, skin.key_disabled);
             theme::TEXT_DISABLED
         } else if let Some(lit) = lit {
             if held || self.pressed {
@@ -254,9 +281,9 @@ impl Widget for Key {
             if held || self.pressed {
                 face(Face::KeyDown, Color32::WHITE, Top::Shade);
             } else if hovered {
-                face(Face::KeyHover, Color32::WHITE, Top::Sheen);
+                face(skin.key_hover, Color32::WHITE, Top::Sheen(skin.sheen));
             } else {
-                face(Face::Key, Color32::WHITE, Top::Sheen);
+                face(skin.key, Color32::WHITE, Top::Sheen(skin.sheen));
             }
             if self.selected {
                 painter.rect_filled(rect, corners, theme::SELECTION);
@@ -274,17 +301,26 @@ impl Widget for Key {
         if let Some(Joint { first: false, .. }) = self.joint {
             let x = rect.left();
             painter.vline(x + 0.5, rect.y_range(), Stroke::new(1.0, theme::EDGE));
-            painter.vline(x + 1.5, rect.y_range(), Stroke::new(1.0, theme::LIP));
+            painter.vline(x + 1.5, rect.y_range(), Stroke::new(1.0, skin.lip));
+        }
+
+        if let Some(color) = self.strip.filter(|_| enabled) {
+            let bottom = rect.bottom() - STRIP_BOTTOM;
+            let strip = Rect::from_x_y_ranges(
+                rect.left() + STRIP_INSET..=rect.right() - STRIP_INSET,
+                bottom - STRIP_H..=bottom,
+            );
+            painter.rect_filled(strip, CornerRadius::same(1), color);
         }
 
         let mut x = rect.center().x - content_w / 2.0;
         if let Some((on, color)) = self.led {
-            let center = egui::pos2(x + theme::SIZE_LED / 2.0, rect.center().y);
-            theme::paint_led(painter, center, on && enabled, color);
+            let center = egui::pos2(x + skin.led / 2.0, rect.center().y);
+            theme::paint_led_sized(painter, center, on && enabled, color, skin.led);
             x += led_w;
         }
         if label_w > 0.0 {
-            let galley = self.style.galley(&ctx, &self.label, label_color);
+            let galley = style.galley(&ctx, &self.label, label_color);
             let pos = egui::pos2(x, rect.center().y - galley.size().y / 2.0);
             painter.galley(pos.round(), galley, label_color);
         }
@@ -297,20 +333,25 @@ impl Widget for Key {
 /// neighbours. Each key keeps its own states (rest, hover, held, lit,
 /// pressed, disabled) and its own `Response`, in order.
 pub fn segmented<const N: usize>(ui: &mut Ui, keys: [Key; N]) -> [Response; N] {
-    let responses = ui
-        .scope(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            let mut i = 0;
-            keys.map(|mut key| {
-                key.joint = Some(Joint {
-                    first: i == 0,
-                    last: i + 1 == N,
-                });
-                i += 1;
-                ui.add(key)
-            })
+    let strip = |ui: &mut Ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let mut i = 0;
+        keys.map(|mut key| {
+            key.joint = Some(Joint {
+                first: i == 0,
+                last: i + 1 == N,
+            });
+            i += 1;
+            ui.add(key)
         })
-        .inner;
+    };
+    // Always a row: in a row already, keep its alignment; otherwise
+    // start one.
+    let responses = if ui.layout().is_horizontal() {
+        ui.scope(strip).inner
+    } else {
+        ui.horizontal(strip).inner
+    };
     let strip = responses
         .iter()
         .fold(Rect::NOTHING, |strip, r| strip.union(r.rect));
@@ -318,4 +359,40 @@ pub fn segmented<const N: usize>(ui: &mut Ui, keys: [Key; N]) -> [Response; N] {
         theme::paint_edge(ui.painter(), strip, theme::RADIUS_CONTROL, theme::EDGE);
     }
     responses
+}
+
+/// Height of a [`text_toggle`].
+pub const TEXT_TOGGLE_H: f32 = 22.0;
+/// Space before a text toggle's label.
+const TEXT_TOGGLE_PAD: f32 = 10.0;
+
+/// A latch drawn as its label alone (A.CUE, Q): no face, gradient or edge.
+/// On it reads `meter-red`, off `text-muted`; the whole `width` × 22 row
+/// takes the click, which flips `on`.
+pub fn text_toggle(ui: &mut Ui, on: &mut bool, label: &str, width: f32) -> Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, TEXT_TOGGLE_H), Sense::click());
+    let enabled = response.enabled();
+    response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, *on, label));
+    if response.clicked() {
+        *on = !*on;
+    }
+    if ui.is_rect_visible(rect) {
+        let hovered = enabled && response.hovered();
+        let color = match (enabled, *on, hovered) {
+            (false, _, _) => theme::TEXT_DISABLED,
+            (true, true, false) => theme::METER_RED,
+            (true, true, true) => theme::WARN,
+            (true, false, false) => theme::TEXT_MUTED,
+            (true, false, true) => theme::TEXT,
+        };
+        theme::paint_text(
+            ui.painter(),
+            egui::pos2(rect.left() + TEXT_TOGGLE_PAD, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            theme::TEXT_TOGGLE,
+            color,
+        );
+    }
+    response
 }

@@ -6,10 +6,12 @@
 use eframe::egui;
 use timestretch::{BandPeaks, PeakLevel};
 
-use super::{GridMarks, paint_placeholder, palette};
+use super::{GridMarks, WaveStyle, paint_placeholder, palette};
 
 /// Strip height in points.
 const STRIP_HEIGHT: f32 = 56.0;
+/// Stacked strip height (the deck's waveform well).
+pub const STACKED_OVERVIEW_H: f32 = 38.0;
 /// Texture height in pixels (2x the strip for retina crispness).
 const TEX_HEIGHT: usize = 112;
 /// Texture columns per coarsest-level bucket, so the interpolated
@@ -91,16 +93,28 @@ pub struct OverviewParams<'a> {
     pub hot_cues: &'a [Option<usize>],
     /// Beat grid, for the bar numbers along the top edge.
     pub marks: &'a GridMarks,
+    pub style: WaveStyle,
 }
 
 /// Paint the overview strip. Returns the click-to-seek target as a track
 /// fraction, if clicked.
 pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f32> {
-    let desired_size = egui::vec2(ui.available_width(), STRIP_HEIGHT);
-    let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::click());
+    let stacked = params.style == WaveStyle::Stacked;
+    let height = if stacked {
+        STACKED_OVERVIEW_H
+    } else {
+        STRIP_HEIGHT
+    };
+    let desired_size = egui::vec2(ui.available_width(), height);
+    let (response, mut painter) = ui.allocate_painter(desired_size, egui::Sense::click());
     let rect = response.rect;
 
-    crate::theme::paint_content_well(&painter, rect, palette::BACKGROUND);
+    if stacked {
+        // Flush in the shared well: keep cue numbers off the lane above.
+        painter.set_clip_rect(rect.intersect(painter.clip_rect()));
+    } else {
+        crate::theme::paint_content_well(&painter, rect, palette::BACKGROUND);
+    }
 
     let Some(texture) = params.texture else {
         paint_placeholder(&painter, rect);

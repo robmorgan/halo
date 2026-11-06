@@ -9,10 +9,19 @@
 use eframe::egui;
 use timestretch::{BandPeaks, PeakLevel};
 
-use super::{FrameMap, GridMarks, overlay_plan, paint_placeholder, palette};
+use super::{FrameMap, GridMarks, WaveStyle, overlay_plan, paint_placeholder, palette};
 
 /// View height in points.
 const VIEW_HEIGHT: f32 = 160.0;
+/// Stacked: the band along the top the bar numbers sit in, so nothing
+/// but the playhead and cue flags is drawn over the waveform itself.
+const STACKED_RULER_H: f32 = 12.0;
+/// Stacked: the waveform under the ruler, with room above and below it
+/// for the edge ticks.
+const STACKED_WAVE_H: f32 = 124.0;
+const STACKED_TICK_ROOM: f32 = 8.0;
+/// Stacked view height: ruler, tick room and waveform.
+pub const STACKED_ZOOMED_H: f32 = STACKED_RULER_H + STACKED_WAVE_H + 2.0 * STACKED_TICK_ROOM;
 /// Edge tick heights in points.
 const TICK_BEAT_PX: f32 = 8.0;
 const TICK_DOWNBEAT_PX: f32 = 14.0;
@@ -127,6 +136,7 @@ pub struct ZoomedParams<'a> {
     pub cue_point: Option<usize>,
     /// Sync-align slide-in animation, if one is running.
     pub ghost: Option<GhostPlayhead>,
+    pub style: WaveStyle,
 }
 
 /// Paint the zoomed view. Reports the drag lifecycle while the user
@@ -137,11 +147,28 @@ pub fn paint_zoomed(
     params: ZoomedParams<'_>,
     span: &mut ZoomSpan,
 ) -> Option<ScrubGesture> {
-    let desired_size = egui::vec2(ui.available_width(), VIEW_HEIGHT);
+    let stacked = params.style == WaveStyle::Stacked;
+    let height = if stacked {
+        STACKED_ZOOMED_H
+    } else {
+        VIEW_HEIGHT
+    };
+    let desired_size = egui::vec2(ui.available_width(), height);
     let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::drag());
     let rect = response.rect;
+    // Where the envelope draws: under the ruler when stacked.
+    let wave = if stacked {
+        egui::Rect::from_min_max(
+            egui::pos2(rect.left(), rect.top() + STACKED_RULER_H),
+            rect.max,
+        )
+    } else {
+        rect
+    };
 
-    crate::theme::paint_content_well(&painter, rect, palette::BACKGROUND);
+    if !stacked {
+        crate::theme::paint_content_well(&painter, rect, palette::BACKGROUND);
+    }
 
     let (Some(peaks), true) = (params.peaks, params.total_frames > 0) else {
         paint_placeholder(&painter, rect);
@@ -154,6 +181,11 @@ pub fn paint_zoomed(
 
     let span_frames = span.span_frames(params.marks, params.sample_rate);
     let map = FrameMap::new(rect, params.position_frames, span_frames);
+
+    // Stacked, the grid runs full height under the waveform.
+    if stacked {
+        paint_grid(&painter, rect, params.marks, &map, GridPass::Lines);
+    }
 
     // 3-band envelopes from the pyramid level nearest one bucket per pixel.
     let px_per_sec = (map.px_per_frame() * params.sample_rate as f64) as f32;
@@ -169,7 +201,10 @@ pub fn paint_zoomed(
             first_bucket..last_bucket,
             frames_per_bucket,
             &map,
-            rect,
+            wave.shrink2(egui::vec2(
+                0.0,
+                if stacked { STACKED_TICK_ROOM } else { 0.0 },
+            )),
             params.total_frames,
         );
     }
@@ -206,76 +241,12 @@ pub fn paint_zoomed(
         }
     }
 
-    // Beat/downbeat edge ticks (top and bottom), density-adaptive.
-    if params.marks.is_usable() {
-        let visible = params
-            .marks
-            .visible_range(map.start_frame(), map.end_frame());
-        let downbeats = visible
-            .clone()
-            .filter(|&i| params.marks.is_downbeat(i))
-            .count();
-        let plan = overlay_plan(rect.width(), visible.len(), downbeats);
-        let stride = plan.downbeat_stride as u32;
-        // Honest display: a low-confidence grid draws dimmed, and the
-        // counter row says why.
-        let (beat_color, downbeat_color) = if params.marks.low_confidence() {
-            (
-                palette::TICK_BEAT.gamma_multiply(super::LOW_CONFIDENCE_TICK_DIM),
-                palette::TICK_DOWNBEAT.gamma_multiply(super::LOW_CONFIDENCE_TICK_DIM),
-            )
-        } else {
-            (palette::TICK_BEAT, palette::TICK_DOWNBEAT)
-        };
-        // Bar-number labels need more room than ticks (~34 px vs 6), so they
-        // thin on their own power-of-two stride on top of the tick stride.
-        let bar_px = (params.marks.median_beat_frames() * 4.0 * map.px_per_frame()) as f32;
-        let mut label_stride = stride;
-        if bar_px > 0.0 {
-            while bar_px * (label_stride as f32) < 34.0 && label_stride < (1 << 16) {
-                label_stride *= 2;
-            }
-        }
-        for i in visible {
-            let is_downbeat = params.marks.is_downbeat(i);
-            let (height, stroke) = if is_downbeat {
-                let bar = params.marks.bar_number(i);
-                if bar == 0 || !(bar - 1).is_multiple_of(stride) {
-                    continue;
-                }
-                if (bar - 1).is_multiple_of(label_stride) {
-                    crate::theme::paint_text(
-                        &painter,
-                        egui::pos2(map.x(params.marks.frame(i)) + 3.0, rect.top() + 1.0),
-                        egui::Align2::LEFT_TOP,
-                        bar,
-                        crate::theme::WAVE_NUMBER,
-                        palette::TEXT_DIM,
-                    );
-                }
-                (TICK_DOWNBEAT_PX, egui::Stroke::new(2.0_f32, downbeat_color))
-            } else {
-                if !plan.draw_beats {
-                    continue;
-                }
-                (TICK_BEAT_PX, egui::Stroke::new(1.0_f32, beat_color))
-            };
-            let x = map.x(params.marks.frame(i));
-            painter.line_segment(
-                [
-                    egui::pos2(x, rect.top()),
-                    egui::pos2(x, rect.top() + height),
-                ],
-                stroke,
-            );
-            painter.line_segment(
-                [
-                    egui::pos2(x, rect.bottom() - height),
-                    egui::pos2(x, rect.bottom()),
-                ],
-                stroke,
-            );
-        }
+    // Beat/downbeat edge ticks over the waveform: stacked, along the
+    // edges of the waveform under the ruler.
+    if stacked {
+        paint_grid(&painter, wave, params.marks, &map, GridPass::Ticks);
+    } else {
+        paint_grid(&painter, rect, params.marks, &map, GridPass::LabelledTicks);
     }
 
     // Elastic lead-in: mark where the track actually starts. Gated on a
@@ -321,14 +292,17 @@ pub fn paint_zoomed(
     }
 
     // Fixed centered playhead — the one full-height line in this view.
-    let center_x = rect.center().x;
-    painter.line_segment(
-        [
-            egui::pos2(center_x, rect.top()),
-            egui::pos2(center_x, rect.bottom()),
-        ],
-        egui::Stroke::new(2.0_f32, palette::PLAYHEAD),
-    );
+    // Stacked, the deck draws it through the whole stack instead.
+    if !stacked {
+        let center_x = rect.center().x;
+        painter.line_segment(
+            [
+                egui::pos2(center_x, rect.top()),
+                egui::pos2(center_x, rect.bottom()),
+            ],
+            egui::Stroke::new(2.0_f32, palette::PLAYHEAD),
+        );
+    }
 
     // Drag-to-scrub: content follows the pointer. `drag_started` must be
     // checked before `dragged` (both are true on the first frame; the
@@ -344,6 +318,114 @@ pub fn paint_zoomed(
         return Some(ScrubGesture::Drag(-(dx as f64) / map.px_per_frame()));
     }
     None
+}
+
+/// What one [`paint_grid`] pass draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GridPass {
+    /// Welled: edge ticks, bar numbers beside the downbeats.
+    LabelledTicks,
+    /// Stacked, under the waveform: faint 1px lines the full height,
+    /// bar numbers in the ruler along the top.
+    Lines,
+    /// Stacked, over the waveform: the edge ticks alone.
+    Ticks,
+}
+
+/// The beat grid, density-adaptive: short beat/downbeat ticks on the
+/// top and bottom edges of `rect`, or faint lines its full height, with
+/// bar numbers along its top.
+fn paint_grid(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    marks: &GridMarks,
+    map: &FrameMap,
+    pass: GridPass,
+) {
+    if !marks.is_usable() {
+        return;
+    }
+    let visible = marks.visible_range(map.start_frame(), map.end_frame());
+    let downbeats = visible.clone().filter(|&i| marks.is_downbeat(i)).count();
+    let plan = overlay_plan(rect.width(), visible.len(), downbeats);
+    let stride = plan.downbeat_stride as u32;
+    // Honest display: a low-confidence grid draws dimmed, and the
+    // beat counter says why.
+    let dim = if marks.low_confidence() {
+        super::LOW_CONFIDENCE_TICK_DIM
+    } else {
+        1.0
+    };
+    let (beat_color, downbeat_color) = match pass {
+        GridPass::LabelledTicks | GridPass::Ticks => (palette::TICK_BEAT, palette::TICK_DOWNBEAT),
+        GridPass::Lines => (
+            crate::theme::QUIET_BEAT_LINE,
+            crate::theme::QUIET_DOWNBEAT_LINE,
+        ),
+    };
+    let (beat_color, downbeat_color) = (
+        beat_color.gamma_multiply(dim),
+        downbeat_color.gamma_multiply(dim),
+    );
+    // Bar-number labels need more room than ticks (~34 px vs 6), so they
+    // thin on their own power-of-two stride on top of the tick stride.
+    let bar_px = (marks.median_beat_frames() * 4.0 * map.px_per_frame()) as f32;
+    let mut label_stride = stride;
+    if bar_px > 0.0 {
+        while bar_px * (label_stride as f32) < 34.0 && label_stride < (1 << 16) {
+            label_stride *= 2;
+        }
+    }
+    for i in visible {
+        let is_downbeat = marks.is_downbeat(i);
+        let (height, stroke) = if is_downbeat {
+            let bar = marks.bar_number(i);
+            if bar == 0 || !(bar - 1).is_multiple_of(stride) {
+                continue;
+            }
+            if pass != GridPass::Ticks && (bar - 1).is_multiple_of(label_stride) {
+                crate::theme::paint_text(
+                    painter,
+                    egui::pos2(map.x(marks.frame(i)) + 3.0, rect.top() + 1.0),
+                    egui::Align2::LEFT_TOP,
+                    bar,
+                    crate::theme::WAVE_NUMBER,
+                    palette::TEXT_DIM,
+                );
+            }
+            (TICK_DOWNBEAT_PX, egui::Stroke::new(2.0_f32, downbeat_color))
+        } else {
+            if !plan.draw_beats {
+                continue;
+            }
+            (TICK_BEAT_PX, egui::Stroke::new(1.0_f32, beat_color))
+        };
+        let x = map.x(marks.frame(i));
+        if pass == GridPass::Lines {
+            // Full height, 1px and pixel-centred so the hairline stays
+            // crisp.
+            painter.vline(
+                x.floor() + 0.5,
+                rect.y_range(),
+                egui::Stroke::new(1.0, stroke.color),
+            );
+            continue;
+        }
+        painter.line_segment(
+            [
+                egui::pos2(x, rect.top()),
+                egui::pos2(x, rect.top() + height),
+            ],
+            stroke,
+        );
+        painter.line_segment(
+            [
+                egui::pos2(x, rect.bottom() - height),
+                egui::pos2(x, rect.bottom()),
+            ],
+            stroke,
+        );
+    }
 }
 
 /// Paint the 3-band waveform as interpolated envelopes: per band, a mesh
