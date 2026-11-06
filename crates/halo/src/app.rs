@@ -2037,7 +2037,7 @@ impl HaloApp {
                             Key::new(play_label)
                                 .size(size)
                                 .text_style(theme::KEY_LABEL.sized(16.0))
-                                .label_color(theme::PLAY)
+                                .label_color(theme::TEXT_STRONG)
                                 .lit(playing.then_some(Lit::Play)),
                         )
                         .clicked()
@@ -3461,28 +3461,14 @@ fn lighting_leds(ui: &mut egui::Ui, outputs: &[LaneOutput; LANE_COUNT]) {
     resp.on_hover_text("Lighting output: solid = track cue, ring = programmer override");
     let painter = ui.painter();
     for (i, out) in outputs.iter().enumerate() {
-        let (_, _, color) = crate::waveform::LANES[i];
+        let color = ACCENT;
         let level = out.level.clamp(0.0, 1.0);
         let c = egui::pos2(rect.left() + 8.0 + i as f32 * 18.0, rect.center().y);
-        // A well bezel with a 1px edge; the lens lights in its lane colour
-        // at 15% + 85% × level, with a glow that grows with the level.
+        // A well bezel with a 1px edge; the lens lights in the accent at
+        // 15% + 85% × level.
         painter.circle(c, 6.5, theme::WELL, egui::Stroke::new(1.0, theme::EDGE));
-        if level > 0.02 {
-            theme::paint_glow(
-                painter,
-                egui::Rect::from_center_size(c, egui::vec2(10.0, 10.0)),
-                5.0,
-                4.4,
-                color.gamma_multiply(0.75 * level),
-            );
-        }
         let lens = lerp_color(theme::LED_OFF, color, 0.15 + 0.85 * level);
         painter.circle_filled(c, 4.5, lens);
-        painter.circle_filled(
-            c + egui::vec2(-1.4, -1.4),
-            1.3,
-            egui::Color32::WHITE.gamma_multiply(0.15 + 0.35 * level),
-        );
         if out.source == LaneSource::Programmer {
             painter.circle_stroke(c, 7.25, egui::Stroke::new(1.5, theme::TEXT_STRONG));
         }
@@ -3727,6 +3713,11 @@ fn deck_panel(
             let x = well.center().x;
             let bottom = well.top() + STACKED_ZOOMED_H + ZOOM_ROW_H + WAVE_STACK_GAP + STRIP_HEIGHT;
             let painter = ui.painter();
+            // A black keyline either side keeps it clear of white peaks.
+            painter.line_segment(
+                [egui::pos2(x, well.top()), egui::pos2(x, bottom)],
+                egui::Stroke::new(4.0, egui::Color32::BLACK),
+            );
             painter.line_segment(
                 [egui::pos2(x, well.top()), egui::pos2(x, bottom)],
                 egui::Stroke::new(2.0, theme::PLAYHEAD),
@@ -3769,11 +3760,7 @@ fn deck_panel(
                     } else {
                         theme::TEXT_MUTED
                     })
-                    .strip(if set {
-                        theme::CUE[i]
-                    } else {
-                        theme::SEGMENT_OFF
-                    })
+                    .strip(if set { ACCENT } else { theme::SEGMENT_OFF })
                     .quiet()
             });
             for (i, resp) in key::segmented(ui, pads).into_iter().enumerate() {
@@ -3813,8 +3800,9 @@ fn deck_panel(
                     Key::new(play_label)
                         .size([TRANSPORT_W, theme::SIZE_KEY])
                         .text_style(theme::QUIET_KEY_LABEL.sized(16.0))
-                        .label_color(theme::PLAY)
+                        .label_color(theme::TEXT_STRONG)
                         .lit(playing.then_some(Lit::Play))
+                        .pulse((!playing).then_some(ACCENT))
                         .quiet(),
                 )
                 .clicked()
@@ -3995,6 +3983,9 @@ const DECK_CONTROLS_GAP: f32 = theme::SPACE_12;
 const DECK_HEADER_H: f32 = 52.0;
 const HEADER_ART_W: f32 = DECK_HEADER_H;
 const HEADER_TOGGLES_W: f32 = 58.0;
+/// The A.CUE and Q latches: inset in their cell, and the gap between them.
+const HEADER_LATCH_INSET: egui::Vec2 = egui::vec2(6.0, 6.0);
+const HEADER_LATCH_GAP: f32 = 4.0;
 const HEADER_TIME_W: f32 = 118.0;
 const HEADER_BPM_W: f32 = 88.0;
 const HEADER_KEY_W: f32 = 44.0;
@@ -4176,18 +4167,20 @@ fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
         );
     }
 
-    // A.CUE over Q.
+    // A.CUE over Q, two latches filling the cell inside its inset.
+    let inner = toggles.shrink2(HEADER_LATCH_INSET);
+    let latch_size = egui::vec2(inner.width(), (inner.height() - HEADER_LATCH_GAP) / 2.0);
     let mut latches = ui.new_child(
         egui::UiBuilder::new()
-            .max_rect(toggles)
+            .max_rect(inner)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    latches.spacing_mut().item_spacing.y = 0.0;
+    latches.spacing_mut().item_spacing.y = HEADER_LATCH_GAP;
     latches.add_enabled_ui(r.has_track, |ui| {
-        key::text_toggle(ui, &mut deck_ui.auto_cue, "A.CUE", HEADER_TOGGLES_W).on_hover_text(
+        key::latch(ui, &mut deck_ui.auto_cue, "A.CUE", latch_size).on_hover_text(
             "Auto cue: on load, set the cue to the first detected beat and park the deck there",
         );
-        key::text_toggle(ui, &mut deck_ui.quantize, "Q", HEADER_TOGGLES_W)
+        key::latch(ui, &mut deck_ui.quantize, "Q", latch_size)
             .on_hover_text("Quantize hot cues and loops to the beat grid");
     });
 
@@ -4833,11 +4826,7 @@ fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) 
     let mut ends = [0.0_f32; 2];
     for (i, letter) in DECK_NAMES.iter().enumerate() {
         let lit = i == source;
-        let color = if lit {
-            theme::LANE_LIGHTING
-        } else {
-            theme::TEXT_MUTED
-        };
+        let color = if lit { ACCENT } else { theme::TEXT_MUTED };
         let g = theme::KEY_LABEL.galley(ctx, letter, color);
         let w = g.size().x - theme::KEY_LABEL.spacing;
         let x = if i == 0 {
@@ -4850,15 +4839,6 @@ fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) 
             egui::pos2(x, well.center().y - g.size().y / 2.0),
             egui::vec2(w, g.size().y),
         );
-        if lit {
-            theme::paint_glow(
-                painter,
-                rect.shrink2(egui::vec2(0.0, 2.0)),
-                3.0,
-                8.0,
-                theme::LANE_LIGHTING.gamma_multiply(0.7),
-            );
-        }
         painter.galley(rect.min, g, color);
     }
 

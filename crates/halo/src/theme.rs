@@ -25,27 +25,27 @@ const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color32 {
 }
 
 // ---------------------------------------------------------------- surfaces
-pub const GROUND: Color32 = Color32::from_rgb(0x0a, 0x0a, 0x0b);
-pub const PANEL: Color32 = Color32::from_rgb(0x1e, 0x1f, 0x21);
-pub const PANEL_DEEP: Color32 = Color32::from_rgb(0x18, 0x19, 0x1b);
-pub const WELL: Color32 = Color32::from_rgb(0x0b, 0x0b, 0x0c);
-pub const KEY_HI: Color32 = Color32::from_rgb(0x35, 0x36, 0x3a);
-pub const KEY: Color32 = Color32::from_rgb(0x2a, 0x2b, 0x2e);
-pub const KEY_LO: Color32 = Color32::from_rgb(0x23, 0x24, 0x27);
-pub const KEY_DOWN: Color32 = Color32::from_rgb(0x1f, 0x20, 0x23);
-pub const CAP_HI: Color32 = Color32::from_rgb(0x46, 0x47, 0x4c);
-pub const CAP: Color32 = Color32::from_rgb(0x2c, 0x2d, 0x31);
-pub const CAP_LO: Color32 = Color32::from_rgb(0x16, 0x17, 0x19);
-pub const SEGMENT_OFF: Color32 = Color32::from_rgb(0x1c, 0x1d, 0x20);
+pub const GROUND: Color32 = Color32::from_rgb(0x05, 0x05, 0x06);
+pub const PANEL: Color32 = Color32::from_rgb(0x0e, 0x0f, 0x10);
+pub const PANEL_DEEP: Color32 = PANEL;
+pub const WELL: Color32 = Color32::from_rgb(0x07, 0x07, 0x08);
+pub const KEY_HI: Color32 = Color32::from_rgb(0x1c, 0x1d, 0x20);
+pub const KEY: Color32 = Color32::from_rgb(0x15, 0x16, 0x18);
+pub const KEY_LO: Color32 = Color32::from_rgb(0x0f, 0x10, 0x11);
+pub const KEY_DOWN: Color32 = Color32::from_rgb(0x1c, 0x1d, 0x20);
+pub const CAP_HI: Color32 = CAP;
+pub const CAP: Color32 = Color32::from_rgb(0x1a, 0x1b, 0x1d);
+pub const CAP_LO: Color32 = CAP;
+pub const SEGMENT_OFF: Color32 = Color32::from_rgb(0x1a, 0x1b, 0x1e);
 pub const LED_OFF: Color32 = Color32::from_rgb(0x0c, 0x0c, 0x0d);
 
 // ---------------------------------------------------------------- light
-pub const EDGE: Color32 = rgba(0, 0, 0, 0xeb);
-pub const EDGE_PANEL: Color32 = rgba(0, 0, 0, 0xd9);
-pub const SHEEN: Color32 = rgba(0xff, 0xff, 0xff, 0x14);
-pub const SHEEN_PANEL: Color32 = rgba(0xff, 0xff, 0xff, 0x0e);
-pub const SHEEN_LIT: Color32 = rgba(0xff, 0xff, 0xff, 0x6b);
-pub const LIP: Color32 = rgba(0xff, 0xff, 0xff, 0x0b);
+pub const EDGE: Color32 = rgba(0xff, 0xff, 0xff, 0x1f);
+pub const EDGE_PANEL: Color32 = rgba(0xff, 0xff, 0xff, 0x10);
+pub const SHEEN: Color32 = Color32::TRANSPARENT;
+pub const SHEEN_PANEL: Color32 = Color32::TRANSPARENT;
+pub const SHEEN_LIT: Color32 = Color32::TRANSPARENT;
+pub const LIP: Color32 = Color32::TRANSPARENT;
 pub const SHADE: Color32 = rgba(0, 0, 0, 0xbf);
 
 // ---------------------------------------------------------------- text
@@ -56,26 +56,25 @@ pub const TEXT_UNLIT: Color32 = Color32::from_rgb(0xa3, 0xa3, 0xa6);
 pub const TEXT_DISABLED: Color32 = Color32::from_rgb(0x5a, 0x5b, 0x5f);
 
 // ---------------------------------------------------------------- states
-pub const ACCENT: Color32 = Color32::from_rgb(0xff, 0xaa, 0x28);
-pub const ACCENT_HI: Color32 = Color32::from_rgb(0xff, 0xc7, 0x67);
-pub const ACCENT_LO: Color32 = Color32::from_rgb(0xe3, 0x8f, 0x1c);
-pub const ACCENT_ON: Color32 = Color32::from_rgb(0x2e, 0x24, 0x10);
-pub const ACCENT_GLOW: Color32 = rgba(0xff, 0xaa, 0x28, 0x8c);
+pub const ACCENT: Color32 = Color32::from_rgb(0x4a, 0xa8, 0xff);
+pub const ACCENT_LO: Color32 = ACCENT;
+pub const ACCENT_GLOW: Color32 = rgba(0x4a, 0xa8, 0xff, 0x8c);
 pub const PLAY: Color32 = Color32::from_rgb(0x5a, 0xdc, 0x78);
-pub const PLAY_HI: Color32 = Color32::from_rgb(0x8c, 0xee, 0xa4);
-pub const PLAY_LO: Color32 = Color32::from_rgb(0x3d, 0xbf, 0x5f);
-pub const PLAY_ON: Color32 = Color32::from_rgb(0x20, 0x38, 0x28);
+pub const PLAY_HI: Color32 = PLAY;
+pub const PLAY_LO: Color32 = PLAY;
 pub const AUDITION: Color32 = Color32::from_rgb(0xff, 0xd7, 0x46);
-pub const AUDITION_HI: Color32 = Color32::from_rgb(0xff, 0xe5, 0x8a);
-pub const AUDITION_LO: Color32 = Color32::from_rgb(0xe6, 0xbd, 0x2a);
-pub const AUDITION_ON: Color32 = Color32::from_rgb(0x3a, 0x32, 0x1a);
+pub const AUDITION_HI: Color32 = AUDITION;
+pub const AUDITION_LO: Color32 = AUDITION;
+/// The latch's red (A.CUE, Q on).
+pub const LATCH: Color32 = Color32::from_rgb(0xf0, 0x66, 0x66);
+pub const LATCH_LO: Color32 = Color32::from_rgb(0xd2, 0x44, 0x44);
 
 // ---------------------------------------------------------------- signals
-pub const MUSICAL_KEY: Color32 = Color32::from_rgb(0x78, 0xbe, 0xff);
+pub const MUSICAL_KEY: Color32 = TEXT;
 pub const WARN: Color32 = Color32::from_rgb(0xe6, 0x5a, 0x46);
-pub const METER_GREEN: Color32 = Color32::from_rgb(0x6e, 0xc8, 0x6e);
+pub const METER_GREEN: Color32 = Color32::from_rgb(0xa8, 0xaa, 0xb0);
 pub const METER_RED: Color32 = Color32::from_rgb(0xe6, 0x50, 0x50);
-pub const SELECTION: Color32 = rgba(0xff, 0xaa, 0x28, 0x2e);
+pub const SELECTION: Color32 = rgba(0x4a, 0xa8, 0xff, 0x2e);
 
 // ---------------------------------------------------------------- content
 // The waveform's and the show's own colours. They stay in content.
@@ -85,11 +84,11 @@ pub const WAVE_MID: Color32 = Color32::from_rgb(0xe6, 0x96, 0x28);
 pub const WAVE_HIGH: Color32 = Color32::from_rgb(0xeb, 0xeb, 0xf0);
 pub const WAVE_PLAYED: Color32 = Color32::from_rgb(0x6e, 0x6e, 0x76);
 pub const WAVE_ANNOTATION: Color32 = Color32::from_rgb(0x8a, 0x8a, 0xa0);
-pub const PLAYHEAD: Color32 = Color32::from_rgb(0xe6, 0x28, 0x28);
+pub const PLAYHEAD: Color32 = Color32::from_rgb(0xf4, 0xf4, 0xf6);
 pub const BEAT_TICK: Color32 = rgba(0xff, 0xff, 0xff, 0xc8);
-pub const LOOP_FILL: Color32 = rgba(0xff, 0xaa, 0x22, 0x3c);
-pub const LOOP_EDGE: Color32 = Color32::from_rgb(0xeb, 0xa0, 0x28);
-pub const ENERGY: Color32 = Color32::from_rgb(0xeb, 0xaf, 0x32);
+pub const LOOP_FILL: Color32 = rgba(0x4a, 0xa8, 0xff, 0x3c);
+pub const LOOP_EDGE: Color32 = Color32::from_rgb(0x4a, 0xa0, 0xeb);
+pub const ENERGY: Color32 = Color32::from_rgb(0x5a, 0xb0, 0xf0);
 pub const LANE_GROUND: Color32 = Color32::from_rgb(0x10, 0x10, 0x16);
 pub const LANE_SEPARATOR: Color32 = Color32::from_rgb(0x1c, 0x1c, 0x24);
 pub const LANE_LIGHTING: Color32 = Color32::from_rgb(0x50, 0xa5, 0xff);
@@ -115,7 +114,9 @@ pub const FIXTURE_R: Color32 = Color32::from_rgb(0xeb, 0x46, 0x3c);
 pub const FIXTURE_G: Color32 = Color32::from_rgb(0x50, 0xcd, 0x5f);
 pub const FIXTURE_B: Color32 = Color32::from_rgb(0x4b, 0x7d, 0xff);
 pub const FIXTURE_W: Color32 = Color32::from_rgb(0xeb, 0xeb, 0xf0);
-/// Hot cue colours by slot (1–8): the strip under a set pad.
+/// Hot cue colours by slot (1–8). The hard-edge look marks every set pad
+/// in the accent instead.
+#[allow(dead_code)]
 pub const CUE: [Color32; 8] = [
     Color32::from_rgb(0xff, 0x82, 0x71),
     Color32::from_rgb(0xff, 0xb8, 0x33),
@@ -129,15 +130,15 @@ pub const CUE: [Color32; 8] = [
 
 // ---------------------------------------------------------------- quiet
 // The decks' quieter skin (F · Quiet): flatter faces, fainter light.
-pub const QUIET_PANEL_HI: Color32 = Color32::from_rgb(0x17, 0x18, 0x1a);
-pub const QUIET_PANEL_LO: Color32 = Color32::from_rgb(0x14, 0x15, 0x17);
-pub const QUIET_KEY_HI: Color32 = Color32::from_rgb(0x27, 0x28, 0x2b);
-pub const QUIET_KEY_LO: Color32 = Color32::from_rgb(0x21, 0x22, 0x25);
-pub const QUIET_HOVER_HI: Color32 = Color32::from_rgb(0x2e, 0x2f, 0x33);
-pub const QUIET_HOVER_LO: Color32 = QUIET_KEY_HI;
-pub const QUIET_KEY_DISABLED: Color32 = Color32::from_rgb(0x1a, 0x1b, 0x1d);
-pub const QUIET_SHEEN: Color32 = rgba(0xff, 0xff, 0xff, 0x0c);
-pub const QUIET_LIP: Color32 = rgba(0xff, 0xff, 0xff, 0x06);
+pub const QUIET_PANEL_HI: Color32 = Color32::from_rgb(0x0b, 0x0b, 0x0c);
+pub const QUIET_PANEL_LO: Color32 = QUIET_PANEL_HI;
+pub const QUIET_KEY_HI: Color32 = Color32::from_rgb(0x1a, 0x1b, 0x1e);
+pub const QUIET_KEY_LO: Color32 = Color32::from_rgb(0x0d, 0x0e, 0x0f);
+pub const QUIET_HOVER_HI: Color32 = Color32::from_rgb(0x23, 0x24, 0x28);
+pub const QUIET_HOVER_LO: Color32 = Color32::from_rgb(0x14, 0x15, 0x18);
+pub const QUIET_KEY_DISABLED: Color32 = WELL;
+pub const QUIET_SHEEN: Color32 = Color32::TRANSPARENT;
+pub const QUIET_LIP: Color32 = Color32::TRANSPARENT;
 /// The hairline between the cells of the deck's header tray.
 pub const QUIET_HAIRLINE: Color32 = rgba(0xff, 0xff, 0xff, 0x0a);
 /// Full-height grid lines on the deck's zoomed waveform.
@@ -148,9 +149,9 @@ pub const QUIET_SEAM: Color32 = Color32::BLACK;
 pub const QUIET_SIZE_LED: f32 = 5.0;
 
 // ---------------------------------------------------------------- shape
-pub const RADIUS_CONTROL: u8 = 3;
-pub const RADIUS_PANEL: u8 = 4;
-pub const RADIUS_WINDOW: u8 = 6;
+pub const RADIUS_CONTROL: u8 = 1;
+pub const RADIUS_PANEL: u8 = 1;
+pub const RADIUS_WINDOW: u8 = 2;
 
 pub const SPACE_2: f32 = 2.0;
 pub const SPACE_4: f32 = 4.0;
@@ -181,6 +182,10 @@ const INTER_SEMIBOLD: &str = "Inter-SemiBold";
 const INTER_BOLD: &str = "Inter-Bold";
 const INTER_TABULAR: &str = "InterTabular-SemiBold";
 const JETBRAINS_MONO: &str = "JetBrainsMono-Regular";
+/// Barlow Condensed (SIL OFL, `BarlowCondensed-OFL.txt`) for labels and
+/// captions, and a copy with its tabular figures frozen in for numbers.
+const BARLOW_SEMIBOLD: &str = "BarlowCondensed-SemiBold";
+const BARLOW_TABULAR: &str = "BarlowCondensedTabular-SemiBold";
 /// egui's bundled icon fallbacks, kept behind Inter in every chain.
 const EMOJI_FALLBACKS: [&str; 2] = ["NotoEmoji-Regular", "emoji-icon-font"];
 
@@ -193,11 +198,13 @@ static NUMERALS: LazyLock<FontFamily> = LazyLock::new(|| FontFamily::Name("numer
 pub enum Weight {
     /// Inter 400: reading text.
     Regular,
-    /// Inter 600: titles.
+    /// Barlow Condensed 600: titles, labels and captions.
     SemiBold,
-    /// Inter 700: labels and captions.
+    /// Inter 700. The hard-edge look sets every label in 600 instead.
+    #[allow(dead_code)]
     Bold,
-    /// Inter 600 with tabular figures frozen in: every live number.
+    /// Barlow Condensed 600 with tabular figures frozen in: every live
+    /// number.
     Numerals,
     /// JetBrains Mono: DMX addresses only.
     Mono,
@@ -272,14 +279,14 @@ impl TypeStyle {
     }
 }
 
-pub const NUMERALS_XL: TypeStyle = TypeStyle::new(30.0, Weight::Numerals, -0.6);
-pub const NUMERALS_MD: TypeStyle = TypeStyle::new(18.0, Weight::Numerals, -0.2);
-pub const NUMERALS_SM: TypeStyle = TypeStyle::new(13.0, Weight::Numerals, 0.0);
-pub const KEY_LABEL: TypeStyle = TypeStyle::new(11.0, Weight::Bold, 0.77);
-pub const CAPTION: TypeStyle = TypeStyle::new(10.0, Weight::Bold, 1.4);
-pub const PAD_NUMBER: TypeStyle = TypeStyle::new(12.0, Weight::Bold, 0.0);
-pub const WORDMARK: TypeStyle = TypeStyle::new(18.0, Weight::Bold, 3.6);
-pub const TRACK_TITLE: TypeStyle = TypeStyle::new(16.0, Weight::SemiBold, 0.0);
+pub const NUMERALS_XL: TypeStyle = TypeStyle::new(28.0, Weight::Numerals, 0.0);
+pub const NUMERALS_MD: TypeStyle = TypeStyle::new(17.0, Weight::Numerals, 0.2);
+pub const NUMERALS_SM: TypeStyle = TypeStyle::new(13.0, Weight::Numerals, 0.2);
+pub const KEY_LABEL: TypeStyle = TypeStyle::new(12.0, Weight::SemiBold, 1.2);
+pub const CAPTION: TypeStyle = TypeStyle::new(10.5, Weight::SemiBold, 1.6);
+pub const PAD_NUMBER: TypeStyle = TypeStyle::new(13.0, Weight::SemiBold, 0.4);
+pub const WORDMARK: TypeStyle = TypeStyle::new(17.0, Weight::SemiBold, 6.0);
+pub const TRACK_TITLE: TypeStyle = TypeStyle::new(18.0, Weight::SemiBold, 0.3);
 pub const BODY_TEXT: TypeStyle = TypeStyle::new(13.0, Weight::Regular, 0.0);
 pub const NOTE_TEXT: TypeStyle = TypeStyle::new(11.0, Weight::Regular, 0.0);
 pub const MONO_TEXT: TypeStyle = TypeStyle::new(12.0, Weight::Mono, 0.0);
@@ -287,12 +294,12 @@ pub const MONO_TEXT: TypeStyle = TypeStyle::new(12.0, Weight::Mono, 0.0);
 /// `numerals-sm` at the performance surface's 10px floor.
 pub const WAVE_NUMBER: TypeStyle = NUMERALS_SM.sized(10.0);
 /// The quiet skin's key labels and captions: 600 weight, tighter spacing.
-pub const QUIET_KEY_LABEL: TypeStyle = TypeStyle::new(11.0, Weight::SemiBold, 0.4);
-pub const QUIET_CAPTION: TypeStyle = TypeStyle::new(10.0, Weight::SemiBold, 0.8);
+pub const QUIET_KEY_LABEL: TypeStyle = TypeStyle::new(12.0, Weight::SemiBold, 1.1);
+pub const QUIET_CAPTION: TypeStyle = TypeStyle::new(10.5, Weight::SemiBold, 1.4);
 /// The deck header's time and BPM.
-pub const QUIET_NUMERALS: TypeStyle = TypeStyle::new(24.0, Weight::Numerals, -0.4);
+pub const QUIET_NUMERALS: TypeStyle = TypeStyle::new(26.0, Weight::Numerals, 0.2);
 /// A text toggle's label (A.CUE, Q).
-pub const TEXT_TOGGLE: TypeStyle = TypeStyle::new(13.0, Weight::Bold, 0.3);
+pub const TEXT_TOGGLE: TypeStyle = TypeStyle::new(13.0, Weight::SemiBold, 1.2);
 
 /// Paint one line of `text` in `style` anchored like `Painter::text`,
 /// keeping the style's letter-spacing (which `Painter::text` drops).
@@ -340,6 +347,14 @@ pub fn install_fonts(ctx: &egui::Context) {
             JETBRAINS_MONO,
             &include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")[..],
         ),
+        (
+            BARLOW_SEMIBOLD,
+            &include_bytes!("../assets/fonts/BarlowCondensed-SemiBold.ttf")[..],
+        ),
+        (
+            BARLOW_TABULAR,
+            &include_bytes!("../assets/fonts/BarlowCondensedTabular-SemiBold.ttf")[..],
+        ),
     ] {
         fonts.font_data.insert(
             name.to_owned(),
@@ -359,11 +374,11 @@ pub fn install_fonts(ctx: &egui::Context) {
         .insert(FontFamily::Proportional, chain(&[INTER_REGULAR]));
     fonts
         .families
-        .insert(SEMIBOLD.clone(), chain(&[INTER_SEMIBOLD]));
+        .insert(SEMIBOLD.clone(), chain(&[BARLOW_SEMIBOLD, INTER_SEMIBOLD]));
     fonts.families.insert(BOLD.clone(), chain(&[INTER_BOLD]));
     fonts
         .families
-        .insert(NUMERALS.clone(), chain(&[INTER_TABULAR, INTER_SEMIBOLD]));
+        .insert(NUMERALS.clone(), chain(&[BARLOW_TABULAR, INTER_TABULAR]));
     fonts.families.insert(
         FontFamily::Monospace,
         chain(&[JETBRAINS_MONO, INTER_REGULAR]),
@@ -387,10 +402,12 @@ pub enum Face {
     QuietPanel,
     QuietKey,
     QuietKeyHover,
+    /// A [`crate::key::latch`] that is on.
+    Latch,
 }
 
 impl Face {
-    const ALL: [Face; 11] = [
+    const ALL: [Face; 12] = [
         Face::Panel,
         Face::Key,
         Face::KeyHover,
@@ -402,26 +419,29 @@ impl Face {
         Face::QuietPanel,
         Face::QuietKey,
         Face::QuietKeyHover,
+        Face::Latch,
     ];
 
     /// Gradient stops, top to bottom, as (offset 0..1, colour).
     fn stops(self) -> &'static [(f32, Color32)] {
-        // face-key-hover's stops have no role names of their own.
-        const HOVER_HI: Color32 = Color32::from_rgb(0x3c, 0x3d, 0x42);
-        const HOVER: Color32 = Color32::from_rgb(0x31, 0x32, 0x36);
-        const HOVER_LO: Color32 = Color32::from_rgb(0x29, 0x2a, 0x2d);
+        // face-key-hover and the pushed-in face (darker at the top) have no
+        // role names of their own.
+        const HOVER_HI: Color32 = Color32::from_rgb(0x24, 0x25, 0x28);
+        const HOVER_LO: Color32 = Color32::from_rgb(0x17, 0x18, 0x1a);
+        const DOWN_HI: Color32 = Color32::from_rgb(0x12, 0x13, 0x15);
         match self {
             Face::Panel => &[(0.0, PANEL), (1.0, PANEL_DEEP)],
             Face::Key => &[(0.0, KEY_HI), (0.45, KEY), (1.0, KEY_LO)],
-            Face::KeyHover => &[(0.0, HOVER_HI), (0.45, HOVER), (1.0, HOVER_LO)],
-            Face::KeyDown => &[(0.0, SEGMENT_OFF), (1.0, KEY_DOWN)],
-            Face::Accent => &[(0.0, ACCENT_HI), (0.46, ACCENT), (1.0, ACCENT_LO)],
+            Face::KeyHover => &[(0.0, HOVER_HI), (1.0, HOVER_LO)],
+            Face::KeyDown => &[(0.0, DOWN_HI), (1.0, KEY_DOWN)],
+            Face::Accent => &[(0.0, ACCENT), (1.0, ACCENT_LO)],
             Face::Play => &[(0.0, PLAY_HI), (0.46, PLAY), (1.0, PLAY_LO)],
             Face::Audition => &[(0.0, AUDITION_HI), (0.46, AUDITION), (1.0, AUDITION_LO)],
             Face::Cap => &[(0.0, CAP_HI), (0.55, CAP), (1.0, CAP_LO)],
             Face::QuietPanel => &[(0.0, QUIET_PANEL_HI), (1.0, QUIET_PANEL_LO)],
             Face::QuietKey => &[(0.0, QUIET_KEY_HI), (1.0, QUIET_KEY_LO)],
             Face::QuietKeyHover => &[(0.0, QUIET_HOVER_HI), (1.0, QUIET_HOVER_LO)],
+            Face::Latch => &[(0.0, LATCH), (1.0, LATCH_LO)],
         }
     }
 }
@@ -575,8 +595,6 @@ pub fn paint_edge(painter: &Painter, rect: Rect, corners: impl Into<CornerRadius
 pub enum Top {
     /// A raised key, lined in its skin's `sheen`.
     Sheen(Color32),
-    /// `sheen-lit`: a lit key.
-    SheenLit,
     /// The pushed-in `shade`: a held or chosen key.
     Shade,
 }
@@ -596,7 +614,6 @@ pub fn paint_key_face(
     paint_face(painter, rect, corners, face, tint);
     match top {
         Top::Sheen(sheen) => top_line(painter, rect, corners, 0.0, sheen),
-        Top::SheenLit => top_line(painter, rect, corners, 0.0, SHEEN_LIT),
         Top::Shade => top_shade(painter, rect, corners),
     }
 }
@@ -604,27 +621,27 @@ pub fn paint_key_face(
 /// A recessed well: flat `well`, shade inside the top, a 1px `lip` of
 /// light under the bottom (`shadow-well`).
 pub fn paint_well(painter: &Painter, rect: Rect, radius: u8) {
-    painter.rect_filled(rect, radius, WELL);
-    top_shade(painter, rect, CornerRadius::same(radius));
-    let inset = radius as f32 * 0.6;
-    painter.hline(
-        (rect.left() + inset)..=(rect.right() - inset),
-        rect.bottom() + 0.5,
-        Stroke::new(1.0, LIP),
-    );
+    paint_content_well_radius(painter, rect, radius, WELL);
 }
+
+/// A flat fill with a [`WELL_LINE`] hairline inside its edge.
+fn paint_content_well_radius(painter: &Painter, rect: Rect, radius: u8, ground: Color32) {
+    painter.add(RectShape::new(
+        rect,
+        radius,
+        ground,
+        Stroke::new(1.0, WELL_LINE),
+        StrokeKind::Inside,
+    ));
+}
+
+/// The hairline round a well.
+const WELL_LINE: Color32 = rgba(0xff, 0xff, 0xff, 0x0c);
 
 /// A content well (waveform, show lanes): the content's own ground with
 /// the well's shade and lip.
 pub fn paint_content_well(painter: &Painter, rect: Rect, ground: Color32) {
-    painter.rect_filled(rect, RADIUS_CONTROL, ground);
-    top_shade(painter, rect, CornerRadius::same(RADIUS_CONTROL));
-    let inset = RADIUS_CONTROL as f32 * 0.6;
-    painter.hline(
-        (rect.left() + inset)..=(rect.right() - inset),
-        rect.bottom() + 0.5,
-        Stroke::new(1.0, LIP),
-    );
+    paint_content_well_radius(painter, rect, RADIUS_CONTROL, ground);
 }
 
 /// A well with a 1px `edge` (meters, fader slots, LED bezels).
@@ -738,14 +755,6 @@ pub fn panel_shapes(ctx: &egui::Context, rect: Rect) -> Vec<egui::Shape> {
 /// [`panel_shapes`] with another panel face (the quiet skin's).
 pub fn panel_shapes_with(ctx: &egui::Context, rect: Rect, face: Face) -> Vec<egui::Shape> {
     let mut shapes = Vec::new();
-    let drop = rect.shrink(30.0).translate(egui::vec2(0.0, 22.0));
-    if drop.is_positive() {
-        shapes.push(
-            RectShape::filled(drop.expand(22.0), RADIUS_PANEL, Color32::BLACK)
-                .with_blur_width(44.0)
-                .into(),
-        );
-    }
     shapes.push(
         RectShape::new(
             rect,
@@ -804,21 +813,16 @@ pub fn well<R>(
     let background = ui.painter().add(egui::Shape::Noop);
     let inner = egui::Frame::new().inner_margin(margin).show(ui, content);
     let rect = inner.response.rect;
-    let mut shapes = vec![egui::Shape::rect_filled(rect, RADIUS_CONTROL, WELL)];
-    let inset = RADIUS_CONTROL as f32 * 0.6;
-    for (row, k) in [(0.0, 1.0), (1.0, 0.45), (2.0, 0.15)] {
-        shapes.push(egui::Shape::hline(
-            (rect.left() + inset)..=(rect.right() - inset),
-            rect.top() + row + 0.5,
-            Stroke::new(1.0, SHADE.gamma_multiply(k)),
-        ));
-    }
-    shapes.push(egui::Shape::hline(
-        (rect.left() + inset)..=(rect.right() - inset),
-        rect.bottom() + 0.5,
-        Stroke::new(1.0, LIP),
-    ));
-    ui.painter().set(background, egui::Shape::Vec(shapes));
+    ui.painter().set(
+        background,
+        RectShape::new(
+            rect,
+            RADIUS_CONTROL,
+            WELL,
+            Stroke::new(1.0, WELL_LINE),
+            StrokeKind::Inside,
+        ),
+    );
     inner
 }
 

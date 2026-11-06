@@ -91,6 +91,7 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
             .map_or(total, |e| e.frame);
         for (i, ev) in visible.iter().enumerate() {
             let color = ev.look.def().color;
+            let block_color = egui::Color32::WHITE;
             let x0 = map.x(ev.frame);
             let block_end = visible.get(i + 1).map_or(end_past_window, |n| n.frame);
             let x1 = map.x(block_end).max(x0 + MIN_BAR_W);
@@ -99,22 +100,22 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
                 egui::pos2(x1, rr.bottom() - 1.0),
             );
             let is_active = active == Some(ev.id) && !params.programmer_override;
-            let fill = if is_active { 0.45 } else { 0.25 };
+            let fill = if is_active { 0.10 } else { 0.05 };
             if params.programmer_override {
                 painter.rect_stroke(
                     block,
-                    2.0,
-                    egui::Stroke::new(1.0_f32, dim(color, 0.7)),
+                    0.0,
+                    egui::Stroke::new(1.0_f32, dim(block_color, 0.25)),
                     egui::StrokeKind::Inside,
                 );
             } else {
-                painter.rect_filled(block, 2.0, dim(color, fill));
+                painter.rect_filled(block, 0.0, dim(block_color, fill));
             }
             if is_active {
                 painter.rect_stroke(
                     block,
-                    2.0,
-                    egui::Stroke::new(1.0_f32, dim(color, 0.9)),
+                    0.0,
+                    egui::Stroke::new(1.0_f32, dim(block_color, 0.35)),
                     egui::StrokeKind::Inside,
                 );
             }

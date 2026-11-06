@@ -62,16 +62,9 @@ pub fn paint_beat_counter(
         let x = rect.left() + WELL_PAD + (seg - 1) as f32 * (SEG_SIZE.x + SEG_GAP);
         let seg_rect = egui::Rect::from_min_size(egui::pos2(x, rect.top() + WELL_PAD), SEG_SIZE);
         if bar_beat.is_some_and(|(_, beat)| beat == seg) {
-            theme::paint_glow(
-                painter,
-                seg_rect,
-                2.0,
-                8.0,
-                theme::PLAYHEAD.gamma_multiply(0.7),
-            );
-            painter.rect_filled(seg_rect, 2.0, theme::PLAYHEAD);
+            painter.rect_filled(seg_rect, 0.0, theme::ACCENT);
         } else {
-            painter.rect_filled(seg_rect, 2.0, theme::SEGMENT_OFF);
+            painter.rect_filled(seg_rect, 0.0, theme::SEGMENT_OFF);
         }
     }
 

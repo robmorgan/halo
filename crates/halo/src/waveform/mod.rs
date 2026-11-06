@@ -68,13 +68,13 @@ pub(crate) mod palette {
     /// Zoomed-view playhead.
     pub const PLAYHEAD: Color32 = theme::PLAYHEAD;
     /// Cue point / hot cue markers on the zoomed view.
-    pub const CUE_MARKER: Color32 = PLAYHEAD;
+    pub const CUE_MARKER: Color32 = theme::ACCENT;
     /// Overview position cursor.
     pub const CURSOR: Color32 = Color32::WHITE;
     /// Regular beat tick.
     pub const TICK_BEAT: Color32 = theme::BEAT_TICK;
     /// Downbeat (bar start) tick.
-    pub const TICK_DOWNBEAT: Color32 = theme::PLAYHEAD;
+    pub const TICK_DOWNBEAT: Color32 = theme::ACCENT;
     /// Loop region fill.
     pub const LOOP_FILL: Color32 = theme::LOOP_FILL;
     /// Loop in/out boundary lines and staged loop-in marker.
@@ -93,9 +93,9 @@ pub(crate) mod palette {
     pub const LANE_LIGHTING: Color32 = theme::LANE_LIGHTING;
     /// Pixels lane.
     pub const LANE_PIXELS: Color32 = theme::LANE_PIXELS;
-    /// FX (smoke/pyro) lane: green — amber is the accent, red the playhead.
+    /// FX (smoke/pyro) lane: green.
     pub const LANE_FX: Color32 = theme::LANE_FX;
-    /// L3 energy envelope: amber, matching the loop/accent family.
+    /// L3 energy envelope: blue, matching the loop/accent family.
     pub const ENERGY: Color32 = theme::ENERGY;
     /// L3 accent one-shots: near-white so they read as hits, not a hue.
     pub const ACCENT: Color32 = theme::LANE_ACCENTS;

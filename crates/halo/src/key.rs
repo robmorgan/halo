@@ -2,13 +2,13 @@
 //!
 //! A raised `face-key` with a line of sheen and a 1px dark edge, 30 high
 //! with 12 either side of a bold spaced label. Hover lightens the face and
-//! never grows it; holding pushes it in. A key can light its whole face in
-//! a state colour (set hot cues, a held CUE, a playing PLAY) or carry an
+//! never grows it; holding pushes it in. A key can light in a state colour
+//! (a held CUE, a playing PLAY), outlined and labelled in it, or carry an
 //! LED before its label (latched toggles).
 //!
 //! Keys can also be joined into one strip with [`segmented`], and drawn
-//! in the decks' quieter skin with [`Key::quiet`]. [`text_toggle`] is the
-//! faceless latch beside them.
+//! in the decks' quieter skin with [`Key::quiet`]. [`latch`] is the
+//! rectangle latch beside them that fills red when on.
 //!
 //! The widget only draws: it allocates a click-sensing rect and returns the
 //! plain `Response`, so callers keep their own press / release / right-click
@@ -33,26 +33,26 @@ pub enum Lit {
 }
 
 impl Lit {
-    fn face(self) -> Face {
+    /// The outline and label a lit key takes.
+    fn color(self) -> Color32 {
         match self {
-            Lit::Accent => Face::Accent,
-            Lit::Play => Face::Play,
-            Lit::Audition => Face::Audition,
-        }
-    }
-
-    /// The dark label colour on the lit face.
-    fn on(self) -> Color32 {
-        match self {
-            Lit::Accent => theme::ACCENT_ON,
-            Lit::Play => theme::PLAY_ON,
-            Lit::Audition => theme::AUDITION_ON,
+            Lit::Accent => theme::ACCENT,
+            Lit::Play => theme::TEXT_STRONG,
+            Lit::Audition => theme::AUDITION,
         }
     }
 }
 
-/// `brightness(0.92)` on a lit face that is held down.
-const LIT_HELD_TINT: Color32 = Color32::from_gray(235);
+/// A lit key's outline, inside its edge, and the wash of its colour over
+/// the face.
+const LIT_OUTLINE: f32 = 1.5;
+const LIT_WASH: f32 = 0.08;
+/// A [`Key::pulse`]: one breath in and out per period (seconds), never
+/// fading below `PULSE_MIN`, redrawn on the programmer preview's slower
+/// tick so an idle deck doesn't pay for 30 fps.
+const PULSE_PERIOD: f64 = 2.8;
+const PULSE_MIN: f32 = 0.15;
+const PULSE_TICK: std::time::Duration = std::time::Duration::from_millis(80);
 /// A [`Key::strip`]: 2 high, 8 in from either side, 4 up from the bottom.
 const STRIP_H: f32 = 2.0;
 const STRIP_INSET: f32 = 8.0;
@@ -72,6 +72,7 @@ pub struct Key {
     color: Option<Color32>,
     led: Option<(bool, Color32)>,
     strip: Option<Color32>,
+    pulse: Option<Color32>,
     selected: bool,
     pressed: bool,
     enabled: bool,
@@ -100,6 +101,7 @@ impl Key {
             color: None,
             led: None,
             strip: None,
+            pulse: None,
             selected: false,
             pressed: false,
             enabled: true,
@@ -146,6 +148,13 @@ impl Key {
     /// An LED before the label, lit in `color` when `on`.
     pub fn led(mut self, on: bool, color: Color32) -> Self {
         self.led = Some((on, color));
+        self
+    }
+
+    /// An outline that slowly pulses in `color` while the key is enabled
+    /// and unlit (a loaded deck's PLAY, waiting to start).
+    pub fn pulse(mut self, color: Option<Color32>) -> Self {
+        self.pulse = color;
         self
     }
 
@@ -267,16 +276,22 @@ impl Widget for Key {
             painter.rect_filled(rect, corners, skin.key_disabled);
             theme::TEXT_DISABLED
         } else if let Some(lit) = lit {
+            let color = lit.color();
             if held || self.pressed {
-                face(lit.face(), LIT_HELD_TINT, Top::Shade);
+                face(Face::KeyDown, Color32::WHITE, Top::Shade);
+            } else if hovered {
+                face(skin.key_hover, Color32::WHITE, Top::Sheen(skin.sheen));
             } else {
-                face(lit.face(), Color32::WHITE, Top::SheenLit);
-                if hovered {
-                    // brightness(1.05): the faintest lift of light.
-                    painter.rect_filled(rect, corners, theme::LIP);
-                }
+                face(skin.key, Color32::WHITE, Top::Sheen(skin.sheen));
             }
-            lit.on()
+            painter.rect_filled(rect, corners, color.gamma_multiply(LIT_WASH));
+            painter.rect_stroke(
+                rect,
+                corners,
+                Stroke::new(LIT_OUTLINE, color),
+                egui::StrokeKind::Inside,
+            );
+            color
         } else {
             if held || self.pressed {
                 face(Face::KeyDown, Color32::WHITE, Top::Shade);
@@ -302,6 +317,21 @@ impl Widget for Key {
             let x = rect.left();
             painter.vline(x + 0.5, rect.y_range(), Stroke::new(1.0, theme::EDGE));
             painter.vline(x + 1.5, rect.y_range(), Stroke::new(1.0, skin.lip));
+        }
+
+        if let Some(color) = self.pulse.filter(|_| enabled && lit.is_none()) {
+            let t = ui.input(|i| i.time);
+            let k = (0.5 - 0.5 * (t * std::f64::consts::TAU / PULSE_PERIOD).cos()) as f32;
+            painter.rect_stroke(
+                rect,
+                corners,
+                Stroke::new(
+                    LIT_OUTLINE,
+                    color.gamma_multiply(PULSE_MIN + (1.0 - PULSE_MIN) * k),
+                ),
+                egui::StrokeKind::Inside,
+            );
+            ui.ctx().request_repaint_after(PULSE_TICK);
         }
 
         if let Some(color) = self.strip.filter(|_| enabled) {
@@ -361,16 +391,15 @@ pub fn segmented<const N: usize>(ui: &mut Ui, keys: [Key; N]) -> [Response; N] {
     responses
 }
 
-/// Height of a [`text_toggle`].
-pub const TEXT_TOGGLE_H: f32 = 22.0;
-/// Space before a text toggle's label.
-const TEXT_TOGGLE_PAD: f32 = 10.0;
+/// A lit latch at rest, a shade under its hovered face.
+const LATCH_REST_TINT: Color32 = Color32::from_gray(232);
 
-/// A latch drawn as its label alone (A.CUE, Q): no face, gradient or edge.
-/// On it reads `meter-red`, off `text-muted`; the whole `width` × 22 row
-/// takes the click, which flips `on`.
-pub fn text_toggle(ui: &mut Ui, on: &mut bool, label: &str, width: f32) -> Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, TEXT_TOGGLE_H), Sense::click());
+/// A latch drawn as a rectangle round its label (A.CUE, Q), `size`
+/// across. Off it is a key's face, outlined, with a `text-muted` label; on
+/// it lights red with a dark label. The whole rect takes the click, which
+/// flips `on`.
+pub fn latch(ui: &mut Ui, on: &mut bool, label: &str, size: Vec2) -> Response {
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let enabled = response.enabled();
     response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, *on, label));
     if response.clicked() {
@@ -378,20 +407,46 @@ pub fn text_toggle(ui: &mut Ui, on: &mut bool, label: &str, width: f32) -> Respo
     }
     if ui.is_rect_visible(rect) {
         let hovered = enabled && response.hovered();
-        let color = match (enabled, *on, hovered) {
-            (false, _, _) => theme::TEXT_DISABLED,
-            (true, true, false) => theme::METER_RED,
-            (true, true, true) => theme::WARN,
-            (true, false, false) => theme::TEXT_MUTED,
-            (true, false, true) => theme::TEXT,
+        let painter = ui.painter();
+        let corners = CornerRadius::same(theme::RADIUS_CONTROL);
+        let label_color = if !enabled {
+            painter.rect_stroke(
+                rect,
+                corners,
+                Stroke::new(1.0, theme::EDGE.gamma_multiply(0.5)),
+                egui::StrokeKind::Inside,
+            );
+            theme::TEXT_DISABLED
+        } else if *on {
+            let tint = if hovered {
+                Color32::WHITE
+            } else {
+                LATCH_REST_TINT
+            };
+            theme::paint_face(painter, rect, corners, Face::Latch, tint);
+            theme::GROUND
+        } else {
+            let (face, edge, label) = if hovered {
+                (Face::QuietKeyHover, theme::TEXT_MUTED, theme::TEXT)
+            } else {
+                (Face::QuietKey, theme::EDGE, theme::TEXT_MUTED)
+            };
+            theme::paint_face(painter, rect, corners, face, Color32::WHITE);
+            painter.rect_stroke(
+                rect,
+                corners,
+                Stroke::new(1.0, edge),
+                egui::StrokeKind::Inside,
+            );
+            label
         };
         theme::paint_text(
-            ui.painter(),
-            egui::pos2(rect.left() + TEXT_TOGGLE_PAD, rect.center().y),
-            egui::Align2::LEFT_CENTER,
+            painter,
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
             label,
             theme::TEXT_TOGGLE,
-            color,
+            label_color,
         );
     }
     response
