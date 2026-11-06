@@ -4,56 +4,77 @@
 
 use eframe::egui;
 
-use super::{GridMarks, palette};
+use super::GridMarks;
+use crate::theme;
 
 /// Segment size and gap in points.
 const SEG_SIZE: egui::Vec2 = egui::vec2(16.0, 10.0);
 const SEG_GAP: f32 = 4.0;
 const SEGMENTS: u8 = 4;
+/// Padding inside the segments' well.
+const WELL_PAD: f32 = 3.0;
 
-/// Paint the readout + segments. Shows placeholders before the first beat;
-/// paints nothing without a usable grid.
-pub fn paint_beat_counter(ui: &mut egui::Ui, marks: &GridMarks, position_frames: f64) {
+/// Paint the readout + segments, the BAR caption in `caption`. Shows
+/// placeholders before the first beat; paints nothing without a usable
+/// grid. `hint` adds the low-confidence note after the steps (the deck
+/// header has no room for it and shows it as a tooltip instead).
+pub fn paint_beat_counter(
+    ui: &mut egui::Ui,
+    marks: &GridMarks,
+    position_frames: f64,
+    caption: theme::TypeStyle,
+    hint: bool,
+) {
     if !marks.is_usable() {
         return;
     }
     let bar_beat = marks.bar_beat(position_frames);
+    let ctx = ui.ctx().clone();
 
+    ui.label(caption.rich("BAR").color(theme::TEXT_MUTED));
+
+    // The value right-aligned in a column as wide as "888.8", so the
+    // digits never move as bars tick over.
     let text = match bar_beat {
-        Some((bar, beat)) => format!("BAR {bar:>3}.{beat}"),
-        None => "BAR   -.-".to_string(),
+        Some((bar, beat)) => format!("{bar}.{beat}"),
+        None => "-.-".to_string(),
     };
-    ui.label(egui::RichText::new(text).monospace().strong());
+    let cell_w = theme::NUMERALS_SM.width(&ctx, "888.8");
+    let galley = theme::NUMERALS_SM.galley(&ctx, &text, theme::TEXT_STRONG);
+    let (cell, _) =
+        ui.allocate_exact_size(egui::vec2(cell_w, galley.size().y), egui::Sense::hover());
+    ui.painter().galley(
+        egui::pos2(cell.right() - galley.size().x, cell.top()),
+        galley,
+        theme::TEXT_STRONG,
+    );
 
-    let width = SEGMENTS as f32 * SEG_SIZE.x + (SEGMENTS - 1) as f32 * SEG_GAP;
+    // The steps sit in a well; the current beat lights playhead red with a
+    // glow.
+    let width = SEGMENTS as f32 * SEG_SIZE.x + (SEGMENTS - 1) as f32 * SEG_GAP + 2.0 * WELL_PAD;
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(width, SEG_SIZE.y.max(ui.spacing().interact_size.y)),
+        egui::vec2(width, SEG_SIZE.y + 2.0 * WELL_PAD),
         egui::Sense::hover(),
     );
     let painter = ui.painter();
-    let top = rect.center().y - SEG_SIZE.y / 2.0;
+    theme::paint_well(painter, rect, theme::RADIUS_CONTROL);
     for seg in 1..=SEGMENTS {
-        let x = rect.left() + (seg - 1) as f32 * (SEG_SIZE.x + SEG_GAP);
-        let seg_rect = egui::Rect::from_min_size(egui::pos2(x, top), SEG_SIZE);
+        let x = rect.left() + WELL_PAD + (seg - 1) as f32 * (SEG_SIZE.x + SEG_GAP);
+        let seg_rect = egui::Rect::from_min_size(egui::pos2(x, rect.top() + WELL_PAD), SEG_SIZE);
         if bar_beat.is_some_and(|(_, beat)| beat == seg) {
-            painter.rect_filled(seg_rect, 2.0, palette::PLAYHEAD);
+            painter.rect_filled(seg_rect, 0.0, theme::ACCENT);
         } else {
-            painter.rect_stroke(
-                seg_rect,
-                2.0,
-                egui::Stroke::new(1.0_f32, palette::TEXT_DIM),
-                egui::StrokeKind::Inside,
-            );
+            painter.rect_filled(seg_rect, 0.0, theme::SEGMENT_OFF);
         }
     }
 
     // Honest-display hint: the waveform ticks are drawn dimmed for this
     // grid, and this says why.
-    if marks.low_confidence() {
+    if hint && marks.low_confidence() {
         ui.label(
-            egui::RichText::new("grid: low confidence")
-                .small()
-                .color(palette::TEXT_DIM),
+            theme::NOTE_TEXT
+                .rich("grid: low confidence")
+                .color(theme::TEXT_MUTED),
         );
     }
 }

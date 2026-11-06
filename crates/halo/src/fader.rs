@@ -1,10 +1,10 @@
 //! Bar-style fader widget (physical-mixer look) for the channel volume
-//! faders and the crossfader.
+//! faders and the decks' tempo faders.
 //!
-//! A rectangular cap rides a grooved track. Channel faders draw evenly
-//! spaced notches down the side as a position scale; the crossfader draws a
-//! single center notch and tints its cap from grey (center) to the accent
-//! color at the extremes. Interaction is absolute positioning — the cap
+//! A raised cap (`face-cap`, a 1px edge, a line of sheen and an amber
+//! indicator line across its middle) rides a slot cut into the panel.
+//! Faders draw evenly spaced notches down the side as a position scale.
+//! Interaction is absolute positioning — the cap
 //! jumps to the pointer, like a real fader — with double-click to reset.
 //!
 //! Pure UI: callers load an atomic into a local `f32`, pass a `&mut`, and
@@ -12,7 +12,9 @@
 
 use std::ops::RangeInclusive;
 
-use eframe::egui::{self, Color32, Rect, Response, Sense, Ui, Vec2, Widget};
+use eframe::egui::{self, Color32, Rect, Response, Sense, Stroke, Ui, Vec2, Widget};
+
+use crate::theme::{self, Face};
 
 /// Thickness of the groove the cap rides in, in points.
 const GROOVE: f32 = 4.0;
@@ -23,14 +25,14 @@ const CAP_HALF_SPAN: f32 = 10.0;
 /// Notch tick length (each side of the groove) and gap from it.
 const NOTCH_LEN: f32 = 4.0;
 const NOTCH_GAP: f32 = 3.0;
+/// Corner radius of the cap.
+const CAP_RADIUS: u8 = 2;
 
 /// Notch (tick) layout drawn alongside the track.
 pub enum Notches {
     None,
     /// `n` evenly-spaced intervals → n+1 ticks across the travel. (channel)
     Even(u32),
-    /// A single tick at the value center. (crossfader)
-    Center,
 }
 
 pub struct Fader<'a> {
@@ -41,9 +43,6 @@ pub struct Fader<'a> {
     notches: Notches,
     default: f32,
     accent: Color32,
-    /// Some(center): draw an accent fill along the groove from `center` to the
-    /// cap as it moves off center (like the bipolar EQ knobs).
-    center_fill: Option<f32>,
     /// Groove thickness across the travel axis.
     groove: f32,
     /// Cap size as (span across the travel axis, thickness along it).
@@ -61,7 +60,6 @@ impl<'a> Fader<'a> {
             notches: Notches::None,
             default,
             accent,
-            center_fill: None,
             groove: GROOVE,
             cap: Vec2::new(CAP_HALF_SPAN * 2.0, CAP_THICKNESS),
         }
@@ -84,11 +82,6 @@ impl<'a> Fader<'a> {
 
     pub fn default_value(mut self, default: f32) -> Self {
         self.default = default;
-        self
-    }
-
-    pub fn center_fill(mut self, center: f32) -> Self {
-        self.center_fill = Some(center);
         self
     }
 
@@ -149,20 +142,29 @@ impl Widget for Fader<'_> {
 
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
-            let visuals = ui.visuals();
             let center = rect.center();
-            let track_col = visuals.weak_text_color().gamma_multiply(0.5);
-
-            // Groove along the travel axis.
-            let groove = if self.vertical {
-                Rect::from_center_size(center, Vec2::new(self.groove, (hi - lo).abs() + self.cap.y))
+            let enabled = response.enabled();
+            let active = enabled && (response.hovered() || response.dragged());
+            // Indicator and fill: 90% accent until hovered or dragged.
+            let line_col = if !enabled {
+                theme::TEXT_DISABLED
+            } else if active {
+                self.accent
             } else {
-                Rect::from_center_size(center, Vec2::new((hi - lo).abs() + self.cap.y, self.groove))
+                self.accent.gamma_multiply(0.9)
             };
-            painter.rect_filled(groove, 2.0, visuals.extreme_bg_color);
+            let notch_col = theme::TEXT_MUTED.gamma_multiply(if enabled { 0.6 } else { 0.3 });
+
+            // The slot: a well with a 1px edge along the whole travel.
+            let half_groove = self.groove / 2.0;
+            let slot = if self.vertical {
+                Rect::from_center_size(center, Vec2::new(self.groove, rect.height() - 1.0))
+            } else {
+                Rect::from_center_size(center, Vec2::new(rect.width() - 1.0, self.groove))
+            };
+            theme::paint_well_edged(painter, slot, half_groove.min(2.0) as u8);
 
             // Notches: short ticks perpendicular to the groove.
-            let half_groove = self.groove / 2.0;
             let tick = |painter: &egui::Painter, t: f32| {
                 let p = lo + (hi - lo) * t;
                 let (a, b, c, d) = if self.vertical {
@@ -180,7 +182,7 @@ impl Widget for Fader<'_> {
                         egui::pos2(p, center.y + half_groove + NOTCH_GAP + NOTCH_LEN),
                     )
                 };
-                let stroke = egui::Stroke::new(1.0, track_col);
+                let stroke = Stroke::new(1.0, notch_col);
                 painter.line_segment([a, b], stroke);
                 painter.line_segment([c, d], stroke);
             };
@@ -191,56 +193,38 @@ impl Widget for Fader<'_> {
                         tick(painter, i as f32 / n as f32);
                     }
                 }
-                Notches::Center => tick(painter, 0.5),
             }
 
             let t = self.norm(*self.value);
             let p = lo + (hi - lo) * t;
-            let active = response.hovered() || response.dragged();
 
-            // Center-origin fill: an accent bar from the center value to the
-            // cap, showing how far it's pushed off center (like the EQ knobs).
-            if let Some(c) = self.center_fill {
-                let pc = lo + (hi - lo) * self.norm(c);
-                if (p - pc).abs() > 0.5 {
-                    let fill = if self.vertical {
-                        Rect::from_two_pos(
-                            egui::pos2(center.x - half_groove, pc),
-                            egui::pos2(center.x + half_groove, p),
-                        )
-                    } else {
-                        Rect::from_two_pos(
-                            egui::pos2(pc, center.y - half_groove),
-                            egui::pos2(p, center.y + half_groove),
-                        )
-                    };
-                    let fill_col = if active {
-                        self.accent
-                    } else {
-                        self.accent.gamma_multiply(0.9)
-                    };
-                    painter.rect_filled(fill, 2.0, fill_col);
-                }
-            }
-
-            // Cap at the current value (always accent).
+            // The cap: face-cap, a 1px edge, sheen along its top and a 2px
+            // indicator line across its middle. Disabled, it fades to 55%.
             let cap = if self.vertical {
                 Rect::from_center_size(egui::pos2(center.x, p), self.cap)
             } else {
                 Rect::from_center_size(egui::pos2(p, center.y), Vec2::new(self.cap.y, self.cap.x))
             };
-            let cap_col = if active {
-                self.accent
-            } else {
-                self.accent.gamma_multiply(0.9)
-            };
-            painter.rect_filled(cap, 2.0, cap_col);
-            painter.rect_stroke(
+            let fade = if enabled { 1.0 } else { 0.55 };
+            theme::paint_edge(painter, cap, CAP_RADIUS, theme::EDGE.gamma_multiply(fade));
+            theme::paint_face(
+                painter,
                 cap,
-                2.0,
-                egui::Stroke::new(1.0, visuals.extreme_bg_color),
-                egui::StrokeKind::Inside,
+                CAP_RADIUS,
+                Face::Cap,
+                Color32::WHITE.gamma_multiply(fade),
             );
+            painter.hline(
+                (cap.left() + 2.0)..=(cap.right() - 2.0),
+                cap.top() + 1.0,
+                Stroke::new(1.0, theme::SHEEN_LIT.gamma_multiply(0.5 * fade)),
+            );
+            let indicator = Stroke::new(2.0, line_col);
+            if self.vertical {
+                painter.hline((cap.left() + 2.0)..=(cap.right() - 2.0), p, indicator);
+            } else {
+                painter.vline(p, (cap.top() + 2.0)..=(cap.bottom() - 2.0), indicator);
+            }
         }
 
         response
