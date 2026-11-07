@@ -3232,9 +3232,12 @@ fn track_table(
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                 .column(Column::exact(58.0)) // load buttons
                 .column(Column::exact(96.0)) // waveform thumbnail
-                .column(Column::remainder().at_least(140.0)) // title
-                .column(Column::initial(140.0).at_least(80.0)) // artist
-                .column(Column::initial(120.0).at_least(60.0)) // album
+                // The text columns clip and their labels truncate, so a long
+                // name ends in "…" in its own column instead of pushing the
+                // rest of its row out of line.
+                .column(Column::remainder().at_least(140.0).clip(true)) // title
+                .column(Column::initial(140.0).at_least(80.0).clip(true)) // artist
+                .column(Column::initial(120.0).at_least(60.0).clip(true)) // album
                 .column(Column::exact(52.0)) // bpm
                 .column(Column::exact(44.0)) // key
                 .column(Column::exact(48.0)) // time
@@ -3331,20 +3334,26 @@ fn track_table(
                             }
                         });
                         row.col(|ui| {
-                            ui.label(&track.title);
+                            ui.add(egui::Label::new(&track.title).truncate());
                         });
                         row.col(|ui| {
-                            ui.label(
-                                theme::BODY_TEXT
-                                    .rich(track.artist.as_deref().unwrap_or("—"))
-                                    .color(theme::TEXT_MUTED),
+                            ui.add(
+                                egui::Label::new(
+                                    theme::BODY_TEXT
+                                        .rich(track.artist.as_deref().unwrap_or("—"))
+                                        .color(theme::TEXT_MUTED),
+                                )
+                                .truncate(),
                             );
                         });
                         row.col(|ui| {
-                            ui.label(
-                                theme::BODY_TEXT
-                                    .rich(track.album.as_deref().unwrap_or("—"))
-                                    .color(theme::TEXT_MUTED),
+                            ui.add(
+                                egui::Label::new(
+                                    theme::BODY_TEXT
+                                        .rich(track.album.as_deref().unwrap_or("—"))
+                                        .color(theme::TEXT_MUTED),
+                                )
+                                .truncate(),
                             );
                         });
                         row.col(|ui| {
