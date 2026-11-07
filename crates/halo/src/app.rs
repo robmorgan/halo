@@ -4002,6 +4002,8 @@ const HEADER_KEY_PAD: f32 = 8.0;
 /// Inside the title cell, left and right.
 const HEADER_TITLE_PAD_L: f32 = 10.0;
 const HEADER_TITLE_PAD_R: f32 = 8.0;
+/// Between the title and the artist under it.
+const HEADER_ARTIST_GAP: f32 = theme::SPACE_2;
 /// The note glyph in an empty artwork cell.
 const HEADER_ART_GLYPH: f32 = 20.0;
 /// The zoom row under the zoomed waveform, the space above its line
@@ -4062,7 +4064,7 @@ struct DeckReadings {
 }
 
 /// The deck's header: one well split by hairlines into artwork | title
-/// | A.CUE over Q | time | BPM | KEY | PITCH.
+/// over artist | A.CUE over Q | time | BPM | KEY | PITCH.
 fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
     let ctx = ui.ctx().clone();
     let (tray, _) = ui.allocate_exact_size(
@@ -4129,7 +4131,8 @@ fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
         }
     }
 
-    // The title, centred in the tray.
+    // The title, with the artist under it when the tags have one, centred
+    // as a block in the tray.
     let inner = egui::Rect::from_min_max(
         egui::pos2(title.left() + HEADER_TITLE_PAD_L, title.top()),
         egui::pos2(title.right() - HEADER_TITLE_PAD_R, title.bottom()),
@@ -4140,12 +4143,28 @@ fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     text.set_clip_rect(inner.intersect(ui.clip_rect()));
+    text.spacing_mut().item_spacing.y = HEADER_ARTIST_GAP;
     if r.has_track {
+        let artist = deck_ui
+            .artist
+            .as_deref()
+            .map(str::trim)
+            .filter(|a| !a.is_empty());
         let title_h = theme::TRACK_TITLE
             .galley(&ctx, "Ag", theme::TEXT_STRONG)
             .size()
             .y;
-        text.add_space(((DECK_HEADER_H - title_h) / 2.0).max(0.0));
+        let block_h = match artist {
+            Some(_) => {
+                let artist_h = theme::BODY_TEXT
+                    .galley(&ctx, "Ag", theme::TEXT_MUTED)
+                    .size()
+                    .y;
+                title_h + HEADER_ARTIST_GAP + artist_h
+            }
+            None => title_h,
+        };
+        text.add_space(((DECK_HEADER_H - block_h) / 2.0).max(0.0));
         text.add(
             egui::Label::new(
                 theme::TRACK_TITLE
@@ -4154,6 +4173,11 @@ fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
             )
             .truncate(),
         );
+        if let Some(artist) = artist {
+            text.add(
+                egui::Label::new(theme::BODY_TEXT.rich(artist).color(theme::TEXT_MUTED)).truncate(),
+            );
+        }
     } else {
         let body_h = theme::BODY_TEXT
             .galley(&ctx, "Ag", theme::TEXT_MUTED)
