@@ -27,17 +27,6 @@ impl SyncState {
             _ => Self::Off,
         }
     }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Off => "",
-            Self::Preparing => "PREPARING",
-            Self::Waiting => "WAITING",
-            Self::Locked => "LOCKED",
-            Self::Nudging => "NUDGING",
-            Self::Unavailable => "UNAVAILABLE",
-        }
-    }
 }
 
 /// Immutable UI-prepared mapping. Replaced and retired like playback storage.

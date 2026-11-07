@@ -117,7 +117,7 @@ pub fn show_editor(
     let rect = response.rect;
     let painter = painter.with_clip_rect(rect);
 
-    painter.rect_filled(rect, 4.0, palette::LANE_BG);
+    crate::theme::paint_content_well(&painter, rect, palette::LANE_BG);
 
     let rows = lane_rows(rect, ROW_H);
     for row in &rows[1..] {
@@ -130,11 +130,12 @@ pub fn show_editor(
 
     let row_label = |row: usize, color: egui::Color32, alpha: f32| {
         let label = ["LOOK", "ENERGY", "ACCENT"][row];
-        painter.text(
+        crate::theme::paint_text(
+            &painter,
             egui::pos2(rows[row].left() + 6.0, rows[row].top() + 4.0),
             egui::Align2::LEFT_TOP,
             label,
-            egui::FontId::monospace(9.0),
+            crate::theme::CAPTION,
             color.gamma_multiply(alpha),
         );
     };
@@ -511,11 +512,12 @@ pub fn show_editor(
         // Pin carried-in block names to the visible edge, clear of the
         // row label.
         let label_x = (x0 + 7.0).max(rect.left() + 52.0);
-        painter.text(
+        crate::theme::paint_text(
+            &painter,
             egui::pos2(label_x, block.center().y),
             egui::Align2::LEFT_CENTER,
             ev.look.def().name,
-            egui::FontId::monospace(9.0),
+            crate::theme::NOTE_TEXT,
             egui::Color32::WHITE.gamma_multiply(0.8),
         );
         if selection.contains(&ShowSel::Look(ev.id)) {

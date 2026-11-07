@@ -6,10 +6,12 @@
 use eframe::egui;
 use timestretch::{BandPeaks, PeakLevel};
 
-use super::{GridMarks, paint_placeholder, palette};
+use super::{GridMarks, WaveStyle, paint_placeholder, palette};
 
 /// Strip height in points.
 const STRIP_HEIGHT: f32 = 56.0;
+/// Stacked strip height (the deck's waveform well).
+pub const STACKED_OVERVIEW_H: f32 = 38.0;
 /// Texture height in pixels (2x the strip for retina crispness).
 const TEX_HEIGHT: usize = 112;
 /// Texture columns per coarsest-level bucket, so the interpolated
@@ -91,16 +93,28 @@ pub struct OverviewParams<'a> {
     pub hot_cues: &'a [Option<usize>],
     /// Beat grid, for the bar numbers along the top edge.
     pub marks: &'a GridMarks,
+    pub style: WaveStyle,
 }
 
 /// Paint the overview strip. Returns the click-to-seek target as a track
 /// fraction, if clicked.
 pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f32> {
-    let desired_size = egui::vec2(ui.available_width(), STRIP_HEIGHT);
-    let (response, painter) = ui.allocate_painter(desired_size, egui::Sense::click());
+    let stacked = params.style == WaveStyle::Stacked;
+    let height = if stacked {
+        STACKED_OVERVIEW_H
+    } else {
+        STRIP_HEIGHT
+    };
+    let desired_size = egui::vec2(ui.available_width(), height);
+    let (response, mut painter) = ui.allocate_painter(desired_size, egui::Sense::click());
     let rect = response.rect;
 
-    painter.rect_filled(rect, 4.0, palette::BACKGROUND);
+    if stacked {
+        // Flush in the shared well: keep cue numbers off the lane above.
+        painter.set_clip_rect(rect.intersect(painter.clip_rect()));
+    } else {
+        crate::theme::paint_content_well(&painter, rect, palette::BACKGROUND);
+    }
 
     let Some(texture) = params.texture else {
         paint_placeholder(&painter, rect);
@@ -161,11 +175,12 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
                 if bar == 0 || !(bar - 1).is_multiple_of(stride) {
                     continue;
                 }
-                painter.text(
+                crate::theme::paint_text(
+                    &painter,
                     egui::pos2(frac_x_f(params.marks.frame(i)) + 2.0, rect.top() + 1.0),
                     egui::Align2::LEFT_TOP,
                     bar,
-                    egui::FontId::monospace(8.0),
+                    crate::theme::WAVE_NUMBER,
                     label_color,
                 );
             }
@@ -211,11 +226,12 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
                 palette::LOOP_EDGE,
                 egui::Stroke::NONE,
             ));
-            painter.text(
+            crate::theme::paint_text(
+                &painter,
                 egui::pos2(x, tip.y - CUE_MARKER_H - 1.0),
                 egui::Align2::CENTER_BOTTOM,
                 format!("{}", slot + 1),
-                egui::FontId::proportional(8.0),
+                crate::theme::WAVE_NUMBER,
                 palette::LOOP_EDGE,
             );
         }

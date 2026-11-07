@@ -1,7 +1,8 @@
 //! L3 show strip: the three role lanes (Look / Energy / Accent) under
-//! the zoomed waveform, sharing its frame→x mapping and centered playhead
-//! so everything scrolls in lockstep. Read-only — editing lives in the
-//! Prepare view's `show_editor`.
+//! the zoomed waveform in the deck's waveform well, sharing its frame→x
+//! mapping so everything scrolls in lockstep (the deck draws the playhead
+//! through both). Read-only — editing lives in the Prepare view's
+//! `show_editor`.
 
 use eframe::egui;
 use halo_light::cues::LANE_COUNT;
@@ -11,9 +12,10 @@ use super::{FrameMap, GridMarks, lane_rows, palette};
 use crate::show_preview::{ACCENT_LANE, ShowPreview};
 
 /// Row heights, top to bottom: look / energy / accent.
-const ROW_H: [f32; LANE_COUNT] = [18.0, 22.0, 12.0];
-/// Full strip height: three rows plus two 1 pt separators.
-const STRIP_HEIGHT: f32 = ROW_H[0] + ROW_H[1] + ROW_H[2] + 2.0;
+const ROW_H: [f32; LANE_COUNT] = [14.0, 14.0, 14.0];
+/// Full strip height: three rows between four 1 pt seams (above, between
+/// and below them).
+pub const STRIP_HEIGHT: f32 = ROW_H[0] + ROW_H[1] + ROW_H[2] + 4.0;
 /// Vertical inset of an accent bar within its row.
 const BAR_INSET_Y: f32 = 2.0;
 /// Bars/blocks never collapse below this width at wide zooms.
@@ -21,7 +23,9 @@ const MIN_BAR_W: f32 = 2.0;
 /// Extra dim applied to every lane when the deck isn't driving lighting.
 const INACTIVE_DIM: f32 = 0.30;
 /// Width of the left label gutter in points.
-const LABEL_GUTTER_W: f32 = 30.0;
+const LABEL_GUTTER_W: f32 = 48.0;
+/// Space before a lane's caption.
+const LABEL_PAD: f32 = 8.0;
 /// Look blocks narrower than this skip their name label.
 const MIN_LABEL_W: f32 = 28.0;
 
@@ -47,7 +51,12 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
     let rect = response.rect;
     let painter = painter.with_clip_rect(rect);
 
-    painter.rect_filled(rect, 4.0, palette::LANE_BG);
+    // Black seams round every row, each row on the lane ground.
+    painter.rect_filled(rect, 0.0, crate::theme::QUIET_SEAM);
+    let rows = lane_rows(rect.shrink2(egui::vec2(0.0, 1.0)), ROW_H);
+    for row in &rows {
+        painter.rect_filled(*row, 0.0, palette::LANE_BG);
+    }
 
     let dim = |color: egui::Color32, alpha: f32| {
         let alpha = if params.lighting_active {
@@ -58,17 +67,7 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
         color.gamma_multiply(alpha)
     };
 
-    let rows = lane_rows(rect, ROW_H);
-    for row in &rows[1..] {
-        let y = row.top() - 0.5;
-        painter.line_segment(
-            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-            egui::Stroke::new(1.0_f32, palette::LANE_SEPARATOR),
-        );
-    }
-
     let loaded = params.total_frames > 0;
-    let mut active_look_color = palette::TEXT_DIM;
 
     if loaded {
         let span_frames = span.span_frames(params.marks, params.sample_rate);
@@ -92,6 +91,7 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
             .map_or(total, |e| e.frame);
         for (i, ev) in visible.iter().enumerate() {
             let color = ev.look.def().color;
+            let block_color = egui::Color32::WHITE;
             let x0 = map.x(ev.frame);
             let block_end = visible.get(i + 1).map_or(end_past_window, |n| n.frame);
             let x1 = map.x(block_end).max(x0 + MIN_BAR_W);
@@ -100,25 +100,24 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
                 egui::pos2(x1, rr.bottom() - 1.0),
             );
             let is_active = active == Some(ev.id) && !params.programmer_override;
-            let fill = if is_active { 0.45 } else { 0.25 };
+            let fill = if is_active { 0.10 } else { 0.05 };
             if params.programmer_override {
                 painter.rect_stroke(
                     block,
-                    2.0,
-                    egui::Stroke::new(1.0_f32, dim(color, 0.7)),
+                    0.0,
+                    egui::Stroke::new(1.0_f32, dim(block_color, 0.25)),
                     egui::StrokeKind::Inside,
                 );
             } else {
-                painter.rect_filled(block, 2.0, dim(color, fill));
+                painter.rect_filled(block, 0.0, dim(block_color, fill));
             }
             if is_active {
                 painter.rect_stroke(
                     block,
-                    2.0,
-                    egui::Stroke::new(1.0_f32, dim(color, 0.9)),
+                    0.0,
+                    egui::Stroke::new(1.0_f32, dim(block_color, 0.35)),
                     egui::StrokeKind::Inside,
                 );
-                active_look_color = color;
             }
             // Solid left-edge tick: the event marker itself.
             painter.rect_filled(
@@ -134,11 +133,12 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
                 // pins to the visible edge (past the gutter) instead of
                 // sitting at an off-screen block start.
                 let label_x = (x0 + 5.0).max(rect.left() + LABEL_GUTTER_W + 5.0);
-                painter.text(
+                crate::theme::paint_text(
+                    &painter,
                     egui::pos2(label_x, rr.center().y),
                     egui::Align2::LEFT_CENTER,
                     ev.look.def().name,
-                    egui::FontId::monospace(8.0),
+                    crate::theme::NOTE_TEXT,
                     dim(egui::Color32::WHITE, 0.75),
                 );
             }
@@ -215,60 +215,19 @@ pub fn paint_show_strip(ui: &mut egui::Ui, params: ShowStripParams<'_>, span: &Z
 
     // Left label gutter, painted over the content so the frame→x mapping
     // stays full-width and pixel-identical to the zoomed view above.
-    let gutter = egui::Rect::from_min_max(
-        rect.left_top(),
-        egui::pos2(rect.left() + LABEL_GUTTER_W, rect.bottom()),
-    );
-    painter.rect_filled(
-        gutter,
-        egui::CornerRadius {
-            nw: 4,
-            ne: 0,
-            sw: 4,
-            se: 0,
-        },
-        palette::LANE_BG,
-    );
-    for row in &rows[1..] {
-        let y = row.top() - 0.5;
-        painter.line_segment(
-            [egui::pos2(gutter.left(), y), egui::pos2(gutter.right(), y)],
-            egui::Stroke::new(1.0_f32, palette::LANE_SEPARATOR),
+    for (row, label) in rows.iter().zip(["LOOK", "NRG", "ACC"]) {
+        let gutter = egui::Rect::from_min_max(
+            row.left_top(),
+            egui::pos2(row.left() + LABEL_GUTTER_W, row.bottom()),
         );
-    }
-    painter.line_segment(
-        [
-            egui::pos2(gutter.right() + 0.5, rect.top()),
-            egui::pos2(gutter.right() + 0.5, rect.bottom()),
-        ],
-        egui::Stroke::new(1.0_f32, palette::LANE_SEPARATOR),
-    );
-    for (row, (label, color)) in [
-        ("LOOK", active_look_color),
-        ("NRG", palette::ENERGY),
-        ("ACC", palette::ACCENT),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        painter.text(
-            egui::pos2(gutter.center().x, rows[row].center().y),
-            egui::Align2::CENTER_CENTER,
+        painter.rect_filled(gutter, 0.0, palette::LANE_BG);
+        crate::theme::paint_text(
+            &painter,
+            egui::pos2(row.left() + LABEL_PAD, row.center().y),
+            egui::Align2::LEFT_CENTER,
             label,
-            egui::FontId::monospace(8.0),
-            dim(color, 0.9),
-        );
-    }
-
-    // Continue the zoomed view's centered playhead through the strip.
-    if loaded {
-        let center_x = rect.center().x;
-        painter.line_segment(
-            [
-                egui::pos2(center_x, rect.top()),
-                egui::pos2(center_x, rect.bottom()),
-            ],
-            egui::Stroke::new(2.0_f32, palette::PLAYHEAD),
+            crate::theme::QUIET_CAPTION,
+            crate::theme::TEXT_MUTED,
         );
     }
 }

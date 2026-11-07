@@ -6,6 +6,10 @@
 //! value. Bipolar knobs fill the arc outward from a center detent (EQ/trim
 //! unity); unipolar knobs fill from the min end (master).
 //!
+//! Drawn as Halo's design system has it: a lit cap seated in a well, the
+//! track in `segment-off`, the value arc in amber and a `text-strong`
+//! pointer.
+//!
 //! The widget is pure UI: callers load an atomic into a local `f32`, pass a
 //! `&mut` to it, and store back on `Response::changed()` — the same pattern
 //! the mixer sliders use.
@@ -13,7 +17,9 @@
 use std::f32::consts::PI;
 use std::ops::RangeInclusive;
 
-use eframe::egui::{self, Color32, Response, Sense, Stroke, Ui, Vec2, Widget};
+use eframe::egui::{self, Color32, Pos2, Response, Sense, Stroke, Ui, Vec2, Widget};
+
+use crate::theme;
 
 /// Total sweep, from `-SWEEP/2` to `+SWEEP/2` about 12 o'clock.
 const SWEEP: f32 = 1.5 * PI; // 270°
@@ -22,8 +28,8 @@ const HALF_SWEEP: f32 = SWEEP / 2.0;
 const PIXELS_FOR_FULL_TRAVEL: f32 = 200.0;
 /// Fine-adjust multiplier while Shift is held.
 const FINE: f32 = 0.25;
-/// Points from the widget rect edge to the track ring.
-const RING_INSET: f32 = 3.0;
+/// The cap's radius as a fraction of the diameter.
+const CAP_RATIO: f32 = 0.29;
 
 /// How the value arc is drawn.
 pub enum KnobArc {
@@ -51,7 +57,7 @@ impl<'a> Knob<'a> {
             range,
             arc: KnobArc::Unipolar,
             default,
-            diameter: 35.0,
+            diameter: theme::SIZE_KNOB,
             accent,
         }
     }
@@ -125,53 +131,56 @@ impl Widget for Knob<'_> {
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
             let center = rect.center();
-            let radius = self.diameter / 2.0 - RING_INSET;
-            let visuals = ui.visuals();
-
-            let track_col = visuals.weak_text_color().gamma_multiply(0.5);
+            let d = self.diameter;
+            let ring = d / 2.0 - (d / 12.0).max(4.0);
+            let width = (d / 20.0).max(2.0);
+            let cap_r = d * CAP_RATIO;
+            // Arc at 85% until hovered or dragged.
             let accent = if response.hovered() || response.dragged() {
                 self.accent
             } else {
                 self.accent.gamma_multiply(0.85)
             };
 
-            // Background track across the full sweep.
-            painter.add(egui::Shape::line(
-                arc_points(center, radius, -HALF_SWEEP, HALF_SWEEP),
-                Stroke::new(3.0, track_col),
-            ));
+            // The seat: a flat well disc.
+            painter.circle_filled(center, d / 2.0 - 0.5, theme::WELL);
 
-            // Value arc.
+            // Track across the full sweep, then the value arc.
+            round_arc(
+                painter,
+                center,
+                ring,
+                -HALF_SWEEP,
+                HALF_SWEEP,
+                width,
+                theme::SEGMENT_OFF,
+            );
             let cur = self.angle_of(*self.value);
             let from = match self.arc {
                 KnobArc::Unipolar => -HALF_SWEEP,
                 KnobArc::Bipolar { center: c } => self.angle_of(c),
             };
             if (cur - from).abs() > 1e-4 {
-                let (a, b) = if from <= cur {
-                    (from, cur)
-                } else {
-                    (cur, from)
-                };
-                painter.add(egui::Shape::line(
-                    arc_points(center, radius, a, b),
-                    Stroke::new(3.0, accent),
-                ));
+                round_arc(
+                    painter,
+                    center,
+                    ring,
+                    from.min(cur),
+                    from.max(cur),
+                    width,
+                    accent,
+                );
             }
 
-            // Body.
-            painter.circle(
-                center,
-                radius - 3.5,
-                visuals.extreme_bg_color,
-                Stroke::new(1.0, visuals.widgets.inactive.bg_stroke.color),
-            );
+            // The cap: a matte disc with a 1px edge.
+            painter.circle_filled(center, cap_r, theme::CAP);
+            painter.circle_stroke(center, cap_r, Stroke::new(1.0, theme::EDGE));
 
-            // Pointer from just inside the body to the rim.
-            let d = dir(cur);
+            // Pointer from near the centre to just inside the cap's rim.
+            let dv = dir(cur);
             painter.line_segment(
-                [center + d * (radius * 0.35), center + d * (radius - 2.0)],
-                Stroke::new(2.0, accent),
+                [center + dv * (d * 0.1), center + dv * (cap_r - d * 0.06)],
+                Stroke::new((d * 0.037).max(1.6), theme::TEXT_STRONG),
             );
         }
 
@@ -189,4 +198,23 @@ fn arc_points(center: egui::Pos2, radius: f32, a0: f32, a1: f32) -> Vec<egui::Po
             center + dir(a) * radius
         })
         .collect()
+}
+
+/// An arc stroke with round ends.
+fn round_arc(
+    painter: &egui::Painter,
+    center: Pos2,
+    radius: f32,
+    a0: f32,
+    a1: f32,
+    width: f32,
+    color: Color32,
+) {
+    painter.add(egui::Shape::line(
+        arc_points(center, radius, a0, a1),
+        Stroke::new(width, color),
+    ));
+    for a in [a0, a1] {
+        painter.circle_filled(center + dir(a) * radius, width / 2.0, color);
+    }
 }
