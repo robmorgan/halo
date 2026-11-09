@@ -25,7 +25,7 @@ use crate::options::{MidiLive, Options, OptionsValues, Outcome};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
 use crate::show::simulate_show_l3;
 use crate::show_preview::{LOOK_PALETTE, LookId, ShowPreview, ShowSel};
-use crate::state::{MixerShared, ScrubPhase, Transport};
+use crate::state::{MASTER_BPM_RANGE, MixerShared, ScrubPhase, Transport};
 use crate::theme::{self, ACCENT};
 use crate::waveform::{
     BandPeaks, GhostPlayhead, GridMarks, OverviewParams, OverviewTexture, STACKED_OVERVIEW_H,
@@ -111,7 +111,7 @@ struct DeckUi {
     /// WIDE expands the fader range; all ranges use the same processor.
     wide: bool,
     keylock: bool,
-    /// Following the master deck's tempo + beat phase.
+    /// Following the master clock's tempo + beat phase.
     synced: bool,
     /// Momentary pitch-bend factor from the held nudge buttons (1.0 = none).
     bend: f32,
@@ -527,6 +527,11 @@ pub struct HaloApp {
     decks: [DeckUi; 2],
     /// Index of the deck driving the lighting rig.
     lighting_deck: usize,
+    /// The lighting deck clicked in the master readout; `None` follows the
+    /// louder playing deck.
+    lighting_pin: Option<usize>,
+    /// The master BPM being typed after a double-click.
+    bpm_edit: Option<String>,
     view: View,
     prepare: PrepareState,
     /// Live manual-override layer; beats the active deck's track cues.
@@ -724,6 +729,8 @@ impl HaloApp {
             mixer,
             decks,
             lighting_deck: 0,
+            lighting_pin: None,
+            bpm_edit: None,
             view: persisted.view,
             prepare,
             programmer: Programmer::default(),
@@ -1253,26 +1260,55 @@ impl HaloApp {
         }
     }
 
-    /// One callback-owned master drives transport, displays and lighting.
-    fn master_source(&self) -> usize {
-        usize::from(self.mixer.effective_master.load(Ordering::Acquire)).min(1)
+    /// The master clock's tempo: synced decks play at it.
+    fn master_bpm(&self) -> f64 {
+        self.mixer.master_bpm.load()
     }
 
-    fn global_bpm(&self) -> f64 {
-        let d = &self.decks[self.master_source()];
-        d.bpm * d.deck.shared.matched_tempo.load()
+    /// Retune the master clock, and every synced deck with it.
+    fn set_master_bpm(&mut self, bpm: f64) {
+        if bpm.is_finite() {
+            let bpm = bpm.clamp(*MASTER_BPM_RANGE.start(), *MASTER_BPM_RANGE.end());
+            self.mixer.master_bpm.store((bpm * 10.0).round() / 10.0);
+        }
+    }
+
+    /// The deck the lighting follows: a pinned one, or else the louder
+    /// playing deck, kept through a blend until the other is clearly
+    /// louder or it stops.
+    fn update_lighting_deck(&mut self) {
+        /// How much louder (channel fader) the other deck must be to take over.
+        const HANDOVER: f32 = 0.1;
+        let current = self.lighting_deck;
+        self.lighting_deck = match self.lighting_pin {
+            Some(deck) => deck,
+            None => {
+                let live = |d: &DeckUi| {
+                    d.deck.track.is_some() && d.deck.shared.transport() == Transport::Playing
+                };
+                let level = |d: &DeckUi| d.deck.shared.fader.load();
+                let other = 1 - current;
+                let (this, that) = (&self.decks[current], &self.decks[other]);
+                match (live(this), live(that)) {
+                    (false, true) => other,
+                    (true, true) if level(that) > level(this) + HANDOVER => other,
+                    _ => current,
+                }
+            }
+        };
+        self.mixer
+            .lighting_deck
+            .store(self.lighting_deck as u8, Ordering::Release);
     }
 
     fn update_tempo(&mut self) {
-        let master = self.master_source();
-        for (i, d) in self.decks.iter_mut().enumerate() {
+        let master_bpm = self.master_bpm();
+        for d in &mut self.decks {
             let shared = &d.deck.shared;
             shared.sync_enabled.store(d.synced, Ordering::Release);
-            if d.synced
-                && (i == master
-                    || crate::sync::SyncState::load(shared) != crate::sync::SyncState::Off)
-            {
-                let pct = ((shared.matched_tempo.load() - 1.0) * 100.0) as f32;
+            // A synced deck plays at the master BPM; its fader shows that.
+            if d.synced && d.bpm > 0.0 {
+                let pct = ((master_bpm / d.bpm - 1.0) * 100.0) as f32;
                 if pct.abs() > 50.0 {
                     d.wide = true;
                     d.pitch_range = 300.0;
@@ -1485,10 +1521,7 @@ impl HaloApp {
                 _ => {
                     // No grid: wall-clock at the master BPM, matching the
                     // programmer's effect previews. Advances per publish only.
-                    let bpm = {
-                        let b = self.global_bpm();
-                        if b > 0.0 { b } else { 120.0 }
-                    };
+                    let bpm = self.master_bpm();
                     dmx::BeatRef {
                         beat_t: ctx.input(|i| i.time) * bpm / 60.0,
                         playhead,
@@ -1780,13 +1813,7 @@ impl HaloApp {
             beat_phase(&deck.marks, playhead),
         ) {
             (Some(i), Some(ph)) => i as f64 + ph,
-            _ => {
-                let bpm = {
-                    let b = self.global_bpm();
-                    if b > 0.0 { b } else { 120.0 }
-                };
-                ui.input(|i| i.time) * bpm / 60.0
-            }
+            _ => ui.input(|i| i.time) * self.master_bpm() / 60.0,
         };
 
         let mut cx = ProgrammerCtx {
@@ -2950,8 +2977,7 @@ impl eframe::App for HaloApp {
         self.handle_shortcuts(ctx);
         self.poll_midi();
         self.update_tempo();
-        // Lighting auto-follows the deck the master BPM is sourced from.
-        self.lighting_deck = self.master_source();
+        self.update_lighting_deck();
         self.update_cpu();
 
         if self.any_active() {
@@ -2966,6 +2992,12 @@ impl eframe::App for HaloApp {
             // Idle tick so worker events (analysis, imports) still land.
             ctx.request_repaint_after(std::time::Duration::from_millis(500));
         }
+        // The master clock's beat counter ticks over at its next beat.
+        if self.audio.is_some() {
+            let beats = self.mixer.clock_beats.load();
+            let to_next = (1.0 - beats.rem_euclid(1.0)) * 60.0 / self.master_bpm();
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(to_next.max(0.005)));
+        }
 
         // Resolve the lighting output stack once per frame — every
         // indicator (toolbar LEDs, lane tints, hollow bars) derives from
@@ -2979,8 +3011,6 @@ impl eframe::App for HaloApp {
         // on its own clock between UI frames.
         self.publish_dmx(ctx);
 
-        let global_bpm = self.global_bpm();
-        let master_src = self.master_source();
         let mixer_cx = self.mixer_center_x;
         egui::TopBottomPanel::top("toolbar")
             .frame(theme::ground_frame(0.0).inner_margin(egui::Margin {
@@ -3073,12 +3103,22 @@ impl eframe::App for HaloApp {
                 } else {
                     toolbar_row.center().x
                 };
-                paint_master_bpm(
+                let clock = master_clock(
                     ui,
                     egui::pos2(cx, toolbar_row.center().y),
-                    global_bpm,
-                    master_src,
+                    self.master_bpm(),
+                    self.mixer.clock_beats.load(),
+                    self.lighting_deck,
+                    self.lighting_pin,
+                    &mut self.bpm_edit,
                 );
+                if let Some(bpm) = clock.bpm {
+                    self.set_master_bpm(bpm);
+                }
+                if let Some(pin) = clock.pin {
+                    self.lighting_pin = pin;
+                    self.update_lighting_deck();
+                }
             });
 
         self.remove_confirm_window(ctx);
@@ -3152,7 +3192,6 @@ impl eframe::App for HaloApp {
                 let mut tallest = 0.0_f32;
 
                 let sample_rate = self.device_rate();
-                let master = self.master_source();
                 let lighting_deck = self.lighting_deck;
                 let has_audio = self.audio.is_some();
                 let mut responses: [DeckPanelResponse; 2] = Default::default();
@@ -3183,7 +3222,6 @@ impl eframe::App for HaloApp {
                             &mut self.decks[0],
                             0,
                             sample_rate,
-                            master == 0,
                             (lighting_deck == 0).then_some(&lighting),
                             has_audio,
                         );
@@ -3209,7 +3247,6 @@ impl eframe::App for HaloApp {
                             &mut self.decks[1],
                             1,
                             sample_rate,
-                            master == 1,
                             (lighting_deck == 1).then_some(&lighting),
                             has_audio,
                         );
@@ -3220,11 +3257,8 @@ impl eframe::App for HaloApp {
                     ui.ctx().request_repaint();
                 }
                 for (i, resp) in responses.into_iter().enumerate() {
-                    if resp.master_clicked {
-                        let request = self.mixer.master_request.load(Ordering::Relaxed);
-                        self.mixer
-                            .master_request
-                            .store((request & !1) + 2 + i as u64, Ordering::Release);
+                    if let Some(bpm) = resp.master_bpm {
+                        self.set_master_bpm(bpm);
                     }
                     if resp.play_toggled {
                         self.toggle_play_synced(i);
@@ -4017,7 +4051,8 @@ fn track_table(
 struct DeckPanelResponse {
     load_path: Option<PathBuf>,
     load_track_id: Option<i64>,
-    master_clicked: bool,
+    /// The synced deck's tempo fader moved: the master BPM it asks for.
+    master_bpm: Option<f64>,
     /// Play/pause was pressed; delivery schedules a synced start after priming.
     play_toggled: bool,
 }
@@ -4128,7 +4163,6 @@ fn deck_panel(
     deck_ui: &mut DeckUi,
     idx: usize,
     sample_rate: u32,
-    is_master: bool,
     // Some exactly when this deck drives the lighting rig.
     lighting_outputs: Option<&[LaneOutput; LANE_COUNT]>,
     has_audio: bool,
@@ -4160,18 +4194,16 @@ fn deck_panel(
     // invisible, and showing them makes a locked deck look like it's
     // hunting. The throw is shown deliberately: the BPM dipping and
     // settling is the platter feedback.
-    let base_rate = if is_master
-        || (deck_ui.synced && crate::sync::SyncState::load(&shared) != crate::sync::SyncState::Off)
-    {
-        shared.matched_tempo.load()
-    } else {
-        1.0 + deck_ui.pitch_percent as f64 / 100.0
-    };
+    let base_rate =
+        if deck_ui.synced && crate::sync::SyncState::load(&shared) != crate::sync::SyncState::Off {
+            shared.matched_tempo.load()
+        } else {
+            1.0 + deck_ui.pitch_percent as f64 / 100.0
+        };
     let tempo_rate = base_rate * deck_ui.bend as f64;
 
     let readings = DeckReadings {
         has_track,
-        is_master,
         playhead,
         total,
         sample_rate,
@@ -4304,7 +4336,7 @@ fn deck_panel(
 
         ui.vertical(|ui| {
             ui.set_width(TEMPO_RAIL_W);
-            deck_tempo_rail(ui, deck_ui, idx, is_master, has_track);
+            response.master_bpm = deck_tempo_rail(ui, deck_ui, idx, has_track);
         });
     });
 
@@ -4632,7 +4664,6 @@ const LOOP_LENGTH: usize = 3;
 /// What the deck's header reads, measured once per frame by `deck_panel`.
 struct DeckReadings {
     has_track: bool,
-    is_master: bool,
     playhead: usize,
     total: usize,
     sample_rate: u32,
@@ -4821,17 +4852,12 @@ fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
         (&value, theme::QUIET_NUMERALS, theme::TEXT_STRONG),
     );
 
-    // BPM: amber while this deck is the tempo master.
     let bpm_text = if deck_ui.bpm > 0.0 && r.has_track {
         format!("{:.1}", deck_ui.bpm * r.tempo_rate)
     } else {
         "—".to_string()
     };
-    let bpm_color = if r.is_master {
-        ACCENT
-    } else {
-        theme::TEXT_STRONG
-    };
+    let bpm_color = theme::TEXT_STRONG;
     header_reading(
         painter,
         bpm,
@@ -4989,29 +5015,27 @@ fn zoom_row(ui: &mut egui::Ui, deck_ui: &mut DeckUi, idx: usize, display_pos: f6
 
 /// The tempo rail beside the waveform well: SYNC, the tempo fader with the
 /// keylock radio level with its middle, and the RANGE selector, spanning
-/// the well's height.
+/// the well's height. Returns the master BPM a synced deck's fader asked
+/// for.
 fn deck_tempo_rail(
     ui: &mut egui::Ui,
     deck_ui: &mut DeckUi,
     deck_idx: usize,
-    is_master: bool,
     has_track: bool,
-) {
+) -> Option<f64> {
+    let mut master_bpm = None;
     ui.add_enabled_ui(has_track, |ui| {
         ui.spacing_mut().item_spacing.y = DECK_GAP;
-        // A master leads rather than follows. Retain its stored Sync intent
-        // for a later handoff, but show only the currently active role.
-        let following = deck_ui.synced && !is_master;
         let sync = ui
             .add(
-                outlined_key(following, "SYNC")
+                outlined_key(deck_ui.synced, "SYNC")
                     .size([TEMPO_RAIL_W, theme::SIZE_KEY])
-                    .enabled(!is_master)
                     .quiet(),
             )
             .on_hover_text(
-                "Match the master BPM; Play keeps the parked position and waits for the next \
-                 matching beat phase",
+                "Follow the master BPM and lock to its beat; Play keeps the parked position and \
+                 waits for the clock's next matching beat. While synced, the tempo fader moves \
+                 the master BPM.",
             );
         if sync.clicked() {
             deck_ui.synced = !deck_ui.synced;
@@ -5044,10 +5068,10 @@ fn deck_tempo_rail(
             keylock.enabled(),
         );
 
-        // Absolute-position fader: `.changed()` only fires on a real
-        // grab, so touching it hands control back and drops sync
-        // (matching the old slider). While synced, update_tempo keeps
-        // writing pitch_percent and the fader just displays it.
+        // Absolute-position fader: `.changed()` only fires on a real grab.
+        // Unsynced, it sets the deck's own tempo. Synced, it sets the master
+        // BPM instead, and update_tempo writes it back as every synced
+        // deck's pitch.
         let range = deck_ui.pitch_range;
         let mut pct = deck_ui.pitch_percent;
         let fader_rect =
@@ -5064,14 +5088,11 @@ fn deck_tempo_rail(
                     .default_value(0.0),
             );
         if fader.changed() {
-            deck_ui.pitch_percent =
-                ((legal_tempo(1.0 + pct as f64 / 100.0, deck_ui.keylock) - 1.0) * 100.0) as f32;
-            deck_ui.synced = false;
-            deck_ui
-                .deck
-                .shared
-                .sync_enabled
-                .store(false, Ordering::Release);
+            let rate = legal_tempo(1.0 + pct as f64 / 100.0, deck_ui.keylock);
+            deck_ui.pitch_percent = ((rate - 1.0) * 100.0) as f32;
+            if deck_ui.synced && deck_ui.bpm > 0.0 {
+                master_bpm = Some(deck_ui.bpm * rate);
+            }
         }
 
         // RANGE: a key opening the range menu.
@@ -5132,6 +5153,7 @@ fn deck_tempo_rail(
                 .clamp(-deck_ui.pitch_range.min(100.0), deck_ui.pitch_range);
         }
     });
+    master_bpm
 }
 
 /// A radio: an 18px round well (edge ring, a lip of sheen under it) holding
@@ -5419,50 +5441,210 @@ fn master_level_meter(ui: &mut egui::Ui, level: f32) {
     theme::paint_steps(ui.painter(), rect, level);
 }
 
-/// The master tempo (MasterBpm): a 144×30 well, the tempo in `numerals-md`
-/// centred between A and B at either end, the source deck lit in
-/// `lane-lighting` (the rig follows the same deck).
-fn paint_master_bpm(ui: &egui::Ui, center: egui::Pos2, bpm: f64, source: usize) {
-    let ctx = ui.ctx();
-    let painter = ui.painter();
-    let well = egui::Rect::from_center_size(center, egui::vec2(144.0, theme::SIZE_KEY));
-    theme::paint_well(painter, well, theme::RADIUS_CONTROL);
+/// What the master clock readout asks for this frame.
+#[derive(Default)]
+struct MasterClockResponse {
+    /// A new master BPM: dragged, scrolled or typed.
+    bpm: Option<f64>,
+    /// A lighting deck clicked: `Some(None)` returns to automatic.
+    pin: Option<Option<usize>>,
+}
 
-    // A and B at the ends, 10 in.
-    let mut ends = [0.0_f32; 2];
-    for (i, letter) in DECK_NAMES.iter().enumerate() {
-        let lit = i == source;
-        let color = if lit { ACCENT } else { theme::TEXT_MUTED };
-        let g = theme::KEY_LABEL.galley(ctx, letter, color);
-        let w = g.size().x - theme::KEY_LABEL.spacing;
-        let x = if i == 0 {
-            well.left() + 10.0
-        } else {
-            well.right() - 10.0 - w
-        };
-        ends[i] = if i == 0 { x + w } else { x };
-        let rect = egui::Rect::from_min_size(
-            egui::pos2(x, well.center().y - g.size().y / 2.0),
-            egui::vec2(w, g.size().y),
-        );
-        painter.galley(rect.min, g, color);
-    }
+/// Points of drag per tempo step, and of scroll: a mouse-wheel notch is
+/// about one step.
+const MASTER_BPM_STEP_PX: f32 = 6.0;
+const MASTER_BPM_SCROLL_PX: f32 = 24.0;
 
-    // The tempo, centred between the letters.
-    let text = if bpm > 0.0 {
-        format!("{bpm:.1}")
-    } else {
-        "—".to_string()
+/// The master clock (MasterClock): one well, centred on `center`, reading
+/// `A │ 128.0 │ 13.2 ▪▪▫▫ │ B`. The lighting deck's letter is lit and, when
+/// it was clicked rather than picked automatically, underlined; clicking a
+/// letter pins it, clicking the pinned one returns to automatic. The tempo
+/// drags or scrolls in 0.1 steps (shift: 1.0) and types after a
+/// double-click. The counter is the clock's bar and beat.
+fn master_clock(
+    ui: &mut egui::Ui,
+    center: egui::Pos2,
+    bpm: f64,
+    clock_beats: f64,
+    lighting: usize,
+    pinned: Option<usize>,
+    edit: &mut Option<String>,
+) -> MasterClockResponse {
+    let mut out = MasterClockResponse::default();
+    let ctx = ui.ctx().clone();
+    const PAD: f32 = 10.0;
+    const GAP: f32 = 12.0;
+    let letter_w = DECK_NAMES.map(|l| theme::KEY_LABEL.width(&ctx, l));
+    let bpm_w = theme::NUMERALS_MD.width(&ctx, "888.8");
+    let count_w = theme::NUMERALS_SM.width(&ctx, "8888.8");
+    let steps = crate::waveform::BEAT_STEPS_SIZE;
+    let width = 2.0 * PAD
+        + letter_w[0]
+        + letter_w[1]
+        + bpm_w
+        + count_w
+        + theme::SPACE_8
+        + steps.x
+        + 4.0 * GAP
+        + 2.0;
+    let well = egui::Rect::from_center_size(center, egui::vec2(width, theme::SIZE_KEY));
+    let painter = ui.painter().clone();
+    theme::paint_well(&painter, well, theme::RADIUS_CONTROL);
+    let mid = well.center().y;
+    let groove = |x: f32| {
+        let span = egui::Rangef::new(mid - 8.0, mid + 8.0);
+        painter.vline(x + 0.5, span, egui::Stroke::new(1.0, theme::EDGE));
     };
-    let value = theme::NUMERALS_MD.galley(ctx, &text, theme::TEXT_STRONG);
-    let value_w = value.size().x - theme::NUMERALS_MD.spacing;
-    let left = ((ends[0] + ends[1]) - value_w) / 2.0;
-    let value_top = well.center().y - value.size().y / 2.0;
-    painter.galley(
-        egui::pos2(left, value_top).round(),
-        value,
+
+    // A and B at the ends: the lighting deck lit, underlined when pinned.
+    let mut x = well.left() + PAD;
+    let letter_rects = [0, 1].map(|i| {
+        let left = if i == 0 {
+            well.left() + PAD
+        } else {
+            well.right() - PAD - letter_w[1]
+        };
+        egui::Rect::from_min_max(
+            egui::pos2(left - 4.0, well.top()),
+            egui::pos2(left + letter_w[i] + 4.0, well.bottom()),
+        )
+    });
+    for (i, rect) in letter_rects.into_iter().enumerate() {
+        let lit = i == lighting;
+        let color = if lit { ACCENT } else { theme::TEXT_MUTED };
+        let resp = ui
+            .interact(
+                rect,
+                ui.id().with(("lighting-deck", i)),
+                egui::Sense::click(),
+            )
+            .on_hover_text(if pinned == Some(i) {
+                format!(
+                    "Lighting follows deck {}. Click to follow the louder deck again.",
+                    DECK_NAMES[i]
+                )
+            } else {
+                format!("Click to keep the lighting on deck {}.", DECK_NAMES[i])
+            });
+        let text_left = rect.left() + 4.0;
+        theme::paint_text(
+            &painter,
+            egui::pos2(text_left, mid),
+            egui::Align2::LEFT_CENTER,
+            DECK_NAMES[i],
+            theme::KEY_LABEL,
+            color,
+        );
+        if pinned == Some(i) {
+            let y = mid + 9.0;
+            painter.hline(
+                egui::Rangef::new(text_left, text_left + letter_w[i]),
+                y,
+                egui::Stroke::new(1.5, ACCENT),
+            );
+        }
+        if resp.clicked() {
+            out.pin = Some(if pinned == Some(i) { None } else { Some(i) });
+        }
+    }
+    x += letter_w[0] + GAP;
+
+    // The tempo.
+    let bpm_rect = egui::Rect::from_min_max(
+        egui::pos2(x - 4.0, well.top()),
+        egui::pos2(x + bpm_w + 4.0, well.bottom()),
+    );
+    let bpm_id = ui.id().with("master-bpm");
+    if let Some(text) = edit {
+        let resp = ui.put(
+            bpm_rect,
+            egui::TextEdit::singleline(text)
+                .id(bpm_id.with("edit"))
+                .font(theme::NUMERALS_MD.font_id())
+                .text_color(theme::TEXT_STRONG)
+                .frame(false)
+                .horizontal_align(egui::Align::Center)
+                .vertical_align(egui::Align::Center),
+        );
+        resp.request_focus();
+        let (enter, escape) = ui.input(|i| {
+            (
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+            )
+        });
+        if enter || (resp.lost_focus() && !escape) {
+            out.bpm = text.trim().parse::<f64>().ok();
+            *edit = None;
+        } else if escape {
+            *edit = None;
+        }
+    } else {
+        let resp = ui
+            .interact(bpm_rect, bpm_id, egui::Sense::click_and_drag())
+            .on_hover_text(
+                "Master BPM: drag or scroll to change (shift: by 1), double-click to type",
+            )
+            .on_hover_cursor(egui::CursorIcon::ResizeVertical);
+        let step = if ui.input(|i| i.modifiers.shift) {
+            1.0
+        } else {
+            0.1
+        };
+        // Drag up or scroll up to raise it; the remainder carries between
+        // frames so slow moves still step.
+        let mut moved = 0.0;
+        if resp.dragged() {
+            moved -= resp.drag_delta().y;
+        }
+        if resp.hovered() {
+            moved +=
+                ui.input(|i| i.smooth_scroll_delta.y) * MASTER_BPM_STEP_PX / MASTER_BPM_SCROLL_PX;
+        }
+        if moved != 0.0 {
+            let carry_id = bpm_id.with("carry");
+            let carry = ui.data(|d| d.get_temp::<f32>(carry_id)).unwrap_or(0.0) + moved;
+            let steps = (carry / MASTER_BPM_STEP_PX).trunc();
+            ui.data_mut(|d| d.insert_temp(carry_id, carry - steps * MASTER_BPM_STEP_PX));
+            if steps != 0.0 {
+                out.bpm = Some(bpm + steps as f64 * step);
+            }
+        }
+        if resp.double_clicked() {
+            *edit = Some(format!("{bpm:.1}"));
+        }
+        theme::paint_text(
+            &painter,
+            egui::pos2(x + bpm_w, mid),
+            egui::Align2::RIGHT_CENTER,
+            format!("{bpm:.1}"),
+            theme::NUMERALS_MD,
+            theme::TEXT_STRONG,
+        );
+    }
+    x += bpm_w + GAP;
+    groove(x);
+    x += 2.0 + GAP;
+
+    // The clock's bar and beat, then its four beat steps.
+    let beat = clock_beats.max(0.0).floor() as u64;
+    let bar = (beat / 4) % 9999 + 1;
+    let in_bar = (beat % 4) as u8 + 1;
+    theme::paint_text(
+        &painter,
+        egui::pos2(x + count_w, mid),
+        egui::Align2::RIGHT_CENTER,
+        format!("{bar}.{in_bar}"),
+        theme::NUMERALS_SM,
         theme::TEXT_STRONG,
     );
+    x += count_w + theme::SPACE_8;
+    crate::waveform::paint_beat_steps(
+        &painter,
+        egui::Rect::from_min_size(egui::pos2(x, mid - steps.y / 2.0), steps),
+        Some(in_bar),
+    );
+    out
 }
 
 /// Toolbar readout: DSP = audio-callback load (render time ÷ buffer time,
