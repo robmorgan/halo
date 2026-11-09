@@ -2539,8 +2539,20 @@ impl HaloApp {
                 }
             }
             BrowserAction::AddToPlaylist(playlist, track) => {
-                if let Err(e) = lib.add_to_playlist(playlist, track) {
-                    log::error!("{e}");
+                let title = self.browser.rows.iter().find(|r| r.id == track);
+                let name = self.browser.playlists.iter().find(|p| p.id == playlist);
+                match lib.add_to_playlist(playlist, track) {
+                    Ok(added) => {
+                        if let (Some(t), Some(p)) = (title, name) {
+                            let (title, name) = (&t.title, &p.name);
+                            self.status = if added {
+                                format!("Added “{title}” to {name}")
+                            } else {
+                                format!("“{title}” is already in {name}")
+                            };
+                        }
+                    }
+                    Err(e) => log::error!("{e}"),
                 }
             }
             BrowserAction::RemoveFromPlaylist(playlist, track) => {
@@ -3161,6 +3173,9 @@ fn paint_programmer_icon(painter: &egui::Painter, center: egui::Pos2, color: egu
 
 /// The playlist well's width.
 const PLAYLIST_WELL_W: f32 = 190.0;
+/// The outline a playlist row gets while a dragged track is over it (a lit
+/// key's outline width).
+const PLAYLIST_DROP_OUTLINE: f32 = 1.5;
 
 /// Left side of the browser: Library root + playlist tree with inline
 /// rename and context menus.
@@ -3280,6 +3295,23 @@ fn playlist_row(
     let resp = ui.selectable_label(browser.selected == Some(pl.id), format!("♪ {}", pl.name));
     if resp.clicked() {
         actions.push(BrowserAction::SelectPlaylist(Some(pl.id)));
+    }
+    // A drop target for library rows: outlined while a track is over it,
+    // the track appended on release.
+    if egui::DragAndDrop::has_payload_of_type::<DragTrack>(ui.ctx())
+        && ui.rect_contains_pointer(resp.rect)
+    {
+        ui.painter().rect_stroke(
+            resp.rect,
+            theme::RADIUS_CONTROL,
+            egui::Stroke::new(PLAYLIST_DROP_OUTLINE, ACCENT),
+            egui::StrokeKind::Inside,
+        );
+        if ui.input(|i| i.pointer.any_released())
+            && let Some(drag) = egui::DragAndDrop::take_payload::<DragTrack>(ui.ctx())
+        {
+            actions.push(BrowserAction::AddToPlaylist(pl.id, drag.track_id));
+        }
     }
     resp.context_menu(|ui| {
         if ui.button("Rename").clicked() {

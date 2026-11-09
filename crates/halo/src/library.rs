@@ -534,8 +534,10 @@ impl Library {
         Ok(())
     }
 
-    pub fn add_to_playlist(&self, playlist: i64, track: i64) -> Result<(), String> {
-        self.conn
+    /// Appends a track to a playlist. Returns false if it was already in it.
+    pub fn add_to_playlist(&self, playlist: i64, track: i64) -> Result<bool, String> {
+        let added = self
+            .conn
             .execute(
                 "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position)
                  VALUES (?1, ?2,
@@ -544,7 +546,7 @@ impl Library {
                 params![playlist, track],
             )
             .map_err(|e| format!("add to playlist: {e}"))?;
-        Ok(())
+        Ok(added == 1)
     }
 
     pub fn remove_from_playlist(&self, playlist: i64, track: i64) -> Result<(), String> {
@@ -790,7 +792,8 @@ mod tests {
         let t1 = insert(&lib, "/x/a.mp3", "Alpha", "A", None);
         let t2 = insert(&lib, "/x/b.mp3", "Beta", "B", None);
         let pl = lib.create_playlist("Set", None, false).unwrap();
-        lib.add_to_playlist(pl, t2).unwrap();
+        assert!(lib.add_to_playlist(pl, t2).unwrap());
+        assert!(!lib.add_to_playlist(pl, t2).unwrap());
 
         let in_pl = lib.tracks(Some(pl), "", SortColumn::Title, true).unwrap();
         assert_eq!(in_pl.len(), 1);
