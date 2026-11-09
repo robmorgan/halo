@@ -57,6 +57,8 @@ const PULSE_TICK: std::time::Duration = std::time::Duration::from_millis(80);
 const STRIP_H: f32 = 2.0;
 const STRIP_INSET: f32 = 8.0;
 const STRIP_BOTTOM: f32 = 4.0;
+/// A [`Key::corner_label`]: in from the right edge, down from the top.
+const CORNER_INSET: Vec2 = egui::vec2(6.0, 4.0);
 
 #[must_use = "add it with `ui.add(...)`"]
 pub struct Key {
@@ -72,6 +74,7 @@ pub struct Key {
     color: Option<Color32>,
     led: Option<(bool, Color32)>,
     strip: Option<Color32>,
+    corner: Option<(String, Color32)>,
     pulse: Option<Color32>,
     selected: bool,
     pressed: bool,
@@ -101,6 +104,7 @@ impl Key {
             color: None,
             led: None,
             strip: None,
+            corner: None,
             pulse: None,
             selected: false,
             pressed: false,
@@ -155,6 +159,13 @@ impl Key {
     /// and unlit (a loaded deck's PLAY, waiting to start).
     pub fn pulse(mut self, color: Option<Color32>) -> Self {
         self.pulse = color;
+        self
+    }
+
+    /// A small `pad-number` label in the top-right corner (a hot cue
+    /// pad's slot number), leaving the centre for the key's own label.
+    pub fn corner_label(mut self, label: impl Into<String>, color: Color32) -> Self {
+        self.corner = Some((label.into(), color));
         self
     }
 
@@ -332,6 +343,21 @@ impl Widget for Key {
                 egui::StrokeKind::Inside,
             );
             ui.ctx().request_repaint_after(PULSE_TICK);
+        }
+
+        if let Some((label, color)) = &self.corner {
+            theme::paint_text(
+                painter,
+                egui::pos2(rect.right() - CORNER_INSET.x, rect.top() + CORNER_INSET.y),
+                egui::Align2::RIGHT_TOP,
+                label,
+                theme::PAD_NUMBER,
+                if enabled {
+                    *color
+                } else {
+                    theme::TEXT_DISABLED
+                },
+            );
         }
 
         if let Some(color) = self.strip.filter(|_| enabled) {

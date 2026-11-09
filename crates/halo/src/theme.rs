@@ -114,18 +114,19 @@ pub const FIXTURE_R: Color32 = Color32::from_rgb(0xeb, 0x46, 0x3c);
 pub const FIXTURE_G: Color32 = Color32::from_rgb(0x50, 0xcd, 0x5f);
 pub const FIXTURE_B: Color32 = Color32::from_rgb(0x4b, 0x7d, 0xff);
 pub const FIXTURE_W: Color32 = Color32::from_rgb(0xeb, 0xeb, 0xf0);
-/// Hot cue colours by slot (1–8). The hard-edge look marks every set pad
-/// in the accent instead.
-#[allow(dead_code)]
+/// Hot cue colours by slot (1–8): a set pad's strip and its markers on the
+/// waveforms. Red, orange, yellow, lime, teal, indigo, violet, pink: each
+/// at least 4.9:1 on a deck key, no two closer than ΔE 33, the indigo kept
+/// clear of the accent and the red of the latch.
 pub const CUE: [Color32; 8] = [
-    Color32::from_rgb(0xff, 0x82, 0x71),
-    Color32::from_rgb(0xff, 0xb8, 0x33),
-    Color32::from_rgb(0xf8, 0xdc, 0x5c),
-    Color32::from_rgb(0x5b, 0xdd, 0x8d),
-    Color32::from_rgb(0x31, 0xd8, 0xd0),
-    Color32::from_rgb(0x5c, 0xa2, 0xff),
-    Color32::from_rgb(0xa8, 0x82, 0xff),
-    Color32::from_rgb(0xff, 0x75, 0xc6),
+    Color32::from_rgb(0xff, 0x4d, 0x5e),
+    Color32::from_rgb(0xff, 0x9a, 0x3d),
+    Color32::from_rgb(0xf5, 0xd9, 0x4a),
+    Color32::from_rgb(0x9b, 0xe1, 0x5d),
+    Color32::from_rgb(0x2e, 0xd3, 0xb7),
+    Color32::from_rgb(0x5a, 0x7d, 0xff),
+    Color32::from_rgb(0xa6, 0x5c, 0xff),
+    Color32::from_rgb(0xff, 0x6f, 0xc0),
 ];
 
 // ---------------------------------------------------------------- quiet
@@ -284,7 +285,7 @@ pub const NUMERALS_MD: TypeStyle = TypeStyle::new(17.0, Weight::Numerals, 0.2);
 pub const NUMERALS_SM: TypeStyle = TypeStyle::new(13.0, Weight::Numerals, 0.2);
 pub const KEY_LABEL: TypeStyle = TypeStyle::new(12.0, Weight::SemiBold, 1.2);
 pub const CAPTION: TypeStyle = TypeStyle::new(10.5, Weight::SemiBold, 1.6);
-pub const PAD_NUMBER: TypeStyle = TypeStyle::new(13.0, Weight::SemiBold, 0.4);
+pub const PAD_NUMBER: TypeStyle = TypeStyle::new(11.0, Weight::SemiBold, 0.4);
 pub const WORDMARK: TypeStyle = TypeStyle::new(17.0, Weight::SemiBold, 6.0);
 pub const TRACK_TITLE: TypeStyle = TypeStyle::new(18.0, Weight::SemiBold, 0.3);
 pub const BODY_TEXT: TypeStyle = TypeStyle::new(13.0, Weight::Regular, 0.0);
@@ -829,7 +830,7 @@ pub fn well<R>(
 /// Padding inside a [`tray`].
 pub const TRAY_PAD: f32 = 3.0;
 /// A [`tray_divider`]'s line, and the room before and after it.
-const TRAY_DIVIDER: Color32 = rgba(0xff, 0xff, 0xff, 0x1f);
+pub const TRAY_DIVIDER: Color32 = rgba(0xff, 0xff, 0xff, 0x1f);
 const TRAY_DIVIDER_BEFORE: f32 = 3.0;
 const TRAY_DIVIDER_AFTER: f32 = 4.0;
 /// The room a [`tray_divider`] takes across.
