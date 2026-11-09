@@ -651,6 +651,20 @@ pub fn paint_well_edged(painter: &Painter, rect: Rect, radius: u8) {
     paint_edge(painter, rect, radius, EDGE);
 }
 
+/// Keyboard focus: a 1px `accent` ring just outside a control, clear of a
+/// lit key's outline inside it.
+pub fn paint_focus(painter: &Painter, rect: Rect) {
+    painter.rect_stroke(
+        rect.expand(FOCUS_GAP),
+        RADIUS_CONTROL,
+        Stroke::new(1.0, ACCENT),
+        StrokeKind::Outside,
+    );
+}
+
+/// Between a control and its focus ring.
+const FOCUS_GAP: f32 = 2.0;
+
 /// A soft glow behind a light source (lit LEDs, the lit beat step, the
 /// master-source letter). Never on keys, text or panels.
 pub fn paint_glow(painter: &Painter, rect: Rect, radius: f32, blur: f32, color: Color32) {

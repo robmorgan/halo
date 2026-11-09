@@ -51,7 +51,7 @@ Plain threads + channels/atomics; each session has one owner:
 ### Key modules — `crates/halo/src`
 
 - `main.rs` — eframe/wgpu entry point; positional file arg; `env_logger`.
-- `app.rs` — `HaloApp`: views (Prepare/Perform), deck UI, mixer UI, rig ownership, PATCH tab, settings window.
+- `app.rs` — `HaloApp`: views (Prepare/Perform), deck UI, mixer UI, rig ownership, PATCH tab, Options wiring.
 - `deck.rs` — worker-owned sessions, typed controls, transport transactions and consumed playheads.
 - `audio.rs` — cpal stream setup.
 - `delivery.rs` — allocation-free callback mixer, scrub handoff and retirement queues.
@@ -65,6 +65,7 @@ Plain threads + channels/atomics; each session has one owner:
 - `decoder.rs` — symphonia decode (mp3/flac/ogg/wav) to interleaved stereo `f32`.
 - `worker.rs` — background import/analysis workers (own DB connections).
 - `library.rs` — SQLite (rusqlite, bundled): `tracks`, `playlists`, `playlist_tracks`, `lighting_cues`, `settings`.
+- `options.rs` — the Options modal (AUDIO / LIGHTING), edited as a draft and applied on SAVE.
 - `dmx.rs` — `spawn_dmx_engine`, the 44 Hz Art-Net output thread (has an end-to-end UDP test).
 - `programmer_ui.rs` — lighting programmer surface (fixture grid, five parameter views, effect panels).
 - `show.rs` — `simulate_show()`: deterministic demo cue generator, not real authored content.

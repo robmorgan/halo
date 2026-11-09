@@ -380,6 +380,9 @@ impl Widget for Key {
             let pos = egui::pos2(x, rect.center().y - galley.size().y / 2.0);
             painter.galley(pos.round(), galley, label_color);
         }
+        if response.has_focus() {
+            theme::paint_focus(painter, rect);
+        }
         response
     }
 }

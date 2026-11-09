@@ -10,6 +10,7 @@ mod fader;
 mod key;
 mod knob;
 mod library;
+mod options;
 mod output_queue;
 mod programmer_ui;
 mod render_worker;
