@@ -3758,18 +3758,26 @@ fn deck_panel(
         ui.add_enabled_ui(has_track, |ui| {
             let strip_w = ui.available_width();
             let edge = |i: usize| (strip_w * i as f32 / 8.0).floor();
-            // A set pad shows its slot colour in a strip along the bottom.
+            // The slot number sits top right, leaving the centre free for a
+            // cue's name; a set pad shows its slot colour in a strip along
+            // the bottom.
             let pads: [Key; 8] = std::array::from_fn(|i| {
                 let set = deck_ui.hot_cues[i].is_some();
-                Key::new(format!("{}", i + 1))
+                Key::new("")
                     .size([edge(i + 1) - edge(i), HOT_CUE_H])
-                    .text_style(theme::PAD_NUMBER)
-                    .label_color(if set {
-                        theme::TEXT_STRONG
+                    .corner_label(
+                        format!("{}", i + 1),
+                        if set {
+                            theme::TEXT_STRONG
+                        } else {
+                            theme::TEXT_MUTED
+                        },
+                    )
+                    .strip(if set {
+                        theme::CUE[i]
                     } else {
-                        theme::TEXT_MUTED
+                        theme::SEGMENT_OFF
                     })
-                    .strip(if set { ACCENT } else { theme::SEGMENT_OFF })
                     .quiet()
             });
             for (i, resp) in key::segmented(ui, pads).into_iter().enumerate() {

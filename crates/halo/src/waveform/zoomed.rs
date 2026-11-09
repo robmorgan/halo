@@ -532,9 +532,10 @@ fn paint_band_envelopes(
 
 /// CDJ-style cue marker: a down-pointing triangle hanging from the top
 /// edge, a small square foot on the bottom edge at the same x, and an
-/// optional hot-cue slot number beside the triangle.
+/// optional hot-cue slot number beside the triangle. A hot cue's marker
+/// takes its slot colour, the cue point the accent.
 fn cue_marker(painter: &egui::Painter, rect: egui::Rect, x: f32, label: Option<usize>) {
-    let color = palette::CUE_MARKER;
+    let color = label.map_or(palette::CUE_MARKER, |n| crate::theme::CUE[(n - 1) % 8]);
     painter.add(egui::Shape::convex_polygon(
         vec![
             egui::pos2(x - CUE_TRI_W / 2.0, rect.top()),

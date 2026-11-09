@@ -209,13 +209,14 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
         );
     }
 
-    // Hot cue markers: numbered amber triangles pointing down at the wave
-    // ceiling, in the headroom the 60% height cap reserves.
+    // Hot cue markers: numbered triangles in their slot colours, pointing
+    // down at the wave ceiling, in the headroom the 60% height cap reserves.
     if params.total_frames > 0 {
         let ceiling_y = rect.bottom() - WAVE_HEIGHT_FRAC * rect.height();
         for (slot, cue) in params.hot_cues.iter().enumerate() {
             let Some(frame) = cue else { continue };
             let x = frac_x(*frame);
+            let color = crate::theme::CUE[slot % 8];
             let tip = egui::pos2(x, ceiling_y - 1.0);
             painter.add(egui::Shape::convex_polygon(
                 vec![
@@ -223,7 +224,7 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
                     egui::pos2(x + CUE_MARKER_W / 2.0, tip.y - CUE_MARKER_H),
                     tip,
                 ],
-                palette::LOOP_EDGE,
+                color,
                 egui::Stroke::NONE,
             ));
             crate::theme::paint_text(
@@ -232,7 +233,7 @@ pub fn paint_overview(ui: &mut egui::Ui, params: OverviewParams<'_>) -> Option<f
                 egui::Align2::CENTER_BOTTOM,
                 format!("{}", slot + 1),
                 crate::theme::WAVE_NUMBER,
-                palette::LOOP_EDGE,
+                color,
             );
         }
     }
