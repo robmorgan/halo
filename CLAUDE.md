@@ -68,6 +68,8 @@ Plain threads + channels/atomics; each session has one owner:
 - `decoder.rs` — symphonia decode (mp3/flac/ogg/wav) to interleaved stereo `f32`.
 - `worker.rs` — background import/analysis workers (own DB connections).
 - `library.rs` — SQLite (rusqlite, bundled): `tracks`, `playlists`, `playlist_tracks`, `lighting_cues`, `settings`.
+- `footer.rs` — the footer: help for the control under the pointer (`StatusHelp::status_help` in place of
+  tooltips) and the background task well/tray (`Tasks`: Attention > Running > Done, Done expires after 4 s).
 - `options.rs` — the Options modal (AUDIO / LIGHTING / MIDI), edited as a draft and applied on SAVE.
 - `midi.rs` — controller ports, messages, profiles (built-in + user, MIDI learn), the action router, feedback.
 - `z1.rs` — Traktor Kontrol Z1 over HID (MODE, 12-bit knobs, 7-step meters), macOS only; its built-in

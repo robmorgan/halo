@@ -7,6 +7,7 @@ mod delivery;
 mod dmx;
 mod dsp;
 mod fader;
+mod footer;
 mod key;
 mod knob;
 mod library;

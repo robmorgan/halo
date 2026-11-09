@@ -17,6 +17,7 @@ use crate::deck::Deck;
 use crate::decoder::decode_file;
 use crate::dmx;
 use crate::fader::{Fader, Notches};
+use crate::footer::{Footer, StatusHelp, TaskId};
 use crate::key::{self, Key, Lit};
 use crate::knob::{Knob, KnobArc};
 use crate::library::{Library, PlaylistRow, SortColumn, TrackRow};
@@ -36,6 +37,8 @@ use crate::waveform::{
 use crate::worker::{WorkerEvent, spawn_analysis_worker, spawn_import};
 
 const DECK_NAMES: [&str; 2] = ["A", "B"];
+/// The Prepare view's audition player, as its load task names it.
+const PREP_LABEL: &str = "PREP";
 /// Longest edge of the artwork texture.
 const ARTWORK_MAX_PX: u32 = 256;
 /// Padding inside the Perform view's deck and mixer panels (`space-16`).
@@ -593,7 +596,11 @@ pub struct HaloApp {
     /// DSP load latched for the toolbar readout, on the same once-a-second
     /// tick as the CPU figure. The number would be unreadable at frame rate.
     dsp_display: f32,
-    status: String,
+    /// The footer: control help and the background tasks.
+    footer: Footer,
+    /// Tracks analyzed since the analysis task last started, for its
+    /// progress and its "ready" count.
+    analysis_done: usize,
     /// Absolute x of the mixer column's center, captured while rendering the
     /// central panel and read a frame later by the toolbar to center the
     /// master-BPM readout over the mixer (0 = not measured yet).
@@ -666,10 +673,14 @@ impl HaloApp {
             }
         };
 
-        let status = match &audio {
-            Some(a) => format!("Output: {} @ {} Hz", a.device_name, a.sample_rate),
-            None => "No audio output".to_string(),
-        };
+        let mut footer = Footer::default();
+        match &audio {
+            Some(a) => footer.tasks.done(
+                TaskId::Audio,
+                format!("Output: {} @ {} Hz", a.device_name, a.sample_rate),
+            ),
+            None => footer.tasks.attention(TaskId::Audio, "No audio output"),
+        }
 
         let db_path = Library::default_path();
         let library = match Library::open(&db_path) {
@@ -762,11 +773,14 @@ impl HaloApp {
             kb_prev: [[false; 8]; 2],
             cpu_sample: (std::time::Instant::now(), process_cpu_secs(), 0.0),
             dsp_display: 0.0,
-            status,
+            footer,
+            analysis_done: 0,
             mixer_center_x: 0.0,
         };
         app.midi.want_z1(app.midi_settings.uses_z1());
         app.midi.connect_output(app.midi_settings.output.as_deref());
+        // Tracks still waiting for analysis from an earlier session.
+        app.update_analysis_task();
         // Dev smoke-test hook: import a folder at startup.
         if let Some(dir) = std::env::var_os("HALO_IMPORT") {
             app.import_paths(vec![PathBuf::from(dir)], None);
@@ -836,10 +850,11 @@ impl HaloApp {
         if self.library.is_none() || paths.is_empty() {
             return;
         }
-        self.status = match paths.as_slice() {
+        let message = match paths.as_slice() {
             [path] => format!("Importing {}…", path.display()),
             _ => format!("Importing {} items…", paths.len()),
         };
+        self.footer.tasks.running(TaskId::Import, message, None);
         spawn_import(
             Library::default_path(),
             paths,
@@ -894,12 +909,29 @@ impl HaloApp {
             .and_then(|lib| lib.track(track_id).ok().flatten());
         match row {
             Some(row) => self.start_decode(deck_idx, row.path, Some(track_id)),
-            None => self.status = "Track not found in library".to_string(),
+            None => self.footer.tasks.note("Track not found in library"),
         }
     }
 
+    /// What a loading track is called: its library title, else its file
+    /// name.
+    fn track_name(&self, path: &Path, track_id: Option<i64>) -> String {
+        track_id
+            .and_then(|id| self.library.as_ref()?.track(id).ok().flatten())
+            .map(|row| row.title)
+            .filter(|title| !title.is_empty())
+            .or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| path.display().to_string())
+    }
+
     fn start_decode(&mut self, deck_idx: usize, path: PathBuf, track_id: Option<i64>) {
-        self.status = format!("Deck {}: loading {}…", DECK_NAMES[deck_idx], path.display());
+        let label = DECK_NAMES[deck_idx];
+        let name = self.track_name(&path, track_id);
+        self.footer.tasks.running(
+            TaskId::Load(label),
+            format!("Deck {label}: loading {name}…"),
+            None,
+        );
         self.decks[deck_idx].pending_seek_frac = None;
         self.decks[deck_idx].reload_restore = None;
         self.decks[deck_idx].decode_rx = Some(self.spawn_decode(path, track_id));
@@ -913,12 +945,17 @@ impl HaloApp {
             .and_then(|lib| lib.track(track_id).ok().flatten());
         match row {
             Some(row) => {
-                self.status = format!("Prepare: loading {}…", row.path.display());
+                let name = self.track_name(&row.path, Some(track_id));
+                self.footer.tasks.running(
+                    TaskId::Load(PREP_LABEL),
+                    format!("Prepare: loading {name}…"),
+                    None,
+                );
                 self.prepare.audition.pending_seek_frac = None;
                 self.prepare.audition.reload_restore = None;
                 self.prepare.audition.decode_rx = Some(self.spawn_decode(row.path, Some(track_id)));
             }
-            None => self.status = "Track not found in library".to_string(),
+            None => self.footer.tasks.note("Track not found in library"),
         }
     }
 
@@ -955,7 +992,7 @@ impl HaloApp {
         }
         let device_rate = self.device_rate();
         for (i, name) in DECK_NAMES.iter().enumerate().take(self.decks.len()) {
-            if let Some(status) = Self::poll_deck_decode(
+            if let Some(result) = Self::poll_deck_decode(
                 &mut self.decks[i],
                 name,
                 ctx,
@@ -963,7 +1000,7 @@ impl HaloApp {
                 self.library.as_ref(),
                 &self.wake_tx,
             ) {
-                self.status = status;
+                self.footer.tasks.finish(TaskId::Load(name), result);
                 // The show preview is session-only: a fresh load adopts
                 // any edits a sibling player holds for the same track,
                 // instead of keeping its own fresh seed.
@@ -974,15 +1011,15 @@ impl HaloApp {
                 }
             }
         }
-        if let Some(status) = Self::poll_deck_decode(
+        if let Some(result) = Self::poll_deck_decode(
             &mut self.prepare.audition,
-            "PREP",
+            PREP_LABEL,
             ctx,
             device_rate,
             self.library.as_ref(),
             &self.wake_tx,
         ) {
-            self.status = status;
+            self.footer.tasks.finish(TaskId::Load(PREP_LABEL), result);
             if let Some(deck) = self
                 .decks
                 .iter()
@@ -1027,9 +1064,9 @@ impl HaloApp {
         device_rate: u32,
         library: Option<&Library>,
         wake_tx: &mpsc::Sender<()>,
-    ) -> Option<String> {
+    ) -> Option<Result<String, String>> {
         if let Some(error) = deck_ui.deck.poll() {
-            return Some(format!("Deck {label}: {error}"));
+            return Some(Err(format!("Deck {label}: {error}")));
         }
         let pending = deck_ui.decode_rx.as_ref()?;
         let Ok(result) = pending.receiver.try_recv() else {
@@ -1153,15 +1190,44 @@ impl HaloApp {
                             }
                             deck_ui.deck.shared.set_transport(Transport::Playing);
                         }
-                        Some(format!(
+                        Some(Ok(format!(
                             "Deck {label}: {} ({:.1} BPM)",
                             deck_ui.title, deck_ui.bpm
-                        ))
+                        )))
                     }
-                    Err(e) => Some(format!("Deck {label}: {e}")),
+                    Err(e) => Some(Err(format!("Deck {label}: {e}"))),
                 }
             }
-            Err(e) => Some(format!("Deck {label}: load failed: {e}")),
+            Err(e) => Some(Err(format!("Deck {label}: load failed: {e}"))),
+        }
+    }
+
+    /// The analysis task, from the library's queue: running with its
+    /// progress while tracks wait, done with the count once all are ready.
+    fn update_analysis_task(&mut self) {
+        let Some(n) = self
+            .library
+            .as_ref()
+            .and_then(|l| l.unanalyzed_count().ok())
+        else {
+            return;
+        };
+        let done = self.analysis_done;
+        let tasks = &mut self.footer.tasks;
+        if n > 0 {
+            let progress = done as f32 / (done + n as usize) as f32;
+            tasks.running(
+                TaskId::Analysis,
+                format!("Analyzing… {n} track(s) remaining"),
+                Some(progress),
+            );
+        } else if done > 0 {
+            let noun = if done == 1 { "track" } else { "tracks" };
+            tasks.done(
+                TaskId::Analysis,
+                format!("Analysis complete — {done} {noun} ready"),
+            );
+            self.analysis_done = 0;
         }
     }
 
@@ -1213,15 +1279,8 @@ impl HaloApp {
                             }
                         }
                     }
-                    if let Some(lib) = &self.library
-                        && let Ok(n) = lib.unanalyzed_count()
-                    {
-                        self.status = if n > 0 {
-                            format!("Analyzing… {n} track(s) remaining")
-                        } else {
-                            "Analysis complete".to_string()
-                        };
-                    }
+                    self.analysis_done += 1;
+                    self.update_analysis_task();
                 }
                 WorkerEvent::WaveformReady(id) => {
                     // Backfill only touches the thumbnail: no row text
@@ -1235,7 +1294,7 @@ impl HaloApp {
                     // The playlist may have been deleted while importing.
                     let target =
                         playlist.and_then(|id| self.browser.playlists.iter().find(|p| p.id == id));
-                    self.status = match (target, &self.library) {
+                    let message = match (target, &self.library) {
                         (Some(pl), Some(lib)) => match lib.add_tracks_to_playlist(pl.id, &tracks) {
                             Ok(added) => {
                                 let name = &pl.name;
@@ -1255,6 +1314,9 @@ impl HaloApp {
                         },
                         _ => format!("Imported {n} {noun}"),
                     };
+                    self.footer.tasks.done(TaskId::Import, message);
+                    // The new tracks queue for analysis.
+                    self.update_analysis_task();
                 }
             }
         }
@@ -1346,11 +1408,16 @@ impl HaloApp {
             &self.audio_settings,
         ) {
             Ok(a) => {
-                self.status = format!("Output: {} @ {} Hz", a.device_name, a.sample_rate);
+                self.footer.tasks.done(
+                    TaskId::Audio,
+                    format!("Output: {} @ {} Hz", a.device_name, a.sample_rate),
+                );
                 self.audio = Some(a);
             }
             Err(e) => {
-                self.status = format!("Audio error: {e}");
+                self.footer
+                    .tasks
+                    .attention(TaskId::Audio, format!("Audio error: {e}"));
                 return;
             }
         }
@@ -1558,6 +1625,15 @@ impl HaloApp {
             .unwrap_or_else(|| (*self.rig).clone());
         let dirty = self.patch_draft.is_some();
         let conflicts = work.conflicts(&self.fixture_library);
+        match conflicts.len() {
+            0 => self.footer.tasks.clear(TaskId::Patch),
+            n => {
+                let noun = if n == 1 { "fixture" } else { "fixtures" };
+                self.footer
+                    .tasks
+                    .attention(TaskId::Patch, format!("{n} {noun} with patch conflicts"));
+            }
+        }
         // Stable, name-sorted profile list for the combos.
         let mut profiles: Vec<(String, String)> = self
             .fixture_library
@@ -1624,17 +1700,19 @@ impl HaloApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let can_apply = dirty && conflicts.is_empty();
                     let apply = ui.add_enabled(can_apply, Key::new("APPLY").small());
-                    let apply = if dirty && !conflicts.is_empty() {
-                        apply.on_disabled_hover_text("Resolve patch conflicts first")
+                    let apply = if can_apply {
+                        apply
+                    } else if dirty && !conflicts.is_empty() {
+                        apply.status_help("Resolve patch conflicts first")
                     } else {
-                        apply.on_disabled_hover_text("No unapplied changes")
+                        apply.status_help("No unapplied changes")
                     };
                     if apply.clicked() {
                         do_apply = true;
                     }
                     if ui
                         .add_enabled(dirty, Key::new("REVERT").small())
-                        .on_hover_text("Discard the draft; keep the applied patch")
+                        .status_help("Discard the draft; keep the applied patch")
                         .clicked()
                     {
                         do_revert = true;
@@ -1733,7 +1811,7 @@ impl HaloApp {
                                     .changed();
                                 if ui
                                     .add(Key::new("−").small())
-                                    .on_hover_text("Unpatch")
+                                    .status_help("Unpatch")
                                     .clicked()
                                 {
                                     remove = Some(f.id);
@@ -1867,7 +1945,9 @@ impl HaloApp {
         if stored > 0 {
             let bar = deck.marks.bar_beat(start).map(|(b, _)| b).unwrap_or(0);
             self.commit_cues(track_id, &cues);
-            self.status = format!("Stored {stored} cue(s) at bar {bar}");
+            self.footer
+                .tasks
+                .note(format!("Stored {stored} cue(s) at bar {bar}"));
         }
     }
 
@@ -2167,7 +2247,7 @@ impl HaloApp {
                             key.size(egui::Vec2::splat(FOOTER_RAIL_W))
                                 .selected(selected),
                         )
-                        .on_hover_text(hover);
+                        .status_help(hover);
                     if tab == FooterTab::Programmer {
                         // The label colour a key gives its own text.
                         let color =
@@ -2433,7 +2513,7 @@ impl HaloApp {
                             [160.0, theme::SIZE_KEY],
                             egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false),
                         )
-                        .on_hover_text("Audition volume")
+                        .status_help("Audition volume")
                         .changed()
                     {
                         shared.fader.store(vol);
@@ -2495,7 +2575,7 @@ impl HaloApp {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_8;
                 if outlined_toggle(ui, *snap, "SNAP", None)
-                    .on_hover_text("Snap edits to the beat grid")
+                    .status_help("Snap edits to the beat grid")
                     .clicked()
                 {
                     *snap = !*snap;
@@ -2512,7 +2592,7 @@ impl HaloApp {
                     .collect();
                 for (i, look) in LOOK_PALETTE.iter().enumerate() {
                     let armed = armed_look.0 == i;
-                    let resp = look_swatch(ui, look.color, armed).on_hover_text(look.name);
+                    let resp = look_swatch(ui, look.color, armed).status_help(look.name);
                     if resp.clicked() {
                         *armed_look = LookId(i);
                         if !selected_looks.is_empty() {
@@ -2576,7 +2656,7 @@ impl HaloApp {
                                     .show_value(false)
                                     .text("INT"),
                             )
-                            .on_hover_text("Intensity of the selected accent(s)");
+                            .status_help("Intensity of the selected accent(s)");
                         if resp.changed() {
                             for &id in &selected_accents {
                                 audition.show.accents.set_intensity(id, intensity);
@@ -2625,7 +2705,7 @@ impl HaloApp {
                     });
                     if ui
                         .add(Key::new("RESET DEMO SHOW").small())
-                        .on_hover_text(
+                        .status_help(
                             "Re-seed the look / energy / accent lanes with the simulated \
                              show, then edit",
                         )
@@ -2786,7 +2866,9 @@ impl HaloApp {
         if self.prepare.audition.track_id == Some(id) {
             self.prepare.audition.track_id = None;
         }
-        self.status = format!("Removed {title} from library");
+        self.footer
+            .tasks
+            .note(format!("Removed “{title}” from library"));
         self.browser.dirty = true;
     }
 
@@ -2849,11 +2931,11 @@ impl HaloApp {
                     Ok(added) => {
                         if let (Some(t), Some(p)) = (title, name) {
                             let (title, name) = (&t.title, &p.name);
-                            self.status = if added {
+                            self.footer.tasks.note(if added {
                                 format!("Added “{title}” to {name}")
                             } else {
                                 format!("“{title}” is already in {name}")
-                            };
+                            });
                         }
                     }
                     Err(e) => log::error!("{e}"),
@@ -2872,7 +2954,10 @@ impl HaloApp {
                 // The worker also polls every 5 s; the wake just makes it
                 // immediate.
                 let _ = self.wake_tx.send(());
-                self.status = "Reanalyzing…".to_string();
+                self.analysis_done = 0;
+                self.footer
+                    .tasks
+                    .running(TaskId::Analysis, "Reanalyzing…", None);
             }
             BrowserAction::RemoveFromLibrary(track, title) => {
                 // No DB change yet — the confirm dialog commits it.
@@ -2970,6 +3055,7 @@ impl eframe::App for HaloApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        Footer::begin_frame(ctx);
         self.poll_decodes(ctx);
         self.poll_worker_events();
         self.refresh_browser();
@@ -3035,7 +3121,7 @@ impl eframe::App for HaloApp {
                         let keys = views.map(|(v, label)| Key::new(label).pressed(self.view == v));
                         for ((v, _), resp) in views.into_iter().zip(key::segmented(ui, keys)) {
                             if resp
-                                .on_hover_text("Switch view (V) — playback is unaffected")
+                                .status_help("Switch view (V) — playback is unaffected")
                                 .clicked()
                             {
                                 self.view = v;
@@ -3048,7 +3134,7 @@ impl eframe::App for HaloApp {
                             && self.prepare.audition.deck.shared.transport() == Transport::Playing
                             && ui
                                 .add(Key::new("AUDITION ▶").small().lit(Some(Lit::Audition)))
-                                .on_hover_text(
+                                .status_help(
                                     "The Prepare audition player is running — click to pause",
                                 )
                                 .clicked()
@@ -3060,7 +3146,7 @@ impl eframe::App for HaloApp {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
                                 .add(Key::new("⚙").small().text_style(theme::BODY_TEXT))
-                                .on_hover_text("Options (⌘,)")
+                                .status_help("Options (⌘,)")
                                 .clicked()
                             {
                                 self.open_options();
@@ -3130,11 +3216,7 @@ impl eframe::App for HaloApp {
             storage.flush();
         }
 
-        egui::TopBottomPanel::bottom("status")
-            .frame(theme::ground_frame(theme::SPACE_8).inner_margin(egui::Margin::symmetric(12, 6)))
-            .show(ctx, |ui| {
-                ui.label(theme::NOTE_TEXT.rich(&self.status).color(theme::TEXT_MUTED));
-            });
+        self.footer.show(ctx);
 
         // The patch sheet gets the whole window: no slide-up footer there.
         if self.view != View::Patch && self.footer_panel(ctx, &lighting) {
@@ -3150,10 +3232,7 @@ impl eframe::App for HaloApp {
                         self.prepare_panel(ui);
                     });
                 });
-            return;
-        }
-
-        if self.view == View::Patch {
+        } else if self.view == View::Patch {
             egui::CentralPanel::default()
                 .frame(theme::ground_frame(SECTION_GAP))
                 .show(ctx, |ui| {
@@ -3163,114 +3242,116 @@ impl eframe::App for HaloApp {
                         self.patch_ui(ui);
                     });
                 });
-            return;
-        }
+        } else {
+            egui::CentralPanel::default()
+                .frame(theme::ground_frame(SECTION_GAP))
+                .show(ctx, |ui| {
+                    // Keep the `space-2` ground above the footer even when the
+                    // decks run taller than the room left for them (the 1px
+                    // allowance is the cards' outside edge).
+                    ui.set_clip_rect(ui.max_rect().expand(1.0).intersect(ui.clip_rect()));
+                    let full_width = ui.available_width();
+                    // Sized to just fit the mixer's strip cluster.
+                    let mixer_width = MIXER_W;
+                    // Three panels on the ground (deck | mixer | deck), `space-2`
+                    // apart: the decks in the quiet skin with `space-6` inside,
+                    // the mixer with `space-16` (`space-6` on top, so its
+                    // captions line up with the decks' headers).
+                    let gap = SECTION_GAP;
+                    let chrome = 2.0 * gap + 4.0 * DECK_PAD + 2.0 * PERFORM_PANEL_PAD;
+                    let deck_width = ((full_width - mixer_width - chrome) / 2.0)
+                        .floor()
+                        .max(280.0);
+                    // Panels in the row share one height: the tallest panel of the
+                    // previous frame.
+                    let row_h_id = egui::Id::new("perform-row-height");
+                    let row_h = ui.data(|d| d.get_temp::<f32>(row_h_id)).unwrap_or(0.0);
+                    let mut tallest = 0.0_f32;
 
-        egui::CentralPanel::default()
-            .frame(theme::ground_frame(SECTION_GAP))
-            .show(ctx, |ui| {
-                // Keep the `space-2` ground above the footer even when the
-                // decks run taller than the room left for them (the 1px
-                // allowance is the cards' outside edge).
-                ui.set_clip_rect(ui.max_rect().expand(1.0).intersect(ui.clip_rect()));
-                let full_width = ui.available_width();
-                // Sized to just fit the mixer's strip cluster.
-                let mixer_width = MIXER_W;
-                // Three panels on the ground (deck | mixer | deck), `space-2`
-                // apart: the decks in the quiet skin with `space-6` inside,
-                // the mixer with `space-16` (`space-6` on top, so its
-                // captions line up with the decks' headers).
-                let gap = SECTION_GAP;
-                let chrome = 2.0 * gap + 4.0 * DECK_PAD + 2.0 * PERFORM_PANEL_PAD;
-                let deck_width = ((full_width - mixer_width - chrome) / 2.0)
-                    .floor()
-                    .max(280.0);
-                // Panels in the row share one height: the tallest panel of the
-                // previous frame.
-                let row_h_id = egui::Id::new("perform-row-height");
-                let row_h = ui.data(|d| d.get_temp::<f32>(row_h_id)).unwrap_or(0.0);
-                let mut tallest = 0.0_f32;
-
-                let sample_rate = self.device_rate();
-                let lighting_deck = self.lighting_deck;
-                let has_audio = self.audio.is_some();
-                let mut responses: [DeckPanelResponse; 2] = Default::default();
-                ui.horizontal_top(|ui| {
-                    ui.spacing_mut().item_spacing.x = gap;
-                    let mut card =
-                        |ui: &mut egui::Ui,
-                         width: f32,
-                         (face, margin): (theme::Face, egui::Margin),
-                         content: &mut dyn FnMut(&mut egui::Ui)| {
-                            let chrome_h = margin.sum().y;
-                            theme::panel_with(ui, margin, face, |ui| {
-                                ui.set_width(width);
-                                // Measured from the cursor, so set before
-                                // the content.
-                                ui.set_min_height(row_h - chrome_h);
-                                let content_h =
-                                    ui.vertical(|ui| content(ui)).response.rect.height();
-                                tallest = tallest.max(content_h + chrome_h);
-                            })
-                            .response
-                            .rect
-                        };
-                    let deck_skin = (theme::SKIN_QUIET.panel, egui::Margin::same(DECK_PAD as i8));
-                    card(ui, deck_width, deck_skin, &mut |ui| {
-                        responses[0] = deck_panel(
+                    let sample_rate = self.device_rate();
+                    let lighting_deck = self.lighting_deck;
+                    let has_audio = self.audio.is_some();
+                    let mut responses: [DeckPanelResponse; 2] = Default::default();
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = gap;
+                        let mut card =
+                            |ui: &mut egui::Ui,
+                             width: f32,
+                             (face, margin): (theme::Face, egui::Margin),
+                             content: &mut dyn FnMut(&mut egui::Ui)| {
+                                let chrome_h = margin.sum().y;
+                                theme::panel_with(ui, margin, face, |ui| {
+                                    ui.set_width(width);
+                                    // Measured from the cursor, so set before
+                                    // the content.
+                                    ui.set_min_height(row_h - chrome_h);
+                                    let content_h =
+                                        ui.vertical(|ui| content(ui)).response.rect.height();
+                                    tallest = tallest.max(content_h + chrome_h);
+                                })
+                                .response
+                                .rect
+                            };
+                        let deck_skin =
+                            (theme::SKIN_QUIET.panel, egui::Margin::same(DECK_PAD as i8));
+                        card(ui, deck_width, deck_skin, &mut |ui| {
+                            responses[0] = deck_panel(
+                                ui,
+                                &mut self.decks[0],
+                                0,
+                                sample_rate,
+                                (lighting_deck == 0).then_some(&lighting),
+                                has_audio,
+                            );
+                        });
+                        let mixer_rect = card(
                             ui,
-                            &mut self.decks[0],
-                            0,
-                            sample_rate,
-                            (lighting_deck == 0).then_some(&lighting),
-                            has_audio,
-                        );
-                    });
-                    let mixer_rect = card(
-                        ui,
-                        mixer_width,
-                        (
-                            theme::Face::Panel,
-                            egui::Margin {
-                                top: DECK_PAD as i8,
-                                ..egui::Margin::same(PERFORM_PANEL_PAD as i8)
+                            mixer_width,
+                            (
+                                theme::Face::Panel,
+                                egui::Margin {
+                                    top: DECK_PAD as i8,
+                                    ..egui::Margin::same(PERFORM_PANEL_PAD as i8)
+                                },
+                            ),
+                            &mut |ui| {
+                                mixer_panel(ui, &self.decks);
                             },
-                        ),
-                        &mut |ui| {
-                            mixer_panel(ui, &self.decks);
-                        },
-                    );
-                    self.mixer_center_x = mixer_rect.center().x;
-                    card(ui, deck_width, deck_skin, &mut |ui| {
-                        responses[1] = deck_panel(
-                            ui,
-                            &mut self.decks[1],
-                            1,
-                            sample_rate,
-                            (lighting_deck == 1).then_some(&lighting),
-                            has_audio,
                         );
+                        self.mixer_center_x = mixer_rect.center().x;
+                        card(ui, deck_width, deck_skin, &mut |ui| {
+                            responses[1] = deck_panel(
+                                ui,
+                                &mut self.decks[1],
+                                1,
+                                sample_rate,
+                                (lighting_deck == 1).then_some(&lighting),
+                                has_audio,
+                            );
+                        });
                     });
+                    if tallest != row_h {
+                        ui.data_mut(|d| d.insert_temp(row_h_id, tallest));
+                        ui.ctx().request_repaint();
+                    }
+                    for (i, resp) in responses.into_iter().enumerate() {
+                        if let Some(bpm) = resp.master_bpm {
+                            self.set_master_bpm(bpm);
+                        }
+                        if resp.play_toggled {
+                            self.toggle_play_synced(i);
+                        }
+                        if let Some(path) = resp.load_path {
+                            self.import_and_load(i, path);
+                        }
+                        if let Some(track_id) = resp.load_track_id {
+                            self.load_track_row(i, track_id);
+                        }
+                    }
                 });
-                if tallest != row_h {
-                    ui.data_mut(|d| d.insert_temp(row_h_id, tallest));
-                    ui.ctx().request_repaint();
-                }
-                for (i, resp) in responses.into_iter().enumerate() {
-                    if let Some(bpm) = resp.master_bpm {
-                        self.set_master_bpm(bpm);
-                    }
-                    if resp.play_toggled {
-                        self.toggle_play_synced(i);
-                    }
-                    if let Some(path) = resp.load_path {
-                        self.import_and_load(i, path);
-                    }
-                    if let Some(track_id) = resp.load_track_id {
-                        self.load_track_row(i, track_id);
-                    }
-                }
-            });
+        }
+        // Last, once every control has recorded its help for this frame.
+        self.footer.paint_help(ctx);
     }
 }
 
@@ -3735,7 +3816,7 @@ fn track_table(
             resp
         };
         if resp
-            .on_hover_text("Clear the search and show the whole library")
+            .status_help("Clear the search and show the whole library")
             .clicked()
         {
             browser.search.clear();
@@ -3756,7 +3837,7 @@ fn track_table(
                 .notches(Notches::Center)
                 .default_value(0.0),
         )
-        .on_hover_text("Library zoom — row height and waveform size");
+        .status_help("Library zoom — row height and waveform size");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let n = browser.rows.len();
             let noun = if n == 1 { "track" } else { "tracks" };
@@ -3857,14 +3938,14 @@ fn track_table(
                                     ui.spacing_mut().item_spacing.x = theme::SPACE_4;
                                     if ui
                                         .add(Key::new("A").small())
-                                        .on_hover_text("Load to deck A")
+                                        .status_help("Load to deck A")
                                         .clicked()
                                     {
                                         actions.push(BrowserAction::LoadDeck(0, track.id));
                                     }
                                     if ui
                                         .add(Key::new("B").small())
-                                        .on_hover_text("Load to deck B")
+                                        .status_help("Load to deck B")
                                         .clicked()
                                     {
                                         actions.push(BrowserAction::LoadDeck(1, track.id));
@@ -3873,7 +3954,7 @@ fn track_table(
                                 View::Prepare => {
                                     if ui
                                         .add(Key::new("EDIT").small())
-                                        .on_hover_text("Open in the cue editor")
+                                        .status_help("Open in the cue editor")
                                         .clicked()
                                     {
                                         actions.push(BrowserAction::LoadAudition(track.id));
@@ -4062,7 +4143,7 @@ struct DeckPanelResponse {
 /// (vs a solid track cue).
 fn lighting_leds(ui: &mut egui::Ui, outputs: &[LaneOutput; LANE_COUNT]) {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(52.0, 16.0), egui::Sense::hover());
-    resp.on_hover_text("Lighting output: solid = track cue, ring = programmer override");
+    resp.status_help("Lighting output: solid = track cue, ring = programmer override");
     let painter = ui.painter();
     for (i, out) in outputs.iter().enumerate() {
         let color = ACCENT;
@@ -4526,7 +4607,7 @@ fn deck_panel(
                 shared.set_loop(Some((start, end.max(start + 1))));
             }
 
-            if chip.on_hover_text("Autoloop at this length").clicked() {
+            if chip.status_help("Autoloop at this length").clicked() {
                 deck_ui.autoloop(deck_ui.loop_beats);
             }
 
@@ -4549,7 +4630,7 @@ fn deck_panel(
                             .size([GATE_W, theme::SIZE_KEY])
                             .quiet(),
                     )
-                    .on_hover_text("Gated hot cues: play while held, stop on release")
+                    .status_help("Gated hot cues: play while held, stop on release")
                     .clicked()
                 {
                     deck_ui.gated = !deck_ui.gated;
@@ -4809,17 +4890,17 @@ fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
     );
     latches.spacing_mut().item_spacing.y = HEADER_LATCH_GAP;
     latches.add_enabled_ui(r.has_track, |ui| {
-        key::latch(ui, &mut deck_ui.auto_cue, "A.CUE", latch_size).on_hover_text(
+        key::latch(ui, &mut deck_ui.auto_cue, "A.CUE", latch_size).status_help(
             "Auto cue: on load, set the cue to the first detected beat and park the deck there",
         );
         key::latch(ui, &mut deck_ui.quantize, "Q", latch_size)
-            .on_hover_text("Quantize hot cues and loops to the beat grid");
+            .status_help("Quantize hot cues and loops to the beat grid");
     });
 
     // Time: clicking it switches elapsed and remaining.
     let time_resp = ui
         .interact(time, ui.id().with("deck-time"), egui::Sense::click())
-        .on_hover_text(if deck_ui.show_remaining {
+        .status_help(if deck_ui.show_remaining {
             "Show elapsed time"
         } else {
             "Show remaining time"
@@ -4957,7 +5038,7 @@ fn zoom_row(ui: &mut egui::Ui, deck_ui: &mut DeckUi, idx: usize, display_pos: f6
             egui::Id::new(("deck-counter", idx)),
             egui::Sense::hover(),
         )
-        .on_hover_text("Beat grid: low confidence");
+        .status_help("Beat grid: low confidence");
     }
 
     let label = deck_ui.zoom.label(deck_ui.marks.is_usable());
@@ -4989,7 +5070,7 @@ fn zoom_row(ui: &mut egui::Ui, deck_ui: &mut DeckUi, idx: usize, display_pos: f6
                 egui::Id::new(("deck-zoom", idx, zoom_in)),
                 egui::Sense::click(),
             )
-            .on_hover_text(hint);
+            .status_help(hint);
         let color = if resp.hovered() {
             theme::TEXT
         } else {
@@ -5032,7 +5113,7 @@ fn deck_tempo_rail(
                     .size([TEMPO_RAIL_W, theme::SIZE_KEY])
                     .quiet(),
             )
-            .on_hover_text(
+            .status_help(
                 "Follow the master BPM and lock to its beat; Play keeps the parked position and \
                  waits for the clock's next matching beat. While synced, the tempo fader moves \
                  the master BPM.",
@@ -5057,7 +5138,7 @@ fn deck_tempo_rail(
         );
         let keylock = ui
             .interact(radio, ui.id().with("keylock"), egui::Sense::click())
-            .on_hover_text("Keylock: keep pitch constant while tempo changes");
+            .status_help("Keylock: keep pitch constant while tempo changes");
         if keylock.clicked() {
             deck_ui.keylock = !deck_ui.keylock;
         }
@@ -5109,7 +5190,7 @@ fn deck_tempo_rail(
                     .size([TEMPO_RAIL_W, theme::SIZE_KEY])
                     .quiet(),
             )
-            .on_hover_text("Pitch range");
+            .status_help("Pitch range");
         let popup = ui.make_persistent_id(("pitch-range", deck_idx));
         if range_key.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -5135,7 +5216,7 @@ fn deck_tempo_rail(
                 }
                 if ui
                     .selectable_label(deck_ui.wide, "WIDE")
-                    .on_hover_text(
+                    .status_help(
                         "Full tempo range: down to 1/32 speed with keylock, \
                          1/4 with linked pitch, up to 4x. Bottom detent stops \
                          playback; raise the fader to resume.",
@@ -5374,7 +5455,7 @@ fn deck_lufs_meter(
     if !ui.is_rect_visible(rect) {
         return;
     }
-    response.on_hover_text(match integrated_lufs {
+    response.status_help(match integrated_lufs {
         Some(i) => format!("Momentary {momentary_lufs:.1} LUFS\nTrack {i:.1} LUFS integrated"),
         None => format!("Momentary {momentary_lufs:.1} LUFS\nTrack: not analyzed"),
     });
@@ -5437,7 +5518,7 @@ const TOOLBAR_ROW_H: f32 = theme::SIZE_KNOB_SMALL;
 /// knob down visibly limits it. Red = pinned near the ceiling (limiting).
 fn master_level_meter(ui: &mut egui::Ui, level: f32) {
     let (rect, response) = ui.allocate_exact_size(theme::STEPS_SIZE, egui::Sense::hover());
-    response.on_hover_text(format!("Output: {:.0}%", level.clamp(0.0, 1.0) * 100.0));
+    response.status_help(format!("Output: {:.0}%", level.clamp(0.0, 1.0) * 100.0));
     theme::paint_steps(ui.painter(), rect, level);
 }
 
@@ -5518,7 +5599,7 @@ fn master_clock(
                 ui.id().with(("lighting-deck", i)),
                 egui::Sense::click(),
             )
-            .on_hover_text(if pinned == Some(i) {
+            .status_help(if pinned == Some(i) {
                 format!(
                     "Lighting follows deck {}. Click to follow the louder deck again.",
                     DECK_NAMES[i]
@@ -5582,9 +5663,7 @@ fn master_clock(
     } else {
         let resp = ui
             .interact(bpm_rect, bpm_id, egui::Sense::click_and_drag())
-            .on_hover_text(
-                "Master BPM: drag or scroll to change (shift: by 1), double-click to type",
-            )
+            .status_help("Master BPM: drag or scroll to change (shift: by 1), double-click to type")
             .on_hover_cursor(egui::CursorIcon::ResizeVertical);
         let step = if ui.input(|i| i.modifiers.shift) {
             1.0
@@ -5675,7 +5754,7 @@ fn cpu_meter(ui: &mut egui::Ui, dsp_latched: f32, process_pct: f32) {
         22.0,
     );
     let (well, response) = ui.allocate_exact_size(well_size, egui::Sense::hover());
-    response.on_hover_text("Busiest audio processing thread: stretching or output delivery.");
+    response.status_help("Busiest audio processing thread: stretching or output delivery.");
     let painter = ui.painter();
     theme::paint_well(painter, well, theme::RADIUS_CONTROL);
     let y = well.center().y - dsp.size().y / 2.0;

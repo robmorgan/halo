@@ -18,6 +18,7 @@ use halo_light::programmer::{
 };
 
 use crate::fader::{Fader, Notches};
+use crate::footer::StatusHelp;
 use crate::key::{Key, Lit};
 use crate::knob::{Knob, KnobArc};
 use crate::theme;
@@ -281,7 +282,7 @@ fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
             .min_col_width(18.0)
             .show(ui, |ui| {
                 for (i, &(name, rgbw)) in COLOR_PRESETS.iter().enumerate() {
-                    if color_swatch(ui, rgbw, false).on_hover_text(name).clicked() {
+                    if color_swatch(ui, rgbw, false).status_help(name).clicked() {
                         p.rgbw = rgbw;
                     }
                     if i % 5 == 4 {
@@ -381,7 +382,7 @@ fn position_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PositionPara
                 (PanTiltTarget::Tilt, "TILT"),
             ] {
                 if choice(ui, p.target == t, label)
-                    .on_hover_text("Apply the effect to these axes")
+                    .status_help("Apply the effect to these axes")
                     .clicked()
                 {
                     p.target = t;
@@ -442,7 +443,7 @@ fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) 
             .show(ui, |ui| {
                 for (i, &(name, rgbw)) in COLOR_PRESETS.iter().enumerate() {
                     if color_swatch(ui, rgbw, p.color == i)
-                        .on_hover_text(name)
+                        .status_help(name)
                         .clicked()
                     {
                         p.color = i;
@@ -544,7 +545,7 @@ fn effect_panel(ui: &mut egui::Ui, cfg: &mut EffectConfig, accent: egui::Color32
                             theme::TEXT_UNLIT
                         }),
                 )
-                .on_hover_text("Latch this effect (visual-only until the fixture engine lands)")
+                .status_help("Latch this effect (visual-only until the fixture engine lands)")
                 .clicked()
             {
                 cfg.applied = !cfg.applied;
@@ -630,7 +631,7 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                     .width(ACTION_COL_W)
                     .lit(armed.then_some(Lit::Accent)),
             )
-            .on_hover_text("Release all latched lanes (Esc)")
+            .status_help("Release all latched lanes (Esc)")
             .clicked()
         {
             programmer::clear(cx.overrides);
@@ -638,7 +639,7 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
         ui.add_enabled_ui(cx.can_store, |ui| {
             if ui
                 .add(Key::new("STORE").width(ACTION_COL_W))
-                .on_hover_text(format!(
+                .status_help(format!(
                     "Write the active lanes into deck {}'s track as cues at the current bar",
                     cx.deck_name
                 ))
@@ -668,7 +669,7 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                 } else {
                     theme::TEXT_UNLIT
                 });
-            if ui.add(key).on_hover_text(hint).clicked() {
+            if ui.add(key).status_help(hint).clicked() {
                 *value = !*value;
             }
         }
@@ -700,14 +701,14 @@ fn lane_controls(ui: &mut egui::Ui, o: &mut halo_light::programmer::LaneOverride
         });
     if ui
         .add(latch)
-        .on_hover_text("Latch this lane on until CLEAR")
+        .status_help("Latch this lane on until CLEAR")
         .clicked()
     {
         o.latched = !o.latched;
     }
     let flash = ui
         .add(Key::new("FLASH").lit_when_held(Lit::Accent))
-        .on_hover_text("Active while held");
+        .status_help("Active while held");
     if flash.is_pointer_button_down_on() {
         o.flash_held = true;
     }
