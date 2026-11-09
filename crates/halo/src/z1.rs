@@ -347,6 +347,8 @@ mod hid {
         // The LEDs the UI wants, kept across a replug.
         let mut leds = None;
         let mut looked: Option<Instant> = None;
+        // Said once until it opens: another app may hold the Z1 for good.
+        let mut warned = false;
         while !flags.stop.load(Ordering::Relaxed) {
             while let Ok(report) = reports.try_recv() {
                 leds = Some(report);
@@ -364,12 +366,15 @@ mod hid {
             if flags.open() && flags.present.load(Ordering::Relaxed) {
                 match api.open(VENDOR, PRODUCT) {
                     Ok(device) => {
+                        warned = false;
                         run(&device, flags, reports, &mut leds, events, ctx);
                         // Gone, or not wanted: either way look again now.
                         looked = None;
                     }
                     Err(e) => {
-                        log::warn!("z1: open: {e}");
+                        if !std::mem::replace(&mut warned, true) {
+                            log::warn!("z1: open: {e}");
+                        }
                         std::thread::sleep(LOOK_EVERY);
                     }
                 }

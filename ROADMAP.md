@@ -130,9 +130,9 @@ signal properties.
 - Tempo slider per deck with ±8 / ±16 / ±50% and WIDE ranges, mapped to typed `TempoRate` controls. WIDE supports 1/32–4x with keylock or 1/4–4x with linked pitch, plus a zero-speed transport detent. It no longer selects a different processor.
 - Keylock selects `Parameters::keylock` or `Parameters::linked`; switching off below 1/4x visibly raises the fader to that supported minimum.
 - Pitch bend / nudge buttons (temporary rate offset while held).
-- **Persistent Sync/Master:** Sync intent survives pause and automatic master promotion.
-  A paused follower matches tempo without moving its exact parked coordinate.
-  The matched rate uses the tracks' analyzed BPMs and the master's base tempo;
+- **Persistent Sync:** Sync intent survives pause.
+  A paused synced deck matches tempo without moving its exact parked coordinate.
+  The matched rate is the master clock's BPM over the track's analyzed BPM;
   detected beat intervals guide initial alignment without changing that BPM target.
   Play prepares audio there, then the callback opens delivery at the first matching
   individual beat phase, including between-beat positions and crossings inside a
@@ -140,10 +140,11 @@ signal properties.
 - **Preparation and feedback:** runtime telemetry distinguishes Preparing, Waiting,
   Locked, Nudging and Unavailable. The waiting ghost approaches the stationary
   playhead from the left using actual remaining phase distance; preparation has its
-  own status. Track/transport/anchor/grid/master revisions reject stale preparation.
+  own status. Track/transport/anchor/grid revisions reject stale preparation.
   Grid ownership uses bounded handoff and UI retirement, as playback storage does.
-- **Established lock:** capture both delivery cursors at launch and compare their
-  subsequent source advance in nominal beats, including loop iterations. Sparse
+- **Established lock:** capture the clock's beat and the deck's delivery cursor at
+  launch and compare the clock's beats with the deck's subsequent source advance in
+  nominal beats, including loop iterations. Sparse
   audio, missing markers and wandering detected onsets cannot manufacture drift
   or restart a playing follower. EQ, filter and fader changes never enter this
   clock calculation. This is fixed-BPM sync, not automatic tempo-ramp following.
@@ -152,21 +153,22 @@ signal properties.
   matching phase, then fades in over 5 ms. Smaller drift uses at most ±1.5% correction,
   starting above 1/128 beat so rounded DSP tempos are corrected before the re-lock threshold;
   error above 1/64 beat for two delivered beats after controls reach delivery also
-  forces re-lock. Held nudges suspend correction; release reacquires. Manual pitch
-  movement disengages Sync. Master seeks and scrub epochs invalidate the captured
-  relationship, as do track, grid and master changes.
-- **Master:** the callback retains the current playing master unless explicitly
-  changed. Pause, stop, EOF and unload transfer master to the other playing deck;
-  faders and underruns do not. MASTER, BPM, Sync and lighting use that same choice.
-  MASTER and SYNC indicators are exclusive: promotion hides the retained Sync
-  intent until the deck becomes a follower again.
-  The DMX snapshot carries both decks so handoff works through UI stalls.
+  forces re-lock. Held nudges suspend correction; release reacquires. Scrub epochs
+  invalidate the captured relationship, as do track and grid changes.
+- **Master clock:** there is no master deck. The callback runs a beat clock at the
+  master BPM (128.0 at launch) that never stops, and every synced deck locks to it,
+  even alone. The BPM is set in the toolbar (drag, scroll, double-click to type) or
+  by moving a synced deck's tempo fader, which retunes every synced deck. The
+  toolbar shows the BPM, the clock's bar.beat and the lighting deck: the one
+  clicked there, or else the louder playing deck, held through a blend. The DMX
+  snapshot carries both decks so switching works through UI stalls.
 - **Recovery and limits:** seek/hot-cue, loop edits and scrub landings establish new
   epochs and reacquire before delivery. Integer-beat loops preserve continuous
   phase; incompatible loops, missing grids and unsupported matched tempos report
-  Unavailable while allowing ordinary playback and retaining intent. The first
-  deck started with no playing master starts normally. Reverse and bar/phrase sync
-  are not implemented. No database migration or timestretch API change is needed.
+  Unavailable while allowing ordinary playback and retaining intent. Starting a
+  synced deck waits for the clock's next matching beat. The clock aligns beats,
+  not bars: its bar count isn't tied to any track's downbeat. Reverse and
+  bar/phrase sync are not implemented. No database migration or timestretch API change is needed.
 
 **Milestone:** press Sync and the decks lock in phase; manual beatmatching works with slider + nudge.
 

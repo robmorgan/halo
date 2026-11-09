@@ -10,7 +10,7 @@ mod show_strip;
 mod thumbnail;
 mod zoomed;
 
-pub use counter::paint_beat_counter;
+pub use counter::{BEAT_STEPS_SIZE, paint_beat_counter, paint_beat_steps};
 pub use overview::{OverviewParams, OverviewTexture, STACKED_OVERVIEW_H, paint_overview};
 pub use show_editor::{ShowEditorInteraction, ShowEditorParams, show_editor};
 pub use show_strip::{STRIP_HEIGHT, ShowStripParams, paint_show_strip};
