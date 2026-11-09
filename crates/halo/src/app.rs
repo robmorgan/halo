@@ -31,7 +31,7 @@ use crate::waveform::{
     ShowStripParams, WaveStyle, ZoomSpan, ZoomedParams, paint_beat_counter, paint_overview,
     paint_show_strip, paint_zoomed, show_editor,
 };
-use crate::worker::{WorkerEvent, spawn_analysis_worker, spawn_folder_import};
+use crate::worker::{WorkerEvent, spawn_analysis_worker, spawn_import};
 
 const DECK_NAMES: [&str; 2] = ["A", "B"];
 /// Longest edge of the artwork texture.
@@ -675,7 +675,7 @@ impl HaloApp {
         };
         // Dev smoke-test hook: import a folder at startup.
         if let Some(dir) = std::env::var_os("HALO_IMPORT") {
-            app.import_folder(PathBuf::from(dir));
+            app.import_paths(vec![PathBuf::from(dir)], None);
         }
         if let Some(path) = initial_file {
             // Dev smoke-test hook: also open the same track in the Prepare
@@ -736,17 +736,36 @@ impl HaloApp {
         app
     }
 
-    fn import_folder(&mut self, dir: PathBuf) {
-        if self.library.is_none() {
+    /// Import files and folders in the background, then add the tracks to
+    /// `playlist` if it's set.
+    fn import_paths(&mut self, paths: Vec<PathBuf>, playlist: Option<i64>) {
+        if self.library.is_none() || paths.is_empty() {
             return;
         }
-        self.status = format!("Importing {}…", dir.display());
-        spawn_folder_import(
+        self.status = match paths.as_slice() {
+            [path] => format!("Importing {}…", path.display()),
+            _ => format!("Importing {} items…", paths.len()),
+        };
+        spawn_import(
             Library::default_path(),
-            dir,
+            paths,
+            playlist,
             self.wake_tx.clone(),
             self.event_tx.clone(),
         );
+    }
+
+    /// Files and folders dropped from Finder join the library, and the
+    /// selected playlist if there is one.
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let paths: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        });
+        self.import_paths(paths, self.browser.selected);
     }
 
     fn device_rate(&self) -> u32 {
@@ -1063,9 +1082,33 @@ impl HaloApp {
                     // changed, so no browser re-query.
                     self.waveform_thumbs.remove(&id);
                 }
-                WorkerEvent::Imported(n) => {
+                WorkerEvent::Imported { tracks, playlist } => {
                     self.browser.dirty = true;
-                    self.status = format!("Imported {n} audio file(s)");
+                    let n = tracks.len();
+                    let noun = if n == 1 { "track" } else { "tracks" };
+                    // The playlist may have been deleted while importing.
+                    let target =
+                        playlist.and_then(|id| self.browser.playlists.iter().find(|p| p.id == id));
+                    self.status = match (target, &self.library) {
+                        (Some(pl), Some(lib)) => match lib.add_tracks_to_playlist(pl.id, &tracks) {
+                            Ok(added) => {
+                                let name = &pl.name;
+                                let already = n - added;
+                                if already == 0 {
+                                    format!("Imported {n} {noun} into {name}")
+                                } else {
+                                    format!(
+                                        "Imported {n} {noun} into {name} ({already} already in it)"
+                                    )
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("{e}");
+                                format!("Imported {n} {noun}")
+                            }
+                        },
+                        _ => format!("Imported {n} {noun}"),
+                    };
                 }
             }
         }
@@ -1962,6 +2005,36 @@ impl HaloApp {
                         store = self.programmer_ui(ui, lighting);
                     }
                 }
+
+                // Files dragged in from Finder: outline the library pane
+                // and say where they'll go. They're accepted anywhere in
+                // the window.
+                if self.footer_tab == FooterTab::Library
+                    && self.library.is_some()
+                    && ctx.input(|i| !i.raw.hovered_files.is_empty())
+                {
+                    ui.painter().with_clip_rect(clip).rect_stroke(
+                        pane,
+                        theme::RADIUS_CONTROL,
+                        egui::Stroke::new(PLAYLIST_DROP_OUTLINE, ACCENT),
+                        egui::StrokeKind::Inside,
+                    );
+                    let target = self
+                        .browser
+                        .selected
+                        .and_then(|id| self.browser.playlists.iter().find(|p| p.id == id))
+                        .map_or("the library".to_string(), |p| p.name.clone());
+                    egui::Area::new(egui::Id::new("file_drop_hint"))
+                        .order(egui::Order::Tooltip)
+                        .pivot(egui::Align2::CENTER_CENTER)
+                        .fixed_pos(pane.center())
+                        .interactable(false)
+                        .show(ctx, |ui| {
+                            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                ui.label(format!("Drop to add to {target}"));
+                            });
+                        });
+                }
             });
 
         for action in actions {
@@ -2576,7 +2649,7 @@ impl HaloApp {
                 return;
             }
             BrowserAction::ImportFolder(dir) => {
-                self.import_folder(dir);
+                self.import_paths(vec![dir], None);
                 return;
             }
         }
@@ -2669,6 +2742,7 @@ impl eframe::App for HaloApp {
         self.poll_decodes(ctx);
         self.poll_worker_events();
         self.refresh_browser();
+        self.handle_dropped_files(ctx);
         self.handle_shortcuts(ctx);
         self.update_tempo();
         // Lighting auto-follows the deck the master BPM is sourced from.

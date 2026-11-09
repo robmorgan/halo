@@ -1,6 +1,7 @@
 //! Background library workers: the analysis queue (one track at a time,
-//! decoded and analyzed at the file's native rate) and one-shot folder
-//! imports. Each worker opens its own SQLite connection.
+//! decoded and analyzed at the file's native rate) and one-shot imports of
+//! picked or dropped files and folders. Each worker opens its own SQLite
+//! connection.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -16,8 +17,12 @@ pub enum WorkerEvent {
     /// A track's browser waveform thumbnail landed in the DB (backfill;
     /// fresh analysis is covered by [`WorkerEvent::Analyzed`]).
     WaveformReady(i64),
-    /// A folder import finished with this many audio files seen.
-    Imported(usize),
+    /// An import finished with these tracks, to be added to `playlist`
+    /// (the one selected when they were dropped) if it's set.
+    Imported {
+        tracks: Vec<i64>,
+        playlist: Option<i64>,
+    },
 }
 
 /// Columns per band in the browser thumbnail blob: covers the widest the
@@ -162,11 +167,12 @@ pub(crate) fn thumbnail_blob(level: &timestretch::PeakLevel, n_cols: usize) -> V
     out
 }
 
-/// One-shot folder import on its own thread; wakes the analysis worker when
-/// done.
-pub fn spawn_folder_import(
+/// One-shot import of files and folders on its own thread; wakes the
+/// analysis worker when done.
+pub fn spawn_import(
     db_path: PathBuf,
-    dir: PathBuf,
+    paths: Vec<PathBuf>,
+    playlist: Option<i64>,
     wake_tx: mpsc::Sender<()>,
     event_tx: mpsc::Sender<WorkerEvent>,
 ) {
@@ -178,13 +184,9 @@ pub fn spawn_folder_import(
                 return;
             }
         };
-        match lib.import_folder(&dir) {
-            Ok(n) => {
-                let _ = event_tx.send(WorkerEvent::Imported(n));
-                let _ = wake_tx.send(());
-            }
-            Err(e) => log::error!("import {}: {e}", dir.display()),
-        }
+        let tracks = lib.import_paths(&paths);
+        let _ = event_tx.send(WorkerEvent::Imported { tracks, playlist });
+        let _ = wake_tx.send(());
     });
 }
 

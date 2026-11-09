@@ -15,6 +15,12 @@ use timestretch::PreAnalysisArtifact;
 /// features in Cargo.toml).
 pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "wav"];
 
+fn is_audio(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+}
+
 /// Format version of the `track_waveforms` thumbnail blob. Bumping it
 /// re-enqueues every track through `next_missing_waveform`.
 pub const WAVEFORM_BLOB_VERSION: i64 = 1;
@@ -208,26 +214,39 @@ impl Library {
         Ok(id)
     }
 
-    /// Recursively import a folder. Returns the number of audio files seen.
-    pub fn import_folder(&self, dir: &Path) -> Result<usize, String> {
-        let mut count = 0;
-        let entries = std::fs::read_dir(dir).map_err(|e| format!("read {dir:?}: {e}"))?;
-        for entry in entries.flatten() {
-            let path = entry.path();
+    /// Recursively import a folder, in path order. Returns the ids of the
+    /// tracks imported.
+    pub fn import_folder(&self, dir: &Path) -> Result<Vec<i64>, String> {
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
+            .map_err(|e| format!("read {dir:?}: {e}"))?
+            .flatten()
+            .map(|entry| entry.path())
+            .collect();
+        paths.sort();
+        Ok(self.import_paths(&paths))
+    }
+
+    /// Import a mix of folders (recursively) and audio files, as dropped
+    /// from Finder; anything else is skipped. Returns the ids of the tracks
+    /// imported, in order and without repeats.
+    pub fn import_paths(&self, paths: &[PathBuf]) -> Vec<i64> {
+        let mut ids = Vec::new();
+        for path in paths {
             if path.is_dir() {
-                count += self.import_folder(&path).unwrap_or(0);
-            } else if path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()))
-            {
-                match self.import_file(&path) {
-                    Ok(_) => count += 1,
+                match self.import_folder(path) {
+                    Ok(found) => ids.extend(found),
+                    Err(e) => log::warn!("import {}: {e}", path.display()),
+                }
+            } else if is_audio(path) {
+                match self.import_file(path) {
+                    Ok(id) => ids.push(id),
                     Err(e) => log::warn!("import {}: {e}", path.display()),
                 }
             }
         }
-        Ok(count)
+        let mut seen = std::collections::HashSet::new();
+        ids.retain(|id| seen.insert(*id));
+        ids
     }
 
     pub fn store_analysis(
@@ -547,6 +566,33 @@ impl Library {
             )
             .map_err(|e| format!("add to playlist: {e}"))?;
         Ok(added == 1)
+    }
+
+    /// Appends tracks to a playlist in one transaction, skipping any
+    /// already in it. Returns how many were added.
+    pub fn add_tracks_to_playlist(&self, playlist: i64, tracks: &[i64]) -> Result<usize, String> {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| format!("add to playlist: {e}"))?;
+        let mut added = 0;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position)
+                     VALUES (?1, ?2,
+                             (SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_tracks
+                              WHERE playlist_id = ?1))",
+                )
+                .map_err(|e| format!("add to playlist: {e}"))?;
+            for track in tracks {
+                added += stmt
+                    .execute(params![playlist, track])
+                    .map_err(|e| format!("add to playlist: {e}"))?;
+            }
+        }
+        tx.commit().map_err(|e| format!("add to playlist: {e}"))?;
+        Ok(added)
     }
 
     pub fn remove_from_playlist(&self, playlist: i64, track: i64) -> Result<(), String> {
@@ -885,6 +931,43 @@ mod tests {
             Path::new("/x/a.mp3")
         );
         assert_eq!(lib.unanalyzed_count().unwrap(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_paths_walks_folders_in_order_and_fills_a_playlist() {
+        let dir = std::env::temp_dir().join(format!("halo_import_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        for name in ["b.mp3", "a.wav", "notes.txt", "sub/c.flac"] {
+            std::fs::write(dir.join(name), b"").unwrap();
+        }
+        let lib = mem_library();
+        // The folder, plus a file inside it dropped alongside: imported once.
+        let ids = lib.import_paths(&[dir.clone(), dir.join("b.mp3")]);
+        let paths: Vec<PathBuf> = ids
+            .iter()
+            .map(|&id| lib.track(id).unwrap().unwrap().path)
+            .collect();
+        assert_eq!(
+            paths,
+            [dir.join("a.wav"), dir.join("b.mp3"), dir.join("sub/c.flac")]
+        );
+
+        let pl = lib.create_playlist("Set", None, false).unwrap();
+        assert_eq!(lib.add_tracks_to_playlist(pl, &ids[1..]).unwrap(), 2);
+        assert_eq!(lib.add_tracks_to_playlist(pl, &ids).unwrap(), 1);
+        let order: Vec<i64> = lib
+            .conn
+            .prepare(
+                "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
+            )
+            .unwrap()
+            .query_map(params![pl], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(order, [ids[1], ids[2], ids[0]]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
