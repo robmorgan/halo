@@ -23,6 +23,7 @@ eframe = { version = "0.31", default-features = false, features = [
     "x11",
 ] }
 cpal = "0.15"
+midir = "0.10"
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "vorbis"] }
 egui_extras = { version = "0.31", default-features = false }
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -38,6 +39,8 @@ env_logger = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 audio_thread_priority = { version = "0.37", default-features = false }
+# The Traktor Kontrol Z1 over HID (its MIDI mode has no MODE button).
+hidapi = { version = "2.6", default-features = false }
 
 [dev-dependencies]
 allocation-counter = "0.8.1"

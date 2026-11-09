@@ -20,6 +20,8 @@ use crate::fader::{Fader, Notches};
 use crate::key::{self, Key, Lit};
 use crate::knob::{Knob, KnobArc};
 use crate::library::{Library, PlaylistRow, SortColumn, TrackRow};
+use crate::midi::{self, Action, DeckControl, Led, Midi, MidiMsg, MidiSettings, Router};
+use crate::options::{MidiLive, Options, OptionsValues, Outcome};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
 use crate::show::simulate_show_l3;
 use crate::show_preview::{LOOK_PALETTE, LookId, ShowPreview, ShowSel};
@@ -122,6 +124,9 @@ struct DeckUi {
     gated_held: Option<usize>,
     /// Quantize hot cues and loop points to the beat grid.
     quantize: bool,
+    /// The filter knob's position while a controller's filter switch has
+    /// it out, to put it back.
+    filter_parked: Option<f32>,
     /// Auto cue: on load, park the deck at the first detected beat.
     auto_cue: bool,
     /// Cue frame last set by auto cue; guards re-application when async
@@ -136,6 +141,23 @@ struct DeckUi {
     /// Restore the playhead to this track fraction after the next load
     /// (used when an audio-device change forces a reload).
     pending_seek_frac: Option<f64>,
+    /// The rest of the deck a device-change reload puts back.
+    reload_restore: Option<ReloadRestore>,
+    /// Reloaded after a device change while playing: starts again with the
+    /// other reloaded decks once every reload has landed.
+    resume_pending: bool,
+}
+
+/// What a device-change reload puts back once the track is decoded at the
+/// new rate, besides the playhead. Positions are fractions of the track,
+/// so they survive a sample-rate change.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ReloadRestore {
+    playing: bool,
+    cue: f64,
+    hot_cues: [Option<f64>; 8],
+    loop_region: Option<(f64, f64)>,
+    loop_beats: f64,
 }
 
 impl DeckUi {
@@ -171,12 +193,15 @@ impl DeckUi {
             gated: false,
             gated_held: None,
             quantize: true,
+            filter_parked: None,
             auto_cue: true,
             last_auto_cue: None,
             show_remaining: false,
             loop_in_staged: None,
             loop_beats: 4.0,
             pending_seek_frac: None,
+            reload_restore: None,
+            resume_pending: false,
         }
     }
 
@@ -189,6 +214,10 @@ impl DeckUi {
 
     fn prepare_device_reload(&mut self) -> Option<(PathBuf, Option<i64>)> {
         let shared = &self.deck.shared;
+        // A deck still waiting to resume from an earlier change counts as
+        // playing.
+        let playing = shared.transport() == Transport::Playing || self.resume_pending;
+        self.resume_pending = false;
         shared.set_transport(Transport::Stopped);
         shared.stream_active.store(false, Ordering::Release);
         shared.scrub.cancel();
@@ -198,8 +227,18 @@ impl DeckUi {
             Some((pending.path.clone(), pending.track_id))
         } else {
             let path = self.source_path.clone()?;
-            self.pending_seek_frac =
-                Some(shared.playhead_frames() as f64 / shared.total().max(1) as f64);
+            let total = shared.total().max(1) as f64;
+            let frac = |frame: usize| frame as f64 / total;
+            self.pending_seek_frac = Some(frac(shared.playhead_frames()));
+            self.reload_restore = Some(ReloadRestore {
+                playing,
+                cue: frac(shared.cue_point.load(Ordering::Relaxed) as usize),
+                hot_cues: self.hot_cues.map(|cue| cue.map(frac)),
+                loop_region: shared
+                    .loop_region()
+                    .map(|(start, end)| (frac(start), frac(end))),
+                loop_beats: self.loop_beats,
+            });
             Some((path, self.track_id))
         }
     }
@@ -291,6 +330,32 @@ impl DeckUi {
 
     fn exit_loop(&mut self) {
         self.deck.shared.set_loop(None);
+    }
+
+    /// A controller's filter switch: takes the filter out, and puts it
+    /// back where it was.
+    fn toggle_filter(&mut self) {
+        let shared = &self.deck.shared;
+        let t = filter_pos(shared.filter_mode_u8(), shared.filter_cutoff.load());
+        if filter_params(t).0 != 0 {
+            self.filter_parked = Some(t);
+            set_filter(shared, 0.0);
+        } else if let Some(t) = self.filter_parked.take() {
+            set_filter(shared, t);
+        }
+    }
+
+    /// Paused on the cue point, as a CDJ's CUE lights.
+    fn at_cue(&self) -> bool {
+        /// About 50 ms at 44.1 kHz: a playhead parked by a seek lands near.
+        const NEAR: usize = 2048;
+        let shared = &self.deck.shared;
+        self.deck.track.is_some()
+            && shared.transport() != Transport::Playing
+            && shared
+                .playhead_frames()
+                .abs_diff(shared.cue_point.load(Ordering::Relaxed) as usize)
+                < NEAR
     }
 }
 
@@ -505,10 +570,17 @@ pub struct HaloApp {
     /// Prototype sender for the events channel (folder imports clone it).
     event_tx: mpsc::Sender<WorkerEvent>,
     audio_settings: AudioSettings,
-    settings_open: bool,
+    /// The Options modal, while it's open.
+    options: Option<Options>,
+    /// Write eframe storage at the end of this frame (Options was saved).
+    persist_now: bool,
+    midi: Midi,
+    midi_settings: MidiSettings,
+    midi_router: Router,
+    /// This frame's controller messages, for Options to show and learn.
+    midi_frame: Vec<MidiMsg>,
     /// Track pending "Remove from library" confirmation: (id, title).
     pending_remove: Option<(i64, String)>,
-    available_devices: Vec<String>,
     /// Per-deck previous key-down states for shortcut edge detection.
     kb_prev: [[bool; 8]; 2],
     /// Process CPU sampling: (last wall instant, last cpu seconds, percent).
@@ -637,6 +709,15 @@ impl HaloApp {
             .unwrap_or_else(|| "10.0.0.10".to_string());
         let net = build_net(&artnet, &rig);
         let dmx = dmx::spawn_dmx_engine();
+        let midi = Midi::new(&cc.egui_ctx);
+        // Until MIDI has been saved once, a known controller that's
+        // plugged in just works.
+        let midi_settings = library
+            .as_ref()
+            .and_then(|l| l.setting("midi").ok().flatten())
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .or_else(|| MidiSettings::suggested(midi.inputs(), midi.outputs()))
+            .unwrap_or_default();
 
         let mut app = Self {
             audio,
@@ -664,15 +745,21 @@ impl HaloApp {
             events_rx,
             event_tx,
             audio_settings,
-            settings_open: false,
+            options: None,
+            persist_now: false,
+            midi,
+            midi_settings,
+            midi_router: Router::default(),
+            midi_frame: Vec::new(),
             pending_remove: None,
-            available_devices: Vec::new(),
             kb_prev: [[false; 8]; 2],
             cpu_sample: (std::time::Instant::now(), process_cpu_secs(), 0.0),
             dsp_display: 0.0,
             status,
             mixer_center_x: 0.0,
         };
+        app.midi.want_z1(app.midi_settings.uses_z1());
+        app.midi.connect_output(app.midi_settings.output.as_deref());
         // Dev smoke-test hook: import a folder at startup.
         if let Some(dir) = std::env::var_os("HALO_IMPORT") {
             app.import_paths(vec![PathBuf::from(dir)], None);
@@ -758,6 +845,9 @@ impl HaloApp {
     /// Files and folders dropped from Finder join the library, and the
     /// selected playlist if there is one.
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        if self.options.is_some() {
+            return;
+        }
         let paths: Vec<PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -804,6 +894,7 @@ impl HaloApp {
     fn start_decode(&mut self, deck_idx: usize, path: PathBuf, track_id: Option<i64>) {
         self.status = format!("Deck {}: loading {}…", DECK_NAMES[deck_idx], path.display());
         self.decks[deck_idx].pending_seek_frac = None;
+        self.decks[deck_idx].reload_restore = None;
         self.decks[deck_idx].decode_rx = Some(self.spawn_decode(path, track_id));
     }
 
@@ -817,6 +908,7 @@ impl HaloApp {
             Some(row) => {
                 self.status = format!("Prepare: loading {}…", row.path.display());
                 self.prepare.audition.pending_seek_frac = None;
+                self.prepare.audition.reload_restore = None;
                 self.prepare.audition.decode_rx = Some(self.spawn_decode(row.path, Some(track_id)));
             }
             None => self.status = "Track not found in library".to_string(),
@@ -890,6 +982,31 @@ impl HaloApp {
                 .find(|d| d.track_id.is_some() && d.track_id == self.prepare.audition.track_id)
             {
                 self.prepare.audition.show = deck.show.clone();
+            }
+        }
+        self.resume_reloaded_players();
+    }
+
+    /// After a device change, the players that were playing start again
+    /// together, in one frame, once every reload has landed, so beat-matched
+    /// decks stay in phase. A reload that failed doesn't hold the others.
+    fn resume_reloaded_players(&mut self) {
+        let players = || {
+            self.decks
+                .iter()
+                .chain(std::iter::once(&self.prepare.audition))
+        };
+        let reloading = players().any(|d| d.decode_rx.is_some() && d.reload_restore.is_some());
+        if reloading || !players().any(|d| d.resume_pending) {
+            return;
+        }
+        for deck in self
+            .decks
+            .iter_mut()
+            .chain(std::iter::once(&mut self.prepare.audition))
+        {
+            if std::mem::take(&mut deck.resume_pending) {
+                deck.deck.shared.set_transport(Transport::Playing);
             }
         }
     }
@@ -984,7 +1101,29 @@ impl HaloApp {
                             deck_ui.deck.shared.request_seek(frame);
                             deck_ui.last_auto_cue = Some(frame);
                         }
-                        // Device-change reload: restore the playhead.
+                        // Device-change reload: put back the cue point, hot
+                        // cues and loop, then the playhead. The loop goes
+                        // first: a seek carries the loop region current
+                        // when it's requested.
+                        if let Some(restore) = deck_ui.reload_restore.take() {
+                            let total = deck_ui.deck.shared.total() as f64;
+                            let frame = |frac: f64| (frac * total) as usize;
+                            deck_ui
+                                .deck
+                                .shared
+                                .cue_point
+                                .store(frame(restore.cue) as u64, Ordering::Relaxed);
+                            deck_ui.last_auto_cue = None;
+                            deck_ui.hot_cues = restore.hot_cues.map(|cue| cue.map(frame));
+                            deck_ui.loop_beats = restore.loop_beats;
+                            if let Some((start, end)) = restore.loop_region {
+                                deck_ui
+                                    .deck
+                                    .shared
+                                    .set_loop(Some((frame(start), frame(end))));
+                            }
+                            deck_ui.resume_pending = restore.playing;
+                        }
                         if let Some(frac) = deck_ui.pending_seek_frac.take() {
                             let total = deck_ui.deck.shared.total();
                             deck_ui
@@ -1193,11 +1332,16 @@ impl HaloApp {
     }
 
     /// Keyboard shortcuts: deck A = Q (play) W (cue) E (4-beat loop)
-    /// R (exit loop) 1–4 (hot cues); deck B = P O I U 7–0. Suppressed while
-    /// a text field has focus.
+    /// R (exit loop) 1–4 (hot cues); deck B = P O I U 7–0; ⌘, opens
+    /// Options. Suppressed while a text field has focus or Options is open.
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
-        if ctx.wants_keyboard_input() {
-            // Don't leave a FLASH stuck on when focus moves to a text field.
+        // ⌘, opens Options from anywhere, a focused text field included.
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma)) {
+            self.open_options();
+        }
+        if ctx.wants_keyboard_input() || self.options.is_some() {
+            // Don't leave a FLASH stuck on when focus moves to a text field
+            // or Options opens.
             self.flash_key = [false; LANE_COUNT];
             for o in self.programmer.iter_mut() {
                 o.flash_held = false;
@@ -1722,138 +1866,199 @@ impl HaloApp {
         }
     }
 
-    fn settings_window(&mut self, ctx: &egui::Context) {
-        if !self.settings_open {
+    /// Open Options on the settings as they are now. The device list is
+    /// read here, fresh each time, and never stored.
+    fn open_options(&mut self) {
+        if self.options.is_some() {
             return;
         }
-        let mut open = true;
-        let mut apply = false;
-        egui::Window::new("Settings")
-            .open(&mut open)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.spacing_mut().item_spacing.y = theme::SPACE_8;
-                ui.label(theme::CAPTION.rich("AUDIO OUTPUT").color(theme::TEXT_MUTED));
-                let current = self
-                    .audio_settings
-                    .device_name
-                    .clone()
-                    .unwrap_or_else(|| "System default".to_string());
-                egui::ComboBox::from_label("Device")
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        if ui
-                            .selectable_label(
-                                self.audio_settings.device_name.is_none(),
-                                "System default",
-                            )
-                            .clicked()
-                        {
-                            self.audio_settings.device_name = None;
-                        }
-                        for name in &self.available_devices {
-                            if ui
-                                .selectable_label(
-                                    self.audio_settings.device_name.as_deref() == Some(name),
-                                    name,
-                                )
-                                .clicked()
-                            {
-                                self.audio_settings.device_name = Some(name.clone());
-                            }
-                        }
-                    });
+        let saved = OptionsValues {
+            device_name: self.audio_settings.device_name.clone(),
+            buffer_size: self.audio_settings.buffer_size,
+            unicast: self.artnet.unicast_ip.is_some(),
+            node_ip: self
+                .artnet
+                .unicast_ip
+                .clone()
+                .unwrap_or_else(|| self.artnet_ip_edit.clone()),
+            midi: self.midi_settings.clone(),
+        };
+        let rate = self.audio.as_ref().map(|a| a.sample_rate);
+        self.midi.refresh(self.midi_settings.output.as_deref());
+        self.options = Some(Options::new(saved, list_output_devices(), rate));
+    }
 
-                let buffer_label = match self.audio_settings.buffer_size {
-                    Some(n) => format!("{n} frames"),
-                    None => "Default".to_string(),
-                };
-                egui::ComboBox::from_label("Buffer size")
-                    .selected_text(buffer_label)
-                    .show_ui(ui, |ui| {
-                        if ui
-                            .selectable_label(self.audio_settings.buffer_size.is_none(), "Default")
-                            .clicked()
-                        {
-                            self.audio_settings.buffer_size = None;
-                        }
-                        for n in [64u32, 128, 256, 512, 1024, 2048] {
-                            if ui
-                                .selectable_label(
-                                    self.audio_settings.buffer_size == Some(n),
-                                    format!("{n} frames"),
-                                )
-                                .clicked()
-                            {
-                                self.audio_settings.buffer_size = Some(n);
-                            }
-                        }
-                    });
+    /// Draw Options if it's open, and apply what it closes with.
+    fn options_modal(&mut self, ctx: &egui::Context) {
+        let Some(options) = &mut self.options else {
+            return;
+        };
+        let active: Vec<bool> = self
+            .midi
+            .inputs()
+            .iter()
+            .map(|p| self.midi.active(p))
+            .collect();
+        let live = MidiLive {
+            inputs: self.midi.inputs(),
+            outputs: self.midi.outputs(),
+            active: &active,
+            messages: &self.midi_frame,
+        };
+        let outcome = options.show(ctx, &live);
+        if options.take_refresh() {
+            self.midi.refresh(self.midi_settings.output.as_deref());
+        }
+        // Keep the activity lights going out on time.
+        if active.contains(&true) {
+            ctx.request_repaint_after(midi::ACTIVITY_HOLD);
+        }
+        match outcome {
+            Some(Outcome::Save(values)) => {
+                self.options = None;
+                self.apply_options(values);
+            }
+            Some(Outcome::Cancel) => self.options = None,
+            None => {}
+        }
+    }
 
-                ui.label(
-                    theme::NOTE_TEXT
-                        .rich("Applying restarts the audio stream and reloads decks.")
-                        .color(theme::TEXT_MUTED),
-                );
-                if ui.add(Key::new("APPLY").small()).clicked() {
-                    apply = true;
-                }
-
-                ui.add_space(theme::SPACE_12);
-                ui.label(
-                    theme::CAPTION
-                        .rich("ART-NET OUTPUT")
-                        .color(theme::TEXT_MUTED),
-                );
-                let was_broadcast = self.artnet.unicast_ip.is_none();
-                let mut artnet_dirty = false;
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(Key::new("BROADCAST").small().selected(was_broadcast))
-                        .clicked()
-                        && !was_broadcast
-                    {
-                        self.artnet.unicast_ip = None;
-                        artnet_dirty = true;
-                    }
-                    if ui
-                        .add(Key::new("UNICAST").small().selected(!was_broadcast))
-                        .clicked()
-                        && was_broadcast
-                    {
-                        self.artnet.unicast_ip = Some(self.artnet_ip_edit.clone());
-                        artnet_dirty = true;
-                    }
-                });
-                if self.artnet.unicast_ip.is_some() {
-                    ui.horizontal(|ui| {
-                        ui.label("Node IP");
-                        let resp = ui.text_edit_singleline(&mut self.artnet_ip_edit);
-                        let valid = self.artnet_ip_edit.parse::<std::net::IpAddr>().is_ok();
-                        if !valid {
-                            ui.label(theme::NOTE_TEXT.rich("invalid address").color(theme::WARN));
-                        } else if resp.lost_focus()
-                            && self.artnet.unicast_ip.as_deref()
-                                != Some(self.artnet_ip_edit.as_str())
-                        {
-                            self.artnet.unicast_ip = Some(self.artnet_ip_edit.clone());
-                            artnet_dirty = true;
-                        }
-                    });
-                }
-                ui.label(
-                    theme::NOTE_TEXT
-                        .rich(self.net.summary())
-                        .color(theme::TEXT_MUTED),
-                );
-                if artnet_dirty {
-                    self.apply_artnet();
-                }
-            });
-        self.settings_open = open;
-        if apply {
+    /// Commit saved Options: Art-Net applies live; an output change
+    /// rebuilds the stream, and decks that were playing carry on from
+    /// where they were once their tracks reload.
+    fn apply_options(&mut self, values: OptionsValues) {
+        let node_ip = values.node_ip.trim().to_string();
+        let unicast_ip = values.unicast.then(|| node_ip.clone());
+        self.artnet_ip_edit = node_ip;
+        if unicast_ip != self.artnet.unicast_ip {
+            self.artnet.unicast_ip = unicast_ip;
+            self.apply_artnet();
+        }
+        let audio = AudioSettings {
+            device_name: values.device_name,
+            buffer_size: values.buffer_size,
+        };
+        if audio.device_name != self.audio_settings.device_name
+            || audio.buffer_size != self.audio_settings.buffer_size
+        {
+            self.audio_settings = audio;
             self.rebuild_audio();
         }
+        if values.midi != self.midi_settings {
+            self.midi_settings = values.midi;
+            self.midi_router.reset();
+            self.midi
+                .connect_output(self.midi_settings.output.as_deref());
+            if let Some(lib) = &self.library {
+                match serde_json::to_string(&self.midi_settings) {
+                    Ok(json) => {
+                        if let Err(e) = lib.store_setting("midi", &json) {
+                            log::warn!("save midi settings: {e}");
+                        }
+                    }
+                    Err(e) => log::warn!("serialize midi settings: {e}"),
+                }
+            }
+        }
+        self.persist_now = true;
+    }
+
+    /// Read the controllers: apply what the chosen input sends through its
+    /// profile, keep the frame's messages for Options, and light the
+    /// controller. While Options is learning, nothing is applied.
+    fn poll_midi(&mut self) {
+        let draft_z1 = self
+            .options
+            .as_ref()
+            .is_some_and(|o| o.midi_draft().uses_z1());
+        self.midi.want_z1(self.midi_settings.uses_z1() || draft_z1);
+        self.midi.rescan(self.midi_settings.output.as_deref());
+        self.midi_frame = self.midi.drain();
+        let learning = self.options.as_ref().is_some_and(Options::learning);
+        let actions: Vec<(Action, f32)> = match (
+            self.midi_settings.profile(),
+            self.midi_settings.input.as_deref(),
+        ) {
+            (Some(profile), Some(input)) if !learning => self
+                .midi_frame
+                .iter()
+                .filter(|m| &*m.port == input)
+                .filter_map(|m| self.midi_router.route(profile, m))
+                .collect(),
+            _ => Vec::new(),
+        };
+        for (action, value) in actions {
+            self.apply_midi(action, value);
+        }
+        self.midi_feedback();
+    }
+
+    /// One controller action, through the same paths as the on-screen
+    /// controls and the keyboard. `value` is 0..1; buttons act when it
+    /// rises, and CUE again when it falls.
+    fn apply_midi(&mut self, action: Action, value: f32) {
+        let pressed = value > 0.0;
+        match action {
+            Action::Deck(deck, DeckControl::PlayPause) => {
+                if pressed && usize::from(deck) < self.decks.len() {
+                    self.toggle_play_synced(usize::from(deck));
+                }
+            }
+            Action::Deck(deck, control) => {
+                let Some(deck_ui) = self.decks.get_mut(usize::from(deck)) else {
+                    return;
+                };
+                let shared = &deck_ui.deck.shared;
+                let gain = || midi::bipolar(value, 0.0, 1.0, 2.0);
+                match control {
+                    DeckControl::Trim => shared.trim.store(gain()),
+                    DeckControl::EqHi => shared.eq_high.store(gain()),
+                    DeckControl::EqMid => shared.eq_mid.store(gain()),
+                    DeckControl::EqLow => shared.eq_low.store(gain()),
+                    DeckControl::Filter => {
+                        set_filter(shared, midi::bipolar(value, -1.0, 0.0, 1.0));
+                        deck_ui.filter_parked = None;
+                    }
+                    DeckControl::Fader => shared.fader.store(value),
+                    DeckControl::Cue if pressed => deck_ui.cue_press(),
+                    DeckControl::Cue => deck_ui.cue_release(),
+                    DeckControl::FilterToggle if pressed => deck_ui.toggle_filter(),
+                    DeckControl::HotCue(slot) if pressed && usize::from(slot) < 8 => {
+                        deck_ui.hot_cue_press(usize::from(slot));
+                    }
+                    DeckControl::AutoLoop if pressed => deck_ui.autoloop(4.0),
+                    DeckControl::ExitLoop if pressed => deck_ui.exit_loop(),
+                    _ => {}
+                }
+            }
+            Action::Crossfader => self.mixer.crossfader.store(value),
+            Action::AuditionVolume => self.prepare.audition.deck.shared.fader.store(value),
+            Action::Shift => {}
+        }
+    }
+
+    /// The chosen profile's LEDs and meters, from the decks as they are.
+    fn midi_feedback(&mut self) {
+        let Some(profile) = self.midi_settings.profile() else {
+            return;
+        };
+        let (decks, shift) = (&self.decks, self.midi_router.shift);
+        let deck = |d: u8| decks.get(usize::from(d));
+        let led = |led: Led| match led {
+            Led::Playing(d) => {
+                deck(d).is_some_and(|d| d.deck.shared.transport() == Transport::Playing)
+            }
+            Led::AtCue(d) => deck(d).is_some_and(DeckUi::at_cue),
+            Led::FilterOn(d) => deck(d).is_some_and(|d| d.deck.shared.filter_mode_u8() != 0),
+            Led::Looping(d) => deck(d).is_some_and(|d| d.deck.shared.loop_region().is_some()),
+            Led::HotCueSet(d, slot) => deck(d)
+                .and_then(|d| d.hot_cues.get(usize::from(slot)))
+                .is_some_and(Option::is_some),
+            Led::Shift => shift,
+        };
+        let peak = |d: u8| deck(d).map_or(0.0, |d| d.deck.shared.meter.load());
+        let feedback = profile.feedback(shift, led, peak);
+        self.midi.show(&feedback);
     }
 
     fn refresh_browser(&mut self) {
@@ -2712,10 +2917,10 @@ impl eframe::App for HaloApp {
     /// Tab flips the footer between Library and Programmer. It's taken out
     /// of the input here, before egui sees it: with nothing focused, egui
     /// would otherwise move focus to the first widget (the search field),
-    /// which silences every shortcut. With a text field focused, Tab is left
-    /// to egui.
+    /// which silences every shortcut. With a text field focused, or in
+    /// Options, Tab is left to egui to move focus.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-        if self.view == View::Patch || ctx.wants_keyboard_input() {
+        if self.view == View::Patch || self.options.is_some() || ctx.wants_keyboard_input() {
             return;
         }
         raw_input.events.retain(|event| match event {
@@ -2738,12 +2943,13 @@ impl eframe::App for HaloApp {
         });
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.poll_decodes(ctx);
         self.poll_worker_events();
         self.refresh_browser();
         self.handle_dropped_files(ctx);
         self.handle_shortcuts(ctx);
+        self.poll_midi();
         self.update_tempo();
         // Lighting auto-follows the deck the master BPM is sourced from.
         self.lighting_deck = self.master_source();
@@ -2825,13 +3031,10 @@ impl eframe::App for HaloApp {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
                                 .add(Key::new("⚙").small().text_style(theme::BODY_TEXT))
-                                .on_hover_text("Audio settings")
+                                .on_hover_text("Options (⌘,)")
                                 .clicked()
                             {
-                                self.settings_open = !self.settings_open;
-                                if self.settings_open {
-                                    self.available_devices = list_output_devices();
-                                }
+                                self.open_options();
                             }
                             group_divider(ui, theme::SIZE_KEY_SMALL);
                             cpu_meter(ui, self.dsp_display, self.cpu_sample.2);
@@ -2879,8 +3082,14 @@ impl eframe::App for HaloApp {
                 );
             });
 
-        self.settings_window(ctx);
         self.remove_confirm_window(ctx);
+        self.options_modal(ctx);
+        if std::mem::take(&mut self.persist_now)
+            && let Some(storage) = frame.storage_mut()
+        {
+            self.save(storage);
+            storage.flush();
+        }
 
         egui::TopBottomPanel::bottom("status")
             .frame(theme::ground_frame(theme::SPACE_8).inner_margin(egui::Margin::symmetric(12, 6)))
@@ -5007,11 +5216,7 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
                 .on_hover_text(filter_hint(t))
                 .changed()
             {
-                let (mode, cutoff) = filter_params(t);
-                if shared.filter_mode_u8() != mode {
-                    shared.set_filter_mode(mode);
-                }
-                shared.filter_cutoff.store(cutoff);
+                set_filter(shared, t);
             }
 
             ui.add_space(theme::SPACE_16);
@@ -5090,6 +5295,15 @@ fn filter_pos(mode: u8, cutoff: f32) -> f32 {
 
 /// Decompose the filter knob position `t` back into (filter_mode, cutoff).
 /// A small center detent snaps to Off so 12 o'clock is easy to hit.
+/// Set the filter from its knob position `t` (see [`filter_params`]).
+fn set_filter(shared: &crate::state::DeckShared, t: f32) {
+    let (mode, cutoff) = filter_params(t);
+    if shared.filter_mode_u8() != mode {
+        shared.set_filter_mode(mode);
+    }
+    shared.filter_cutoff.store(cutoff);
+}
+
 fn filter_params(t: f32) -> (u8, f32) {
     const EPS: f32 = 0.02;
     if t < -EPS {
@@ -5669,6 +5883,37 @@ mod tests {
         deck.pending_seek_frac = Some(0.75);
         assert_eq!(deck.prepare_device_reload(), Some((next, Some(42))));
         assert_eq!(deck.pending_seek_frac, Some(0.75));
+    }
+
+    #[test]
+    fn device_reload_keeps_cues_loop_and_whether_it_was_playing() {
+        let mut deck = DeckUi::new();
+        deck.source_path = Some(PathBuf::from("a.wav"));
+        let shared = &deck.deck.shared;
+        shared.total_frames.store(100_000, Ordering::Relaxed);
+        shared.playhead.store(50_000, Ordering::Relaxed);
+        shared.cue_point.store(10_000, Ordering::Relaxed);
+        shared.set_loop(Some((40_000, 60_000)));
+        shared.set_transport(Transport::Playing);
+        deck.hot_cues[2] = Some(25_000);
+        deck.loop_beats = 8.0;
+        deck.prepare_device_reload();
+        let restore = deck.reload_restore.unwrap();
+        assert!(restore.playing);
+        assert_eq!(restore.cue, 0.1);
+        assert_eq!(restore.hot_cues[2], Some(0.25));
+        assert_eq!(restore.hot_cues[0], None);
+        assert_eq!(restore.loop_region, Some((0.4, 0.6)));
+        assert_eq!(restore.loop_beats, 8.0);
+        assert_eq!(deck.pending_seek_frac, Some(0.5));
+
+        // Waiting to resume when another change lands: still counts as
+        // playing, though its transport is stopped.
+        deck.reload_restore = None;
+        deck.resume_pending = true;
+        deck.prepare_device_reload();
+        assert!(deck.reload_restore.unwrap().playing);
+        assert!(!deck.resume_pending);
     }
 
     fn grid_100(sr: u32, n: usize) -> GridMarks {
