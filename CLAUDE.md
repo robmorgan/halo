@@ -43,7 +43,7 @@ Plain threads + channels/atomics; each session has one owner:
 - **Render worker per loaded player** — owns a `PreparedSession`/`StreamSession`, source requests,
   seek/loop/EOF transactions, output reserve, consumption receipts and shared playhead. Includes audition.
 - **Audio callback thread (cpal)** — consumes completed audio, renders scrub voices, applies channel
-  strips, faders, crossfader, master and limiter. Fixed scratch storage, no locks or allocations,
+  strips, faders, master and limiter. Fixed scratch storage, no locks or allocations,
   no session reset/processing/destruction. A bounded handoff returns old storage to the UI.
 - **Worker threads** (`std::thread` + `mpsc`, drained per frame by the UI) — library import, track analysis.
 - **DMX engine thread** — 44 Hz tick: reads deck playheads from atomics, `resolve()` → `render()` → Art-Net send.

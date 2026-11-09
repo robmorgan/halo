@@ -401,8 +401,8 @@ impl BrowserState {
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct Persisted {
     master_volume: f32,
-    /// No longer restored: the crossfader has no control, so it stays
-    /// centred. Kept so older builds still read this state.
+    /// Halo has no crossfader any more; always written centred. Kept so
+    /// older builds still read this state.
     crossfader: f32,
     trims: [f32; 2],
     keylocks: [bool; 2],
@@ -485,8 +485,8 @@ enum View {
     Patch,
 }
 
-/// Default audition player volume (its channel bypasses the crossfader,
-/// so the fader alone sets its level).
+/// Default audition player volume (its own channel, so the fader alone
+/// sets its level).
 const AUDITION_VOLUME_DEFAULT: f32 = 0.85;
 
 /// Prepare-view state: an independent audition player (a full third deck
@@ -2031,7 +2031,6 @@ impl HaloApp {
                     _ => {}
                 }
             }
-            Action::Crossfader => self.mixer.crossfader.store(value),
             Action::AuditionVolume => self.prepare.audition.deck.shared.fader.store(value),
             Action::Shift => {}
         }
@@ -2357,8 +2356,8 @@ impl HaloApp {
         });
         ui.add_space(theme::SPACE_12);
 
-        // Transport + audition volume (this channel bypasses the
-        // crossfader; the fader alone is its level).
+        // Transport + audition volume (its own channel; the fader alone is
+        // its level).
         ui.add_enabled_ui(has_track, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
@@ -2407,7 +2406,7 @@ impl HaloApp {
                             [160.0, theme::SIZE_KEY],
                             egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false),
                         )
-                        .on_hover_text("Audition volume (independent of the crossfader)")
+                        .on_hover_text("Audition volume")
                         .changed()
                     {
                         shared.fader.store(vol);
@@ -2890,7 +2889,7 @@ impl eframe::App for HaloApp {
             PERSIST_KEY,
             &Persisted {
                 master_volume: self.mixer.master.load(),
-                crossfader: self.mixer.crossfader.load(),
+                crossfader: 0.5,
                 trims: [
                     self.decks[0].deck.shared.trim.load(),
                     self.decks[1].deck.shared.trim.load(),
@@ -5257,8 +5256,8 @@ fn mixer_panel(ui: &mut egui::Ui, decks: &[DeckUi; 2]) {
     // Two channel strips packed toward the center, with the pair of level
     // meters between them (classic DJ-mixer layout). `vertical_centered` won't
     // center a multi-widget horizontal row (egui seeds it at full width), so
-    // pad-center it to the panel mid-line. No crossfader: the volume faders
-    // set each deck's level, and the crossfader stays centred.
+    // pad-center it to the panel mid-line. The volume faders alone set each
+    // deck's level.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(((ui.available_width() - MIXER_W) * 0.5).max(0.0));

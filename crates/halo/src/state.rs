@@ -151,7 +151,7 @@ pub struct DeckShared {
     pub fader: AtomicF32,
     /// Pre-fader (post-trim) deck level (linear peak, 0..1), published by
     /// the audio callback for the channel meter — shows the track's level
-    /// regardless of fader/crossfader. Fast attack, slow release.
+    /// regardless of the fader. Fast attack, slow release.
     pub meter: AtomicF32,
     /// Pre-fader (post-trim) momentary loudness in LUFS (BS.1770 400 ms
     /// window), published by the audio callback. Floor -100.0 (silence).
@@ -512,8 +512,6 @@ pub struct MixerShared {
     pub effective_master: AtomicU8,
     pub master_request: AtomicU64,
     pub output_frame: AtomicU64,
-    /// Crossfader position 0..1: 0 = full deck A, 1 = full deck B.
-    pub crossfader: AtomicF32,
     /// Master volume, linear.
     pub master: AtomicF32,
     /// Master output level (linear peak, 0..1), measured post-master and
@@ -531,7 +529,6 @@ impl MixerShared {
             effective_master: AtomicU8::new(0),
             master_request: AtomicU64::new(0),
             output_frame: AtomicU64::new(0),
-            crossfader: AtomicF32::new(0.5),
             master: AtomicF32::new(1.0),
             master_meter: AtomicF32::new(0.0),
             cpu_load: AtomicF32::new(0.0),

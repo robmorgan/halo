@@ -183,7 +183,6 @@ impl DeckVoice {
     fn render_following(
         &mut self,
         out: &mut [f32],
-        fader: f32,
         master: &DeckVoice,
         master_revision: u64,
         clock: u64,
@@ -233,7 +232,7 @@ impl DeckVoice {
                 shared.manual_tempo.load() as f64 * shared.bend.load() as f64,
             ));
             self.status(SyncState::Off);
-            self.render_into(out, fader);
+            self.render_into(out);
             return;
         }
         let cursor = self
@@ -298,7 +297,7 @@ impl DeckVoice {
                 shared.matched_tempo.load() * shared.bend.load() as f64,
             ));
             self.status(SyncState::Unavailable);
-            self.render_into(out, fader);
+            self.render_into(out);
             return;
         };
         let nudge = (shared.bend.load() - 1.0).abs() > f32::EPSILON
@@ -323,7 +322,7 @@ impl DeckVoice {
             self.lock.drift_beats = 0.0;
             self.delivery_open = !master.playing();
             self.status(SyncState::Preparing);
-            self.render_into(out, fader);
+            self.render_into(out);
             return;
         }
         if newly_enabled && !self.was_live {
@@ -353,7 +352,7 @@ impl DeckVoice {
             let count = self.lock.fading_out.min(out.len() / 2);
             self.delivery_open = true;
             self.status(SyncState::Preparing);
-            self.render_into(&mut out[..count * 2], fader);
+            self.render_into(&mut out[..count * 2]);
             if self.lock.fading_out == 0 {
                 let mut master_cursor = master.prefix_start;
                 for &advance in &master.advances[..count] {
@@ -374,7 +373,7 @@ impl DeckVoice {
                 self.lock.launched = false;
                 self.lock.drift_beats = 0.0;
                 self.delivery_open = false;
-                self.render_into(&mut out[count * 2..], fader);
+                self.render_into(&mut out[count * 2..]);
             }
             return;
         }
@@ -403,7 +402,7 @@ impl DeckVoice {
         if !self.ready() || self.lock.reprime {
             self.delivery_open = false;
             self.status(SyncState::Preparing);
-            self.render_into(out, fader);
+            self.render_into(out);
             return;
         }
         if self.lock.launched {
@@ -413,7 +412,7 @@ impl DeckVoice {
             } else {
                 SyncState::Locked
             });
-            self.render_into(out, fader);
+            self.render_into(out);
             return;
         }
         let distance = (phase - master_phase).rem_euclid(1.0);
@@ -449,7 +448,7 @@ impl DeckVoice {
         }
         self.delivery_open = false;
         let offset = launch.unwrap_or(out.len() / 2);
-        self.render_into(&mut out[..offset * 2], fader);
+        self.render_into(&mut out[..offset * 2]);
         if let Some(offset) = launch {
             // Recheck cancellation after scanning the bounded prefix. The next
             // render_segment also checks readiness and the anchor generation.
@@ -481,7 +480,7 @@ impl DeckVoice {
             } else {
                 SyncState::Locked
             });
-            self.render_into(&mut out[offset * 2..], fader);
+            self.render_into(&mut out[offset * 2..]);
         }
     }
 
@@ -538,7 +537,7 @@ impl DeckVoice {
         }
     }
 
-    fn render_into(&mut self, out: &mut [f32], fader: f32) {
+    fn render_into(&mut self, out: &mut [f32]) {
         self.advances.fill(0.0);
         self.prefix_start = self
             .playback
@@ -595,12 +594,12 @@ impl DeckVoice {
             } else {
                 out.len() - offset
             };
-            self.render_segment(&mut out[offset..offset + count], fader, phase, offset / 2);
+            self.render_segment(&mut out[offset..offset + count], phase, offset / 2);
             offset += count;
         }
     }
 
-    fn render_segment(&mut self, out: &mut [f32], fader: f32, phase: ScrubPhase, offset: usize) {
+    fn render_segment(&mut self, out: &mut [f32], phase: ScrubPhase, offset: usize) {
         let ready = self.ready();
         let Some(playback) = &mut self.playback else {
             return;
@@ -658,7 +657,7 @@ impl DeckVoice {
         }
         let alpha = 1.0 - (-1.0 / (0.005 * self.sample_rate as f32)).exp();
         let target_gain = if live || scrubbing || self.scrub_mix > 0.0 {
-            shared.fader.load() * fader
+            shared.fader.load()
         } else {
             0.0
         };
@@ -779,12 +778,6 @@ impl MixerRenderer {
     pub fn render(&mut self, data: &mut [f32]) {
         let started = Instant::now();
         data.fill(0.0);
-        let xf = self.mixer.crossfader.load().clamp(0.0, 1.0);
-        let faders = [
-            (xf * std::f32::consts::FRAC_PI_2).cos(),
-            (xf * std::f32::consts::FRAC_PI_2).sin(),
-            1.0,
-        ];
         let whole = data.len() / 2 * 2;
         let mut peak = 0.0_f32;
         for block in data[..whole].chunks_mut(BLOCK_SAMPLES) {
@@ -832,15 +825,9 @@ impl MixerRenderer {
                 .store(shared.manual_tempo.load() as f64);
             // Remember intent through promotion, but a master is not following.
             master.status(SyncState::Off);
-            master.render_into(block, faders[self.master]);
-            follower.render_following(
-                block,
-                faders[1 - self.master],
-                master,
-                self.master_revision,
-                self.output_frame,
-            );
-            audition[0].render_into(block, faders[2]);
+            master.render_into(block);
+            follower.render_following(block, master, self.master_revision, self.output_frame);
+            audition[0].render_into(block);
             self.output_frame += (block.len() / 2) as u64;
             self.mixer
                 .output_frame
@@ -887,7 +874,8 @@ mod tests {
         let rounding = 0.9078014184397163 - matched;
         for bias in [rounding, -rounding] {
             let (mut renderer, shared, handoffs, mut producers) = fixture();
-            renderer.mixer.crossfader.store(1.0);
+            // Deck B alone is heard.
+            shared[0].fader.store(0.0);
             shared[2].set_transport(Transport::Paused);
             shared[1].sync_enabled.store(true, Ordering::Release);
             shared[1].tempo_rate.store(matched as f32);
@@ -1702,8 +1690,9 @@ mod tests {
                 generation: 1,
             });
             let mixer = Arc::new(MixerShared::new());
-            mixer.crossfader.store(0.0);
             mixer.master.store(1.0);
+            // Deck A alone is heard.
+            shared[1].fader.store(0.0);
             let mut renderer = MixerRenderer::new(
                 std::array::from_fn(|i| DeckAudio {
                     shared: shared[i].clone(),
@@ -1921,9 +1910,11 @@ mod tests {
     }
 
     #[test]
-    fn audition_bypasses_crossfader_and_muted_decks_still_consume() {
-        let (mut renderer, _, _, mut producers) = fixture();
-        renderer.mixer.crossfader.store(0.0);
+    fn audition_plays_and_muted_decks_still_consume() {
+        let (mut renderer, shared, _, mut producers) = fixture();
+        for deck in &shared[..2] {
+            deck.fader.store(0.0);
+        }
         for (i, producer) in producers.iter_mut().enumerate() {
             let value = if i == 2 { 0.1 } else { 0.0 };
             assert!(producer.push(
