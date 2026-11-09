@@ -47,6 +47,9 @@ Plain threads + channels/atomics; each session has one owner:
   no session reset/processing/destruction. A bounded handoff returns old storage to the UI.
 - **Worker threads** (`std::thread` + `mpsc`, drained per frame by the UI) — library import, track analysis.
 - **DMX engine thread** — 44 Hz tick: reads deck playheads from atomics, `resolve()` → `render()` → Art-Net send.
+- **Controller input** — CoreMIDI's callback thread (via `midir`) and the Z1's HID thread only parse messages
+  into an `mpsc` queue; the UI thread applies them and sends LED/meter feedback. All hidapi calls stay on the
+  Z1 thread: macOS spins the caller's run loop while enumerating, which panics winit on the main thread.
 
 ### Key modules — `crates/halo/src`
 
@@ -65,7 +68,10 @@ Plain threads + channels/atomics; each session has one owner:
 - `decoder.rs` — symphonia decode (mp3/flac/ogg/wav) to interleaved stereo `f32`.
 - `worker.rs` — background import/analysis workers (own DB connections).
 - `library.rs` — SQLite (rusqlite, bundled): `tracks`, `playlists`, `playlist_tracks`, `lighting_cues`, `settings`.
-- `options.rs` — the Options modal (AUDIO / LIGHTING), edited as a draft and applied on SAVE.
+- `options.rs` — the Options modal (AUDIO / LIGHTING / MIDI), edited as a draft and applied on SAVE.
+- `midi.rs` — controller ports, messages, profiles (built-in + user, MIDI learn), the action router, feedback.
+- `z1.rs` — Traktor Kontrol Z1 over HID (MODE, 12-bit knobs, 7-step meters), macOS only; its built-in
+  profile is in `midi.rs`.
 - `dmx.rs` — `spawn_dmx_engine`, the 44 Hz Art-Net output thread (has an end-to-end UDP test).
 - `programmer_ui.rs` — lighting programmer surface (fixture grid, five parameter views, effect panels).
 - `show.rs` — `simulate_show()`: deterministic demo cue generator, not real authored content.
@@ -91,7 +97,7 @@ Plain threads + channels/atomics; each session has one owner:
 
 - **eframe persistence** (`PERSIST_KEY = "halo"`) — UI/mixer state: trims, keylock, pitch range, quantize,
   gated mode, audition volume, device/buffer, sort order.
-- **Library DB `settings` table** — Art-Net config and rig patch.
+- **Library DB `settings` table** — Art-Net config, rig patch, and `midi` (ports, profile, user profiles).
 - There is no config file; `config.json` in old branches/history is from the pre-pivot console.
 
 ## Conventions

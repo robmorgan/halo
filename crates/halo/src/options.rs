@@ -12,6 +12,7 @@ use eframe::egui::{
 use halo_light::artnet::ARTNET_PORT;
 
 use crate::key::{self, Key, Lit};
+use crate::midi::{self, Action, MidiMsg, MidiSettings, Profile};
 use crate::theme::{self, Face, TypeStyle};
 
 /// The values Options edits. Only these are persisted, never the lists
@@ -26,6 +27,17 @@ pub struct OptionsValues {
     pub unicast: bool,
     /// The unicast node's address, kept while broadcasting.
     pub node_ip: String,
+    /// Controller ports, profile and the user's profiles.
+    pub midi: MidiSettings,
+}
+
+/// The controllers as they are this frame, for the MIDI category.
+pub struct MidiLive<'a> {
+    pub inputs: &'a [String],
+    pub outputs: &'a [String],
+    /// Per input: sent something just now.
+    pub active: &'a [bool],
+    pub messages: &'a [MidiMsg],
 }
 
 /// What closing the modal asks the app to do.
@@ -38,15 +50,17 @@ pub enum Outcome {
 enum Category {
     Audio,
     Lighting,
+    Midi,
 }
 
 impl Category {
-    const ALL: [Category; 2] = [Category::Audio, Category::Lighting];
+    const ALL: [Category; 3] = [Category::Audio, Category::Lighting, Category::Midi];
 
     fn label(self) -> &'static str {
         match self {
             Category::Audio => "AUDIO",
             Category::Lighting => "LIGHTING",
+            Category::Midi => "MIDI",
         }
     }
 }
@@ -63,6 +77,14 @@ pub struct Options {
     devices: Vec<String>,
     /// The running stream's rate, for the latency readout.
     sample_rate: Option<u32>,
+    /// The action waiting for a control to bind to.
+    learning: Option<Action>,
+    /// The draft profile's SHIFT is held on the draft input.
+    learn_shift: bool,
+    /// The last message from any controller.
+    last: Option<MidiMsg>,
+    /// REFRESH was pressed.
+    refresh: bool,
 }
 
 // Layout, in points.
@@ -110,6 +132,60 @@ impl Options {
             category: Category::Audio,
             devices,
             sample_rate,
+            learning: None,
+            learn_shift: false,
+            last: None,
+            refresh: false,
+        }
+    }
+
+    /// Waiting for a control to learn: the app holds controller input back.
+    pub fn learning(&self) -> bool {
+        self.learning.is_some()
+    }
+
+    /// The MIDI settings being edited.
+    pub fn midi_draft(&self) -> &MidiSettings {
+        &self.draft.midi
+    }
+
+    /// True once after REFRESH was pressed.
+    pub fn take_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.refresh)
+    }
+
+    /// This frame's controller messages: the last one for the readout, and
+    /// the first from the draft input to whatever is learning.
+    fn take_messages(&mut self, messages: &[MidiMsg], outputs: &[String]) {
+        for m in messages {
+            self.last = Some(m.clone());
+            let draft = &mut self.draft.midi;
+            if draft.input.as_deref().is_some_and(|i| i != &*m.port) {
+                continue;
+            }
+            if draft.profile().and_then(Profile::shift_key) == Some(m.key) {
+                self.learn_shift = m.value > 0.0;
+                if self.learning != Some(Action::Shift) {
+                    continue;
+                }
+            }
+            // A release, or a knob coming to rest at zero, binds nothing.
+            let Some(action) = self.learning.filter(|_| m.value > 0.0) else {
+                continue;
+            };
+            // Learning with no input chosen takes the one that answered.
+            if draft.input.is_none() {
+                let port = m.port.to_string();
+                draft.output = draft
+                    .output
+                    .take()
+                    .or_else(|| midi::matching_output(&port, outputs));
+                draft.input = Some(port);
+            }
+            if let Some(profile) = draft.user_profile_mut() {
+                profile.learn(action, m.key, self.learn_shift);
+            }
+            self.learning = None;
         }
     }
 
@@ -125,6 +201,28 @@ impl Options {
                 usize::from(draft.unicast != saved.unicast)
                     + usize::from(draft.unicast && draft.node_ip != saved.node_ip)
             }
+            Category::Midi => {
+                let (draft, saved) = (&draft.midi, &saved.midi);
+                // Each profile added, removed or edited is one change.
+                let user = |settings: &MidiSettings, id: &str| {
+                    settings.user_profiles.iter().find(|p| p.id == id).cloned()
+                };
+                let mut ids: Vec<&str> = draft
+                    .user_profiles
+                    .iter()
+                    .chain(&saved.user_profiles)
+                    .map(|p| p.id.as_str())
+                    .collect();
+                ids.sort_unstable();
+                ids.dedup();
+                usize::from(draft.input != saved.input)
+                    + usize::from(draft.output != saved.output)
+                    + usize::from(draft.profile != saved.profile)
+                    + ids
+                        .into_iter()
+                        .filter(|id| user(draft, id) != user(saved, id))
+                        .count()
+            }
         }
     }
 
@@ -138,9 +236,15 @@ impl Options {
     }
 
     /// Draw the modal; returns what to do once SAVE, CANCEL or Esc closes it.
-    pub fn show(&mut self, ctx: &egui::Context) -> Option<Outcome> {
-        // Esc closes an open dropdown (the popup handles that itself) and
-        // only cancels when none was open.
+    pub fn show(&mut self, ctx: &egui::Context, live: &MidiLive) -> Option<Outcome> {
+        self.take_messages(live.messages, live.outputs);
+        // Esc stops a learn, closes an open dropdown (the popup handles
+        // that itself), and only cancels when neither was going on.
+        if self.learning.is_some()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            self.learning = None;
+        }
         let popup_was_open = ctx.memory(|m| m.any_popup_open());
         let screen = ctx.screen_rect().size();
         let size = MODAL_SIZE
@@ -155,7 +259,7 @@ impl Options {
                     .stroke(Stroke::new(1.0, theme::EDGE))
                     .corner_radius(theme::RADIUS_WINDOW),
             )
-            .show(ctx, |ui| self.body(ui, size, &mut outcome));
+            .show(ctx, |ui| self.body(ui, size, live, &mut outcome));
         if outcome.is_none()
             && modal.is_top_modal
             && !popup_was_open
@@ -166,7 +270,7 @@ impl Options {
         outcome
     }
 
-    fn body(&mut self, ui: &mut Ui, size: Vec2, outcome: &mut Option<Outcome>) {
+    fn body(&mut self, ui: &mut Ui, size: Vec2, live: &MidiLive, outcome: &mut Option<Outcome>) {
         let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
         let footer = Rect::from_min_max(pos2(rect.left(), rect.bottom() - BAND_H), rect.max);
         let rail = Rect::from_min_max(rect.min, pos2(rect.left() + RAIL_W, footer.top()));
@@ -243,6 +347,7 @@ impl Options {
             }
             if resp.clicked() {
                 self.category = category;
+                self.learning = None;
             }
         }
 
@@ -280,6 +385,7 @@ impl Options {
                         match self.category {
                             Category::Audio => self.audio(ui),
                             Category::Lighting => self.lighting(ui),
+                            Category::Midi => self.midi(ui, live),
                         }
                     });
             });
@@ -431,6 +537,253 @@ impl Options {
             });
         });
     }
+
+    fn midi(&mut self, ui: &mut Ui, live: &MidiLive) {
+        group(ui, "DEVICES", |ui| {
+            let draft = &self.draft.midi;
+            for (i, name) in live.inputs.iter().enumerate() {
+                let note = if draft.input.as_deref() == Some(name) {
+                    "Input. Plays Halo."
+                } else {
+                    "Input."
+                };
+                let active = live.active.get(i).copied().unwrap_or(false);
+                row(ui, name, Some(note), |ui| activity(ui, active));
+            }
+            for name in live.outputs {
+                let note = if draft.output.as_deref() == Some(name) {
+                    "Output. Shows Halo's LEDs and meters."
+                } else {
+                    "Output."
+                };
+                row(ui, name, Some(note), |_| {});
+            }
+            if live.inputs.is_empty() && live.outputs.is_empty() {
+                row(ui, "NO DEVICES", Some("Connect a controller."), |_| {});
+            }
+            row(
+                ui,
+                "REFRESH",
+                Some("Halo also looks for devices every couple of seconds."),
+                |ui| {
+                    if ui
+                        .add(Key::new("REFRESH").size(vec2(READOUT_W, CONTROL_H)))
+                        .clicked()
+                    {
+                        self.refresh = true;
+                    }
+                },
+            );
+        });
+
+        group(ui, "CONTROLLER", |ui| {
+            row(ui, "INPUT", Some("The device that plays Halo."), |ui| {
+                let choices = port_choices(live.inputs, self.saved.midi.input.as_deref());
+                if let Some(input) = dropdown(ui, "midi_input", &choices, &self.draft.midi.input) {
+                    let draft = &mut self.draft.midi;
+                    // A controller Halo knows brings its output and profile.
+                    if let Some(input) = &input {
+                        if draft.output.is_none() {
+                            draft.output = midi::matching_output(input, live.outputs);
+                        }
+                        if draft.profile.is_none() {
+                            draft.profile = MidiSettings::builtin_for(input).map(|p| p.id.clone());
+                        }
+                    }
+                    draft.input = input;
+                    self.learning = None;
+                }
+            });
+            row(ui, "OUTPUT", Some("Where the LEDs and meters go."), |ui| {
+                let choices = port_choices(live.outputs, self.saved.midi.output.as_deref());
+                if let Some(output) = dropdown(ui, "midi_output", &choices, &self.draft.midi.output)
+                {
+                    self.draft.midi.output = output;
+                }
+            });
+            let note = match self.draft.midi.profile() {
+                Some(p) if p.is_builtin() => "Built-in. Duplicate it to change the mapping.",
+                Some(_) => "Your own: learn each control below.",
+                None => "Controls do nothing until a profile is chosen.",
+            };
+            row(ui, "PROFILE", Some(note), |ui| {
+                let draft = &self.draft.midi;
+                let mut choices = vec![("NONE".to_string(), None)];
+                choices.extend(
+                    midi::builtins()
+                        .iter()
+                        .chain(&draft.user_profiles)
+                        .map(|p| (p.name.clone(), Some(p.id.clone()))),
+                );
+                if let Some(profile) = dropdown(ui, "midi_profile", &choices, &draft.profile) {
+                    self.draft.midi.profile = profile;
+                    self.learning = None;
+                }
+            });
+            row(ui, "PROFILES", None, |ui| {
+                let draft = &self.draft.midi;
+                let current = draft.profile().cloned();
+                let user = current.as_ref().is_some_and(|p| !p.is_builtin());
+                let size = vec2(CONTROL_W / 3.0, CONTROL_H);
+                let [new, duplicate, delete] = key::segmented(
+                    ui,
+                    [
+                        Key::new("NEW").size(size),
+                        Key::new("DUPLICATE").size(size).enabled(current.is_some()),
+                        Key::new("DELETE").size(size).enabled(user),
+                    ],
+                );
+                let draft = &mut self.draft.midi;
+                let id = draft.new_profile_id();
+                if new.clicked() {
+                    draft.user_profiles.push(Profile {
+                        id: id.clone(),
+                        name: "New profile".into(),
+                        port_match: None,
+                        bindings: Vec::new(),
+                        meters: Vec::new(),
+                    });
+                    draft.profile = Some(id);
+                    self.learning = None;
+                } else if duplicate.clicked()
+                    && let Some(source) = current
+                {
+                    let name = format!("{} copy", source.name);
+                    draft.user_profiles.push(Profile {
+                        id: id.clone(),
+                        name,
+                        port_match: None,
+                        ..source
+                    });
+                    draft.profile = Some(id);
+                    self.learning = None;
+                } else if delete.clicked()
+                    && let Some(source) = current
+                {
+                    draft.user_profiles.retain(|p| p.id != source.id);
+                    draft.profile = None;
+                    self.learning = None;
+                }
+            });
+            if let Some(profile) = self.draft.midi.user_profile_mut() {
+                let valid = !profile.name.trim().is_empty();
+                row(ui, "NAME", Some("What the profile is listed as."), |ui| {
+                    text_field(ui, &mut profile.name, true, valid);
+                });
+            }
+            let (value, note) = match &self.last {
+                Some(m) => (m.label(), m.port.to_string()),
+                None => ("—".to_string(), "Move a control on any device.".to_string()),
+            };
+            row(ui, "LAST MESSAGE", Some(&note), |ui| {
+                wide_readout(ui, &value)
+            });
+        });
+
+        let Some(profile) = self.draft.midi.profile().cloned() else {
+            return;
+        };
+        let shift = profile.shift_key();
+        for (heading, actions) in [
+            ("DECK A", Action::deck(0).collect::<Vec<_>>()),
+            ("DECK B", Action::deck(1).collect()),
+            ("GLOBAL", Action::GLOBAL.to_vec()),
+        ] {
+            group(ui, heading, |ui| {
+                for action in actions {
+                    let learning = self.learning == Some(action);
+                    let note = if learning {
+                        "Move or press a control. Esc stops.".to_string()
+                    } else {
+                        match profile.binding(action) {
+                            Some(b) if b.shifted => {
+                                let shift = shift.map_or("SHIFT".into(), |k| k.label());
+                                let key = b.key.label();
+                                format!("{shift} + {key}")
+                            }
+                            Some(b) => b.key.label(),
+                            None => "Not mapped.".to_string(),
+                        }
+                    };
+                    row(ui, &action.label(), Some(&note), |ui| {
+                        let editable = !profile.is_builtin();
+                        let size = vec2(CONTROL_W / 2.0, CONTROL_H);
+                        let [learn, clear] = key::segmented(
+                            ui,
+                            [
+                                Key::new("LEARN")
+                                    .size(size)
+                                    .lit(learning.then_some(Lit::Accent))
+                                    .pressed(learning)
+                                    .enabled(editable),
+                                Key::new("CLEAR")
+                                    .size(size)
+                                    .enabled(editable && profile.binding(action).is_some()),
+                            ],
+                        );
+                        if learn.clicked() {
+                            self.learning = (!learning).then_some(action);
+                        }
+                        if clear.clicked()
+                            && let Some(profile) = self.draft.midi.user_profile_mut()
+                        {
+                            profile.clear(action);
+                        }
+                    });
+                }
+            });
+        }
+    }
+}
+
+/// NONE, the ports, and the saved one if it isn't connected.
+fn port_choices(ports: &[String], saved: Option<&str>) -> Vec<(String, Option<String>)> {
+    let mut choices = vec![("NONE".to_string(), None)];
+    choices.extend(ports.iter().map(|p| (p.clone(), Some(p.clone()))));
+    if let Some(saved) = saved
+        && !ports.iter().any(|p| p == saved)
+    {
+        choices.push((format!("{saved} (not connected)"), Some(saved.to_string())));
+    }
+    choices
+}
+
+/// An input's activity light, lit while it's sending.
+fn activity(ui: &mut Ui, on: bool) {
+    let (rect, _) = ui.allocate_exact_size(vec2(CONTROL_W, CONTROL_H), Sense::hover());
+    let led = pos2(rect.left() + FIELD_PAD, rect.center().y);
+    theme::paint_led(ui.painter(), led, on, theme::ACCENT);
+    if on {
+        theme::paint_text(
+            ui.painter(),
+            pos2(led.x + FIELD_PAD, rect.center().y),
+            Align2::LEFT_CENTER,
+            "RECEIVING",
+            theme::CAPTION,
+            theme::TEXT_MUTED,
+        );
+    }
+}
+
+/// A read-only value across the whole control column, left-aligned.
+fn wide_readout(ui: &mut Ui, value: &str) {
+    let (rect, _) = ui.allocate_exact_size(vec2(CONTROL_W, CONTROL_H), Sense::hover());
+    theme::paint_well(ui.painter(), rect, theme::RADIUS_CONTROL);
+    let galley = truncated(
+        ui.ctx(),
+        value,
+        theme::NUMERALS_MD,
+        theme::TEXT_STRONG,
+        CONTROL_W - 2.0 * FIELD_PAD,
+    );
+    ui.painter().galley(
+        pos2(
+            rect.left() + FIELD_PAD,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        theme::TEXT_STRONG,
+    );
 }
 
 /// A titled group of rows: a `caption` heading over an `edge-panel` line.
@@ -708,6 +1061,7 @@ mod tests {
             buffer_size: Some(256),
             unicast: false,
             node_ip: "10.0.0.5".to_string(),
+            midi: MidiSettings::default(),
         }
     }
 
@@ -725,6 +1079,58 @@ mod tests {
         assert_eq!(options.changes(Category::Lighting), 2);
         assert_eq!(options.total_changes(), 4);
         // Back to the saved values: nothing to save.
+        options.draft = saved();
+        assert_eq!(options.total_changes(), 0);
+    }
+
+    fn msg(port: &str, key: midi::MsgKey, value: f32) -> MidiMsg {
+        MidiMsg {
+            port: port.into(),
+            key,
+            value,
+            raw: 0,
+        }
+    }
+
+    #[test]
+    fn learns_into_a_user_profile_and_counts_it() {
+        use crate::midi::DeckControl;
+        use crate::z1;
+        let mut options = Options::new(saved(), Vec::new(), None);
+        let draft = &mut options.draft.midi;
+        draft.input = Some(z1::PORT.into());
+        draft.profile = Some("builtin:traktor-kontrol-z1".into());
+        assert_eq!(options.changes(Category::Midi), 2);
+
+        // A copy of the built-in, with FX ON A's plain layer moved to HOT
+        // CUE 1, learned with MODE held.
+        let mut copy = options.draft.midi.profile().unwrap().clone();
+        copy.id = "user:1".into();
+        options.draft.midi.user_profiles.push(copy);
+        options.draft.midi.profile = Some("user:1".into());
+        let cue = Action::Deck(0, DeckControl::HotCue(0));
+        options.learning = Some(cue);
+        let (mode, fx) = (z1::key(z1::MODE), z1::key(z1::FX_A));
+        options.take_messages(
+            &[
+                msg("Elsewhere", fx, 1.0),
+                msg(z1::PORT, mode, 1.0),
+                msg(z1::PORT, fx, 0.0),
+                msg(z1::PORT, fx, 1.0),
+            ],
+            &[],
+        );
+        assert!(!options.learning(), "learned");
+        let profile = options.draft.midi.profile().unwrap();
+        assert_eq!(profile.resolve(fx, true), Some(cue));
+        assert_eq!(
+            profile.resolve(fx, false),
+            Some(Action::Deck(0, DeckControl::FilterToggle)),
+            "the plain layer is untouched"
+        );
+        assert_eq!(options.last.as_ref().map(|m| m.key), Some(fx));
+        // Input, profile, and the new profile.
+        assert_eq!(options.changes(Category::Midi), 3);
         options.draft = saved();
         assert_eq!(options.total_changes(), 0);
     }

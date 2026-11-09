@@ -10,6 +10,7 @@ mod fader;
 mod key;
 mod knob;
 mod library;
+mod midi;
 mod options;
 mod output_queue;
 mod programmer_ui;
@@ -23,6 +24,7 @@ mod theme;
 mod waveform;
 mod worker;
 mod worker_priority;
+mod z1;
 
 fn main() -> eframe::Result<()> {
     env_logger::init();
