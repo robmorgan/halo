@@ -830,7 +830,7 @@ pub fn well<R>(
 /// Padding inside a [`tray`].
 pub const TRAY_PAD: f32 = 3.0;
 /// A [`tray_divider`]'s line, and the room before and after it.
-const TRAY_DIVIDER: Color32 = rgba(0xff, 0xff, 0xff, 0x1f);
+pub const TRAY_DIVIDER: Color32 = rgba(0xff, 0xff, 0xff, 0x1f);
 const TRAY_DIVIDER_BEFORE: f32 = 3.0;
 const TRAY_DIVIDER_AFTER: f32 = 4.0;
 /// The room a [`tray_divider`] takes across.

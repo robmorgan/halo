@@ -33,6 +33,8 @@ pub enum Notches {
     None,
     /// `n` evenly-spaced intervals → n+1 ticks across the travel. (channel)
     Even(u32),
+    /// One tick at the middle of the travel (the library zoom).
+    Center,
 }
 
 pub struct Fader<'a> {
@@ -193,6 +195,7 @@ impl Widget for Fader<'_> {
                         tick(painter, i as f32 / n as f32);
                     }
                 }
+                Notches::Center => tick(painter, 0.5),
             }
 
             let t = self.norm(*self.value);

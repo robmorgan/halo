@@ -307,6 +307,9 @@ struct BrowserState {
     dirty: bool,
     /// Playlist being renamed inline: (id, buffer).
     rename: Option<(i64, String)>,
+    /// The library zoom fader's position, −1..1 with 0 in the middle; see
+    /// [`library_zoom_scale`].
+    zoom: f32,
 }
 
 impl BrowserState {
@@ -320,6 +323,7 @@ impl BrowserState {
             ascending: true,
             dirty: true,
             rename: None,
+            zoom: 0.0,
         }
     }
 }
@@ -356,6 +360,10 @@ struct Persisted {
     auto_cue_off: [bool; 2],
     #[serde(default)]
     footer_tab: FooterTab,
+    /// The library zoom fader's position, −1..1; the missing-field
+    /// default (0) is the middle, today's row size.
+    #[serde(default)]
+    library_zoom: f32,
     /// Wide-range Master Tempo (WIDE) per deck.
     #[serde(default)]
     wides: [bool; 2],
@@ -605,6 +613,7 @@ impl HaloApp {
             browser.sort = sort;
             browser.ascending = persisted.ascending;
         }
+        browser.zoom = persisted.library_zoom.clamp(-1.0, 1.0);
 
         // Rig patch + Art-Net settings from the library DB, falling back
         // to the default rig / broadcast when absent or unparsable.
@@ -1846,26 +1855,73 @@ impl HaloApp {
                 let card = ui.available_rect_before_wrap();
                 ui.advance_cursor_after_rect(card);
                 ui.painter().extend(theme::panel_shapes(ui.ctx(), card));
-                let mut body =
-                    ui.new_child(egui::UiBuilder::new().max_rect(card.shrink(PERFORM_PANEL_PAD)));
-                body.set_clip_rect(card.intersect(ui.clip_rect()));
-                let ui = &mut body;
-                ui.horizontal(|ui| {
-                    for (tab, label) in [
-                        (FooterTab::Library, "LIBRARY"),
-                        (FooterTab::Programmer, "PROGRAMMER"),
-                    ] {
-                        if ui
-                            .add(Key::new(label).small().selected(self.footer_tab == tab))
-                            .clicked()
-                        {
-                            self.footer_tab = tab;
-                        }
+                let clip = card.intersect(ui.clip_rect());
+
+                // The card's body: rail | divider | pane, each the body's
+                // full height.
+                let inner = egui::Rect::from_min_max(
+                    card.min + egui::vec2(FOOTER_PAD_LEFT, PERFORM_PANEL_PAD),
+                    card.max - egui::Vec2::splat(PERFORM_PANEL_PAD),
+                );
+                let rail =
+                    egui::Rect::from_min_size(inner.min, egui::vec2(FOOTER_RAIL_W, inner.height()));
+                let divider_x = rail.right() + FOOTER_RAIL_GAP;
+                let pane =
+                    egui::Rect::from_min_max(egui::pos2(divider_x + 1.0, inner.top()), inner.max);
+
+                let mut rail_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rail)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                rail_ui.set_clip_rect(clip);
+                rail_ui.spacing_mut().item_spacing.y = FOOTER_RAIL_KEY_GAP;
+                for (tab, hover) in [
+                    (FooterTab::Library, "Library — tracks and playlists"),
+                    (
+                        FooterTab::Programmer,
+                        "Programmer — lane overrides, looks and effects",
+                    ),
+                ] {
+                    let selected = self.footer_tab == tab;
+                    let key = match tab {
+                        FooterTab::Library => Key::new("🗄").text_style(FOOTER_RAIL_GLYPH),
+                        FooterTab::Programmer => Key::new(""),
+                    };
+                    let resp = rail_ui
+                        .add(
+                            key.size(egui::Vec2::splat(FOOTER_RAIL_W))
+                                .selected(selected),
+                        )
+                        .on_hover_text(hover);
+                    if tab == FooterTab::Programmer {
+                        // The label colour a key gives its own text.
+                        let color =
+                            if selected || resp.hovered() || resp.is_pointer_button_down_on() {
+                                theme::TEXT_STRONG
+                            } else {
+                                theme::TEXT
+                            };
+                        paint_programmer_icon(rail_ui.painter(), resp.rect.center(), color);
                     }
-                    group_divider(ui, theme::SIZE_KEY_SMALL);
-                    lighting_leds(ui, lighting);
-                });
-                ui.add_space(theme::SPACE_8);
+                    if resp.clicked() {
+                        self.footer_tab = tab;
+                    }
+                }
+
+                ui.painter().with_clip_rect(clip).vline(
+                    divider_x + 0.5,
+                    inner.y_range(),
+                    egui::Stroke::new(1.0, theme::TRAY_DIVIDER),
+                );
+
+                let mut body = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(pane)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                body.set_clip_rect(pane.intersect(clip));
+                let ui = &mut body;
                 match self.footer_tab {
                     FooterTab::Library => {
                         if self.library.is_none() {
@@ -1883,10 +1939,11 @@ impl HaloApp {
                         ui.horizontal_top(|ui| {
                             ui.spacing_mut().item_spacing.x = theme::SPACE_8;
                             theme::well(ui, theme::SPACE_8, |ui| {
-                                ui.set_width(190.0);
-                                ui.set_min_height(body_h - 2.0 * theme::SPACE_8);
+                                ui.set_width(PLAYLIST_WELL_W);
+                                let inner_h = body_h - 2.0 * theme::SPACE_8;
+                                ui.set_min_height(inner_h);
                                 ui.vertical(|ui| {
-                                    playlist_tree(ui, &mut self.browser, &mut actions);
+                                    playlist_tree(ui, &mut self.browser, &mut actions, inner_h);
                                 });
                             });
                             ui.vertical(|ui| {
@@ -2562,8 +2619,38 @@ impl eframe::App for HaloApp {
                 snap_off: !self.prepare.snap,
                 auto_cue_off: [!self.decks[0].auto_cue, !self.decks[1].auto_cue],
                 footer_tab: self.footer_tab,
+                library_zoom: self.browser.zoom,
             },
         );
+    }
+
+    /// Tab flips the footer between Library and Programmer. It's taken out
+    /// of the input here, before egui sees it: with nothing focused, egui
+    /// would otherwise move focus to the first widget (the search field),
+    /// which silences every shortcut. With a text field focused, Tab is left
+    /// to egui.
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if self.view == View::Patch || ctx.wants_keyboard_input() {
+            return;
+        }
+        raw_input.events.retain(|event| match event {
+            egui::Event::Key {
+                key: egui::Key::Tab,
+                pressed,
+                repeat,
+                modifiers,
+                ..
+            } if !(modifiers.command || modifiers.ctrl || modifiers.alt) => {
+                if *pressed && !*repeat {
+                    self.footer_tab = match self.footer_tab {
+                        FooterTab::Library => FooterTab::Programmer,
+                        FooterTab::Programmer => FooterTab::Library,
+                    };
+                }
+                false
+            }
+            _ => true,
+        });
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -3035,9 +3122,94 @@ enum BrowserAction {
     ImportFolder(PathBuf),
 }
 
+/// The footer's left inner padding (the rail sits close to the card's
+/// edge; the other sides keep `PERFORM_PANEL_PAD`), the icon rail's width
+/// and the gap between its keys, and the room between the rail and its
+/// divider. The pane starts right at the divider.
+const FOOTER_PAD_LEFT: f32 = theme::SPACE_4;
+const FOOTER_RAIL_W: f32 = theme::SIZE_KEY;
+const FOOTER_RAIL_KEY_GAP: f32 = theme::SPACE_4;
+const FOOTER_RAIL_GAP: f32 = theme::SPACE_4;
+/// The Library key's 🗄 glyph.
+const FOOTER_RAIL_GLYPH: theme::TypeStyle = theme::BODY_TEXT.sized(16.0);
+/// The programmer icon: 16 square, three fader slots at 55% with 4×2.5
+/// caps at different heights (0 = top, 1 = bottom).
+const PROGRAMMER_ICON: f32 = 16.0;
+const PROGRAMMER_ICON_CAP: egui::Vec2 = egui::vec2(4.0, 2.5);
+const PROGRAMMER_ICON_CAPS: [f32; 3] = [0.3, 0.7, 0.45];
+
+/// The footer rail's Programmer icon, centred on `center` in `color`.
+fn paint_programmer_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    let half = PROGRAMMER_ICON / 2.0;
+    let top = center.y - half;
+    let travel = PROGRAMMER_ICON - PROGRAMMER_ICON_CAP.y;
+    let step = (PROGRAMMER_ICON - PROGRAMMER_ICON_CAP.x) / 2.0;
+    for (i, at) in PROGRAMMER_ICON_CAPS.iter().enumerate() {
+        let x = center.x - half + PROGRAMMER_ICON_CAP.x / 2.0 + i as f32 * step;
+        painter.vline(
+            x,
+            top..=top + PROGRAMMER_ICON,
+            egui::Stroke::new(1.0, color.gamma_multiply(0.55)),
+        );
+        let cap = egui::Rect::from_min_size(
+            egui::pos2(x - PROGRAMMER_ICON_CAP.x / 2.0, top + at * travel),
+            PROGRAMMER_ICON_CAP,
+        );
+        painter.rect_filled(cap, 0.0, color);
+    }
+}
+
+/// The playlist well's width.
+const PLAYLIST_WELL_W: f32 = 190.0;
+
 /// Left side of the browser: Library root + playlist tree with inline
 /// rename and context menus.
-fn playlist_tree(ui: &mut egui::Ui, browser: &mut BrowserState, actions: &mut Vec<BrowserAction>) {
+fn playlist_tree(
+    ui: &mut egui::Ui,
+    browser: &mut BrowserState,
+    actions: &mut Vec<BrowserAction>,
+    height: f32,
+) {
+    // The list scrolls in whatever height is left above + PLAYLIST, which
+    // stays pinned to the bottom of the well.
+    let list_h = (height - theme::SIZE_KEY_SMALL - theme::SPACE_8).max(0.0);
+    let list_rect =
+        egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), list_h));
+    // Right-clicking the tree's background (not a row) offers the folder
+    // actions. Registered before the rows, so the rows stay on top.
+    let background = ui.interact(
+        list_rect,
+        ui.id().with("playlist_background"),
+        egui::Sense::click(),
+    );
+    egui::ScrollArea::vertical()
+        .id_salt("playlist_tree")
+        .auto_shrink([false, false])
+        .min_scrolled_height(list_h)
+        .max_height(list_h)
+        .show(ui, |ui| playlist_list(ui, browser, actions));
+    background.context_menu(|ui| {
+        if ui.button("New folder").clicked() {
+            actions.push(BrowserAction::NewPlaylist(true));
+            ui.close_menu();
+        }
+        if ui.button("Import folder…").clicked() {
+            ui.close_menu();
+            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                actions.push(BrowserAction::ImportFolder(dir));
+            }
+        }
+    });
+
+    ui.add_space(theme::SPACE_8);
+    if ui.add(Key::new("+ PLAYLIST").small()).clicked() {
+        actions.push(BrowserAction::NewPlaylist(false));
+    }
+}
+
+/// The Library root, then folders (each with its playlists), then
+/// root-level playlists.
+fn playlist_list(ui: &mut egui::Ui, browser: &mut BrowserState, actions: &mut Vec<BrowserAction>) {
     if ui
         .selectable_label(browser.selected.is_none(), "🗄 Library")
         .clicked()
@@ -3082,21 +3254,6 @@ fn playlist_tree(ui: &mut egui::Ui, browser: &mut BrowserState, actions: &mut Ve
     {
         playlist_row(ui, browser, pl, actions);
     }
-
-    ui.add_space(theme::SPACE_8);
-    ui.horizontal(|ui| {
-        if ui.add(Key::new("+ LIST").small()).clicked() {
-            actions.push(BrowserAction::NewPlaylist(false));
-        }
-        if ui.add(Key::new("+ FOLDER").small()).clicked() {
-            actions.push(BrowserAction::NewPlaylist(true));
-        }
-    });
-    if ui.add(Key::new("⬇ IMPORT FOLDER…").small()).clicked()
-        && let Some(dir) = rfd::FileDialog::new().pick_folder()
-    {
-        actions.push(BrowserAction::ImportFolder(dir));
-    }
 }
 
 fn playlist_row(
@@ -3140,8 +3297,50 @@ fn playlist_row(
 /// Library row height in points: tall enough for the waveform thumbnail
 /// while keeping the table dense.
 const TRACK_ROW_HEIGHT: f32 = 26.0;
-/// Thumbnail cell rect in points (drawn centered in its 96pt column).
+/// Thumbnail cell rect in points (drawn centered in its column, 4 wider).
 const THUMB_CELL_SIZE: egui::Vec2 = egui::vec2(92.0, 20.0);
+/// The search field's clear button: a bare × of `SEARCH_CLEAR_ICON` square,
+/// with a hit area as tall as the search row.
+const SEARCH_CLEAR_ICON: f32 = 8.0;
+const SEARCH_CLEAR_HIT: egui::Vec2 = egui::vec2(16.0, 22.0);
+
+fn paint_clear_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
+    let half = SEARCH_CLEAR_ICON / 2.0;
+    let stroke = egui::Stroke::new(1.5, color);
+    painter.line_segment(
+        [
+            center + egui::vec2(-half, -half),
+            center + egui::vec2(half, half),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            center + egui::vec2(-half, half),
+            center + egui::vec2(half, -half),
+        ],
+        stroke,
+    );
+}
+
+/// The library zoom fader: 120×22, a 20×6 cap, a centre notch.
+const LIBRARY_ZOOM_SIZE: egui::Vec2 = egui::vec2(120.0, 22.0);
+const LIBRARY_ZOOM_CAP: egui::Vec2 = egui::vec2(20.0, 6.0);
+/// The zoom's range either side of the middle (1×). Its floor keeps a
+/// row at least as tall as the 22pt load keys in it.
+const LIBRARY_ZOOM_MIN: f32 = 0.85;
+const LIBRARY_ZOOM_MAX: f32 = 1.6;
+
+/// The library zoom fader's −1..1 position as a scale on row height and
+/// thumbnail size: `LIBRARY_ZOOM_MIN` at the left, 1× in the middle,
+/// `LIBRARY_ZOOM_MAX` at the right.
+fn library_zoom_scale(t: f32) -> f32 {
+    if t < 0.0 {
+        1.0 + (1.0 - LIBRARY_ZOOM_MIN) * t
+    } else {
+        1.0 + (LIBRARY_ZOOM_MAX - 1.0) * t
+    }
+}
 
 fn track_table(
     ui: &mut egui::Ui,
@@ -3165,10 +3364,57 @@ fn track_table(
         {
             actions.push(BrowserAction::SearchChanged);
         }
+        // Back to the whole library: empties the search and drops the
+        // playlist selection.
+        let filtered = !browser.search.is_empty() || browser.selected.is_some();
+        let sense = if filtered {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+        let (rect, resp) = ui.allocate_exact_size(SEARCH_CLEAR_HIT, sense);
+        let color = if !filtered {
+            theme::TEXT_DISABLED
+        } else if resp.hovered() {
+            theme::TEXT_STRONG
+        } else {
+            theme::TEXT_MUTED
+        };
+        paint_clear_icon(ui.painter(), rect.center(), color);
+        let resp = if filtered {
+            resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        } else {
+            resp
+        };
+        if resp
+            .on_hover_text("Clear the search and show the whole library")
+            .clicked()
+        {
+            browser.search.clear();
+            actions.push(BrowserAction::SelectPlaylist(None));
+        }
+        let (rule, _) =
+            ui.allocate_exact_size(egui::vec2(1.0, LIBRARY_ZOOM_SIZE.y), egui::Sense::hover());
+        ui.painter().vline(
+            rule.left() + 0.5,
+            rule.y_range(),
+            egui::Stroke::new(1.0, theme::TRAY_DIVIDER),
+        );
+        ui.add(
+            Fader::new(&mut browser.zoom, -1.0..=1.0, ACCENT)
+                .vertical(false)
+                .size(LIBRARY_ZOOM_SIZE)
+                .cap_size(LIBRARY_ZOOM_CAP.x, LIBRARY_ZOOM_CAP.y)
+                .notches(Notches::Center)
+                .default_value(0.0),
+        )
+        .on_hover_text("Library zoom — row height and waveform size");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let n = browser.rows.len();
+            let noun = if n == 1 { "track" } else { "tracks" };
             ui.label(
                 theme::NOTE_TEXT
-                    .rich(format!("{} tracks", browser.rows.len()))
+                    .rich(format!("{n} {noun}"))
                     .color(theme::TEXT_MUTED),
             );
         });
@@ -3215,6 +3461,9 @@ fn track_table(
         .map(|p| (p.id, p.name.clone()))
         .collect();
     let selected_playlist = browser.selected;
+    let zoom = library_zoom_scale(browser.zoom);
+    let row_h = TRACK_ROW_HEIGHT * zoom;
+    let thumb = THUMB_CELL_SIZE * zoom;
 
     // Text selection in cells would show an I-beam cursor and steal drags
     // from the row; the whole row must act as one draggable unit.
@@ -3231,7 +3480,7 @@ fn track_table(
                 .sense(egui::Sense::click_and_drag())
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                 .column(Column::exact(58.0)) // load buttons
-                .column(Column::exact(96.0)) // waveform thumbnail
+                .column(Column::exact(thumb.x + 4.0)) // waveform thumbnail
                 // The text columns clip and their labels truncate, so a long
                 // name ends in "…" in its own column instead of pushing the
                 // rest of its row out of line.
@@ -3252,7 +3501,7 @@ fn track_table(
                     h.col(|ui| header(ui, "Time", SortColumn::Duration, browser, actions));
                 })
                 .body(|body| {
-                    body.rows(TRACK_ROW_HEIGHT, browser.rows.len(), |mut row| {
+                    body.rows(row_h, browser.rows.len(), |mut row| {
                         let track = &browser.rows[row.index()];
                         row.col(|ui| {
                             ui.horizontal(|ui| match view {
@@ -3287,10 +3536,7 @@ fn track_table(
                         row.col(|ui| {
                             // Painter-only (no widget) so the cell never competes
                             // with the table's row-level click/drag sense.
-                            let rect = egui::Rect::from_center_size(
-                                ui.max_rect().center(),
-                                THUMB_CELL_SIZE,
-                            );
+                            let rect = egui::Rect::from_center_size(ui.max_rect().center(), thumb);
                             if thumbs.len() >= 512 && !thumbs.contains_key(&track.id) {
                                 // Cap: dropping the handles frees the textures;
                                 // visible rows repopulate over the next frames.
