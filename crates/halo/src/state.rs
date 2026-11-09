@@ -506,11 +506,22 @@ impl ScrubState {
     }
 }
 
+/// The master clock's tempo at launch.
+pub const DEFAULT_MASTER_BPM: f64 = 128.0;
+/// The range the master clock's tempo is held to.
+pub const MASTER_BPM_RANGE: std::ops::RangeInclusive<f64> = 20.0..=300.0;
+
 /// Mixer state shared between the UI and the audio callback.
 pub struct MixerShared {
-    /// Callback-owned effective master; UI requests changes separately.
-    pub effective_master: AtomicU8,
-    pub master_request: AtomicU64,
+    /// The master clock's tempo. Synced decks follow it and lock their
+    /// beats to the clock. Written by the UI.
+    pub master_bpm: AtomicF64,
+    /// The master clock's beat position at the end of the last block,
+    /// published by the audio callback.
+    pub clock_beats: AtomicF64,
+    /// The deck the lighting follows. Written by the UI, read by the DMX
+    /// engine.
+    pub lighting_deck: AtomicU8,
     pub output_frame: AtomicU64,
     /// Master volume, linear.
     pub master: AtomicF32,
@@ -526,8 +537,9 @@ pub struct MixerShared {
 impl MixerShared {
     pub fn new() -> Self {
         Self {
-            effective_master: AtomicU8::new(0),
-            master_request: AtomicU64::new(0),
+            master_bpm: AtomicF64::new(DEFAULT_MASTER_BPM),
+            clock_beats: AtomicF64::new(0.0),
+            lighting_deck: AtomicU8::new(0),
             output_frame: AtomicU64::new(0),
             master: AtomicF32::new(1.0),
             master_meter: AtomicF32::new(0.0),

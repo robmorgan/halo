@@ -51,7 +51,7 @@ pub struct DmxSnapshot {
     pub net: Arc<NetworkConfig>,
 }
 
-/// Keep both cue maps so automatic master handoff survives a stalled UI.
+/// Keep both cue maps so switching the lighting deck survives a stalled UI.
 #[derive(Clone)]
 pub struct DmxDeck {
     pub cues: Option<CueSet>,
@@ -60,8 +60,8 @@ pub struct DmxDeck {
 }
 
 impl DmxSnapshot {
-    fn master_deck(&self) -> &DmxDeck {
-        &self.decks[usize::from(self.mixer.effective_master.load(Ordering::Acquire)).min(1)]
+    fn lighting_deck(&self) -> &DmxDeck {
+        &self.decks[usize::from(self.mixer.lighting_deck.load(Ordering::Acquire)).min(1)]
     }
 }
 
@@ -110,7 +110,7 @@ pub fn spawn_dmx_engine() -> DmxShared {
                 };
                 current_net = Some(Arc::clone(&snap.net));
             }
-            let deck = snap.master_deck();
+            let deck = snap.lighting_deck();
             let playhead = deck
                 .deck
                 .delivery_clock

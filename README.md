@@ -43,7 +43,8 @@ real-time tempo and pitch control.
 * **Hot cues** — 8 per deck, with Normal and Gated modes and optional quantize to the beat grid.
 * **Loops** — manual in/out, 4-beat quantized autoloop, and halve/double controls from 1/16 up to 16 beats.
 * **Tempo & sync** — tempo slider with ±8/±16/±50% ranges, keylock, pitch-bend nudges, and one-button sync that
-  locks BPM and beat phase to a master deck.
+  locks BPM and beat phase to a master clock (128 BPM to start; set it in the toolbar or from a synced deck's
+  tempo fader).
 * **Audible scrub** with momentum — grab the waveform and hear it, like dragging a platter.
 * **Rich waveforms** — 3-band RGB overview strip and a zoomed, centered-playhead view with beat/bar marks,
   rendered from background track analysis.

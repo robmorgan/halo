@@ -13,6 +13,27 @@ const SEG_GAP: f32 = 4.0;
 const SEGMENTS: u8 = 4;
 /// Padding inside the segments' well.
 const WELL_PAD: f32 = 3.0;
+/// The four beat steps in their well.
+pub const BEAT_STEPS_SIZE: egui::Vec2 = egui::vec2(
+    SEGMENTS as f32 * SEG_SIZE.x + (SEGMENTS - 1) as f32 * SEG_GAP + 2.0 * WELL_PAD,
+    SEG_SIZE.y + 2.0 * WELL_PAD,
+);
+
+/// The four beat steps in a well at `rect` (`BEAT_STEPS_SIZE`), `beat`
+/// (1–4) lit.
+pub fn paint_beat_steps(painter: &egui::Painter, rect: egui::Rect, beat: Option<u8>) {
+    theme::paint_well(painter, rect, theme::RADIUS_CONTROL);
+    for seg in 1..=SEGMENTS {
+        let x = rect.left() + WELL_PAD + (seg - 1) as f32 * (SEG_SIZE.x + SEG_GAP);
+        let seg_rect = egui::Rect::from_min_size(egui::pos2(x, rect.top() + WELL_PAD), SEG_SIZE);
+        let color = if beat == Some(seg) {
+            theme::ACCENT
+        } else {
+            theme::SEGMENT_OFF
+        };
+        painter.rect_filled(seg_rect, 0.0, color);
+    }
+}
 
 /// Paint the readout + segments, the BAR caption in `caption`. Shows
 /// placeholders before the first beat; paints nothing without a usable
@@ -49,24 +70,9 @@ pub fn paint_beat_counter(
         theme::TEXT_STRONG,
     );
 
-    // The steps sit in a well; the current beat lights playhead red with a
-    // glow.
-    let width = SEGMENTS as f32 * SEG_SIZE.x + (SEGMENTS - 1) as f32 * SEG_GAP + 2.0 * WELL_PAD;
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(width, SEG_SIZE.y + 2.0 * WELL_PAD),
-        egui::Sense::hover(),
-    );
-    let painter = ui.painter();
-    theme::paint_well(painter, rect, theme::RADIUS_CONTROL);
-    for seg in 1..=SEGMENTS {
-        let x = rect.left() + WELL_PAD + (seg - 1) as f32 * (SEG_SIZE.x + SEG_GAP);
-        let seg_rect = egui::Rect::from_min_size(egui::pos2(x, rect.top() + WELL_PAD), SEG_SIZE);
-        if bar_beat.is_some_and(|(_, beat)| beat == seg) {
-            painter.rect_filled(seg_rect, 0.0, theme::ACCENT);
-        } else {
-            painter.rect_filled(seg_rect, 0.0, theme::SEGMENT_OFF);
-        }
-    }
+    // The steps sit in a well, the current beat lit.
+    let (rect, _) = ui.allocate_exact_size(BEAT_STEPS_SIZE, egui::Sense::hover());
+    paint_beat_steps(ui.painter(), rect, bar_beat.map(|(_, beat)| beat));
 
     // Honest-display hint: the waveform ticks are drawn dimmed for this
     // grid, and this says why.

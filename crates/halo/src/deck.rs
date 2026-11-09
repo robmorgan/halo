@@ -398,12 +398,16 @@ mod tests {
     use crate::state::MixerShared;
 
     fn audio(decks: &[Deck; 3], rate: u32) -> MixerRenderer {
+        audio_with(decks, rate, Arc::new(MixerShared::new()))
+    }
+
+    fn audio_with(decks: &[Deck; 3], rate: u32, mixer: Arc<MixerShared>) -> MixerRenderer {
         MixerRenderer::new(
             std::array::from_fn(|i| DeckAudio {
                 shared: decks[i].shared.clone(),
                 handoff: decks[i].handoff.clone(),
             }),
-            Arc::new(MixerShared::new()),
+            mixer,
             rate,
         )
     }
@@ -437,8 +441,11 @@ mod tests {
             deck.handoff
                 .publish_grid(BeatMap::new((0..101).map(|i| i as f64 * 4800.0), 1, 600.0));
         }
-        let mut renderer = audio(&decks, 48_000);
-        let master = decks[0].shared.clone();
+        // The master clock at the grid's tempo: a beat every 4800 frames.
+        let mixer = Arc::new(MixerShared::new());
+        mixer.master_bpm.store(600.0);
+        let mut renderer = audio_with(&decks, 48_000, mixer.clone());
+        let other = decks[0].shared.clone();
         let follower = decks[1].shared.clone();
         follower.request_anchor(12_750.25);
         follower.sync_enabled.store(true, Ordering::Release);
@@ -446,10 +453,11 @@ mod tests {
             renderer.render(&mut [0.0; 256]);
             follower.delivery_position.load() == 12_750.25
         });
-        master.set_transport(Transport::Playing);
+        // An unsynced deck playing alongside changes nothing.
+        other.set_transport(Transport::Playing);
         wait(|| {
             renderer.render(&mut [0.0; 256]);
-            master.playhead_frames() >= 2048
+            other.playhead_frames() >= 2048
         });
         assert_eq!(follower.delivery_position.load(), 12_750.25);
         follower.set_transport(Transport::Playing);
@@ -459,7 +467,7 @@ mod tests {
         });
         let aligned = || {
             let error = phase_error(
-                master.delivery_position.load() / 4800.0,
+                mixer.clock_beats.load(),
                 follower.delivery_position.load() / 4800.0,
             )
             .abs();

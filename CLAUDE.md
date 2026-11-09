@@ -43,7 +43,7 @@ Plain threads + channels/atomics; each session has one owner:
 - **Render worker per loaded player** — owns a `PreparedSession`/`StreamSession`, source requests,
   seek/loop/EOF transactions, output reserve, consumption receipts and shared playhead. Includes audition.
 - **Audio callback thread (cpal)** — consumes completed audio, renders scrub voices, applies channel
-  strips, faders, master and limiter. Fixed scratch storage, no locks or allocations,
+  strips, faders, master and limiter, and runs the master clock synced decks lock to. Fixed scratch storage, no locks or allocations,
   no session reset/processing/destruction. A bounded handoff returns old storage to the UI.
 - **Worker threads** (`std::thread` + `mpsc`, drained per frame by the UI) — library import, track analysis.
 - **DMX engine thread** — 44 Hz tick: reads deck playheads from atomics, `resolve()` → `render()` → Art-Net send.
@@ -68,6 +68,8 @@ Plain threads + channels/atomics; each session has one owner:
 - `decoder.rs` — symphonia decode (mp3/flac/ogg/wav) to interleaved stereo `f32`.
 - `worker.rs` — background import/analysis workers (own DB connections).
 - `library.rs` — SQLite (rusqlite, bundled): `tracks`, `playlists`, `playlist_tracks`, `lighting_cues`, `settings`.
+- `footer.rs` — the footer: help for the control under the pointer (`StatusHelp::status_help` in place of
+  tooltips) and the background task well/tray (`Tasks`: Attention > Running > Done, Done expires after 4 s).
 - `options.rs` — the Options modal (AUDIO / LIGHTING / MIDI), edited as a draft and applied on SAVE.
 - `midi.rs` — controller ports, messages, profiles (built-in + user, MIDI learn), the action router, feedback.
 - `z1.rs` — Traktor Kontrol Z1 over HID (MODE, 12-bit knobs, 7-step meters), macOS only; its built-in

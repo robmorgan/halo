@@ -301,6 +301,16 @@ pub const QUIET_CAPTION: TypeStyle = TypeStyle::new(10.5, Weight::SemiBold, 1.4)
 pub const QUIET_NUMERALS: TypeStyle = TypeStyle::new(26.0, Weight::Numerals, 0.2);
 /// A text toggle's label (A.CUE, Q).
 pub const TEXT_TOGGLE: TypeStyle = TypeStyle::new(13.0, Weight::SemiBold, 1.2);
+/// The footer's task message and help text: size and line height, kept
+/// here to tune.
+pub const STATUS_MESSAGE_SIZE: f32 = 14.5;
+pub const STATUS_MESSAGE_LINE: f32 = 17.5;
+pub const STATUS_HELP_SIZE: f32 = 11.5;
+pub const STATUS_HELP_LINE: f32 = 16.0;
+/// `status-message`: the footer's background task, Barlow Condensed 600.
+pub const STATUS_MESSAGE: TypeStyle = TypeStyle::new(STATUS_MESSAGE_SIZE, Weight::SemiBold, 0.2);
+/// `status-help`: the footer's help for the control under the pointer.
+pub const STATUS_HELP: TypeStyle = TypeStyle::new(STATUS_HELP_SIZE, Weight::Regular, 0.0);
 
 /// Paint one line of `text` in `style` anchored like `Painter::text`,
 /// keeping the style's letter-spacing (which `Painter::text` drops).
@@ -317,6 +327,20 @@ pub fn paint_text(
     let rect = anchor.anchor_size(pos, size);
     painter.galley(rect.min, galley, color);
     rect
+}
+
+/// One line of `text` in `style`, cut short with "…" at `width`.
+pub fn truncated(
+    ctx: &egui::Context,
+    text: &str,
+    style: TypeStyle,
+    color: Color32,
+    width: f32,
+) -> Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::single_section(text.to_owned(), style.format(color));
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(0.0));
+    job.break_on_newline = false;
+    ctx.fonts(|f| f.layout_job(job))
 }
 
 /// Register Inter (three weights plus the tabular copy) and JetBrains Mono,
