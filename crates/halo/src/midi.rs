@@ -229,7 +229,6 @@ impl DeckControl {
 pub enum Action {
     /// A deck's control: deck 0 is A, 1 is B.
     Deck(u8, DeckControl),
-    Crossfader,
     AuditionVolume,
     /// Held, it switches every control to its shifted binding.
     Shift,
@@ -243,12 +242,11 @@ impl Action {
             .map(move |control| Action::Deck(deck, control))
     }
 
-    pub const GLOBAL: [Action; 3] = [Action::Crossfader, Action::AuditionVolume, Action::Shift];
+    pub const GLOBAL: [Action; 2] = [Action::AuditionVolume, Action::Shift];
 
     pub fn label(self) -> String {
         match self {
             Action::Deck(_, control) => control.label(),
-            Action::Crossfader => "CROSSFADER".into(),
             Action::AuditionVolume => "AUDITION VOLUME".into(),
             Action::Shift => "SHIFT".into(),
         }
@@ -257,7 +255,7 @@ impl Action {
     fn is_button(self) -> bool {
         match self {
             Action::Deck(_, control) => control.is_button(),
-            Action::Crossfader | Action::AuditionVolume => false,
+            Action::AuditionVolume => false,
             Action::Shift => true,
         }
     }
@@ -333,13 +331,23 @@ pub struct Profile {
     /// A built-in is picked for an input whose name contains this.
     #[serde(default)]
     pub port_match: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "known_bindings")]
     pub bindings: Vec<Binding>,
     #[serde(default)]
     pub meters: Vec<Meter>,
 }
 
 const BUILTIN_PREFIX: &str = "builtin:";
+
+/// A profile's stored bindings, minus any for actions Halo no longer has,
+/// so removing one never throws away the rest of the MIDI settings.
+fn known_bindings<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Vec<Binding>, D::Error> {
+    let stored = Vec::<serde_json::Value>::deserialize(de)?;
+    Ok(stored
+        .into_iter()
+        .filter_map(|b| serde_json::from_value(b).ok())
+        .collect())
+}
 
 impl Profile {
     pub fn is_builtin(&self) -> bool {
@@ -518,7 +526,6 @@ fn traktor_z1() -> Profile {
     }
     bindings.extend([
         bind(z1::CUE_MIX, false, Action::AuditionVolume),
-        bind(z1::CROSSFADER, false, Action::Crossfader),
         bind(z1::MODE, false, Action::Shift),
     ]);
     Profile {
@@ -1096,6 +1103,29 @@ mod tests {
             MidiSettings::builtin_for(z1::PORT).map(|p| &p.id),
             Some(&z1.id)
         );
+    }
+
+    #[test]
+    fn bindings_to_actions_halo_dropped_are_skipped() {
+        // A profile duplicated while the Z1's crossfader was still mapped.
+        let json = r#"{
+            "input": "Traktor Kontrol Z1 (HID)",
+            "profile": "user:1",
+            "user_profiles": [{
+                "id": "user:1",
+                "name": "Mine",
+                "bindings": [
+                    {"key": {"kind": "Hid", "channel": 0, "number": 13}, "action": "Crossfader"},
+                    {"key": {"kind": "Hid", "channel": 0, "number": 14}, "action": "Shift"}
+                ]
+            }]
+        }"#;
+        let settings: MidiSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.input.as_deref(), Some(z1::PORT));
+        let profile = settings.profile().unwrap();
+        assert_eq!(profile.name, "Mine");
+        assert_eq!(profile.bindings.len(), 1);
+        assert_eq!(profile.shift_key(), Some(z1::key(z1::MODE)));
     }
 
     #[test]

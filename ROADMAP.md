@@ -31,8 +31,8 @@ Render worker × 3 (one per loaded player)
 Audio callback (cpal)
     delivery clock + beat-phase launch coordinator → shared playheads
     A queue + scrub → EQ/filter → trim → fader ┐
-    B queue + scrub → EQ/filter → trim → fader ├ crossfader → master → limiter
-    Audition queue + scrub → strip → fader ───┘ (bypasses crossfader)
+    B queue + scrub → EQ/filter → trim → fader ├ master → limiter
+    Audition queue + scrub → strip → fader ───┘
 ```
 
 Session preparation, processing, restart and destruction stay off the callback.
@@ -421,8 +421,9 @@ pulls the arc down, disarm an accent — nothing destructive.
 
 Open question to resolve here: lighting follows a single deck's
 playhead, so during a two-deck blend the look hard-switches when the
-lighting deck changes — decide whether lighting should follow the audio
-crossfader once shows span transitions.
+lighting deck changes — decide whether lighting should follow the
+channel faders' balance once shows span transitions (Halo has no
+crossfader).
 
 **Milestone:** run a playlist as a show — the look lane plays the
 track's color script, the energy curve draws the arc, one fader pulls

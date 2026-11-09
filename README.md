@@ -38,7 +38,7 @@ real-time tempo and pitch control.
 * **Dual decks** powered by one `timestretch` engine each: warm-start seeks, gapless loop wrap, and keylocked
   tempo control.
 * **Full mixer chain** per deck: trim → 3-band isolator EQ (full-kill) → resonant LP/HP filter → channel fader,
-  into a constant-power crossfader, master fader, and soft limiter.
+  into the master fader and soft limiter.
 * **CDJ-style transport**: play/pause and cue (set while paused, hold to preview, release to return).
 * **Hot cues** — 8 per deck, with Normal and Gated modes and optional quantize to the beat grid.
 * **Loops** — manual in/out, 4-beat quantized autoloop, and halve/double controls from 1/16 up to 16 beats.

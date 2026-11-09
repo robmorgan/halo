@@ -217,7 +217,7 @@ impl DjFilter {
 }
 
 /// One deck's post-engine DSP chain: isolator EQ then filter. Gains
-/// (trim/fader/crossfader) stay in the mixer where they always were — for a
+/// (trim/fader) stay in the mixer where they always were — for a
 /// linear chain the order doesn't change the result.
 pub struct ChannelStrip {
     eq: IsolatorEq,
