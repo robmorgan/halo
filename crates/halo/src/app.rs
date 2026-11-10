@@ -533,6 +533,8 @@ impl PrepareState {
 const PERSIST_KEY: &str = "halo";
 
 pub struct HaloApp {
+    /// The toolbar's logo; the wordmark stands in if it can't be decoded.
+    logo: Option<Logo>,
     audio: Option<AudioOutput>,
     mixer: Arc<MixerShared>,
     decks: [DeckUi; 2],
@@ -745,6 +747,7 @@ impl HaloApp {
             .unwrap_or_default();
 
         let mut app = Self {
+            logo: logo_texture(&cc.egui_ctx),
             audio,
             mixer,
             decks,
@@ -3141,7 +3144,20 @@ impl eframe::App for HaloApp {
                     ui.horizontal(|ui| {
                         ui.set_min_height(TOOLBAR_ROW_H);
                         ui.spacing_mut().item_spacing.x = theme::SPACE_8;
-                        ui.label(theme::WORDMARK.rich("HALO").color(ACCENT));
+                        let version = format!("Halo {}", env!("CARGO_PKG_VERSION"));
+                        match &self.logo {
+                            Some(logo) => {
+                                // The ring's edge, not its glow, sits at the inset.
+                                ui.add_space(-logo.bleed);
+                                ui.add(
+                                    egui::Image::new(&logo.texture)
+                                        .fit_to_exact_size(logo.size)
+                                        .sense(egui::Sense::hover()),
+                                )
+                            }
+                            None => ui.label(theme::WORDMARK.rich("HALO").color(ACCENT)),
+                        }
+                        .status_help(version);
                         ui.add_space(theme::SPACE_8);
                         // The view switcher: one strip, the current view
                         // pressed in.
@@ -5613,6 +5629,91 @@ fn deck_lufs_meter(
 
 /// Height of the toolbar's control row: the small master knob.
 const TOOLBAR_ROW_H: f32 = theme::SIZE_KNOB_SMALL;
+/// The toolbar logo's points per icon pixel: the ring a little under the
+/// view keys' height.
+const LOGO_SCALE: f32 = 28.0 / 256.0;
+/// Below this alpha the faded glow counts as empty and is trimmed off.
+const LOGO_VISIBLE: u8 = 6;
+/// From this alpha up it's the ring itself, which lines up with the
+/// toolbar's inset; the glow and grid to its left spill into the margin.
+const LOGO_EDGE: u8 = 100;
+
+/// The toolbar logo, its size in points, and how far its glow reaches left
+/// of the ring.
+struct Logo {
+    texture: egui::TextureHandle,
+    size: egui::Vec2,
+    bleed: f32,
+}
+/// Where the ring sits in the 512 px icon, with room for its glow to fade:
+/// left, top, width, height.
+const LOGO_CROP: [u32; 4] = [56, 128, 400, 256];
+/// The ring's centre and half-axes in the icon, for the fade.
+const LOGO_RING: [f32; 4] = [256.0, 256.0, 152.0, 96.0];
+/// The icon's tile colour, which becomes transparent.
+const LOGO_TILE: [f32; 3] = [14.0, 15.0, 17.0];
+
+/// The toolbar logo: the ring lifted off the icon's dark tile, so it sits on
+/// the toolbar's own ground, trimmed to what shows and scaled down once here
+/// to stay sharp.
+fn logo_texture(ctx: &egui::Context) -> Option<Logo> {
+    let icon = match image::load_from_memory(crate::APP_ICON_PNG) {
+        Ok(icon) => icon.to_rgba8(),
+        Err(e) => {
+            log::warn!("logo: {e}");
+            return None;
+        }
+    };
+    let [left, top, width, height] = LOGO_CROP;
+    let [cx, cy, rx, ry] = LOGO_RING;
+    let ring = image::RgbaImage::from_fn(width, height, |x, y| {
+        let (ix, iy) = (x + left, y + top);
+        let [r, g, b, _] = icon.get_pixel(ix, iy).0;
+        // The glow beyond the ring, the faint grid, fades out from just
+        // outside the ring to the crop's edge.
+        let distance = ((ix as f32 - cx) / rx).hypot((iy as f32 - cy) / ry);
+        let fade = 1.0 - ((distance - 1.05) / 0.25).clamp(0.0, 1.0);
+        // Premultiplied: what the ring adds over the tile.
+        let lift = [r, g, b].map(f32::from);
+        let lift = std::array::from_fn::<f32, 3, _>(|i| (lift[i] - LOGO_TILE[i]).max(0.0) * fade);
+        let alpha = lift.iter().copied().fold(0.0, f32::max);
+        image::Rgba([lift[0] as u8, lift[1] as u8, lift[2] as u8, alpha as u8])
+    });
+    let shown = ring
+        .enumerate_pixels()
+        .filter(|(_, _, pixel)| pixel.0[3] >= LOGO_VISIBLE);
+    let (x0, y0, x1, y1) = shown.fold((width, height, 0, 0), |(x0, y0, x1, y1), (x, y, _)| {
+        (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1))
+    });
+    if x0 >= x1 || y0 >= y1 {
+        return None;
+    }
+    let edge = ring
+        .enumerate_pixels()
+        .filter(|(_, _, pixel)| pixel.0[3] >= LOGO_EDGE)
+        .map(|(x, _, _)| x)
+        .min()
+        .unwrap_or(x0);
+    let bleed = edge.saturating_sub(x0) as f32 * LOGO_SCALE;
+    let ring = image::imageops::crop_imm(&ring, x0, y0, x1 - x0, y1 - y0).to_image();
+    let size = egui::vec2(ring.width() as f32, ring.height() as f32) * LOGO_SCALE;
+    let scale = ctx.pixels_per_point().max(2.0);
+    let (w, h) = (
+        (size.x * scale).ceil() as u32,
+        (size.y * scale).ceil() as u32,
+    );
+    let ring = image::imageops::resize(&ring, w, h, image::imageops::FilterType::Lanczos3);
+    let texture = ctx.load_texture(
+        "logo",
+        egui::ColorImage::from_rgba_premultiplied([w as usize, h as usize], ring.as_raw()),
+        egui::TextureOptions::LINEAR,
+    );
+    Some(Logo {
+        texture,
+        size,
+        bleed,
+    })
+}
 
 /// Toolbar master output meter as LED steps: the summed
 /// stream level measured post-master / post-limiter, so pulling the master

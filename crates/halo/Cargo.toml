@@ -51,4 +51,5 @@ name = "Halo"
 identifier = "com.robmorgan.halo"
 category = "public.app-category.music"
 short_description = "Two-deck DJ app powered by the timestretch engine"
+icon = ["icons/Halo.icns"]
 osx_minimum_system_version = "12.0"
