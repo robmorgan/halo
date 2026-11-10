@@ -22,8 +22,8 @@ eframe = { version = "0.31", default-features = false, features = [
     "wayland",
     "x11",
 ] }
-cpal = "0.15"
-midir = "0.10"
+cpal = "0.18"
+midir = "0.11"
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "vorbis"] }
 egui_extras = { version = "0.31", default-features = false }
 rusqlite = { version = "0.32", features = ["bundled"] }

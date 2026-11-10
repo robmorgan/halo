@@ -12,7 +12,9 @@ use halo_light::programmer::{
 };
 use timestretch::{AudioBuffer, BeatGrid, Channels, PreAnalysisArtifact};
 
-use crate::audio::{AudioOutput, AudioSettings, DeckAudio, list_output_devices};
+use crate::audio::{
+    AudioOutput, AudioSettings, DeckAudio, default_output_device, list_output_devices,
+};
 use crate::deck::Deck;
 use crate::decoder::decode_file;
 use crate::dmx;
@@ -26,7 +28,7 @@ use crate::options::{MidiLive, Options, OptionsValues, Outcome};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
 use crate::show::simulate_show_l3;
 use crate::show_preview::{LOOK_PALETTE, LookId, ShowPreview, ShowSel};
-use crate::state::{MASTER_BPM_RANGE, MixerShared, ScrubPhase, Transport};
+use crate::state::{DEFAULT_CUE_MIX, MASTER_BPM_RANGE, MixerShared, ScrubPhase, Transport};
 use crate::theme::{self, ACCENT};
 use crate::waveform::{
     BandPeaks, GhostPlayhead, GridMarks, OverviewParams, OverviewTexture, STACKED_OVERVIEW_H,
@@ -435,6 +437,12 @@ struct Persisted {
     /// Wide-range Master Tempo (WIDE) per deck.
     #[serde(default)]
     wides: [bool; 2],
+    /// Inverted so the missing-field default (false) means headphone cue ON.
+    #[serde(default)]
+    cue_output_off: bool,
+    /// The phones' cue/master blend; `None` (missing) is the default.
+    #[serde(default)]
+    cue_mix: Option<f32>,
 }
 
 /// Which pane the bottom slide-up footer shows.
@@ -652,9 +660,13 @@ impl HaloApp {
                 .store(persisted.audition_volume.clamp(0.0, 1.0));
         }
         prepare.snap = !persisted.snap_off;
+        if let Some(cue_mix) = persisted.cue_mix {
+            mixer.cue_mix.store(cue_mix.clamp(0.0, 1.0));
+        }
         let audio_settings = AudioSettings {
             device_name: persisted.device_name,
             buffer_size: persisted.buffer_size,
+            cue_output: !persisted.cue_output_off,
         };
 
         let audio = match AudioOutput::new(
@@ -675,10 +687,7 @@ impl HaloApp {
 
         let mut footer = Footer::default();
         match &audio {
-            Some(a) => footer.tasks.done(
-                TaskId::Audio,
-                format!("Output: {} @ {} Hz", a.device_name, a.sample_rate),
-            ),
+            Some(a) => footer.tasks.done(TaskId::Audio, output_label(a)),
             None => footer.tasks.attention(TaskId::Audio, "No audio output"),
         }
 
@@ -1408,10 +1417,7 @@ impl HaloApp {
             &self.audio_settings,
         ) {
             Ok(a) => {
-                self.footer.tasks.done(
-                    TaskId::Audio,
-                    format!("Output: {} @ {} Hz", a.device_name, a.sample_rate),
-                );
+                self.footer.tasks.done(TaskId::Audio, output_label(&a));
                 self.audio = Some(a);
             }
             Err(e) => {
@@ -1982,6 +1988,7 @@ impl HaloApp {
         let saved = OptionsValues {
             device_name: self.audio_settings.device_name.clone(),
             buffer_size: self.audio_settings.buffer_size,
+            cue_output: self.audio_settings.cue_output,
             unicast: self.artnet.unicast_ip.is_some(),
             node_ip: self
                 .artnet
@@ -1992,7 +1999,12 @@ impl HaloApp {
         };
         let rate = self.audio.as_ref().map(|a| a.sample_rate);
         self.midi.refresh(self.midi_settings.output.as_deref());
-        self.options = Some(Options::new(saved, list_output_devices(), rate));
+        self.options = Some(Options::new(
+            saved,
+            list_output_devices(),
+            default_output_device(),
+            rate,
+        ));
     }
 
     /// Draw Options if it's open, and apply what it closes with.
@@ -2044,10 +2056,9 @@ impl HaloApp {
         let audio = AudioSettings {
             device_name: values.device_name,
             buffer_size: values.buffer_size,
+            cue_output: values.cue_output,
         };
-        if audio.device_name != self.audio_settings.device_name
-            || audio.buffer_size != self.audio_settings.buffer_size
-        {
+        if audio != self.audio_settings {
             self.audio_settings = audio;
             self.rebuild_audio();
         }
@@ -2135,10 +2146,17 @@ impl HaloApp {
                     }
                     DeckControl::AutoLoop if pressed => deck_ui.autoloop(4.0),
                     DeckControl::ExitLoop if pressed => deck_ui.exit_loop(),
+                    // Nothing to hear without a phones output.
+                    DeckControl::Phones
+                        if pressed && self.mixer.cue_output.load(Ordering::Acquire) =>
+                    {
+                        shared.pfl.fetch_xor(true, Ordering::Relaxed);
+                    }
                     _ => {}
                 }
             }
             Action::AuditionVolume => self.prepare.audition.deck.shared.fader.store(value),
+            Action::CueMix => self.mixer.cue_mix.store(value),
             Action::Shift => {}
         }
     }
@@ -2149,18 +2167,25 @@ impl HaloApp {
             return;
         };
         let (decks, shift) = (&self.decks, self.midi_router.shift);
+        let phones = self.mixer.cue_output.load(Ordering::Acquire);
         let deck = |d: u8| decks.get(usize::from(d));
-        let led = |led: Led| match led {
-            Led::Playing(d) => {
-                deck(d).is_some_and(|d| d.deck.shared.transport() == Transport::Playing)
-            }
-            Led::AtCue(d) => deck(d).is_some_and(DeckUi::at_cue),
-            Led::FilterOn(d) => deck(d).is_some_and(|d| d.deck.shared.filter_mode_u8() != 0),
-            Led::Looping(d) => deck(d).is_some_and(|d| d.deck.shared.loop_region().is_some()),
-            Led::HotCueSet(d, slot) => deck(d)
-                .and_then(|d| d.hot_cues.get(usize::from(slot)))
-                .is_some_and(Option::is_some),
-            Led::Shift => shift,
+        let led = |led: Led| {
+            Some(match led {
+                Led::Playing(d) => {
+                    deck(d).is_some_and(|d| d.deck.shared.transport() == Transport::Playing)
+                }
+                Led::AtCue(d) => deck(d).is_some_and(DeckUi::at_cue),
+                Led::FilterOn(d) => deck(d).is_some_and(|d| d.deck.shared.filter_mode_u8() != 0),
+                Led::Looping(d) => deck(d).is_some_and(|d| d.deck.shared.loop_region().is_some()),
+                Led::HotCueSet(d, slot) => deck(d)
+                    .and_then(|d| d.hot_cues.get(usize::from(slot)))
+                    .is_some_and(Option::is_some),
+                Led::Phones(d) if phones => {
+                    deck(d).is_some_and(|d| d.deck.shared.pfl.load(Ordering::Relaxed))
+                }
+                Led::Phones(_) => return None,
+                Led::Shift => shift,
+            })
         };
         let peak = |d: u8| deck(d).map_or(0.0, |d| d.deck.shared.meter.load());
         let feedback = profile.feedback(shift, led, peak);
@@ -2505,6 +2530,7 @@ impl HaloApp {
                 ui.add_space(theme::SPACE_12);
                 group_divider(ui, 48.0);
                 ui.add_space(theme::SPACE_12);
+                let in_phones = self.mixer.cue_output.load(Ordering::Acquire);
                 control_group(ui, "VOLUME", |ui| {
                     let mut vol = shared.fader.load();
                     ui.spacing_mut().slider_width = 160.0;
@@ -2513,7 +2539,11 @@ impl HaloApp {
                             [160.0, theme::SIZE_KEY],
                             egui::Slider::new(&mut vol, 0.0..=1.0).show_value(false),
                         )
-                        .status_help("Audition volume")
+                        .status_help(if in_phones {
+                            "Audition volume: the audition player plays in the headphones only"
+                        } else {
+                            "Audition volume"
+                        })
                         .changed()
                     {
                         shared.fader.store(vol);
@@ -3021,6 +3051,8 @@ impl eframe::App for HaloApp {
                 auto_cue_off: [!self.decks[0].auto_cue, !self.decks[1].auto_cue],
                 footer_tab: self.footer_tab,
                 library_zoom: self.browser.zoom,
+                cue_output_off: !self.audio_settings.cue_output,
+                cue_mix: Some(self.mixer.cue_mix.load()),
             },
         );
     }
@@ -3172,6 +3204,28 @@ impl eframe::App for HaloApp {
                                 self.mixer.master.store(master);
                             }
                             ui.label(theme::CAPTION.rich("MASTER").color(theme::TEXT_MUTED));
+                            if self.mixer.cue_output.load(Ordering::Acquire) {
+                                group_divider(ui, theme::SIZE_KEY_SMALL);
+                                let mut cue_mix = self.mixer.cue_mix.load();
+                                if ui
+                                    .add(
+                                        Knob::new(&mut cue_mix, 0.0..=1.0, ACCENT)
+                                            .arc(KnobArc::Bipolar {
+                                                center: DEFAULT_CUE_MIX,
+                                            })
+                                            .default_value(DEFAULT_CUE_MIX)
+                                            .diameter(theme::SIZE_KNOB_SMALL),
+                                    )
+                                    .status_help(format!(
+                                        "Headphones: cue ← → master ({:.0}% master)",
+                                        cue_mix * 100.0
+                                    ))
+                                    .changed()
+                                {
+                                    self.mixer.cue_mix.store(cue_mix);
+                                }
+                                ui.label(theme::CAPTION.rich("CUE MIX").color(theme::TEXT_MUTED));
+                            }
                         });
                     })
                     .response
@@ -3315,7 +3369,11 @@ impl eframe::App for HaloApp {
                                 },
                             ),
                             &mut |ui| {
-                                mixer_panel(ui, &self.decks);
+                                mixer_panel(
+                                    ui,
+                                    &self.decks,
+                                    self.mixer.cue_output.load(Ordering::Acquire),
+                                );
                             },
                         );
                         self.mixer_center_x = mixer_rect.center().x;
@@ -5268,7 +5326,12 @@ fn paint_radio(painter: &egui::Painter, center: egui::Pos2, on: bool, enabled: b
 /// One deck's knob strip (Trim/Hi/Mid/Low/Filter) with the volume fader
 /// centered beneath it, in a fixed-width column so the knobs land directly
 /// over the fader. Returns the column rect (used to size the level meter).
-fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> egui::Rect {
+fn deck_channel_strip(
+    ui: &mut egui::Ui,
+    shared: &crate::state::DeckShared,
+    letter: char,
+    phones: bool,
+) -> egui::Rect {
     // Each knob sits `space-2` under its caption, `space-8` from the next.
     let caption = |ui: &mut egui::Ui, text: &str| {
         ui.label(theme::CAPTION.rich(text).color(theme::TEXT_MUTED));
@@ -5321,13 +5384,35 @@ fn deck_channel_strip(ui: &mut egui::Ui, shared: &crate::state::DeckShared) -> e
                 set_filter(shared, t);
             }
 
-            ui.add_space(theme::SPACE_16);
+            // Headphone cue, pre-fader: hear the deck with its fader down.
+            ui.add_space(theme::SPACE_8);
+            let cued = phones && shared.pfl.load(Ordering::Relaxed);
+            let help = if phones {
+                format!("Cue deck {letter} in the headphones (pre-fader)")
+            } else {
+                "No headphone output: choose a device with 4 outputs in Options → Audio".into()
+            };
+            if ui
+                .add(
+                    Key::new("CUE")
+                        .size([MIXER_STRIP_W, theme::SIZE_KEY_SMALL])
+                        .small()
+                        .lit(cued.then_some(Lit::Accent))
+                        .enabled(phones),
+                )
+                .status_help(help)
+                .clicked()
+            {
+                shared.pfl.fetch_xor(true, Ordering::Relaxed);
+            }
+
+            ui.add_space(theme::SPACE_8);
             let mut fader = shared.fader.load();
             if ui
                 .add(
                     Fader::new(&mut fader, 0.0..=1.0, ACCENT)
                         .vertical(true)
-                        .size([CHANNEL_FADER_W, 120.0])
+                        .size([CHANNEL_FADER_W, CHANNEL_FADER_H])
                         .cap_size(CHANNEL_FADER_CAP.x, CHANNEL_FADER_CAP.y)
                         .notches(Notches::Even(10))
                         .default_value(1.0),
@@ -5350,12 +5435,28 @@ const MIXER_STRIP_W: f32 = MIXER_KNOB;
 /// The channel volume faders, and their caps: span across the travel
 /// by thickness along it.
 const CHANNEL_FADER_W: f32 = 40.0;
+/// The faders' length: short enough to leave room for the CUE keys.
+const CHANNEL_FADER_H: f32 = 104.0;
 const CHANNEL_FADER_CAP: egui::Vec2 = egui::vec2(36.0, 12.0);
 /// Both strips with the LUFS ladders between them:
 /// strip + 8 + 12 + 3 + 12 + 8 + strip.
 const MIXER_W: f32 = MIXER_STRIP_W + 8.0 + 12.0 + 3.0 + 12.0 + 8.0 + MIXER_STRIP_W;
 
-fn mixer_panel(ui: &mut egui::Ui, decks: &[DeckUi; 2]) {
+/// The footer's line for the running output.
+fn output_label(output: &AudioOutput) -> String {
+    let AudioOutput {
+        device_name,
+        sample_rate,
+        ..
+    } = output;
+    if output.cue {
+        format!("Output: {device_name} @ {sample_rate} Hz · cue on 3–4")
+    } else {
+        format!("Output: {device_name} @ {sample_rate} Hz")
+    }
+}
+
+fn mixer_panel(ui: &mut egui::Ui, decks: &[DeckUi; 2], phones: bool) {
     // Two channel strips packed toward the center, with the pair of level
     // meters between them (classic DJ-mixer layout). `vertical_centered` won't
     // center a multi-widget horizontal row (egui seeds it at full width), so
@@ -5364,7 +5465,7 @@ fn mixer_panel(ui: &mut egui::Ui, decks: &[DeckUi; 2]) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.add_space(((ui.available_width() - MIXER_W) * 0.5).max(0.0));
-        let a = deck_channel_strip(ui, &decks[0].deck.shared);
+        let a = deck_channel_strip(ui, &decks[0].deck.shared, 'A', phones);
         ui.add_space(8.0);
         for (i, gap) in [(0, 3.0), (1, 8.0)] {
             let shared = &decks[i].deck.shared;
@@ -5380,7 +5481,7 @@ fn mixer_panel(ui: &mut egui::Ui, decks: &[DeckUi; 2]) {
             );
             ui.add_space(gap);
         }
-        deck_channel_strip(ui, &decks[1].deck.shared);
+        deck_channel_strip(ui, &decks[1].deck.shared, 'B', phones);
     });
 }
 

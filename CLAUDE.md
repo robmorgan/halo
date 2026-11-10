@@ -43,7 +43,8 @@ Plain threads + channels/atomics; each session has one owner:
 - **Render worker per loaded player** — owns a `PreparedSession`/`StreamSession`, source requests,
   seek/loop/EOF transactions, output reserve, consumption receipts and shared playhead. Includes audition.
 - **Audio callback thread (cpal)** — consumes completed audio, renders scrub voices, applies channel
-  strips, faders, master and limiter, and runs the master clock synced decks lock to. Fixed scratch storage, no locks or allocations,
+  strips, faders, master and limiter, the headphone cue bus (pre-fader taps, CUE MIX, its own limiter), and
+  runs the master clock synced decks lock to. Fixed scratch storage, no locks or allocations,
   no session reset/processing/destruction. A bounded handoff returns old storage to the UI.
 - **Worker threads** (`std::thread` + `mpsc`, drained per frame by the UI) — library import, track analysis.
 - **DMX engine thread** — 44 Hz tick: reads deck playheads from atomics, `resolve()` → `render()` → Art-Net send.
@@ -56,7 +57,7 @@ Plain threads + channels/atomics; each session has one owner:
 - `main.rs` — eframe/wgpu entry point; positional file arg; `env_logger`.
 - `app.rs` — `HaloApp`: views (Prepare/Perform), deck UI, mixer UI, rig ownership, PATCH tab, Options wiring.
 - `deck.rs` — worker-owned sessions, typed controls, transport transactions and consumed playheads.
-- `audio.rs` — cpal stream setup.
+- `audio.rs` — cpal stream setup: 4 channels on a device that has them (master 1–2, headphone cue 3–4).
 - `delivery.rs` — allocation-free callback mixer, scrub handoff and retirement queues.
 - `output_queue.rs` / `render_worker.rs` — epoch-aware SPSC output and bounded session pump.
 - `worker_priority.rs` — host-owned scheduling policy (macOS audio priority).
@@ -98,7 +99,7 @@ Plain threads + channels/atomics; each session has one owner:
 ### Persistence
 
 - **eframe persistence** (`PERSIST_KEY = "halo"`) — UI/mixer state: trims, keylock, pitch range, quantize,
-  gated mode, audition volume, device/buffer, sort order.
+  gated mode, audition volume, device/buffer, headphone cue on/off and CUE MIX, sort order.
 - **Library DB `settings` table** — Art-Net config, rig patch, and `midi` (ports, profile, user profiles).
 - There is no config file; `config.json` in old branches/history is from the pre-pivot console.
 

@@ -2,36 +2,103 @@
 //! their completed audio, scrub voices and the mixer through fixed storage.
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleRate, Stream, StreamConfig};
+use cpal::{Stream, StreamConfig};
 
 pub use crate::delivery::DeckAudio;
 use crate::delivery::MixerRenderer;
 use crate::state::MixerShared;
 
 /// User-selectable output configuration (persisted between sessions).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AudioSettings {
     /// Output device name (None = system default).
     pub device_name: Option<String>,
     /// Requested buffer size in frames (None = device default).
     pub buffer_size: Option<u32>,
+    /// Headphone cue on outputs 3–4, on a device that has them.
+    pub cue_output: bool,
 }
 
-/// Names of the available output devices.
-pub fn list_output_devices() -> Vec<String> {
-    use cpal::traits::HostTrait;
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            device_name: None,
+            buffer_size: None,
+            cue_output: true,
+        }
+    }
+}
+
+/// An output device: its name and how many outputs it has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutputDevice {
+    pub name: String,
+    pub channels: u16,
+}
+
+impl OutputDevice {
+    /// Whether it has outputs for the phones (3–4).
+    pub fn can_cue(&self) -> bool {
+        self.channels >= PHONES_CHANNELS
+    }
+}
+
+/// A stream with the phones has at least these: the master on 1–2, the
+/// phones on 3–4.
+const PHONES_CHANNELS: u16 = 4;
+
+/// The available output devices.
+pub fn list_output_devices() -> Vec<OutputDevice> {
     let host = cpal::default_host();
-    host.output_devices()
-        .map(|devices| devices.filter_map(|d| d.name().ok()).collect())
-        .unwrap_or_default()
+    let Ok(devices) = host.output_devices() else {
+        return Vec::new();
+    };
+    devices
+        .filter_map(|device| {
+            let name = device_name(&device)?;
+            let channels = device
+                .supported_output_configs()
+                .ok()?
+                .map(|config| config.channels())
+                .max()
+                .unwrap_or(2);
+            Some(OutputDevice { name, channels })
+        })
+        .collect()
+}
+
+/// A device's name, as Options lists it and the settings store it.
+fn device_name(device: &cpal::Device) -> Option<String> {
+    Some(device.description().ok()?.name().to_string())
+}
+
+/// The system default output's name.
+pub fn default_output_device() -> Option<String> {
+    device_name(&cpal::default_host().default_output_device()?)
+}
+
+/// The fewest channels, from 4 up, that `device` opens at `rate`.
+fn phones_channels(device: &cpal::Device, rate: u32) -> Option<u16> {
+    device
+        .supported_output_configs()
+        .ok()?
+        .filter(|config| {
+            config.channels() >= PHONES_CHANNELS
+                && (config.min_sample_rate()..=config.max_sample_rate()).contains(&rate)
+        })
+        .map(|config| config.channels())
+        .min()
 }
 
 pub struct AudioOutput {
     _stream: Stream,
     pub sample_rate: u32,
     pub device_name: String,
+    /// Whether the phones (outputs 3–4) carry the cue.
+    pub cue: bool,
 }
 
 impl AudioOutput {
@@ -45,7 +112,9 @@ impl AudioOutput {
             Some(wanted) => host
                 .output_devices()
                 .ok()
-                .and_then(|mut devices| devices.find(|d| d.name().is_ok_and(|n| &n == wanted)))
+                .and_then(|mut devices| {
+                    devices.find(|d| device_name(d).is_some_and(|n| &n == wanted))
+                })
                 .or_else(|| {
                     log::warn!("Output device {wanted:?} not found, using default");
                     host.default_output_device()
@@ -53,26 +122,35 @@ impl AudioOutput {
             None => host.default_output_device(),
         }
         .ok_or_else(|| "No audio output device found".to_string())?;
-        let device_name = device.name().unwrap_or_else(|_| "Unknown".to_string());
+        let device_name = device_name(&device).unwrap_or_else(|| "Unknown".to_string());
 
         let default_config = device
             .default_output_config()
             .map_err(|e| format!("Failed to get default output config: {e}"))?;
-        let sample_rate = default_config.sample_rate().0;
+        let sample_rate = default_config.sample_rate();
+        let channels = settings
+            .cue_output
+            .then(|| phones_channels(&device, sample_rate))
+            .flatten()
+            .unwrap_or(2);
+        let cue = channels >= PHONES_CHANNELS;
+        // Only a running stream has phones.
+        mixer.cue_output.store(false, Ordering::Release);
+        let shared = mixer.clone();
 
         let config = StreamConfig {
-            channels: 2,
-            sample_rate: SampleRate(sample_rate),
+            channels,
+            sample_rate,
             buffer_size: match settings.buffer_size {
                 Some(frames) => cpal::BufferSize::Fixed(frames),
                 None => cpal::BufferSize::Default,
             },
         };
 
-        let mut renderer = MixerRenderer::new(decks, mixer, sample_rate);
+        let mut renderer = MixerRenderer::new(decks, mixer, sample_rate, channels as usize);
         let stream = device
             .build_output_stream(
-                &config,
+                config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| renderer.render(data),
                 move |err| {
                     log::error!("Audio output error: {err}");
@@ -84,11 +162,16 @@ impl AudioOutput {
         stream
             .play()
             .map_err(|e| format!("Failed to start audio stream: {e}"))?;
+        shared.cue_output.store(cue, Ordering::Release);
 
+        log::info!(
+            "Audio output: {device_name}, {channels} channels @ {sample_rate} Hz, cue {cue}"
+        );
         Ok(AudioOutput {
             _stream: stream,
             sample_rate,
             device_name,
+            cue,
         })
     }
 }

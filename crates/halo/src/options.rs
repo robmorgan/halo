@@ -11,6 +11,7 @@ use eframe::egui::{
 };
 use halo_light::artnet::ARTNET_PORT;
 
+use crate::audio::OutputDevice;
 use crate::key::{self, Key, Lit};
 use crate::midi::{self, Action, MidiMsg, MidiSettings, Profile};
 use crate::theme::{self, Face, TypeStyle};
@@ -23,6 +24,8 @@ pub struct OptionsValues {
     pub device_name: Option<String>,
     /// Buffer size in frames; `None` lets the device choose.
     pub buffer_size: Option<u32>,
+    /// Headphone cue on outputs 3–4, on a device that has them.
+    pub cue_output: bool,
     /// Art-Net to one node (`node_ip`) instead of broadcast.
     pub unicast: bool,
     /// The unicast node's address, kept while broadcasting.
@@ -74,7 +77,9 @@ pub struct Options {
     saved: OptionsValues,
     draft: OptionsValues,
     category: Category,
-    devices: Vec<String>,
+    devices: Vec<OutputDevice>,
+    /// The system default output's name.
+    default_device: Option<String>,
     /// The running stream's rate, for the latency readout.
     sample_rate: Option<u32>,
     /// The action waiting for a control to bind to.
@@ -125,12 +130,18 @@ const FOOTER_KEY: Vec2 = vec2(96.0, 30.0);
 const FOOTER_KEY_GAP: f32 = 8.0;
 
 impl Options {
-    pub fn new(saved: OptionsValues, devices: Vec<String>, sample_rate: Option<u32>) -> Self {
+    pub fn new(
+        saved: OptionsValues,
+        devices: Vec<OutputDevice>,
+        default_device: Option<String>,
+        sample_rate: Option<u32>,
+    ) -> Self {
         Self {
             draft: saved.clone(),
             saved,
             category: Category::Audio,
             devices,
+            default_device,
             sample_rate,
             learning: None,
             learn_shift: false,
@@ -196,6 +207,7 @@ impl Options {
             Category::Audio => {
                 usize::from(draft.device_name != saved.device_name)
                     + usize::from(draft.buffer_size != saved.buffer_size)
+                    + usize::from(draft.cue_output != saved.cue_output)
             }
             Category::Lighting => {
                 usize::from(draft.unicast != saved.unicast)
@@ -448,10 +460,14 @@ impl Options {
                 Some("Changing it silences audio briefly; playing decks carry on."),
                 |ui| {
                     let mut choices = vec![("SYSTEM DEFAULT".to_string(), None)];
-                    choices.extend(self.devices.iter().map(|d| (d.clone(), Some(d.clone()))));
+                    choices.extend(
+                        self.devices
+                            .iter()
+                            .map(|d| (d.name.clone(), Some(d.name.clone()))),
+                    );
                     // A saved device that's unplugged stays choosable.
                     if let Some(saved) = &self.saved.device_name
-                        && !self.devices.contains(saved)
+                        && !self.devices.iter().any(|d| &d.name == saved)
                     {
                         choices.push((format!("{saved} (not connected)"), Some(saved.clone())));
                     }
@@ -495,6 +511,44 @@ impl Options {
                 readout(ui, &value);
             });
         });
+        group(ui, "HEADPHONES", |ui| {
+            let note = match self.draft_device() {
+                Some(device) if !device.can_cue() => {
+                    format!("No cue: this device has only {} outputs.", device.channels)
+                }
+                _ => "Plays on outputs 3–4, like the Z1's phones.".to_string(),
+            };
+            row(ui, "HEADPHONE CUE", Some(&note), |ui| {
+                let w = CONTROL_W / 2.0;
+                let [on, off] = key::segmented(
+                    ui,
+                    [
+                        Key::new("ON")
+                            .size(vec2(w, CONTROL_H))
+                            .pressed(self.draft.cue_output),
+                        Key::new("OFF")
+                            .size(vec2(w, CONTROL_H))
+                            .pressed(!self.draft.cue_output),
+                    ],
+                );
+                if on.clicked() {
+                    self.draft.cue_output = true;
+                }
+                if off.clicked() {
+                    self.draft.cue_output = false;
+                }
+            });
+        });
+    }
+
+    /// The draft's output device, when it's connected.
+    fn draft_device(&self) -> Option<&OutputDevice> {
+        let name = self
+            .draft
+            .device_name
+            .as_ref()
+            .or(self.default_device.as_ref())?;
+        self.devices.iter().find(|d| &d.name == name)
     }
 
     fn lighting(&mut self, ui: &mut Ui) {
@@ -1059,6 +1113,7 @@ mod tests {
         OptionsValues {
             device_name: None,
             buffer_size: Some(256),
+            cue_output: true,
             unicast: false,
             node_ip: "10.0.0.5".to_string(),
             midi: MidiSettings::default(),
@@ -1067,20 +1122,43 @@ mod tests {
 
     #[test]
     fn counts_changes_per_category() {
-        let mut options = Options::new(saved(), Vec::new(), Some(48_000));
+        let mut options = Options::new(saved(), Vec::new(), None, Some(48_000));
         assert_eq!(options.total_changes(), 0);
         options.draft.buffer_size = Some(512);
         options.draft.device_name = Some("Interface".to_string());
         assert_eq!(options.changes(Category::Audio), 2);
+        options.draft.cue_output = false;
+        assert_eq!(options.changes(Category::Audio), 3);
         // The node address only counts while it's the destination.
         options.draft.node_ip = "10.0.0.6".to_string();
         assert_eq!(options.changes(Category::Lighting), 0);
         options.draft.unicast = true;
         assert_eq!(options.changes(Category::Lighting), 2);
-        assert_eq!(options.total_changes(), 4);
+        assert_eq!(options.total_changes(), 5);
         // Back to the saved values: nothing to save.
         options.draft = saved();
         assert_eq!(options.total_changes(), 0);
+    }
+
+    #[test]
+    fn headphone_cue_follows_the_draft_device() {
+        let devices = vec![
+            OutputDevice {
+                name: "Speakers".to_string(),
+                channels: 2,
+            },
+            OutputDevice {
+                name: "Z1".to_string(),
+                channels: 4,
+            },
+        ];
+        let mut options = Options::new(saved(), devices, Some("Speakers".to_string()), None);
+        // No device chosen: the system default's outputs count.
+        assert!(!options.draft_device().unwrap().can_cue());
+        options.draft.device_name = Some("Z1".to_string());
+        assert!(options.draft_device().unwrap().can_cue());
+        options.draft.device_name = Some("Unplugged".to_string());
+        assert_eq!(options.draft_device(), None);
     }
 
     fn msg(port: &str, key: midi::MsgKey, value: f32) -> MidiMsg {
@@ -1096,7 +1174,7 @@ mod tests {
     fn learns_into_a_user_profile_and_counts_it() {
         use crate::midi::DeckControl;
         use crate::z1;
-        let mut options = Options::new(saved(), Vec::new(), None);
+        let mut options = Options::new(saved(), Vec::new(), None, None);
         let draft = &mut options.draft.midi;
         draft.input = Some(z1::PORT.into());
         draft.profile = Some("builtin:traktor-kontrol-z1".into());
@@ -1137,7 +1215,7 @@ mod tests {
 
     #[test]
     fn a_unicast_draft_needs_a_valid_address() {
-        let mut options = Options::new(saved(), Vec::new(), None);
+        let mut options = Options::new(saved(), Vec::new(), None, None);
         options.draft.node_ip = "not an address".to_string();
         assert!(options.node_ip_valid(), "broadcast ignores the address");
         options.draft.unicast = true;
