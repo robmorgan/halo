@@ -31,9 +31,18 @@ Render worker × 3 (one per loaded player)
 Audio callback (cpal)
     delivery clock + beat-phase launch coordinator → shared playheads
     A queue + scrub → EQ/filter → trim → fader ┐
-    B queue + scrub → EQ/filter → trim → fader ├ master → limiter
-    Audition queue + scrub → strip → fader ───┘
+    B queue + scrub → EQ/filter → trim → fader ├ master → limiter → outputs 1–2
+    Audition queue + scrub → strip → fader ───┘   (audition here without phones)
+    A, B trim ─[CUE]─┐                            (pre-fader taps)
+    Audition fader ──┴ cue ─┬ CUE MIX ─ phones limiter → outputs 3–4
+    master (pre-volume) ────┘
 ```
+
+With a 4-output device (the Z1: main 1–2, phones 3–4) the stream opens 4
+channels. Each deck's CUE taps it pre-fader into a cue bus, the audition
+player goes to the cue bus alone so previews never reach the room, and CUE
+MIX blends cue and master into the phones through their own limiter. A
+stereo device has no phones: CUE is off and the audition plays in the master.
 
 Session preparation, processing, restart and destruction stay off the callback.
 Source frames remain in the device-rate domain: Halo resamples on load, and
@@ -437,7 +446,7 @@ accent never touches the authored cues.
 ## Backlog (post-1.0)
 
 - In-app musical key detection (chromagram-based — a natural fit for the `timestretch` crate).
-- Headphone cue / split output (needs a second output or multi-channel device routing).
+- Headphone cue on stereo devices (split mono: master left, cue right) and on a second, separate output device.
 - Session recording to disk.
 - MIDI controller mapping.
 - Rekordbox library import.

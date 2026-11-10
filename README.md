@@ -39,6 +39,8 @@ real-time tempo and pitch control.
   tempo control.
 * **Full mixer chain** per deck: trim → 3-band isolator EQ (full-kill) → resonant LP/HP filter → channel fader,
   into the master fader and soft limiter.
+* **Headphone cue** on a device with 4 outputs (the Traktor Kontrol Z1's phones are 3–4): cue either deck
+  pre-fader, blend cue and master with CUE MIX, and audition tracks in the headphones only.
 * **CDJ-style transport**: play/pause and cue (set while paused, hold to preview, release to return).
 * **Hot cues** — 8 per deck, with Normal and Gated modes and optional quantize to the beat grid.
 * **Loops** — manual in/out, 4-beat quantized autoloop, and halve/double controls from 1/16 up to 16 beats.

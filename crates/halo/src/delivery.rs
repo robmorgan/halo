@@ -1,6 +1,7 @@
 //! Device-side delivery and mixer. All storage is prepared before cpal calls
 //! render; track handoffs return retired storage to the UI for destruction.
 
+use std::slice::SliceIndex;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
@@ -73,6 +74,40 @@ pub struct DeckAudio {
     pub handoff: Arc<DeliveryHandoff>,
 }
 
+/// One block's stereo buses: the master and the phones' cue.
+struct Bus<'a> {
+    main: &'a mut [f32],
+    cue: &'a mut [f32],
+}
+
+impl Bus<'_> {
+    fn len(&self) -> usize {
+        self.main.len()
+    }
+
+    fn range<R>(&mut self, range: R) -> Bus<'_>
+    where
+        R: SliceIndex<[f32], Output = [f32]> + Clone,
+    {
+        Bus {
+            main: &mut self.main[range.clone()],
+            cue: &mut self.cue[range],
+        }
+    }
+}
+
+/// Where a voice's channel goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Route {
+    /// The master only: the stream has no phones.
+    Main,
+    /// The master, and the phones pre-fader while the deck is cued.
+    MainCued,
+    /// The phones only, after the channel's volume: the audition player,
+    /// so previews never reach the room.
+    Phones,
+}
+
 struct DeckVoice {
     grid: Option<BeatMap>,
     retiring_grid: Option<BeatMap>,
@@ -92,6 +127,8 @@ struct DeckVoice {
     scrub_mix: f32,
     gain: f32,
     pre_gain: f32,
+    route: Route,
+    cue_gain: f32,
     meter: f32,
     lufs: Option<MomentaryLoudness>,
     transition: TransitionEnvelope,
@@ -103,7 +140,7 @@ struct DeckVoice {
 }
 
 impl DeckVoice {
-    fn new(input: DeckAudio, sample_rate: u32) -> Self {
+    fn new(input: DeckAudio, sample_rate: u32, route: Route) -> Self {
         Self {
             input,
             grid: None,
@@ -123,6 +160,8 @@ impl DeckVoice {
             scrub_mix: 0.0,
             gain: 0.0,
             pre_gain: 0.0,
+            route,
+            cue_gain: 0.0,
             meter: 0.0,
             lufs: MomentaryLoudness::new(sample_rate, 2),
             transition: Default::default(),
@@ -187,7 +226,7 @@ impl DeckVoice {
     /// deck plays at its own tempo; a synced one plays at the clock's BPM,
     /// waits for the clock's next matching beat to start, and is held to
     /// its phase once it has.
-    fn render_following(&mut self, out: &mut [f32], clock: &ClockBlock, frame: u64) {
+    fn render_following(&mut self, mut out: Bus<'_>, clock: &ClockBlock, frame: u64) {
         // The clone cannot be the final owner: input retains the same Arc.
         let shared = self.input.shared.clone();
         let enabled = shared.sync_enabled.load(Ordering::Acquire);
@@ -333,7 +372,7 @@ impl DeckVoice {
             let count = self.lock.fading_out.min(frames);
             self.delivery_open = true;
             self.status(SyncState::Preparing);
-            self.render_into(&mut out[..count * 2]);
+            self.render_into(out.range(..count * 2));
             if self.lock.fading_out == 0 {
                 let target = self.map().and_then(|grid| {
                     grid.aligned_target(
@@ -347,7 +386,7 @@ impl DeckVoice {
                 self.lock.launched = false;
                 self.lock.drift_beats = 0.0;
                 self.delivery_open = false;
-                self.render_into(&mut out[count * 2..]);
+                self.render_into(out.range(count * 2..));
             }
             return;
         }
@@ -397,7 +436,7 @@ impl DeckVoice {
         self.status(SyncState::Waiting);
         self.delivery_open = false;
         let offset = launch.unwrap_or(frames);
-        self.render_into(&mut out[..offset * 2]);
+        self.render_into(out.range(..offset * 2));
         if let Some(offset) = launch {
             // Recheck cancellation after the bounded prefix. The next
             // render_segment also checks readiness and the anchor generation.
@@ -420,7 +459,7 @@ impl DeckVoice {
             } else {
                 SyncState::Locked
             });
-            self.render_into(&mut out[offset * 2..]);
+            self.render_into(out.range(offset * 2..));
         }
     }
 
@@ -477,7 +516,7 @@ impl DeckVoice {
         }
     }
 
-    fn render_into(&mut self, out: &mut [f32]) {
+    fn render_into(&mut self, mut out: Bus<'_>) {
         self.advances.fill(0.0);
         self.prefix_start = self
             .playback
@@ -534,12 +573,12 @@ impl DeckVoice {
             } else {
                 out.len() - offset
             };
-            self.render_segment(&mut out[offset..offset + count], phase, offset / 2);
+            self.render_segment(out.range(offset..offset + count), phase, offset / 2);
             offset += count;
         }
     }
 
-    fn render_segment(&mut self, out: &mut [f32], phase: ScrubPhase, offset: usize) {
+    fn render_segment(&mut self, out: Bus<'_>, phase: ScrubPhase, offset: usize) {
         let ready = self.ready();
         let Some(playback) = &mut self.playback else {
             return;
@@ -633,13 +672,30 @@ impl DeckVoice {
         if let Some(last) = buf.chunks_exact(2).last() {
             self.last_frame.copy_from_slice(last);
         }
-        for (frame, samples) in out.chunks_exact_mut(2).zip(buf.chunks_exact(2)) {
+        let target_cue = match self.route {
+            Route::MainCued if shared.pfl.load(Ordering::Relaxed) => 1.0,
+            _ => 0.0,
+        };
+        let buses = out
+            .main
+            .chunks_exact_mut(2)
+            .zip(out.cue.chunks_exact_mut(2));
+        for ((frame, cue), samples) in buses.zip(buf.chunks_exact(2)) {
             self.pre_gain += (target_pre - self.pre_gain) * alpha;
             self.gain += (target_gain - self.gain) * alpha;
+            self.cue_gain += (target_cue - self.cue_gain) * alpha;
             let left = samples[0] * self.pre_gain;
             let right = samples[1] * self.pre_gain;
-            frame[0] += left * self.gain;
-            frame[1] += right * self.gain;
+            // The phones take the deck pre-fader, or the audition player
+            // after its own volume.
+            let (main, phones) = match self.route {
+                Route::Phones => (0.0, self.gain),
+                _ => (self.gain, self.cue_gain),
+            };
+            frame[0] += left * main;
+            frame[1] += right * main;
+            cue[0] += left * phones;
+            cue[1] += right * phones;
             peak = peak.max(left.abs()).max(right.abs());
             if let Some(lufs) = &mut self.lufs {
                 lufs.push_stereo(left, right);
@@ -692,32 +748,70 @@ pub struct MixerRenderer {
     decks: [DeckVoice; 3],
     mixer: Arc<MixerShared>,
     limiter: Limiter,
+    /// The phones' own ceiling, so a hot cue never clips in your ears.
+    phones_limiter: Limiter,
     master_meter: f32,
     sample_rate: u32,
+    /// The stream's channels: the master on 1–2, the phones on 3–4 when
+    /// there are at least 4.
+    channels: usize,
+    main: Box<[f32; BLOCK_SAMPLES]>,
+    cue: Box<[f32; BLOCK_SAMPLES]>,
     /// The master clock's beat position: synced decks lock to it.
     clock_beats: f64,
     output_frame: u64,
 }
 
 impl MixerRenderer {
-    pub fn new(decks: [DeckAudio; 3], mixer: Arc<MixerShared>, sample_rate: u32) -> Self {
+    pub fn new(
+        decks: [DeckAudio; 3],
+        mixer: Arc<MixerShared>,
+        sample_rate: u32,
+        channels: usize,
+    ) -> Self {
+        let channels = channels.max(2);
+        let phones = channels >= 4;
+        let mut routes = if phones {
+            [Route::MainCued, Route::MainCued, Route::Phones]
+        } else {
+            [Route::Main; 3]
+        }
+        .into_iter();
         Self {
-            decks: decks.map(|deck| DeckVoice::new(deck, sample_rate)),
+            decks: decks.map(|deck| {
+                DeckVoice::new(deck, sample_rate, routes.next().unwrap_or(Route::Main))
+            }),
             mixer,
             limiter: Limiter::new(sample_rate),
+            phones_limiter: Limiter::new(sample_rate),
             master_meter: 0.0,
             sample_rate,
+            channels,
+            main: Box::new([0.0; BLOCK_SAMPLES]),
+            cue: Box::new([0.0; BLOCK_SAMPLES]),
             clock_beats: 0.0,
             output_frame: 0,
         }
     }
 
+    fn phones(&self) -> bool {
+        self.channels >= 4
+    }
+
     pub fn render(&mut self, data: &mut [f32]) {
         let started = Instant::now();
-        data.fill(0.0);
-        let whole = data.len() / 2 * 2;
+        let channels = self.channels;
+        let frames = data.len() / channels;
+        let (whole, rest) = data.split_at_mut(frames * channels);
+        rest.fill(0.0);
+        let phones = self.phones();
         let mut peak = 0.0_f32;
-        for block in data[..whole].chunks_mut(BLOCK_SAMPLES) {
+        for chunk in whole.chunks_mut(BLOCK_SAMPLES / 2 * channels) {
+            let samples = chunk.len() / channels * 2;
+            let main = &mut self.main[..samples];
+            let cue = &mut self.cue[..samples];
+            main.fill(0.0);
+            cue.fill(0.0);
             for deck in &mut self.decks {
                 deck.frame_clock = self.output_frame;
                 deck.adopt();
@@ -733,25 +827,55 @@ impl MixerRenderer {
             let clock = ClockBlock::new(self.clock_beats, bpm, self.sample_rate);
             let (decks, audition) = self.decks.split_at_mut(2);
             for deck in decks {
-                deck.render_following(block, &clock, self.output_frame);
+                deck.render_following(
+                    Bus {
+                        main: &mut *main,
+                        cue: &mut *cue,
+                    },
+                    &clock,
+                    self.output_frame,
+                );
             }
-            audition[0].render_into(block);
-            self.clock_beats = clock.at(block.len() / 2);
+            audition[0].render_into(Bus {
+                main: &mut *main,
+                cue: &mut *cue,
+            });
+            self.clock_beats = clock.at(samples / 2);
             self.mixer.clock_beats.store(self.clock_beats);
-            self.output_frame += (block.len() / 2) as u64;
+            self.output_frame += (samples / 2) as u64;
             self.mixer
                 .output_frame
                 .store(self.output_frame, Ordering::Release);
+            if phones {
+                // CUE MIX: an equal-power blend of the cue and the master
+                // as it is before the master volume, so turning the room
+                // down leaves the phones alone.
+                let angle = self.mixer.cue_mix.load().clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
+                let (to_cue, to_master) = (angle.cos(), angle.sin());
+                for (phones, &master) in cue.iter_mut().zip(main.iter()) {
+                    *phones = *phones * to_cue + master * to_master;
+                }
+                self.phones_limiter.process(cue);
+            }
             let master = self.mixer.master.load();
-            for sample in block.iter_mut() {
+            for sample in main.iter_mut() {
                 *sample *= master;
             }
-            self.limiter.process(block);
-            for &sample in block.iter() {
+            self.limiter.process(main);
+            for &sample in main.iter() {
                 peak = peak.max(sample.abs());
             }
+            let outs = main.chunks_exact(2).zip(cue.chunks_exact(2));
+            for (frame, (master, phones)) in chunk.chunks_exact_mut(channels).zip(outs) {
+                let (front, back) = frame.split_at_mut(2);
+                front.copy_from_slice(master);
+                if let Some((pair, others)) = back.split_at_mut_checked(2) {
+                    pair.copy_from_slice(phones);
+                    others.fill(0.0);
+                }
+            }
         }
-        let budget = (whole / 2) as f32 / self.sample_rate as f32;
+        let budget = frames as f32 / self.sample_rate as f32;
         let release = 1.0 - (-budget / 0.3).exp();
         self.master_meter = if peak >= self.master_meter {
             peak
@@ -1498,6 +1622,7 @@ mod tests {
                 }),
                 mixer,
                 RATE,
+                2,
             );
             let mut scratch = [0.0; 4096];
             let mut block = [0.0; 512];
@@ -1572,6 +1697,11 @@ mod tests {
     );
 
     fn fixture() -> Fixture {
+        fixture_with(2)
+    }
+
+    /// A fixture whose stream has `channels`: 4 and up have the phones.
+    fn fixture_with(channels: usize) -> Fixture {
         let shared = std::array::from_fn(|_| Arc::new(DeckShared::new()));
         let handoffs = std::array::from_fn(|_| Arc::new(DeliveryHandoff::new()));
         let producers = std::array::from_fn(|i| {
@@ -1600,6 +1730,7 @@ mod tests {
             }),
             mixer,
             48_000,
+            channels,
         );
         (renderer, shared, handoffs, producers)
     }
@@ -1709,6 +1840,111 @@ mod tests {
         for voice in &renderer.decks {
             assert_eq!(voice.playback.as_ref().unwrap().generation, 7);
         }
+    }
+
+    /// Queue `frames` of a steady `level` on each of A, B and the audition.
+    fn push_levels(producers: &mut [Producer; 3], levels: [f32; 3], frames: usize) {
+        for (producer, level) in producers.iter_mut().zip(levels) {
+            assert!(producer.push(
+                &vec![level; frames * 2],
+                OutputStamp {
+                    epoch: Epoch(1),
+                    start_frame: 0,
+                    frames
+                }
+            ));
+        }
+    }
+
+    /// The last frame of an interleaved buffer.
+    fn last_frame(out: &[f32], channels: usize) -> &[f32] {
+        &out[out.len() - channels..]
+    }
+
+    #[test]
+    fn the_phones_hear_cued_decks_pre_fader_and_the_audition_player_alone() {
+        let (mut renderer, shared, _, mut producers) = fixture_with(4);
+        // A cued with its fader down, B in the room only, the audition
+        // player at half volume.
+        shared[0].fader.store(0.0);
+        shared[0].pfl.store(true, Ordering::Relaxed);
+        shared[2].fader.store(0.5);
+        renderer.mixer.master.store(0.5);
+        renderer.mixer.cue_mix.store(0.0);
+        push_levels(&mut producers, [0.1, 0.2, 0.3], 8192);
+        let mut out = vec![0.0; 4096 * 4];
+        let allocation = allocation_counter::measure(|| renderer.render(&mut out));
+        assert_eq!(allocation.count_total, 0);
+        assert_eq!(allocation.count_current, 0);
+        let frame = last_frame(&out, 4);
+        // The room: B alone, through the master volume.
+        assert!((frame[0] - 0.1).abs() < 0.01, "{frame:?}");
+        assert!((frame[1] - 0.1).abs() < 0.01, "{frame:?}");
+        // The phones, all cue: A pre-fader and the audition at its volume.
+        assert!((frame[2] - 0.25).abs() < 0.01, "{frame:?}");
+        assert!((frame[3] - 0.25).abs() < 0.01, "{frame:?}");
+
+        // All master: the room's mix before the master volume.
+        renderer.mixer.cue_mix.store(1.0);
+        renderer.render(&mut out);
+        let frame = last_frame(&out, 4);
+        assert!((frame[0] - 0.1).abs() < 0.01, "{frame:?}");
+        assert!((frame[2] - 0.2).abs() < 0.01, "{frame:?}");
+    }
+
+    #[test]
+    fn without_phones_cue_is_silent_and_the_audition_player_is_in_the_room() {
+        let (mut renderer, shared, _, mut producers) = fixture_with(2);
+        shared[0].fader.store(0.0);
+        shared[0].pfl.store(true, Ordering::Relaxed);
+        shared[1].fader.store(0.0);
+        push_levels(&mut producers, [0.1, 0.2, 0.3], 4096);
+        let mut out = vec![0.0; 4096 * 2];
+        renderer.render(&mut out);
+        let frame = last_frame(&out, 2);
+        assert!((frame[0] - 0.3).abs() < 0.01, "{frame:?}");
+    }
+
+    #[test]
+    fn the_phones_have_their_own_ceiling_and_channels_past_them_are_silent() {
+        let (mut renderer, shared, _, mut producers) = fixture_with(6);
+        for deck in &shared[..2] {
+            deck.pfl.store(true, Ordering::Relaxed);
+        }
+        renderer.mixer.cue_mix.store(0.0);
+        push_levels(&mut producers, [0.9, 0.9, 0.9], 4096);
+        let mut out = vec![0.0; 4096 * 6];
+        renderer.render(&mut out);
+        let mut heard = 0.0_f32;
+        for frame in out.chunks_exact(6) {
+            assert!(frame.iter().all(|s| s.abs() <= 0.981), "{frame:?}");
+            assert_eq!(&frame[4..], &[0.0, 0.0]);
+            heard = heard.max(frame[2].abs());
+        }
+        assert!(heard > 0.9, "the phones went quiet: {heard}");
+    }
+
+    #[test]
+    fn cueing_a_deck_fades_it_into_the_phones_without_a_click() {
+        let (mut renderer, shared, _, mut producers) = fixture_with(4);
+        renderer.mixer.cue_mix.store(0.0);
+        push_levels(&mut producers, [0.5, 0.0, 0.0], 8192);
+        let mut out = vec![0.0; 4096 * 4];
+        renderer.render(&mut out);
+        assert!(out.chunks_exact(4).all(|frame| frame[2] == 0.0));
+        let before = last_frame(&out, 4)[2];
+        shared[0].pfl.store(true, Ordering::Relaxed);
+        renderer.render(&mut out);
+        let mut previous = before;
+        for frame in out.chunks_exact(4) {
+            assert!(
+                (frame[2] - previous).abs() < 0.005,
+                "a step at {}",
+                frame[2]
+            );
+            previous = frame[2];
+        }
+        assert!((previous - 0.5).abs() < 0.01, "{previous}");
     }
 
     #[test]

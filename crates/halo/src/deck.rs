@@ -409,6 +409,7 @@ mod tests {
             }),
             mixer,
             rate,
+            2,
         )
     }
 

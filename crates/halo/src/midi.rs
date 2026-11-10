@@ -165,10 +165,12 @@ pub enum DeckControl {
     HotCue(u8),
     AutoLoop,
     ExitLoop,
+    /// The deck in the headphones, pre-fader, on and off.
+    Phones,
 }
 
 impl DeckControl {
-    const ALL: [DeckControl; 19] = [
+    const ALL: [DeckControl; 20] = [
         DeckControl::Trim,
         DeckControl::EqHi,
         DeckControl::EqMid,
@@ -177,6 +179,7 @@ impl DeckControl {
         DeckControl::Fader,
         DeckControl::PlayPause,
         DeckControl::Cue,
+        DeckControl::Phones,
         DeckControl::FilterToggle,
         DeckControl::AutoLoop,
         DeckControl::ExitLoop,
@@ -200,6 +203,7 @@ impl DeckControl {
             DeckControl::Fader => "VOLUME".into(),
             DeckControl::PlayPause => "PLAY / PAUSE".into(),
             DeckControl::Cue => "CUE".into(),
+            DeckControl::Phones => "HEADPHONE CUE".into(),
             DeckControl::FilterToggle => "FILTER ON / OFF".into(),
             DeckControl::AutoLoop => "LOOP 4 BEATS".into(),
             DeckControl::ExitLoop => "EXIT LOOP".into(),
@@ -230,6 +234,8 @@ pub enum Action {
     /// A deck's control: deck 0 is A, 1 is B.
     Deck(u8, DeckControl),
     AuditionVolume,
+    /// The phones' blend: cue to the left, master to the right.
+    CueMix,
     /// Held, it switches every control to its shifted binding.
     Shift,
 }
@@ -242,12 +248,13 @@ impl Action {
             .map(move |control| Action::Deck(deck, control))
     }
 
-    pub const GLOBAL: [Action; 2] = [Action::AuditionVolume, Action::Shift];
+    pub const GLOBAL: [Action; 3] = [Action::CueMix, Action::AuditionVolume, Action::Shift];
 
     pub fn label(self) -> String {
         match self {
             Action::Deck(_, control) => control.label(),
             Action::AuditionVolume => "AUDITION VOLUME".into(),
+            Action::CueMix => "CUE MIX".into(),
             Action::Shift => "SHIFT".into(),
         }
     }
@@ -255,7 +262,7 @@ impl Action {
     fn is_button(self) -> bool {
         match self {
             Action::Deck(_, control) => control.is_button(),
-            Action::AuditionVolume => false,
+            Action::AuditionVolume | Action::CueMix => false,
             Action::Shift => true,
         }
     }
@@ -287,6 +294,8 @@ pub enum Led {
     FilterOn(u8),
     Looping(u8),
     HotCueSet(u8, u8),
+    /// Cued in the headphones.
+    Phones(u8),
     Shift,
 }
 
@@ -298,6 +307,7 @@ impl Led {
             Action::Deck(d, DeckControl::FilterToggle) => Led::FilterOn(d),
             Action::Deck(d, DeckControl::AutoLoop) => Led::Looping(d),
             Action::Deck(d, DeckControl::HotCue(slot)) => Led::HotCueSet(d, slot),
+            Action::Deck(d, DeckControl::Phones) => Led::Phones(d),
             Action::Shift => Led::Shift,
             _ => return None,
         })
@@ -399,15 +409,17 @@ impl Profile {
 
     /// The LEDs and meters for this frame: each bound button's own LED
     /// shows the state its actions leave behind.
+    /// `led` is `None` for a state with nothing to show, such as headphone
+    /// cue with no phones output: that layer stays dark.
     pub fn feedback(
         &self,
         shift: bool,
-        led: impl Fn(Led) -> bool,
+        led: impl Fn(Led) -> Option<bool>,
         peak: impl Fn(u8) -> f32,
     ) -> Feedback {
         let mut leds: Vec<LedState> = Vec::new();
         for b in &self.bindings {
-            let Some(state) = Led::of(b.action).map(&led) else {
+            let Some(state) = Led::of(b.action).and_then(&led) else {
                 continue;
             };
             let i = leds.iter().position(|l| l.key == b.key).unwrap_or_else(|| {
@@ -473,9 +485,9 @@ pub fn builtins() -> &'static [Profile] {
 }
 
 /// Native Instruments Traktor Kontrol Z1, over HID as Mixxx maps it:
-/// FX ON switches the filter, MODE + FX ON plays, MODE + headphone is the
-/// cue. The headphone buttons alone do nothing, as Halo has no headphone
-/// cue.
+/// FX ON switches the filter, MODE + FX ON plays, the headphone buttons cue
+/// to the phones and MODE + headphone is the CDJ cue. CUE MIX blends the
+/// phones; CUE VOL is the Z1's own headphone amp.
 fn traktor_z1() -> Profile {
     let bind = |number, shifted, action| Binding {
         key: z1::key(number),
@@ -521,11 +533,12 @@ fn traktor_z1() -> Profile {
             bind(volume, false, deck_action(DeckControl::Fader)),
             bind(fx, false, deck_action(DeckControl::FilterToggle)),
             bind(fx, true, deck_action(DeckControl::PlayPause)),
+            bind(headphone, false, deck_action(DeckControl::Phones)),
             bind(headphone, true, deck_action(DeckControl::Cue)),
         ]);
     }
     bindings.extend([
-        bind(z1::CUE_MIX, false, Action::AuditionVolume),
+        bind(z1::CUE_MIX, false, Action::CueMix),
         bind(z1::MODE, false, Action::Shift),
     ]);
     Profile {
@@ -1012,11 +1025,9 @@ mod tests {
         let mut router = Router::default();
         let (mode, headphone) = (z1::key(z1::MODE), z1::key(z1::HEADPHONE_A));
         let cue = Action::Deck(0, DeckControl::Cue);
-        assert_eq!(
-            router.route(&z1, &msg(headphone, 1.0)),
-            None,
-            "nothing plain"
-        );
+        let phones = Action::Deck(0, DeckControl::Phones);
+        assert_eq!(router.route(&z1, &msg(headphone, 1.0)), Some((phones, 1.0)));
+        assert_eq!(router.route(&z1, &msg(headphone, 0.0)), Some((phones, 0.0)));
         router.route(&z1, &msg(mode, 1.0));
         assert!(router.shift);
         assert_eq!(router.route(&z1, &msg(headphone, 1.0)), Some((cue, 1.0)));
@@ -1074,10 +1085,16 @@ mod tests {
         }
         assert_eq!(z1.shift_key(), Some(z1::key(z1::MODE)));
         // FX ON's blue LED is the filter, its red one the transport; the
-        // headphone button shows the cue.
+        // headphone button shows headphone cue, and the CDJ cue shifted.
         let feedback = z1.feedback(
             false,
-            |led| matches!(led, Led::FilterOn(0) | Led::AtCue(1)),
+            |led| match led {
+                Led::Phones(0) => None,
+                led => Some(matches!(
+                    led,
+                    Led::FilterOn(0) | Led::AtCue(1) | Led::Phones(1)
+                )),
+            },
             f32::from,
         );
         let led = |number| {
@@ -1093,7 +1110,20 @@ mod tests {
         );
         assert_eq!(
             (led(z1::HEADPHONE_B).plain, led(z1::HEADPHONE_B).shifted),
-            (None, Some(true))
+            (Some(true), Some(true))
+        );
+        // No phones output: the plain layer has nothing to show.
+        assert_eq!(
+            (led(z1::HEADPHONE_A).plain, led(z1::HEADPHONE_A).shifted),
+            (None, Some(false))
+        );
+        assert_eq!(
+            z1.resolve(z1::key(z1::HEADPHONE_A), false),
+            Some(Action::Deck(0, DeckControl::Phones))
+        );
+        assert_eq!(
+            z1.resolve(z1::key(z1::CUE_MIX), false),
+            Some(Action::CueMix)
         );
         assert_eq!(
             feedback.meters,

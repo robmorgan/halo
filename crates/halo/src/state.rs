@@ -149,6 +149,9 @@ pub struct DeckShared {
     pub trim: AtomicF32,
     /// Channel fader, 0..1.
     pub fader: AtomicF32,
+    /// Headphone cue: the deck plays in the phones, pre-fader. Written by
+    /// the UI; the callback ignores it without a phones output.
+    pub pfl: AtomicBool,
     /// Pre-fader (post-trim) deck level (linear peak, 0..1), published by
     /// the audio callback for the channel meter — shows the track's level
     /// regardless of the fader. Fast attack, slow release.
@@ -222,6 +225,7 @@ impl DeckShared {
             stream_active: AtomicBool::new(false),
             trim: AtomicF32::new(1.0),
             fader: AtomicF32::new(1.0),
+            pfl: AtomicBool::new(false),
             meter: AtomicF32::new(0.0),
             meter_lufs: AtomicF32::new(-100.0),
             eq_low: AtomicF32::new(1.0),
@@ -510,6 +514,8 @@ impl ScrubState {
 pub const DEFAULT_MASTER_BPM: f64 = 128.0;
 /// The range the master clock's tempo is held to.
 pub const MASTER_BPM_RANGE: std::ops::RangeInclusive<f64> = 20.0..=300.0;
+/// The phones' cue/master blend at launch: both, equally.
+pub const DEFAULT_CUE_MIX: f32 = 0.5;
 
 /// Mixer state shared between the UI and the audio callback.
 pub struct MixerShared {
@@ -529,6 +535,11 @@ pub struct MixerShared {
     /// post-limiter — what actually leaves the stream. Published by the
     /// audio callback; fast attack, slow release.
     pub master_meter: AtomicF32,
+    /// The phones' blend, 0 = cue only, 1 = master only. Written by the UI.
+    pub cue_mix: AtomicF32,
+    /// Whether the running stream has a phones pair (outputs 3–4). Set by
+    /// the stream's setup, read by the UI.
+    pub cue_output: AtomicBool,
     /// Audio-callback load: processing time ÷ buffer duration (EMA),
     /// published by the callback.
     pub cpu_load: AtomicF32,
@@ -543,6 +554,8 @@ impl MixerShared {
             output_frame: AtomicU64::new(0),
             master: AtomicF32::new(1.0),
             master_meter: AtomicF32::new(0.0),
+            cue_mix: AtomicF32::new(DEFAULT_CUE_MIX),
+            cue_output: AtomicBool::new(false),
             cpu_load: AtomicF32::new(0.0),
         }
     }
