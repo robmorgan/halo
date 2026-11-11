@@ -16,6 +16,7 @@ mod options;
 mod output_queue;
 mod programmer_ui;
 mod render_worker;
+mod routing;
 mod scrub;
 mod show;
 mod show_preview;

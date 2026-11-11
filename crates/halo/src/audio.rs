@@ -9,27 +9,21 @@ use cpal::{Stream, StreamConfig};
 
 pub use crate::delivery::DeckAudio;
 use crate::delivery::MixerRenderer;
+use crate::routing::{DeviceRouting, Layout};
 use crate::state::MixerShared;
 
 /// User-selectable output configuration (persisted between sessions).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct AudioSettings {
     /// Output device name (None = system default).
     pub device_name: Option<String>,
     /// Requested buffer size in frames (None = device default).
     pub buffer_size: Option<u32>,
-    /// Headphone cue on outputs 3–4, on a device that has them.
-    pub cue_output: bool,
-}
-
-impl Default for AudioSettings {
-    fn default() -> Self {
-        Self {
-            device_name: None,
-            buffer_size: None,
-            cue_output: true,
-        }
-    }
+    /// Each edited device's routing; the rest get their default.
+    pub routings: Vec<DeviceRouting>,
+    /// The headphone cue was turned off before routing existed: new
+    /// devices' defaults leave it off.
+    pub cue_off_default: bool,
 }
 
 /// An output device: its name and how many outputs it has.
@@ -38,17 +32,6 @@ pub struct OutputDevice {
     pub name: String,
     pub channels: u16,
 }
-
-impl OutputDevice {
-    /// Whether it has outputs for the phones (3–4).
-    pub fn can_cue(&self) -> bool {
-        self.channels >= PHONES_CHANNELS
-    }
-}
-
-/// A stream with the phones has at least these: the master on 1–2, the
-/// phones on 3–4.
-const PHONES_CHANNELS: u16 = 4;
 
 /// The available output devices.
 pub fn list_output_devices() -> Vec<OutputDevice> {
@@ -59,12 +42,7 @@ pub fn list_output_devices() -> Vec<OutputDevice> {
     devices
         .filter_map(|device| {
             let name = device_name(&device)?;
-            let channels = device
-                .supported_output_configs()
-                .ok()?
-                .map(|config| config.channels())
-                .max()
-                .unwrap_or(2);
+            let channels = max_channels(&device, None);
             Some(OutputDevice { name, channels })
         })
         .collect()
@@ -80,16 +58,31 @@ pub fn default_output_device() -> Option<String> {
     device_name(&cpal::default_host().default_output_device()?)
 }
 
-/// The fewest channels, from 4 up, that `device` opens at `rate`.
-fn phones_channels(device: &cpal::Device, rate: u32) -> Option<u16> {
-    device
-        .supported_output_configs()
-        .ok()?
+/// The supported output channel counts, at `rate` when given.
+fn channel_counts(device: &cpal::Device, rate: Option<u32>) -> Vec<u16> {
+    let Ok(configs) = device.supported_output_configs() else {
+        return Vec::new();
+    };
+    configs
         .filter(|config| {
-            config.channels() >= PHONES_CHANNELS
-                && (config.min_sample_rate()..=config.max_sample_rate()).contains(&rate)
+            rate.is_none_or(|rate| {
+                (config.min_sample_rate()..=config.max_sample_rate()).contains(&rate)
+            })
         })
         .map(|config| config.channels())
+        .collect()
+}
+
+/// The most outputs `device` opens, at `rate` when given; 2 if it can't say.
+fn max_channels(device: &cpal::Device, rate: Option<u32>) -> u16 {
+    channel_counts(device, rate).into_iter().max().unwrap_or(2)
+}
+
+/// The fewest channels, from `wanted` up, that `device` opens at `rate`.
+fn channels_at_least(device: &cpal::Device, rate: u32, wanted: u16) -> Option<u16> {
+    channel_counts(device, Some(rate))
+        .into_iter()
+        .filter(|&channels| channels >= wanted)
         .min()
 }
 
@@ -97,8 +90,10 @@ pub struct AudioOutput {
     _stream: Stream,
     pub sample_rate: u32,
     pub device_name: String,
-    /// Whether the phones (outputs 3–4) carry the cue.
-    pub cue: bool,
+    /// What the stream's pairs carry.
+    pub layout: Layout,
+    /// The device's routing, for its pair names.
+    pub routing: DeviceRouting,
 }
 
 impl AudioOutput {
@@ -128,14 +123,26 @@ impl AudioOutput {
             .default_output_config()
             .map_err(|e| format!("Failed to get default output config: {e}"))?;
         let sample_rate = default_config.sample_rate();
-        let channels = settings
-            .cue_output
-            .then(|| phones_channels(&device, sample_rate))
-            .flatten()
-            .unwrap_or(2);
-        let cue = channels >= PHONES_CHANNELS;
-        // Only a running stream has phones.
+        let routing = DeviceRouting::for_device(
+            &settings.routings,
+            &device_name,
+            max_channels(&device, None),
+            settings.cue_off_default,
+        );
+        let mut layout = routing.resolve(max_channels(&device, Some(sample_rate)));
+        if layout != routing.resolve(u16::MAX) {
+            log::warn!("{device_name}: some outputs are past what it opens at {sample_rate} Hz");
+        }
+        match channels_at_least(&device, sample_rate, layout.channels) {
+            Some(channels) => layout.channels = channels,
+            None => layout = Layout::stereo(),
+        }
+        let channels = layout.channels;
+        let cue = layout.phones().is_some();
+        let external = layout.external();
+        // Only a running stream has phones, or a pair per deck.
         mixer.cue_output.store(false, Ordering::Release);
+        mixer.external.store(false, Ordering::Release);
         let shared = mixer.clone();
 
         let config = StreamConfig {
@@ -147,7 +154,7 @@ impl AudioOutput {
             },
         };
 
-        let mut renderer = MixerRenderer::new(decks, mixer, sample_rate, channels as usize);
+        let mut renderer = MixerRenderer::new(decks, mixer, sample_rate, layout);
         let stream = device
             .build_output_stream(
                 config,
@@ -163,15 +170,18 @@ impl AudioOutput {
             .play()
             .map_err(|e| format!("Failed to start audio stream: {e}"))?;
         shared.cue_output.store(cue, Ordering::Release);
+        shared.external.store(external, Ordering::Release);
 
         log::info!(
-            "Audio output: {device_name}, {channels} channels @ {sample_rate} Hz, cue {cue}"
+            "Audio output: {device_name}, {channels} channels @ {sample_rate} Hz, {:?}",
+            layout.mixing
         );
         Ok(AudioOutput {
             _stream: stream,
             sample_rate,
             device_name,
-            cue,
+            layout,
+            routing,
         })
     }
 }

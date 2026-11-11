@@ -11,6 +11,7 @@ use timestretch::{MomentaryLoudness, TransitionEnvelope};
 
 use crate::dsp::{ChannelStrip, FilterMode, Limiter, StripParams};
 use crate::output_queue::{Consumer, Cursor};
+use crate::routing::{Layout, Mixing, Pair};
 use crate::scrub::ScrubVoice;
 use crate::state::{
     DEFAULT_MASTER_BPM, DeckShared, DeliveryClock, MixerShared, ScrubPhase, Transport,
@@ -74,10 +75,12 @@ pub struct DeckAudio {
     pub handoff: Arc<DeliveryHandoff>,
 }
 
-/// One block's stereo buses: the master and the phones' cue.
+/// One block's stereo buses: the master and the phones' cue, or for a
+/// hardware mixer deck A, deck B and the audition player.
 struct Bus<'a> {
     main: &'a mut [f32],
     cue: &'a mut [f32],
+    aux: &'a mut [f32],
 }
 
 impl Bus<'_> {
@@ -91,7 +94,8 @@ impl Bus<'_> {
     {
         Bus {
             main: &mut self.main[range.clone()],
-            cue: &mut self.cue[range],
+            cue: &mut self.cue[range.clone()],
+            aux: &mut self.aux[range],
         }
     }
 }
@@ -106,6 +110,40 @@ enum Route {
     /// The phones only, after the channel's volume: the audition player,
     /// so previews never reach the room.
     Phones,
+    /// Straight to one bus for a hardware mixer: trim only, with no EQ,
+    /// filter or fader, which the mixer has.
+    Direct(Slot),
+    /// The audition player on one bus for a hardware mixer, after its
+    /// own volume.
+    Preview(Slot),
+}
+
+/// One of a block's buses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    Main,
+    Cue,
+    Aux,
+}
+
+impl Slot {
+    const ALL: [Slot; 3] = [Slot::Main, Slot::Cue, Slot::Aux];
+
+    /// `gain` into this bus, nothing into the others.
+    fn gains(self, gain: f32) -> [f32; 3] {
+        match self {
+            Slot::Main => [gain, 0.0, 0.0],
+            Slot::Cue => [0.0, gain, 0.0],
+            Slot::Aux => [0.0, 0.0, gain],
+        }
+    }
+}
+
+impl Route {
+    /// Halo's EQ and filter are the hardware mixer's job.
+    fn bypasses_strip(self) -> bool {
+        matches!(self, Route::Direct(_) | Route::Preview(_))
+    }
 }
 
 struct DeckVoice {
@@ -615,7 +653,9 @@ impl DeckVoice {
             filter_mode: FilterMode::from_u8(shared.filter_mode_u8()),
             cutoff: shared.filter_cutoff.load(),
         };
-        self.strip.process(buf, params);
+        if !self.route.bypasses_strip() {
+            self.strip.process(buf, params);
+        }
         let vbuf = &mut self.scratch[..out.len()];
         let scrubbing = phase != ScrubPhase::Idle;
         if scrubbing || self.scrub_mix > 0.0 {
@@ -630,13 +670,18 @@ impl DeckVoice {
                 }
             }
             shared.scrub.publish_voice_frame(self.voice.position());
-            self.scrub_strip.process(vbuf, params);
+            if !self.route.bypasses_strip() {
+                self.scrub_strip.process(vbuf, params);
+            }
         } else {
             vbuf.fill(0.0);
         }
         let alpha = 1.0 - (-1.0 / (0.005 * self.sample_rate as f32)).exp();
         let target_gain = if live || scrubbing || self.scrub_mix > 0.0 {
-            shared.fader.load()
+            match self.route {
+                Route::Direct(_) => 1.0,
+                _ => shared.fader.load(),
+            }
         } else {
             0.0
         };
@@ -679,8 +724,9 @@ impl DeckVoice {
         let buses = out
             .main
             .chunks_exact_mut(2)
-            .zip(out.cue.chunks_exact_mut(2));
-        for ((frame, cue), samples) in buses.zip(buf.chunks_exact(2)) {
+            .zip(out.cue.chunks_exact_mut(2))
+            .zip(out.aux.chunks_exact_mut(2));
+        for (((frame, cue), aux), samples) in buses.zip(buf.chunks_exact(2)) {
             self.pre_gain += (target_pre - self.pre_gain) * alpha;
             self.gain += (target_gain - self.gain) * alpha;
             self.cue_gain += (target_cue - self.cue_gain) * alpha;
@@ -688,14 +734,17 @@ impl DeckVoice {
             let right = samples[1] * self.pre_gain;
             // The phones take the deck pre-fader, or the audition player
             // after its own volume.
-            let (main, phones) = match self.route {
-                Route::Phones => (0.0, self.gain),
-                _ => (self.gain, self.cue_gain),
+            let [main, phones, extra] = match self.route {
+                Route::Phones => Slot::Cue.gains(self.gain),
+                Route::Direct(slot) | Route::Preview(slot) => slot.gains(self.gain),
+                Route::Main | Route::MainCued => [self.gain, self.cue_gain, 0.0],
             };
             frame[0] += left * main;
             frame[1] += right * main;
             cue[0] += left * phones;
             cue[1] += right * phones;
+            aux[0] += left * extra;
+            aux[1] += right * extra;
             peak = peak.max(left.abs()).max(right.abs());
             if let Some(lufs) = &mut self.lufs {
                 lufs.push_stereo(left, right);
@@ -744,19 +793,36 @@ impl DeckVoice {
 }
 
 /// Shared by the real device callback and deterministic delivery tests.
+/// One output pair: the buses it carries, summed, behind its own ceiling.
+struct OutputMix {
+    /// Its left channel in a frame.
+    offset: usize,
+    /// Which of main, cue and aux it carries.
+    slots: [bool; 3],
+    limiter: Limiter,
+    /// Whether the master meter reads it.
+    metered: bool,
+}
+
 pub struct MixerRenderer {
     decks: [DeckVoice; 3],
     mixer: Arc<MixerShared>,
-    limiter: Limiter,
-    /// The phones' own ceiling, so a hot cue never clips in your ears.
-    phones_limiter: Limiter,
     master_meter: f32,
     sample_rate: u32,
-    /// The stream's channels: the master on 1–2, the phones on 3–4 when
-    /// there are at least 4.
+    /// The stream's channels; pairs without a role are silent.
     channels: usize,
+    /// A hardware mixer does the mixing: the buses are deck A, deck B and
+    /// the audition player.
+    external: bool,
+    /// Halo's phones have a pair: the cue bus gets CUE MIX.
+    phones: bool,
+    /// The pairs something plays on, at most one per bus.
+    outputs: Vec<OutputMix>,
     main: Box<[f32; BLOCK_SAMPLES]>,
     cue: Box<[f32; BLOCK_SAMPLES]>,
+    aux: Box<[f32; BLOCK_SAMPLES]>,
+    /// One pair's sum, before its limiter.
+    mix: Box<[f32; BLOCK_SAMPLES]>,
     /// The master clock's beat position: synced decks lock to it.
     clock_beats: f64,
     output_frame: u64,
@@ -767,35 +833,78 @@ impl MixerRenderer {
         decks: [DeckAudio; 3],
         mixer: Arc<MixerShared>,
         sample_rate: u32,
-        channels: usize,
+        layout: Layout,
     ) -> Self {
-        let channels = channels.max(2);
-        let phones = channels >= 4;
-        let mut routes = if phones {
-            [Route::MainCued, Route::MainCued, Route::Phones]
-        } else {
-            [Route::Main; 3]
+        let channels = usize::from(layout.channels).max(2);
+        // A role past the stream's channels plays nowhere.
+        let fits = |pair: Pair| pair.offset() + 2 <= channels;
+        let (routes, roles) = match layout.mixing {
+            Mixing::Internal { master, phones } => {
+                let phones = phones.filter(|&p| fits(p) && p != master);
+                let routes = if phones.is_some() {
+                    [Route::MainCued, Route::MainCued, Route::Phones]
+                } else {
+                    [Route::Main; 3]
+                };
+                (routes, [Some(master).filter(|&p| fits(p)), phones, None])
+            }
+            Mixing::External {
+                deck_a,
+                deck_b,
+                audition,
+            } => (
+                [
+                    Route::Direct(Slot::Main),
+                    Route::Direct(Slot::Cue),
+                    Route::Preview(Slot::Aux),
+                ],
+                [deck_a, deck_b, audition].map(|role| role.filter(|&p| fits(p))),
+            ),
+        };
+        let external = layout.external();
+        let mut outputs: Vec<OutputMix> = Vec::with_capacity(Slot::ALL.len());
+        for (i, role) in roles.into_iter().enumerate() {
+            let Some(pair) = role else {
+                continue;
+            };
+            let index = outputs.iter().position(|o| o.offset == pair.offset());
+            let output = match index {
+                Some(index) => &mut outputs[index],
+                None => {
+                    outputs.push(OutputMix {
+                        offset: pair.offset(),
+                        slots: [false; 3],
+                        limiter: Limiter::new(sample_rate),
+                        metered: false,
+                    });
+                    let last = outputs.len() - 1;
+                    &mut outputs[last]
+                }
+            };
+            output.slots[i] = true;
+            // The meter reads the room: the master, or every channel
+            // going to a hardware mixer.
+            output.metered |= external || i == 0;
         }
-        .into_iter();
+        let mut routes = routes.into_iter();
         Self {
             decks: decks.map(|deck| {
                 DeckVoice::new(deck, sample_rate, routes.next().unwrap_or(Route::Main))
             }),
             mixer,
-            limiter: Limiter::new(sample_rate),
-            phones_limiter: Limiter::new(sample_rate),
             master_meter: 0.0,
             sample_rate,
             channels,
+            external,
+            phones: roles[1].is_some() && !external,
+            outputs,
             main: Box::new([0.0; BLOCK_SAMPLES]),
             cue: Box::new([0.0; BLOCK_SAMPLES]),
+            aux: Box::new([0.0; BLOCK_SAMPLES]),
+            mix: Box::new([0.0; BLOCK_SAMPLES]),
             clock_beats: 0.0,
             output_frame: 0,
         }
-    }
-
-    fn phones(&self) -> bool {
-        self.channels >= 4
     }
 
     pub fn render(&mut self, data: &mut [f32]) {
@@ -804,14 +913,15 @@ impl MixerRenderer {
         let frames = data.len() / channels;
         let (whole, rest) = data.split_at_mut(frames * channels);
         rest.fill(0.0);
-        let phones = self.phones();
         let mut peak = 0.0_f32;
         for chunk in whole.chunks_mut(BLOCK_SAMPLES / 2 * channels) {
             let samples = chunk.len() / channels * 2;
             let main = &mut self.main[..samples];
             let cue = &mut self.cue[..samples];
+            let aux = &mut self.aux[..samples];
             main.fill(0.0);
             cue.fill(0.0);
+            aux.fill(0.0);
             for deck in &mut self.decks {
                 deck.frame_clock = self.output_frame;
                 deck.adopt();
@@ -831,6 +941,7 @@ impl MixerRenderer {
                     Bus {
                         main: &mut *main,
                         cue: &mut *cue,
+                        aux: &mut *aux,
                     },
                     &clock,
                     self.output_frame,
@@ -839,6 +950,7 @@ impl MixerRenderer {
             audition[0].render_into(Bus {
                 main: &mut *main,
                 cue: &mut *cue,
+                aux: &mut *aux,
             });
             self.clock_beats = clock.at(samples / 2);
             self.mixer.clock_beats.store(self.clock_beats);
@@ -846,7 +958,7 @@ impl MixerRenderer {
             self.mixer
                 .output_frame
                 .store(self.output_frame, Ordering::Release);
-            if phones {
+            if self.phones {
                 // CUE MIX: an equal-power blend of the cue and the master
                 // as it is before the master volume, so turning the room
                 // down leaves the phones alone.
@@ -855,23 +967,36 @@ impl MixerRenderer {
                 for (phones, &master) in cue.iter_mut().zip(main.iter()) {
                     *phones = *phones * to_cue + master * to_master;
                 }
-                self.phones_limiter.process(cue);
             }
-            let master = self.mixer.master.load();
-            for sample in main.iter_mut() {
-                *sample *= master;
+            // A hardware mixer has the master.
+            if !self.external {
+                let master = self.mixer.master.load();
+                for sample in main.iter_mut() {
+                    *sample *= master;
+                }
             }
-            self.limiter.process(main);
-            for &sample in main.iter() {
-                peak = peak.max(sample.abs());
-            }
-            let outs = main.chunks_exact(2).zip(cue.chunks_exact(2));
-            for (frame, (master, phones)) in chunk.chunks_exact_mut(channels).zip(outs) {
-                let (front, back) = frame.split_at_mut(2);
-                front.copy_from_slice(master);
-                if let Some((pair, others)) = back.split_at_mut_checked(2) {
-                    pair.copy_from_slice(phones);
-                    others.fill(0.0);
+            chunk.fill(0.0);
+            let mix = &mut self.mix[..samples];
+            for output in &mut self.outputs {
+                mix.fill(0.0);
+                for (&on, bus) in output.slots.iter().zip([&*main, &*cue, &*aux]) {
+                    if on {
+                        for (sum, &sample) in mix.iter_mut().zip(bus.iter()) {
+                            *sum += sample;
+                        }
+                    }
+                }
+                output.limiter.process(mix);
+                if output.metered {
+                    for &sample in mix.iter() {
+                        peak = peak.max(sample.abs());
+                    }
+                }
+                let at = output.offset..output.offset + 2;
+                for (frame, pair) in chunk.chunks_exact_mut(channels).zip(mix.chunks_exact(2)) {
+                    if let Some(out) = frame.get_mut(at.clone()) {
+                        out.copy_from_slice(pair);
+                    }
                 }
             }
         }
@@ -1622,7 +1747,7 @@ mod tests {
                 }),
                 mixer,
                 RATE,
-                2,
+                Layout::stereo(),
             );
             let mut scratch = [0.0; 4096];
             let mut block = [0.0; 512];
@@ -1700,8 +1825,19 @@ mod tests {
         fixture_with(2)
     }
 
-    /// A fixture whose stream has `channels`: 4 and up have the phones.
-    fn fixture_with(channels: usize) -> Fixture {
+    /// A fixture whose stream has `channels`: 4 and up have the phones,
+    /// on 3–4.
+    fn fixture_with(channels: u16) -> Fixture {
+        fixture_layout(Layout {
+            channels,
+            mixing: Mixing::Internal {
+                master: Pair(0),
+                phones: (channels >= 4).then_some(Pair(1)),
+            },
+        })
+    }
+
+    fn fixture_layout(layout: Layout) -> Fixture {
         let shared = std::array::from_fn(|_| Arc::new(DeckShared::new()));
         let handoffs = std::array::from_fn(|_| Arc::new(DeliveryHandoff::new()));
         let producers = std::array::from_fn(|i| {
@@ -1730,7 +1866,7 @@ mod tests {
             }),
             mixer,
             48_000,
-            channels,
+            layout,
         );
         (renderer, shared, handoffs, producers)
     }
@@ -1890,6 +2026,141 @@ mod tests {
         let frame = last_frame(&out, 4);
         assert!((frame[0] - 0.1).abs() < 0.01, "{frame:?}");
         assert!((frame[2] - 0.2).abs() < 0.01, "{frame:?}");
+    }
+
+    #[test]
+    fn the_phones_can_take_1_2_with_the_master_on_3_4() {
+        let (mut renderer, shared, _, mut producers) = fixture_layout(Layout {
+            channels: 4,
+            mixing: Mixing::Internal {
+                master: Pair(1),
+                phones: Some(Pair(0)),
+            },
+        });
+        // As above: A cued with its fader down, B in the room only.
+        shared[0].fader.store(0.0);
+        shared[0].pfl.store(true, Ordering::Relaxed);
+        shared[2].fader.store(0.5);
+        renderer.mixer.master.store(0.5);
+        renderer.mixer.cue_mix.store(0.0);
+        push_levels(&mut producers, [0.1, 0.2, 0.3], 8192);
+        let mut out = vec![0.0; 4096 * 4];
+        renderer.render(&mut out);
+        let frame = last_frame(&out, 4);
+        for (i, want) in [0.25, 0.25, 0.1, 0.1].into_iter().enumerate() {
+            assert!((frame[i] - want).abs() < 0.01, "{frame:?}");
+        }
+    }
+
+    /// A hardware mixer on a 4-output stream: A on 1–2, B on 3–4.
+    fn external(audition: Pair) -> Fixture {
+        fixture_layout(Layout {
+            channels: 4,
+            mixing: Mixing::External {
+                deck_a: Some(Pair(0)),
+                deck_b: Some(Pair(1)),
+                audition: Some(audition),
+            },
+        })
+    }
+
+    #[test]
+    fn external_sends_each_deck_unmixed_to_its_own_pair() {
+        let (mut renderer, shared, _, mut producers) = external(Pair(1));
+        // Halo's mixer is ignored: A's fader is down, its lows killed and
+        // its filter closed, the master is off and B is cued. Only the
+        // trim counts.
+        shared[0].fader.store(0.0);
+        shared[0].eq_low.store(0.0);
+        shared[0].set_filter_mode(1);
+        shared[0].filter_cutoff.store(0.0);
+        shared[0].trim.store(0.5);
+        shared[1].pfl.store(true, Ordering::Relaxed);
+        shared[2].fader.store(0.0);
+        renderer.mixer.master.store(0.0);
+        push_levels(&mut producers, [0.2, 0.3, 0.4], 8192);
+        let mut out = vec![0.0; 4096 * 4];
+        let allocation = allocation_counter::measure(|| renderer.render(&mut out));
+        assert_eq!(allocation.count_total, 0);
+        assert_eq!(allocation.count_current, 0);
+        let frame = last_frame(&out, 4);
+        for (i, want) in [0.1, 0.1, 0.3, 0.3].into_iter().enumerate() {
+            assert!((frame[i] - want).abs() < 0.01, "{frame:?}");
+        }
+    }
+
+    #[test]
+    fn external_plays_the_audition_player_on_its_pair_at_its_volume() {
+        let (mut renderer, shared, _, mut producers) = external(Pair(0));
+        shared[2].fader.store(0.5);
+        push_levels(&mut producers, [0.0, 0.0, 0.4], 8192);
+        let mut out = vec![0.0; 4096 * 4];
+        renderer.render(&mut out);
+        let frame = last_frame(&out, 4);
+        assert!((frame[0] - 0.2).abs() < 0.01, "{frame:?}");
+        assert_eq!(&frame[2..], &[0.0, 0.0]);
+    }
+
+    #[test]
+    fn external_pairs_each_keep_their_own_ceiling() {
+        let (mut renderer, shared, _, mut producers) = external(Pair(1));
+        shared[0].trim.store(2.0);
+        push_levels(&mut producers, [0.9, 0.9, 0.9], 4096);
+        let mut out = vec![0.0; 4096 * 4];
+        renderer.render(&mut out);
+        let mut heard = [0.0_f32; 2];
+        for frame in out.chunks_exact(4) {
+            assert!(frame.iter().all(|s| s.abs() <= 0.981), "{frame:?}");
+            heard[0] = heard[0].max(frame[0].abs());
+            heard[1] = heard[1].max(frame[2].abs());
+        }
+        assert!(
+            heard.iter().all(|&h| h > 0.9),
+            "a pair went quiet: {heard:?}"
+        );
+    }
+
+    #[test]
+    fn external_reaches_any_pair_and_leaves_the_rest_silent() {
+        let (mut renderer, shared, _, mut producers) = fixture_layout(Layout {
+            channels: 8,
+            mixing: Mixing::External {
+                deck_a: Some(Pair(2)),
+                deck_b: Some(Pair(0)),
+                audition: Some(Pair(3)),
+            },
+        });
+        shared[2].fader.store(1.0);
+        push_levels(&mut producers, [0.2, 0.3, 0.4], 8192);
+        let mut out = vec![0.0; 4096 * 8];
+        let allocation = allocation_counter::measure(|| renderer.render(&mut out));
+        assert_eq!(allocation.count_total, 0);
+        let frame = last_frame(&out, 8);
+        for (i, want) in [0.3, 0.3, 0.0, 0.0, 0.2, 0.2, 0.4, 0.4]
+            .into_iter()
+            .enumerate()
+        {
+            assert!((frame[i] - want).abs() < 0.01, "{frame:?}");
+        }
+    }
+
+    #[test]
+    fn roles_sharing_a_pair_are_summed_under_one_ceiling() {
+        let (mut renderer, shared, _, mut producers) = external(Pair(1));
+        shared[2].fader.store(1.0);
+        push_levels(&mut producers, [0.1, 0.2, 0.3], 8192);
+        let mut out = vec![0.0; 4096 * 4];
+        renderer.render(&mut out);
+        let frame = last_frame(&out, 4);
+        // Deck B and the audition player together on 3–4.
+        assert!((frame[2] - 0.5).abs() < 0.01, "{frame:?}");
+        // Together past the ceiling, they're held under it.
+        let (mut renderer, shared, _, mut producers) = external(Pair(1));
+        shared[2].fader.store(1.0);
+        push_levels(&mut producers, [0.0, 0.7, 0.7], 8192);
+        renderer.render(&mut out);
+        assert!(out.iter().all(|s| s.abs() <= 0.981));
+        assert!(last_frame(&out, 4)[2] > 0.9);
     }
 
     #[test]

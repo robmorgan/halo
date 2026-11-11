@@ -409,7 +409,7 @@ mod tests {
             }),
             mixer,
             rate,
-            2,
+            crate::routing::Layout::stereo(),
         )
     }
 
