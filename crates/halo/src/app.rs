@@ -5,8 +5,10 @@ use std::sync::{Arc, mpsc};
 use eframe::egui;
 use halo_light::artnet::{ARTNET_PORT, ArtNetMode, NetworkConfig};
 use halo_light::cues::{ALL_LANES, CueSet, LANE_COUNT, Lane};
+use halo_light::energy::EnergyLane;
 use halo_light::fixture::{ALL_KINDS, Rig, RigFile, default_rig};
 use halo_light::fixture_library::FixtureLibrary;
+use halo_light::looks::look_at;
 use halo_light::programmer::{
     self, LaneOutput, LaneSource, ParamView, Programmer, ProgrammerParams,
 };
@@ -28,7 +30,7 @@ use crate::options::{MidiLive, Options, OptionsValues, Outcome};
 use crate::programmer_ui::{ProgrammerCtx, programmer_panel};
 use crate::routing::{DeviceRouting, Mixing};
 use crate::show::simulate_show_l3;
-use crate::show_preview::{LOOK_PALETTE, LookId, ShowPreview, ShowSel};
+use crate::show_preview::{LOOK_PALETTE, LookId, LookStyle, ShowPreview, ShowSel};
 use crate::state::{DEFAULT_CUE_MIX, MASTER_BPM_RANGE, MixerShared, ScrubPhase, Transport};
 use crate::theme::{self, ACCENT};
 use crate::waveform::{
@@ -1117,10 +1119,12 @@ impl HaloApp {
                             deck_ui.deck.shared.track_generation.load(Ordering::Acquire),
                             data.grid.bpm,
                         ));
-                        deck_ui.cues = data
+                        let lighting = data
                             .track_id
-                            .and_then(|id| library?.cues(id).ok().flatten())
-                            .map(|f| CueSet::from_file(&f, device_rate))
+                            .and_then(|id| library?.cues(id).ok().flatten());
+                        deck_ui.cues = lighting
+                            .as_ref()
+                            .map(|f| CueSet::from_file(f, device_rate))
                             .unwrap_or_else(CueSet::empty);
                         // Session-only L3 preview: seed the role lanes
                         // deterministically per track so both views show
@@ -1132,6 +1136,12 @@ impl HaloApp {
                             device_rate,
                             data.track_id.unwrap_or(1) as u64,
                         );
+                        // The NRG curve is the track's own, saved with its
+                        // cues: flat until one is drawn.
+                        deck_ui.show.energy = lighting
+                            .as_ref()
+                            .map(|f| EnergyLane::from_points(&f.energy, device_rate))
+                            .unwrap_or_default();
                         deck_ui.bpm = data.grid.bpm;
                         deck_ui.title = data.title;
                         deck_ui.artist = data.artist;
@@ -1623,6 +1633,8 @@ impl HaloApp {
             };
             dmx::DmxDeck {
                 cues: d.deck.track.is_some().then(|| d.cues.clone()),
+                energy: d.deck.track.is_some().then(|| d.show.energy.clone()),
+                looks: d.deck.track.is_some().then(|| d.show.looks.clone()),
                 deck: d.deck.shared.clone(),
                 beat_ref,
             }
@@ -2427,16 +2439,11 @@ impl HaloApp {
         store
     }
 
-    /// Single write path for every cue mutation: persist to the library,
-    /// then propagate clones to every player holding the same track — this
-    /// is what keeps a performance deck's lane strip live-updating while
-    /// the same track is edited in Prepare.
+    /// Single write path for every cue mutation: propagate clones to every
+    /// player holding the same track — this is what keeps a performance
+    /// deck's lane strip live-updating while the same track is edited in
+    /// Prepare — then persist to the library.
     fn commit_cues(&mut self, track_id: i64, cues: &CueSet) {
-        if let Some(lib) = &self.library
-            && let Err(e) = lib.store_cues(track_id, &cues.to_file(self.device_rate()))
-        {
-            log::error!("store cues: {e}");
-        }
         for d in &mut self.decks {
             if d.track_id == Some(track_id) {
                 d.cues = cues.clone();
@@ -2445,11 +2452,13 @@ impl HaloApp {
         if self.prepare.audition.track_id == Some(track_id) {
             self.prepare.audition.cues = cues.clone();
         }
+        self.store_lighting(track_id);
     }
 
-    /// Session-only analogue of [`commit_cues`](Self::commit_cues) for the
-    /// L3 show preview: propagate an edited show to every player holding
-    /// the same track. No persistence — the preview dies with the session.
+    /// The show lanes' analogue of [`commit_cues`](Self::commit_cues):
+    /// propagate an edited show to every player holding the same track,
+    /// and save its energy curve. The looks and accents are a session-only
+    /// preview and die with the session.
     fn sync_show(&mut self, track_id: i64, show: &ShowPreview) {
         for d in &mut self.decks {
             if d.track_id == Some(track_id) {
@@ -2458,6 +2467,29 @@ impl HaloApp {
         }
         if self.prepare.audition.track_id == Some(track_id) {
             self.prepare.audition.show = show.clone();
+        }
+        self.store_lighting(track_id);
+    }
+
+    /// Save a track's cues and energy curve together, from a player
+    /// holding it, so saving one never drops the other.
+    fn store_lighting(&self, track_id: i64) {
+        let Some(lib) = &self.library else {
+            return;
+        };
+        let Some(player) = self
+            .decks
+            .iter()
+            .chain([&self.prepare.audition])
+            .find(|d| d.track_id == Some(track_id))
+        else {
+            return;
+        };
+        let rate = self.device_rate();
+        let mut file = player.cues.to_file(rate);
+        file.energy = player.show.energy.to_points(rate);
+        if let Err(e) = lib.store_cues(track_id, &file) {
+            log::error!("store cues: {e}");
         }
     }
 
@@ -2794,17 +2826,19 @@ impl HaloApp {
                     if ui
                         .add(Key::new("RESET DEMO SHOW").small())
                         .status_help(
-                            "Re-seed the look / energy / accent lanes with the simulated \
-                             show, then edit",
+                            "Re-seed the look and accent lanes with the simulated show, \
+                             then edit. The NRG curve stays",
                         )
                         .clicked()
                     {
+                        let energy = std::mem::take(&mut audition.show.energy);
                         audition.show = simulate_show_l3(
                             &audition.marks,
                             total,
                             sample_rate,
                             audition.track_id.unwrap_or(1) as u64,
                         );
+                        audition.show.energy = energy;
                         selection.clear();
                         mutated = true;
                     }
@@ -3182,8 +3216,22 @@ impl eframe::App for HaloApp {
         // this one result so provenance stays consistent.
         let lighting = {
             let d = &self.decks[self.lighting_deck];
-            let cues = d.deck.track.is_some().then_some(&d.cues);
-            programmer::resolve(&self.programmer, cues, d.playhead() as f64)
+            let loaded = d.deck.track.is_some();
+            let playhead = d.playhead() as f64;
+            let energy = programmer::energy_at(
+                loaded.then_some(&d.show.energy),
+                playhead,
+                self.programmer_params.energy,
+            );
+            let look = look_at(loaded.then_some(&d.show.looks), playhead);
+            programmer::resolve(
+                &self.programmer,
+                loaded.then_some(&d.cues),
+                look,
+                energy,
+                playhead,
+            )
+            .lanes
         };
         // Same inputs, other consumer: the DMX engine thread re-resolves
         // on its own clock between UI frames.

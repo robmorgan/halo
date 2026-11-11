@@ -11,11 +11,22 @@
 //! style: setting them takes the fixtures selected at the time (the whole
 //! rig when none are) away from their lanes until CLEAR. Picking a pixel
 //! effect or colour brings the bars it applies to up the same way.
+//!
+//! Under the programmer and the track's cues sits the deck's active look
+//! (see [`crate::looks`]): it lights the Lighting and Pixels lanes and
+//! supplies every parameter section the programmer hasn't touched
+//! ([`effective`]).
+//!
+//! Energy — the track's NRG curve times the live ENERGY fader — then
+//! scales everything's intensity, like a grand master: lanes whatever
+//! their source, and what the programmer holds. HIGHLIGHT ignores it.
 
 use std::collections::{BTreeMap, HashSet};
 
-use crate::cues::{ALL_LANES, CueSet, LANE_COUNT};
+use crate::cues::{ALL_LANES, CueSet, LANE_COUNT, Lane};
+use crate::energy::EnergyLane;
 use crate::fixture::{Fixture, FixtureKind, Rig};
+use crate::looks::LookParams;
 
 /// One lane's manual override state.
 #[derive(Clone)]
@@ -53,6 +64,8 @@ pub enum LaneSource {
     Programmer,
     /// A cue from the active lighting deck's track.
     Track,
+    /// The deck's active look.
+    Look,
     Off,
 }
 
@@ -62,48 +75,168 @@ pub struct LaneOutput {
     pub level: f32,
 }
 
+/// The rig's state for one instant: each lane's output, already scaled
+/// by `energy`, the energy itself for what the programmer holds, and the
+/// active look for what the programmer hasn't touched.
+#[derive(Debug, Clone)]
+pub struct Resolved {
+    pub lanes: [LaneOutput; LANE_COUNT],
+    /// 0..=1.
+    pub energy: f32,
+    pub look: Option<LookParams>,
+}
+
+/// The energy at `playhead`: the track's curve (flat without one) times
+/// the live fader.
+pub fn energy_at(curve: Option<&EnergyLane>, playhead: f64, fader: f32) -> f32 {
+    let curve = curve.map_or(1.0, |c| c.value_at(playhead));
+    (curve * fader).clamp(0.0, 1.0)
+}
+
 /// Resolve the lighting output priority stack for one instant:
-/// Programmer > track cues at `playhead` > off.
+/// Programmer > track cues at `playhead` > the active `look` > off, each
+/// scaled by `energy` (see [`energy_at`]). The look lights the Lighting
+/// and Pixels lanes at its dimmer, never FX: a look can't fire smoke or
+/// pyro. Scaling keeps the source: a dimmed lane is still its own.
 pub fn resolve(
     prog: &Programmer,
     track_cues: Option<&CueSet>,
+    look: Option<&LookParams>,
+    energy: f32,
     playhead: f64,
-) -> [LaneOutput; LANE_COUNT] {
-    ALL_LANES.map(|lane| {
+) -> Resolved {
+    let energy = energy.clamp(0.0, 1.0);
+    let lanes = ALL_LANES.map(|lane| {
         let o = &prog[lane as usize];
-        if o.active() {
-            return LaneOutput {
-                source: LaneSource::Programmer,
-                level: o.intensity.clamp(0.0, 1.0),
-            };
-        }
-        if let Some(cue) = track_cues.and_then(|c| c.active_at(lane, playhead)) {
-            return LaneOutput {
-                source: LaneSource::Track,
-                level: cue.intensity.clamp(0.0, 1.0),
-            };
-        }
+        let (source, level) = if o.active() {
+            (LaneSource::Programmer, o.intensity)
+        } else if let Some(cue) = track_cues.and_then(|c| c.active_at(lane, playhead)) {
+            (LaneSource::Track, cue.intensity)
+        } else if let Some(look) = look.filter(|_| lane != Lane::Fx) {
+            (LaneSource::Look, look.intensity.dimmer / 100.0)
+        } else {
+            (LaneSource::Off, 0.0)
+        };
         LaneOutput {
-            source: LaneSource::Off,
-            level: 0.0,
+            source,
+            level: level.clamp(0.0, 1.0) * energy,
         }
-    })
+    });
+    Resolved {
+        lanes,
+        energy,
+        look: look.cloned(),
+    }
 }
 
 /// One fixture's intensity (0..=1) and colour (RGBW percent), merged per
 /// fixture as [`resolve`] merges per lane: what the programmer holds for
-/// it beats its lane's level and the rig's default open white.
+/// it beats its lane's level, and the look's colour or else open white.
+/// A held dimmer is scaled by the energy, as the lanes are.
 pub fn resolve_fixture(
     params: &ProgrammerParams,
-    lanes: &[LaneOutput; LANE_COUNT],
+    resolved: &Resolved,
     fixture: &Fixture,
 ) -> (f32, [f32; 4]) {
     let held = params.held.get(&fixture.id).copied().unwrap_or_default();
     let level = held
         .dimmer
-        .map_or(lanes[fixture.kind.lane() as usize].level, |d| d / 100.0)
+        .map_or(resolved.lanes[fixture.kind.lane() as usize].level, |d| {
+            (d / 100.0).clamp(0.0, 1.0) * resolved.energy
+        })
         .clamp(0.0, 1.0);
-    (level, held.rgbw.unwrap_or(ColorParams::default().rgbw))
+    let rgbw = held.rgbw.unwrap_or_else(|| {
+        resolved
+            .look
+            .as_ref()
+            .map_or(ColorParams::default().rgbw, |l| l.color.rgbw)
+    });
+    (level, rgbw)
+}
+
+/// The parameter sections the rig renders: each the look's, when a look is
+/// active and the programmer hasn't touched that section, or else the
+/// programmer's. `*_from_look` says which, for the effect's cohort.
+pub struct Effective<'a> {
+    pub intensity: &'a IntensityParams,
+    pub color: &'a ColorParams,
+    pub position: &'a PositionParams,
+    pub beam: &'a BeamParams,
+    pub pixel: &'a PixelFxParams,
+    pub intensity_from_look: bool,
+    pub color_from_look: bool,
+    pub position_from_look: bool,
+    pub beam_from_look: bool,
+}
+
+pub fn effective<'a>(params: &'a ProgrammerParams, resolved: &'a Resolved) -> Effective<'a> {
+    let look = resolved.look.as_ref();
+    let owned = params.owned;
+    let from = |owns: bool| look.filter(|_| !owns);
+    let pick = |owns: bool| from(owns).is_some();
+    Effective {
+        intensity: from(owned.intensity).map_or(&params.intensity, |l| &l.intensity),
+        color: from(owned.color).map_or(&params.color, |l| &l.color),
+        position: from(owned.position).map_or(&params.position, |l| &l.position),
+        beam: from(owned.beam).map_or(&params.beam, |l| &l.beam),
+        pixel: from(owned.pixel).map_or(&params.pixel, |l| &l.pixel),
+        intensity_from_look: pick(owned.intensity),
+        color_from_look: pick(owned.color),
+        position_from_look: pick(owned.position),
+        beam_from_look: pick(owned.beam),
+    }
+}
+
+/// The parameter sections the programmer has taken from the look, until
+/// CLEAR. A fixture's dimmer and colour are held per fixture instead
+/// (see [`Held`]), so they don't count.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Owned {
+    pub intensity: bool,
+    pub color: bool,
+    pub position: bool,
+    pub beam: bool,
+    pub pixel: bool,
+}
+
+/// The sections [`Owned::mark`] compares.
+#[derive(Clone, PartialEq)]
+pub struct Sections {
+    strobe: f32,
+    intensity_fx: EffectConfig,
+    color_fx: EffectConfig,
+    position: PositionParams,
+    beam: BeamParams,
+    pixel: PixelFxParams,
+}
+
+impl Sections {
+    pub fn of(p: &ProgrammerParams) -> Self {
+        Self {
+            strobe: p.intensity.strobe,
+            intensity_fx: p.intensity.effect.clone(),
+            color_fx: p.color.effect.clone(),
+            position: p.position.clone(),
+            beam: p.beam.clone(),
+            pixel: p.pixel.clone(),
+        }
+    }
+}
+
+impl Owned {
+    /// Take every section that changed between two snapshots.
+    pub fn mark(&mut self, before: &Sections, after: &Sections) {
+        self.intensity |=
+            before.strobe != after.strobe || before.intensity_fx != after.intensity_fx;
+        self.color |= before.color_fx != after.color_fx;
+        self.position |= before.position != after.position;
+        self.beam |= before.beam != after.beam;
+        self.pixel |= before.pixel != after.pixel;
+    }
+
+    pub fn any(&self) -> bool {
+        *self != Self::default()
+    }
 }
 
 /// Release every latch (held FLASH keys release themselves on key-up).
@@ -121,8 +254,8 @@ pub fn any_latched(prog: &Programmer) -> bool {
 // ---------------------------------------------------------------------------
 // Parameter views + per-parameter effects.
 //
-// MOCKUP STATE for now: values and effect configs are real, interactive
-// state, but nothing drives fixture output until the fixture engine lands.
+// What `render()` reads, from the programmer or from the deck's look
+// (see `effective`).
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -194,7 +327,7 @@ pub enum Distribution {
     Wave(u32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EffectConfig {
     pub waveform: Waveform,
     pub interval: Interval,
@@ -245,7 +378,7 @@ pub fn effect_value(cfg: &EffectConfig, t: f64) -> f32 {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IntensityParams {
     /// Percent, 0..=100.
     pub dimmer: f32,
@@ -263,7 +396,7 @@ impl Default for IntensityParams {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ColorParams {
     /// R/G/B/W percent, 0..=100.
     pub rgbw: [f32; 4],
@@ -288,7 +421,7 @@ pub enum PanTiltTarget {
     Tilt,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PositionParams {
     /// Degrees, 0..=360.
     pub pan: f32,
@@ -308,20 +441,11 @@ impl Default for PositionParams {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BeamParams {
-    /// Selected gobo, 1..=8.
+    /// Selected gobo, 1..=8; 0 is open.
     pub gobo: u8,
     pub effect: EffectConfig,
-}
-
-impl Default for BeamParams {
-    fn default() -> Self {
-        Self {
-            gobo: 1,
-            effect: EffectConfig::default(),
-        }
-    }
 }
 
 /// Placeholder pixel-bar effects until the fixture engine defines real ones.
@@ -351,7 +475,7 @@ pub const COLOR_PRESETS: [(&str, [f32; 4]); 10] = [
     ("UV", [45.0, 0.0, 100.0, 0.0]),
 ];
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PixelFxParams {
     /// Index into [`PIXEL_EFFECTS`].
     pub effect: usize,
@@ -360,7 +484,7 @@ pub struct PixelFxParams {
 }
 
 /// All parameter-view state for the programmer surface.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ProgrammerParams {
     pub view: ParamView,
     pub intensity: IntensityParams,
@@ -374,6 +498,29 @@ pub struct ProgrammerParams {
     pub highlight: bool,
     /// What the programmer holds per fixture id, until CLEAR.
     pub held: BTreeMap<u32, Held>,
+    /// The live ENERGY fader, 0..=1, on top of the track's NRG curve.
+    /// CLEAR leaves it.
+    pub energy: f32,
+    /// The sections taken from the look, until CLEAR.
+    pub owned: Owned,
+}
+
+impl Default for ProgrammerParams {
+    fn default() -> Self {
+        Self {
+            view: ParamView::default(),
+            intensity: IntensityParams::default(),
+            color: ColorParams::default(),
+            position: PositionParams::default(),
+            beam: BeamParams::default(),
+            pixel: PixelFxParams::default(),
+            preview: false,
+            highlight: false,
+            held: BTreeMap::new(),
+            energy: 1.0,
+            owned: Owned::default(),
+        }
+    }
 }
 
 /// What the programmer holds for one fixture. `None` leaves it to the
@@ -456,13 +603,16 @@ impl ProgrammerParams {
         self.shown(selection, |h| h.rgbw).unwrap_or(self.color.rgbw)
     }
 
-    /// Let go of every fixture: CLEAR.
+    /// Let go of every fixture and section: CLEAR.
     pub fn release(&mut self) {
         self.held.clear();
+        self.owned = Owned::default();
     }
 
+    /// Whether CLEAR has anything to release: a held fixture or a section
+    /// taken from the look.
     pub fn holds_any(&self) -> bool {
-        !self.held.is_empty()
+        !self.held.is_empty() || self.owned.any()
     }
 }
 
@@ -472,24 +622,113 @@ mod tests {
     use crate::cues::Lane;
 
     #[test]
+    fn energy_scales_every_lane_and_keeps_its_source() {
+        let mut cues = CueSet::empty();
+        cues.insert(Lane::Lighting, 0.0, 100.0, 0.8);
+        let mut prog = Programmer::default();
+        prog[1].latched = true;
+        let out = resolve(&prog, Some(&cues), None, 0.5, 50.0);
+        assert_eq!(out.energy, 0.5);
+        assert_eq!(out.lanes[0].source, LaneSource::Track);
+        assert!((out.lanes[0].level - 0.4).abs() < 1e-6);
+        assert_eq!(out.lanes[1].source, LaneSource::Programmer);
+        assert!((out.lanes[1].level - 0.5).abs() < 1e-6);
+        assert_eq!(out.lanes[2].level, 0.0);
+    }
+
+    #[test]
+    fn the_look_lights_lanes_under_the_programmer_and_the_track() {
+        use crate::looks::{LookId, builtin};
+        let look = &builtin(LookId(0)).params; // Warm Open, dimmer 80
+        let mut cues = CueSet::empty();
+        cues.insert(Lane::Lighting, 0.0, 100.0, 0.3);
+        let mut prog = Programmer::default();
+        prog[1].latched = true;
+        let out = resolve(&prog, Some(&cues), Some(look), 0.5, 50.0);
+        // The track's cue and the programmer's latch beat the look.
+        assert_eq!(out.lanes[0].source, LaneSource::Track);
+        assert_eq!(out.lanes[1].source, LaneSource::Programmer);
+        // A look never drives FX.
+        assert_eq!(out.lanes[2].source, LaneSource::Off);
+        // Past the cue, the look lights Lighting at its dimmer × energy.
+        let out = resolve(&Programmer::default(), Some(&cues), Some(look), 0.5, 200.0);
+        assert_eq!(out.lanes[0].source, LaneSource::Look);
+        assert!((out.lanes[0].level - 0.4).abs() < 1e-6);
+        assert_eq!(out.look.as_ref(), Some(look));
+    }
+
+    #[test]
+    fn untouched_sections_come_from_the_look() {
+        use crate::looks::{LookId, builtin};
+        let look = builtin(LookId(2)).params.clone(); // Red Drop
+        let mut p = ProgrammerParams::default();
+        // No look: the programmer's sections, as before looks.
+        let none = resolve(&Programmer::default(), None, None, 1.0, 0.0);
+        let e = effective(&p, &none);
+        assert_eq!(e.beam, &p.beam);
+        assert!(!e.position_from_look);
+
+        let with = resolve(&Programmer::default(), None, Some(&look), 1.0, 0.0);
+        let e = effective(&p, &with);
+        assert_eq!(e.beam.gobo, 3);
+        assert_eq!(e.position, &look.position);
+        assert!(e.position_from_look);
+
+        // Touch position and DIMMER: position becomes the programmer's,
+        // intensity stays the look's.
+        let before = Sections::of(&p);
+        p.position.pan = 90.0;
+        p.hold_dimmer(&[1], 50.0);
+        p.owned.mark(&before, &Sections::of(&p));
+        assert_eq!(
+            p.owned,
+            Owned {
+                position: true,
+                ..Owned::default()
+            }
+        );
+        assert!(p.holds_any());
+        let e = effective(&p, &with);
+        assert_eq!(e.position.pan, 90.0);
+        assert!(!e.position_from_look);
+        assert_eq!(e.intensity, &look.intensity);
+        // CLEAR hands everything back.
+        p.release();
+        assert!(!p.holds_any());
+        assert!(effective(&p, &with).position_from_look);
+    }
+
+    #[test]
+    fn energy_is_the_curve_at_the_playhead_times_the_fader() {
+        // No track, or a track with no curve: flat, so only the fader.
+        assert_eq!(energy_at(None, 0.0, 1.0), 1.0);
+        assert_eq!(energy_at(Some(&EnergyLane::default()), 9.0, 0.25), 0.25);
+        let mut curve = EnergyLane::default();
+        curve.insert(100.0, 0.2);
+        curve.insert(300.0, 0.8);
+        assert!((energy_at(Some(&curve), 200.0, 1.0) - 0.5).abs() < 1e-6);
+        assert!((energy_at(Some(&curve), 200.0, 0.5) - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
     fn programmer_beats_track_beats_off() {
         let mut cues = CueSet::empty();
         cues.insert(Lane::Lighting, 0.0, 100.0, 0.7);
 
         let mut prog = Programmer::default();
         // Track cue wins while the programmer is idle.
-        let out = resolve(&prog, Some(&cues), 50.0);
+        let out = resolve(&prog, Some(&cues), None, 1.0, 50.0).lanes;
         assert_eq!(out[0].source, LaneSource::Track);
         assert!((out[0].level - 0.7).abs() < 1e-6);
         // Off past the cue.
         assert_eq!(
-            resolve(&prog, Some(&cues), 200.0)[0].source,
+            resolve(&prog, Some(&cues), None, 1.0, 200.0).lanes[0].source,
             LaneSource::Off
         );
         // Latching takes the lane over at the programmer's intensity.
         prog[0].latched = true;
         prog[0].intensity = 0.4;
-        let out = resolve(&prog, Some(&cues), 50.0);
+        let out = resolve(&prog, Some(&cues), None, 1.0, 50.0).lanes;
         assert_eq!(out[0].source, LaneSource::Programmer);
         assert!((out[0].level - 0.4).abs() < 1e-6);
         // Other lanes are untouched.
@@ -497,7 +736,7 @@ mod tests {
         // CLEAR hands back to the track.
         clear(&mut prog);
         assert_eq!(
-            resolve(&prog, Some(&cues), 50.0)[0].source,
+            resolve(&prog, Some(&cues), None, 1.0, 50.0).lanes[0].source,
             LaneSource::Track
         );
     }
@@ -551,11 +790,20 @@ mod tests {
     fn flash_is_momentary_and_survives_clear() {
         let mut prog = Programmer::default();
         prog[2].flash_held = true;
-        assert_eq!(resolve(&prog, None, 0.0)[2].source, LaneSource::Programmer);
+        assert_eq!(
+            resolve(&prog, None, None, 1.0, 0.0).lanes[2].source,
+            LaneSource::Programmer
+        );
         // CLEAR only drops latches; a held flash stays until key-up.
         clear(&mut prog);
-        assert_eq!(resolve(&prog, None, 0.0)[2].source, LaneSource::Programmer);
+        assert_eq!(
+            resolve(&prog, None, None, 1.0, 0.0).lanes[2].source,
+            LaneSource::Programmer
+        );
         prog[2].flash_held = false;
-        assert_eq!(resolve(&prog, None, 0.0)[2].source, LaneSource::Off);
+        assert_eq!(
+            resolve(&prog, None, None, 1.0, 0.0).lanes[2].source,
+            LaneSource::Off
+        );
     }
 }

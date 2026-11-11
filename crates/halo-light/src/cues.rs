@@ -7,6 +7,8 @@
 
 use std::collections::HashSet;
 
+use crate::energy::EnergyPoint;
+
 /// The three trigger lanes drawn under the zoomed waveform, top to bottom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Lane {
@@ -200,6 +202,7 @@ impl CueSet {
                     })
                     .collect()
             }),
+            energy: Vec::new(),
         }
     }
 
@@ -224,6 +227,9 @@ impl CueSet {
 pub struct CueFile {
     pub version: u32,
     pub lanes: [Vec<CueJson>; LANE_COUNT],
+    /// The track's energy curve; files from before it load flat.
+    #[serde(default)]
+    pub energy: Vec<EnergyPoint>,
 }
 
 /// One persisted cue, in seconds.
@@ -318,6 +324,13 @@ mod tests {
     }
 
     #[test]
+    fn a_file_from_before_energy_loads_flat() {
+        let json = r#"{"version":1,"lanes":[[],[],[]]}"#;
+        let parsed: CueFile = serde_json::from_str(json).unwrap();
+        assert!(parsed.energy.is_empty());
+    }
+
+    #[test]
     fn from_file_drops_overlaps_defensively() {
         let file = CueFile {
             version: 1,
@@ -337,6 +350,7 @@ mod tests {
                 Vec::new(),
                 Vec::new(),
             ],
+            energy: Vec::new(),
         };
         let s = CueSet::from_file(&file, 100);
         let got = spans(&s, Lane::Lighting);

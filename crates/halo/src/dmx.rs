@@ -17,10 +17,12 @@ use std::time::{Duration, Instant};
 
 use halo_light::artnet::NetworkConfig;
 use halo_light::cues::{CueSet, LANE_COUNT};
+use halo_light::energy::EnergyLane;
 use halo_light::fixture::Rig;
 use halo_light::fixture_library::FixtureLibrary;
+use halo_light::looks::{LookLane, look_at};
 use halo_light::output::render;
-use halo_light::programmer::{LaneOverride, ProgrammerParams, resolve};
+use halo_light::programmer::{LaneOverride, ProgrammerParams, energy_at, resolve};
 
 use crate::state::{DeckShared, MixerShared};
 
@@ -55,6 +57,10 @@ pub struct DmxSnapshot {
 #[derive(Clone)]
 pub struct DmxDeck {
     pub cues: Option<CueSet>,
+    /// The track's NRG curve.
+    pub energy: Option<EnergyLane>,
+    /// The track's LOOK lane.
+    pub looks: Option<LookLane>,
     pub deck: Arc<DeckShared>,
     pub beat_ref: BeatRef,
 }
@@ -120,7 +126,9 @@ pub fn spawn_dmx_engine() -> DmxShared {
                     || deck.deck.playhead_frames() as f64,
                     |clock| clock.position,
                 );
-            let lanes = resolve(&snap.overrides, deck.cues.as_ref(), playhead);
+            let energy = energy_at(deck.energy.as_ref(), playhead, snap.params.energy);
+            let look = look_at(deck.looks.as_ref(), playhead);
+            let resolved = resolve(&snap.overrides, deck.cues.as_ref(), look, energy, playhead);
             let beat_t = if deck.beat_ref.frames_per_beat > 0.0 {
                 deck.beat_ref.beat_t
                     + (playhead - deck.beat_ref.playhead) / deck.beat_ref.frames_per_beat
@@ -131,7 +139,7 @@ pub fn spawn_dmx_engine() -> DmxShared {
             let frames = render(
                 &snap.rig,
                 &library,
-                &lanes,
+                &resolved,
                 &snap.params,
                 &snap.selection,
                 beat_t,
@@ -187,6 +195,8 @@ mod tests {
             selection: HashSet::new(),
             decks: std::array::from_fn(|_| DmxDeck {
                 cues: None,
+                energy: None,
+                looks: None,
                 deck: Arc::new(DeckShared::new()),
                 beat_ref: BeatRef {
                     beat_t: 0.0,

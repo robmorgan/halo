@@ -7,23 +7,25 @@
 //! universe always ships all 512 channels, so "off" is sent, not held.
 //!
 //! Value semantics:
-//! - A fixture's intensity is what the programmer holds for it, or else its lane's resolved level.
-//!   Fixtures without a dimmer channel fold intensity into their color channels.
-//! - Its colour is what the programmer holds for it, or else open white. A colour wheel turns to
-//!   the slot nearest that colour.
-//! - Position, gobo, and strobe apply rig-wide; *effects* run across the fixture selection (or the
-//!   whole rig when nothing is selected), with Step/Wave distribution by ordinal in that cohort.
+//! - A fixture's intensity is what the programmer holds for it, or else its lane's resolved level
+//!   (which the deck's active look lights). Fixtures without a dimmer channel fold intensity into
+//!   their color channels.
+//! - Its colour is what the programmer holds for it, or else the look's, or else open white. A
+//!   colour wheel turns to the slot nearest that colour.
+//! - Position, gobo, strobe and the pixel effect apply rig-wide, each from the look unless the
+//!   programmer has taken that section. The programmer's *effects* run across the fixture selection
+//!   (or the whole rig when nothing is selected), a look's across the whole rig, with Step/Wave
+//!   distribution by ordinal in that cohort.
 //! - HIGHLIGHT snaps the selection to open white. PREVIEW (blind) renders as if the programmer
 //!   params were untouched defaults.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::cues::LANE_COUNT;
 use crate::fixture::{FixtureKind, Rig};
 use crate::fixture_library::{ChannelType, FixtureLibrary, FixtureMode, FixtureProfile};
 use crate::programmer::{
-    COLOR_PRESETS, Distribution, EffectConfig, LaneOutput, PanTiltTarget, ProgrammerParams,
-    effect_value, resolve_fixture,
+    COLOR_PRESETS, Distribution, EffectConfig, Effective, PanTiltTarget, PixelFxParams,
+    ProgrammerParams, Resolved, effect_value, effective, resolve_fixture,
 };
 
 pub const UNIVERSE_CHANNELS: usize = 512;
@@ -62,7 +64,7 @@ fn effect_at(cfg: &EffectConfig, beat_t: f64, ord: Option<usize>) -> Option<f32>
 pub fn render(
     rig: &Rig,
     library: &FixtureLibrary,
-    lanes: &[LaneOutput; LANE_COUNT],
+    resolved: &Resolved,
     params: &ProgrammerParams,
     selection: &HashSet<u32>,
     beat_t: f64,
@@ -77,16 +79,19 @@ pub fn render(
         params
     };
 
-    // Effect cohort: the selection, or everything when nothing is
-    // selected. Ordinals follow rig order.
+    // Effect cohorts: the programmer's effects run across the selection,
+    // or everything when nothing is selected; a look's across the whole
+    // rig, so selecting fixtures to edit them doesn't shrink the show.
+    // Ordinals follow rig order.
     let cohort: Vec<u32> = rig
         .iter()
         .filter(|f| selection.is_empty() || selection.contains(&f.id))
         .map(|f| f.id)
         .collect();
+    let sections = effective(p, resolved);
 
     let mut universes: HashMap<u8, UniverseFrame> = HashMap::new();
-    for f in rig.iter() {
+    for (i, f) in rig.iter().enumerate() {
         let Some((profile, mode)) = library.patched(f) else {
             continue;
         };
@@ -106,15 +111,33 @@ pub fn render(
         }
 
         // PREVIEW's defaults hold nothing.
-        let (level, rgbw) = resolve_fixture(p, lanes, f);
-        let ord = cohort.iter().position(|&id| id == f.id);
+        let (level, rgbw) = resolve_fixture(p, resolved, f);
+        let ords = Ords {
+            selection: cohort.iter().position(|&id| id == f.id),
+            rig: Some(i),
+        };
         if f.kind == FixtureKind::PixelBar {
-            render_pixel_bar(mode, slot, p, level, beat_t);
+            render_pixel_bar(mode, slot, sections.pixel, level, beat_t);
         } else {
-            render_conventional(profile, mode, slot, p, Look { level, rgbw }, beat_t, ord);
+            let state = State { level, rgbw };
+            render_conventional(profile, mode, slot, &sections, state, beat_t, ords);
         }
     }
     universes
+}
+
+/// A fixture's ordinal in each effect cohort; `None` when it's outside it.
+#[derive(Clone, Copy)]
+struct Ords {
+    selection: Option<usize>,
+    rig: Option<usize>,
+}
+
+impl Ords {
+    /// The ordinal for an effect from the look or from the programmer.
+    fn of(self, from_look: bool) -> Option<usize> {
+        if from_look { self.rig } else { self.selection }
+    }
 }
 
 /// Open white at full for fixture identification.
@@ -135,7 +158,7 @@ fn render_highlight(mode: &FixtureMode, slot: &mut [u8]) {
 }
 
 /// One fixture's intensity (0..=1) and colour (RGBW percent).
-struct Look {
+struct State {
     level: f32,
     rgbw: [f32; 4],
 }
@@ -144,25 +167,25 @@ fn render_conventional(
     profile: &FixtureProfile,
     mode: &FixtureMode,
     slot: &mut [u8],
-    p: &ProgrammerParams,
-    look: Look,
+    p: &Effective<'_>,
+    state: State,
     beat_t: f64,
-    ord: Option<usize>,
+    ords: Ords,
 ) {
-    let level = look.level;
+    let level = state.level;
     let mut dim = level;
-    if let Some(fx) = effect_at(&p.intensity.effect, beat_t, ord) {
+    if let Some(fx) = effect_at(&p.intensity.effect, beat_t, ords.of(p.intensity_from_look)) {
         dim *= fx;
     }
 
-    let mut rgbw = look.rgbw.map(|v| v / 100.0);
-    if let Some(fx) = effect_at(&p.color.effect, beat_t, ord) {
+    let mut rgbw = state.rgbw.map(|v| v / 100.0);
+    if let Some(fx) = effect_at(&p.color.effect, beat_t, ords.of(p.color_from_look)) {
         for c in rgbw.iter_mut() {
             *c *= fx;
         }
     }
 
-    let pos_fx = effect_at(&p.position.effect, beat_t, ord);
+    let pos_fx = effect_at(&p.position.effect, beat_t, ords.of(p.position_from_look));
     // 16-bit: the coarse channel takes the high byte, a fine channel
     // the low one.
     let axis = |deg: f32, driven: bool| -> u16 {
@@ -206,6 +229,7 @@ fn render_conventional(
                 "Smoke" => u8_of(dim),
                 // Igniter convention: Safety arms with any level, Fire
                 // needs the lane driven hard (a deliberate cue at ≥ 0.9).
+                // The level is after energy, so low energy can't fire.
                 "Safety" if level > 0.0 => 255,
                 "Fire" if level >= 0.9 => 255,
                 _ => 0,
@@ -267,7 +291,7 @@ fn hue_rgb(h: f32) -> [f32; 3] {
 fn render_pixel_bar(
     mode: &FixtureMode,
     slot: &mut [u8],
-    p: &ProgrammerParams,
+    pixel: &PixelFxParams,
     level: f32,
     beat_t: f64,
 ) {
@@ -275,14 +299,14 @@ fn render_pixel_bar(
     if n == 0 || level <= 0.0 {
         return; // slot is already zeroed
     }
-    let base_rgb = preset_rgb(COLOR_PRESETS[p.pixel.color.min(COLOR_PRESETS.len() - 1)].1);
+    let base_rgb = preset_rgb(COLOR_PRESETS[pixel.color.min(COLOR_PRESETS.len() - 1)].1);
     let frac = |x: f64| x.rem_euclid(1.0);
 
     for i in 0..n {
         let fi = i as f32;
         let nf = n as f32;
         // (intensity, optional color override) per pixel.
-        let (v, over): (f32, Option<[f32; 3]>) = match p.pixel.effect {
+        let (v, over): (f32, Option<[f32; 3]>) = match pixel.effect {
             // Chase L-R: a window sweeping once per beat.
             0 => {
                 let pos = frac(beat_t) as f32 * nf;
@@ -338,15 +362,19 @@ mod tests {
     use crate::fixture::default_rig;
     use crate::programmer::{LaneOutput, LaneSource, Waveform};
 
-    fn lanes(lighting: f32, pixels: f32, fx: f32) -> [LaneOutput; LANE_COUNT] {
-        [lighting, pixels, fx].map(|level| LaneOutput {
-            source: if level > 0.0 {
-                LaneSource::Track
-            } else {
-                LaneSource::Off
-            },
-            level,
-        })
+    fn lanes(lighting: f32, pixels: f32, fx: f32) -> Resolved {
+        Resolved {
+            lanes: [lighting, pixels, fx].map(|level| LaneOutput {
+                source: if level > 0.0 {
+                    LaneSource::Track
+                } else {
+                    LaneSource::Off
+                },
+                level,
+            }),
+            energy: 1.0,
+            look: None,
+        }
     }
 
     fn setup() -> (Rig, FixtureLibrary) {
@@ -793,6 +821,116 @@ mod tests {
         assert_eq!(p.held[&pb1].dimmer, Some(40.0));
         assert!(!p.held.contains_key(&pb2));
         assert_eq!(p.intensity.dimmer, 40.0);
+    }
+
+    #[test]
+    fn energy_dims_everything_but_highlight() {
+        use crate::programmer::{Programmer, resolve};
+        let (rig, library) = setup();
+        let (s1, p1) = (id_of(&rig, "S1"), id_of(&rig, "P1"));
+        let mut prog = Programmer::default();
+        prog[2].latched = true;
+        let half = resolve(&prog, None, None, 0.5, 0.0);
+        let mut p = ProgrammerParams::default();
+        p.hold_dimmer(&[s1], 80.0);
+        p.bring_up(&crate::programmer::pixel_targets(&rig, &HashSet::new()));
+        // Breathe, at its peak on beat 1.
+        p.pixel.effect = 5;
+        let frames = render(&rig, &library, &half, &p, &HashSet::new(), 1.0);
+        let at = |label, ch: &ChannelType| value_of(&rig, &library, &frames, label, ch);
+        assert_eq!(at("S1", &ChannelType::Dimmer), u8_of(0.4));
+        assert_eq!(at("PB1", &ChannelType::PixelRed(0)), u8_of(0.5));
+        // The FX lane at full, halved: smoke at half, and pyro can't fire.
+        let smoke = ChannelType::Other("Smoke".to_string());
+        assert_eq!(at("SM1", &smoke), u8_of(0.5));
+        assert_eq!(at("PY1", &ChannelType::Other("Fire".to_string())), 0);
+        // HIGHLIGHT still goes out at full.
+        p.highlight = true;
+        let frames = render(&rig, &library, &half, &p, &HashSet::from([p1]), 1.0);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "P1", &ChannelType::Dimmer),
+            255
+        );
+    }
+
+    /// The rig with only `look` running: no programmer, no cues.
+    fn with_look(id: usize) -> Resolved {
+        use crate::looks::{LookId, builtin};
+        use crate::programmer::{Programmer, resolve};
+        resolve(
+            &Programmer::default(),
+            None,
+            Some(&builtin(LookId(id)).params),
+            1.0,
+            0.0,
+        )
+    }
+
+    #[test]
+    fn a_look_runs_the_rig_without_the_programmer() {
+        let (rig, library) = setup();
+        let red_drop = with_look(2);
+        let p = ProgrammerParams::default();
+        let at = |beat: f64, selection: &HashSet<u32>, label, ch: &ChannelType| {
+            let frames = render(&rig, &library, &red_drop, &p, selection, beat);
+            value_of(&rig, &library, &frames, label, ch)
+        };
+        let none = HashSet::new();
+        // Red on a PAR and on the spots' wheel, and the look's gobo.
+        assert_eq!(at(0.0, &none, "P1", &ChannelType::Red), 255);
+        assert_eq!(at(0.0, &none, "P1", &ChannelType::Green), 0);
+        assert_eq!(at(0.0, &none, "S1", &ChannelType::Color), 15);
+        assert_eq!(at(0.0, &none, "S1", &ChannelType::Gobo), 28);
+        // The heads move between beats…
+        let pan = |beat, selection| at(beat, selection, "S1", &ChannelType::Pan);
+        assert_ne!(pan(0.0, &none), pan(1.0, &none));
+        // …even when the selection leaves them out.
+        let p1 = HashSet::from([id_of(&rig, "P1")]);
+        assert_ne!(pan(0.0, &p1), pan(1.0, &p1));
+        // The pixel bars run the look's chase in its red.
+        assert!(at(0.0, &none, "PB1", &ChannelType::PixelRed(0)) > 0);
+        assert_eq!(at(0.0, &none, "PB1", &ChannelType::PixelGreen(0)), 0);
+        // Smoke and pyro stay off.
+        assert_eq!(
+            at(0.0, &none, "SM1", &ChannelType::Other("Smoke".into())),
+            0
+        );
+        assert_eq!(
+            at(0.0, &none, "PY1", &ChannelType::Other("Safety".into())),
+            0
+        );
+    }
+
+    #[test]
+    fn the_programmer_beats_the_look_where_it_touches() {
+        use crate::programmer::Sections;
+        let (rig, library) = setup();
+        let deep_blue = with_look(1);
+        let p1 = id_of(&rig, "P1");
+        let mut p = ProgrammerParams::default();
+        p.hold_rgbw(&[p1], [100.0, 0.0, 0.0, 0.0]);
+        let before = Sections::of(&p);
+        p.beam.gobo = 7;
+        p.owned.mark(&before, &Sections::of(&p));
+        let frames = render(&rig, &library, &deep_blue, &p, &HashSet::new(), 0.0);
+        let at = |label, ch: &ChannelType| value_of(&rig, &library, &frames, label, ch);
+        // P1 is held red; P2 keeps the look's blue.
+        assert_eq!(at("P1", &ChannelType::Red), 255);
+        assert_eq!(at("P1", &ChannelType::Blue), 0);
+        assert_eq!(at("P2", &ChannelType::Blue), 255);
+        // The gobo is the programmer's.
+        assert_eq!(at("S1", &ChannelType::Gobo), 60);
+        // PREVIEW (blind) shows the look alone.
+        p.preview = true;
+        let frames = render(&rig, &library, &deep_blue, &p, &HashSet::new(), 0.0);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "P1", &ChannelType::Blue),
+            255
+        );
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Gobo),
+            0
+        );
     }
 
     #[test]

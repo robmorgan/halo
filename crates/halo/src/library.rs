@@ -799,6 +799,25 @@ mod tests {
     }
 
     #[test]
+    fn a_tracks_energy_curve_is_saved_with_its_cues() {
+        let lib = mem_library();
+        let id = insert(&lib, "/x/a.mp3", "One", "AA", None);
+        let mut set = halo_light::cues::CueSet::empty();
+        set.insert(halo_light::cues::Lane::Lighting, 0.0, 44_100.0, 0.9);
+        let mut energy = halo_light::energy::EnergyLane::default();
+        energy.insert(44_100.0, 0.3);
+        energy.insert(88_200.0, 0.9);
+        let mut file = set.to_file(44_100);
+        file.energy = energy.to_points(44_100);
+        lib.store_cues(id, &file).unwrap();
+
+        let back = lib.cues(id).unwrap().unwrap();
+        assert_eq!(back.lanes[0].len(), 1);
+        let curve = halo_light::energy::EnergyLane::from_points(&back.energy, 48_000);
+        assert!((curve.value_at(72_000.0) - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
     fn settings_round_trip_and_upsert() {
         let lib = mem_library();
         assert!(lib.setting("rig_patch").unwrap().is_none());

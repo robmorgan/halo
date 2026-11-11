@@ -1,7 +1,7 @@
 //! The programmer surface in the footer: fixture grid + lane overrides on
 //! the left, the parameter views (Intensity / Color / Position / Beam /
 //! Pixel FX) with their beat-synced effect panels in the middle, and the
-//! CLEAR / STORE / PREVIEW / HIGHLIGHT action column on the right.
+//! CLEAR / STORE / PREVIEW / HIGHLIGHT / ENERGY action column on the right.
 //!
 //! Everything here edits real state, but values and effects are
 //! visual-only until the fixture engine consumes them.
@@ -57,6 +57,8 @@ fn caption(ui: &mut egui::Ui, text: &str) {
 /// Returns true when STORE was pressed.
 pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
     let mut store = false;
+    // A section you change here is taken from the deck's look until CLEAR.
+    let before = programmer::Sections::of(cx.params);
     ui.horizontal_top(|ui| {
         // Left: group selects, rig grid, lane override row — the groups
         // row and the view tabs sit on the same top line.
@@ -140,6 +142,8 @@ pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
         // Right: stacked actions.
         store = action_column(ui, cx);
     });
+    let after = programmer::Sections::of(cx.params);
+    cx.params.owned.mark(&before, &after);
     store
 }
 
@@ -428,10 +432,16 @@ fn beam_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::BeamParams) {
         egui::Grid::new("gobo_grid")
             .spacing([theme::SPACE_8, theme::SPACE_8])
             .show(ui, |ui| {
-                for g in 1..=8u8 {
+                // OPEN, then G1–G8, three to a row.
+                for g in 0..=8u8 {
+                    let label = if g == 0 {
+                        "OPEN".to_string()
+                    } else {
+                        format!("G{g}")
+                    };
                     if ui
                         .add(
-                            Key::new(format!("G{g}"))
+                            Key::new(label)
                                 .size([theme::SIZE_PAD, theme::SIZE_KEY])
                                 .selected(p.gobo == g),
                         )
@@ -439,7 +449,7 @@ fn beam_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::BeamParams) {
                     {
                         p.gobo = g;
                     }
-                    if g == 4 {
+                    if g % 3 == 2 {
                         ui.end_row();
                     }
                 }
@@ -654,7 +664,8 @@ fn effect_preview(ui: &mut egui::Ui, cfg: &EffectConfig, accent: egui::Color32, 
     painter.circle_filled(dot, 3.0, theme::TEXT_STRONG);
 }
 
-/// CLEAR / STORE / PREVIEW / HIGHLIGHT, stacked on the panel's right edge.
+/// CLEAR / STORE / PREVIEW / HIGHLIGHT and the ENERGY fader, stacked on the
+/// panel's right edge.
 fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
     let mut store = false;
     ui.vertical(|ui| {
@@ -669,7 +680,7 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                     .width(ACTION_COL_W)
                     .lit(armed.then_some(Lit::Accent)),
             )
-            .status_help("Release all latched lanes and held fixtures (Esc)")
+            .status_help("Release latched lanes, held fixtures and edited parameters (Esc)")
             .clicked()
         {
             programmer::clear(cx.overrides);
@@ -712,6 +723,26 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                 *value = !*value;
             }
         }
+        ui.add_space(theme::SPACE_8);
+        // The grand master on the deck's NRG curve: everything but
+        // HIGHLIGHT follows it.
+        ui.horizontal(|ui| {
+            caption(ui, "ENERGY");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    theme::NOTE_TEXT
+                        .rich(format!("{:.0}%", cx.params.energy * 100.0))
+                        .color(theme::TEXT_MUTED),
+                );
+            });
+        });
+        ui.add(
+            Fader::new(&mut cx.params.energy, 0.0..=1.0, theme::ENERGY)
+                .vertical(false)
+                .size([ACTION_COL_W, theme::SIZE_KEY])
+                .default_value(1.0),
+        )
+        .status_help("Scale the whole rig with the track's NRG curve");
         ui.label(
             theme::NOTE_TEXT
                 .rich(format!("out: deck {}", cx.deck_name))

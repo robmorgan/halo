@@ -418,14 +418,20 @@ governs accents firing over the active look.
 Build order is smallest-first; every step keeps `resolve()` as the
 single merge point and `render()` pure:
 
-1. **Energy** — the authored curve, plus a live master fader that
-   scales/offsets it; both multiply resolved output inside `resolve()`.
-   The priority stack becomes Programmer (replace) > energy (scale) >
-   track cues > off. Authored shape is preserved — builds and chases
-   just sit lower. Optionally damp strobe and effect rate when energy
-   drops below a threshold. The fader alone is small and immediately
-   useful live; the curve lands with the lane re-base.
-2. **Look lane** — a `Look` is a stored snapshot of programmer params
+1. **Energy** — *landed:* each track's NRG curve (saved with its cues,
+   flat until drawn) times the programmer's live ENERGY fader multiplies
+   resolved output inside `resolve()`, like a grand master: lanes
+   whatever their source and what the programmer holds per fixture;
+   only HIGHLIGHT ignores it. Authored shape is preserved — builds and
+   chases just sit lower. Still open: damping strobe and effect rate
+   when energy drops below a threshold.
+2. **Look lane** — *first half landed:* each LOOK event switches the rig
+   to one of eight built-in looks (`halo_light::looks`: colour, dimmer,
+   strobe, position, gobo, pixel effect and their effects, beat-locked),
+   lighting the Lighting and Pixels lanes under the programmer and track
+   cues. The programmer takes over only the sections you touch, until
+   CLEAR. Still open: saving the lane per track, and STORE as a look.
+   The full plan: a `Look` is a stored snapshot of programmer params
    (STORE-from-live already captures one), persisted by id in the
    library. `resolve()` yields (active look, energy, accents) instead
    of three levels; `render()` renders the cue's look instead of the
