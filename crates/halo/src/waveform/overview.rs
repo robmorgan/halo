@@ -59,7 +59,7 @@ impl OverviewTexture {
 fn render_level(level: &PeakLevel) -> egui::ColorImage {
     let n = level.num_buckets().max(1);
     let width = n * TEX_SUPERSAMPLE;
-    let mut image = egui::ColorImage::new([width, TEX_HEIGHT], egui::Color32::TRANSPARENT);
+    let mut image = egui::ColorImage::filled([width, TEX_HEIGHT], egui::Color32::TRANSPARENT);
     let band_colors = [palette::BAND_LOW, palette::BAND_MID, palette::BAND_HIGH];
     let inv_ss = 1.0 / TEX_SUPERSAMPLE as f32;
     for x in 0..width {

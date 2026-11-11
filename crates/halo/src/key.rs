@@ -15,8 +15,7 @@
 //! handling exactly as with `egui::Button`.
 
 use eframe::egui::{
-    self, Color32, CornerRadius, Rect, Response, Sense, Stroke, Ui, Vec2, Widget, WidgetInfo,
-    WidgetType,
+    self, Color32, CornerRadius, Rect, Response, Role, Sense, Stroke, Ui, Vec2, Widget, WidgetInfo,
 };
 
 use crate::theme::{self, Face, Skin, Top, TypeStyle};
@@ -247,7 +246,7 @@ impl Widget for Key {
 
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         let enabled = response.enabled();
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, &self.label));
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, &self.label));
         if !ui.is_rect_visible(rect) {
             return response;
         }
@@ -430,7 +429,7 @@ const LATCH_REST_TINT: Color32 = Color32::from_gray(232);
 pub fn latch(ui: &mut Ui, on: &mut bool, label: &str, size: Vec2) -> Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let enabled = response.enabled();
-    response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, *on, label));
+    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, enabled, *on, label));
     if response.clicked() {
         *on = !*on;
     }

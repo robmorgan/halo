@@ -205,7 +205,7 @@ struct HelpSlots {
 }
 
 fn help_id() -> Id {
-    Id::new("halo-status-help")
+    Id::unique("halo-status-help")
 }
 
 /// Help for a control, shown in the footer while it's under the pointer
@@ -255,7 +255,8 @@ impl Footer {
     /// The footer panel: places the help zone and draws the task well,
     /// and the tray above it while it's open. Call where the status line
     /// was, before the panels that sit above it.
-    pub fn show(&mut self, ctx: &egui::Context) {
+    pub fn show(&mut self, ui: &mut Ui) {
+        let ctx = &ui.ctx().clone();
         let now = Instant::now();
         self.tasks.expire(now);
         if let Some(wait) = self.tasks.next_expiry(now) {
@@ -264,11 +265,11 @@ impl Footer {
         if self.tasks.more() == 0 {
             self.tray_open = false;
         }
-        let panel = egui::TopBottomPanel::bottom("footer")
-            .exact_height(FOOTER_H)
+        let panel = egui::Panel::bottom("footer")
+            .exact_size(FOOTER_H)
             .show_separator_line(false)
             .frame(egui::Frame::NONE)
-            .show(ctx, |ui| self.body(ui));
+            .show(ui, |ui| self.body(ui));
         if self.tray_open {
             self.tray(ctx, panel.response.rect);
         }
@@ -334,12 +335,12 @@ impl Footer {
 
     /// Every task in a well above the footer, right-aligned with it.
     fn tray(&mut self, ctx: &egui::Context, footer: Rect) {
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let width = TRAY_W.min(screen.width() - 2.0 * TRAY_INSET).max(0.0);
         let tasks = self.tasks.sorted();
         let rows = tasks.len() as f32;
         let well_h = rows * TRAY_ROW_H + (rows - 1.0).max(0.0);
-        egui::Area::new(Id::new("footer-tray"))
+        egui::Area::new(Id::unique("footer-tray"))
             .order(egui::Order::Foreground)
             .pivot(Align2::RIGHT_BOTTOM)
             .fixed_pos(pos2(footer.right() - TRAY_INSET, footer.top() - TRAY_GAP))

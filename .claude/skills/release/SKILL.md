@@ -72,7 +72,7 @@ cargo test --workspace
 
 (`cargo build` is covered by the test compile.) Clippy is not yet enforced in CI
 (commented out), but the local hook expects a clean tree — fix warnings rather
-than skipping. Note CI uses stable **1.90.0**; run checks on that toolchain if
+than skipping. Note CI uses stable **1.95.0**; run checks on that toolchain if
 the default rustup toolchain differs.
 
 ## Phase 5 — Commit, tag, push

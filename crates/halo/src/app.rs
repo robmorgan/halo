@@ -886,7 +886,7 @@ impl HaloApp {
             i.raw
                 .dropped_files
                 .iter()
-                .filter_map(|f| f.path.clone())
+                .map(|f| f.path().to_path_buf())
                 .collect()
         });
         self.import_paths(paths, self.browser.selected);
@@ -1451,7 +1451,7 @@ impl HaloApp {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Comma)) {
             self.open_options();
         }
-        if ctx.wants_keyboard_input() || self.options.is_some() {
+        if ctx.egui_wants_keyboard_input() || self.options.is_some() {
             // Don't leave a FLASH stuck on when focus moves to a text field
             // or Options opens.
             self.flash_key = [false; LANE_COUNT];
@@ -1688,7 +1688,7 @@ impl HaloApp {
                                 start_address: addr.min(512),
                             });
                             changed = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 });
@@ -2216,19 +2216,20 @@ impl HaloApp {
     /// The bottom slide-up footer, home of both the library browser and
     /// the programmer, toggled by tabs so the programmer lives in one
     /// consistent place across views. Returns true when STORE was pressed.
-    fn footer_panel(&mut self, ctx: &egui::Context, lighting: &[LaneOutput; LANE_COUNT]) -> bool {
+    fn footer_panel(&mut self, ui: &mut egui::Ui, lighting: &[LaneOutput; LANE_COUNT]) -> bool {
+        let ctx = &ui.ctx().clone();
         let mut actions: Vec<BrowserAction> = Vec::new();
         let mut store = false;
-        egui::TopBottomPanel::bottom("browser")
+        egui::Panel::bottom("browser")
             .resizable(true)
-            .default_height(300.0)
-            .min_height(140.0)
+            .default_size(300.0)
+            .min_size(140.0)
             .frame(theme::ground_frame(0.0).inner_margin(egui::Margin {
                 top: 0,
                 bottom: 0,
                 ..egui::Margin::same(SECTION_GAP as i8)
             }))
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 // The panel card fills the footer's (resizable) height
                 // exactly, and its content lays out in a child that can't
                 // grow the panel: a resizable panel stores the size its
@@ -2363,7 +2364,7 @@ impl HaloApp {
                         .selected
                         .and_then(|id| self.browser.playlists.iter().find(|p| p.id == id))
                         .map_or("the library".to_string(), |p| p.name.clone());
-                    egui::Area::new(egui::Id::new("file_drop_hint"))
+                    egui::Area::new(egui::Id::unique("file_drop_hint"))
                         .order(egui::Order::Tooltip)
                         .pivot(egui::Align2::CENTER_CENTER)
                         .fixed_pos(pane.center())
@@ -2717,23 +2718,23 @@ impl HaloApp {
                         if ui.button("Looks").clicked() {
                             audition.show.looks.clear();
                             mutated = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                         if ui.button("Energy").clicked() {
                             audition.show.energy.clear();
                             mutated = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                         if ui.button("Accents").clicked() {
                             audition.show.accents = CueSet::empty();
                             mutated = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                         if ui.button("All").clicked() {
                             audition.show = ShowPreview::default();
                             selection.clear();
                             mutated = true;
-                            ui.close_menu();
+                            ui.close();
                         }
                     });
                     if ui
@@ -3066,7 +3067,7 @@ impl eframe::App for HaloApp {
     /// which silences every shortcut. With a text field focused, or in
     /// Options, Tab is left to egui to move focus.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-        if self.view == View::Patch || self.options.is_some() || ctx.wants_keyboard_input() {
+        if self.view == View::Patch || self.options.is_some() || ctx.egui_wants_keyboard_input() {
             return;
         }
         raw_input.events.retain(|event| match event {
@@ -3089,7 +3090,8 @@ impl eframe::App for HaloApp {
         });
     }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = &ui.ctx().clone();
         Footer::begin_frame(ctx);
         self.poll_decodes(ctx);
         self.poll_worker_events();
@@ -3133,12 +3135,12 @@ impl eframe::App for HaloApp {
         self.publish_dmx(ctx);
 
         let mixer_cx = self.mixer_center_x;
-        egui::TopBottomPanel::top("toolbar")
+        egui::Panel::top("toolbar")
             .frame(theme::ground_frame(0.0).inner_margin(egui::Margin {
                 bottom: 0,
                 ..egui::Margin::same(SECTION_GAP as i8)
             }))
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 let margin = egui::Margin::symmetric(theme::SPACE_16 as i8, theme::SPACE_8 as i8);
                 let toolbar_row = theme::panel(ui, margin, |ui| {
                     ui.horizontal(|ui| {
@@ -3286,17 +3288,17 @@ impl eframe::App for HaloApp {
             storage.flush();
         }
 
-        self.footer.show(ctx);
+        self.footer.show(ui);
 
         // The patch sheet gets the whole window: no slide-up footer there.
-        if self.view != View::Patch && self.footer_panel(ctx, &lighting) {
+        if self.view != View::Patch && self.footer_panel(ui, &lighting) {
             self.store_programmer();
         }
 
         if self.view == View::Prepare {
             egui::CentralPanel::default()
                 .frame(theme::ground_frame(SECTION_GAP))
-                .show(ctx, |ui| {
+                .show(ui, |ui| {
                     theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
                         ui.set_width(ui.available_width());
                         self.prepare_panel(ui);
@@ -3305,7 +3307,7 @@ impl eframe::App for HaloApp {
         } else if self.view == View::Patch {
             egui::CentralPanel::default()
                 .frame(theme::ground_frame(SECTION_GAP))
-                .show(ctx, |ui| {
+                .show(ui, |ui| {
                     let fill = ui.available_size() - egui::Vec2::splat(2.0 * PERFORM_PANEL_PAD);
                     theme::panel(ui, PERFORM_PANEL_PAD, |ui| {
                         ui.set_min_size(fill);
@@ -3315,7 +3317,7 @@ impl eframe::App for HaloApp {
         } else {
             egui::CentralPanel::default()
                 .frame(theme::ground_frame(SECTION_GAP))
-                .show(ctx, |ui| {
+                .show(ui, |ui| {
                     // Keep the `space-2` ground above the footer even when the
                     // decks run taller than the room left for them (the 1px
                     // allowance is the cards' outside edge).
@@ -3334,7 +3336,7 @@ impl eframe::App for HaloApp {
                         .max(280.0);
                     // Panels in the row share one height: the tallest panel of the
                     // previous frame.
-                    let row_h_id = egui::Id::new("perform-row-height");
+                    let row_h_id = egui::Id::unique("perform-row-height");
                     let row_h = ui.data(|d| d.get_temp::<f32>(row_h_id)).unwrap_or(0.0);
                     let mut tallest = 0.0_f32;
 
@@ -3665,7 +3667,7 @@ fn playlist_tree(
     // actions. Registered before the rows, so the rows stay on top.
     let background = ui.interact(
         list_rect,
-        ui.id().with("playlist_background"),
+        ui.scope_id().with("playlist_background"),
         egui::Sense::click(),
     );
     egui::ScrollArea::vertical()
@@ -3677,10 +3679,10 @@ fn playlist_tree(
     background.context_menu(|ui| {
         if ui.button("New folder").clicked() {
             actions.push(BrowserAction::NewPlaylist(true));
-            ui.close_menu();
+            ui.close();
         }
         if ui.button("Import folder…").clicked() {
-            ui.close_menu();
+            ui.close();
             if let Some(dir) = rfd::FileDialog::new().pick_folder() {
                 actions.push(BrowserAction::ImportFolder(dir));
             }
@@ -3730,7 +3732,7 @@ fn playlist_list(ui: &mut egui::Ui, browser: &mut BrowserState, actions: &mut Ve
             .context_menu(|ui| {
                 if ui.button("Delete folder").clicked() {
                     actions.push(BrowserAction::DeletePlaylist(folder.id));
-                    ui.close_menu();
+                    ui.close();
                 }
             });
     }
@@ -3787,11 +3789,11 @@ fn playlist_row(
     resp.context_menu(|ui| {
         if ui.button("Rename").clicked() {
             browser.rename = Some((pl.id, pl.name.clone()));
-            ui.close_menu();
+            ui.close();
         }
         if ui.button("Delete").clicked() {
             actions.push(BrowserAction::DeletePlaylist(pl.id));
-            ui.close_menu();
+            ui.close();
         }
     });
 }
@@ -3860,7 +3862,8 @@ fn track_table(
             .add(
                 egui::TextEdit::singleline(&mut browser.search)
                     .hint_text("Search title, artist, album")
-                    .desired_width(240.0)
+                    // The whole field, margins included.
+                    .desired_width(240.0 + 2.0 * theme::SPACE_8)
                     .margin(egui::vec2(theme::SPACE_8, 4.0)),
             )
             .changed()
@@ -4136,7 +4139,7 @@ fn track_table(
                                 for (id, name) in &playlists {
                                     if ui.button(name).clicked() {
                                         actions.push(BrowserAction::AddToPlaylist(*id, track.id));
-                                        ui.close_menu();
+                                        ui.close();
                                     }
                                 }
                                 if playlists.is_empty() {
@@ -4151,19 +4154,19 @@ fn track_table(
                                 && ui.button("Remove from this playlist").clicked()
                             {
                                 actions.push(BrowserAction::RemoveFromPlaylist(pl, track.id));
-                                ui.close_menu();
+                                ui.close();
                             }
                             ui.separator();
                             if ui.button("Reanalyze").clicked() {
                                 actions.push(BrowserAction::Reanalyze(track.id));
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Remove from library…").clicked() {
                                 actions.push(BrowserAction::RemoveFromLibrary(
                                     track.id,
                                     track.title.clone(),
                                 ));
-                                ui.close_menu();
+                                ui.close();
                             }
                         });
                         if view == View::Prepare && row_resp.double_clicked() {
@@ -4189,7 +4192,7 @@ fn track_table(
     if let Some(drag) = egui::DragAndDrop::payload::<DragTrack>(ui.ctx())
         && let Some(pos) = ui.ctx().pointer_interact_pos()
     {
-        egui::Area::new(egui::Id::new("track_drag_preview"))
+        egui::Area::new(egui::Id::unique("track_drag_preview"))
             .order(egui::Order::Tooltip)
             .fixed_pos(pos + egui::vec2(14.0, 10.0))
             .interactable(false)
@@ -4266,17 +4269,15 @@ fn handle_scrub_gesture(
     let shared = deck_ui.deck.shared.clone();
     let total = shared.total();
     match gesture {
-        Some(ScrubGesture::Grab) => {
-            if has_track && total > 0 {
-                // `grab_pos` is scrub-aware at the caller, so re-grabbing a
-                // mid-glide platter continues from the voice's gliding
-                // position — including inside the lead-in — not the stale
-                // engine playhead.
-                let lead_in = scrub_lead_in(&deck_ui.marks, sample_rate);
-                deck_ui.scrub_lead_in = lead_in;
-                deck_ui.scrub_pos = Some(grab_pos);
-                shared.scrub.begin(grab_pos, lead_in);
-            }
+        Some(ScrubGesture::Grab) if has_track && total > 0 => {
+            // `grab_pos` is scrub-aware at the caller, so re-grabbing a
+            // mid-glide platter continues from the voice's gliding
+            // position — including inside the lead-in — not the stale
+            // engine playhead.
+            let lead_in = scrub_lead_in(&deck_ui.marks, sample_rate);
+            deck_ui.scrub_lead_in = lead_in;
+            deck_ui.scrub_pos = Some(grab_pos);
+            shared.scrub.begin(grab_pos, lead_in);
         }
         Some(ScrubGesture::Drag(delta)) => {
             if let Some(pos) = deck_ui.scrub_pos {
@@ -4308,7 +4309,7 @@ fn handle_scrub_gesture(
                 }
             }
         }
-        None => {}
+        Some(ScrubGesture::Grab) | None => {}
     }
 }
 
@@ -4973,7 +4974,7 @@ fn deck_header(ui: &mut egui::Ui, deck_ui: &mut DeckUi, r: &DeckReadings) {
 
     // Time: clicking it switches elapsed and remaining.
     let time_resp = ui
-        .interact(time, ui.id().with("deck-time"), egui::Sense::click())
+        .interact(time, ui.scope_id().with("deck-time"), egui::Sense::click())
         .status_help(if deck_ui.show_remaining {
             "Show elapsed time"
         } else {
@@ -5109,7 +5110,7 @@ fn zoom_row(ui: &mut egui::Ui, deck_ui: &mut DeckUi, idx: usize, display_pos: f6
     if deck_ui.marks.low_confidence() {
         ui.interact(
             counter.min_rect(),
-            egui::Id::new(("deck-counter", idx)),
+            egui::Id::unique(("deck-counter", idx)),
             egui::Sense::hover(),
         )
         .status_help("Beat grid: low confidence");
@@ -5141,7 +5142,7 @@ fn zoom_row(ui: &mut egui::Ui, deck_ui: &mut DeckUi, idx: usize, display_pos: f6
         let resp = ui
             .interact(
                 rect,
-                egui::Id::new(("deck-zoom", idx, zoom_in)),
+                egui::Id::unique(("deck-zoom", idx, zoom_in)),
                 egui::Sense::click(),
             )
             .status_help(hint);
@@ -5211,7 +5212,7 @@ fn deck_tempo_rail(
             KEYLOCK_HIT,
         );
         let keylock = ui
-            .interact(radio, ui.id().with("keylock"), egui::Sense::click())
+            .interact(radio, ui.scope_id().with("keylock"), egui::Sense::click())
             .status_help("Keylock: keep pitch constant while tempo changes");
         if keylock.clicked() {
             deck_ui.keylock = !deck_ui.keylock;
@@ -5266,15 +5267,10 @@ fn deck_tempo_rail(
             )
             .status_help("Pitch range");
         let popup = ui.make_persistent_id(("pitch-range", deck_idx));
-        if range_key.clicked() {
-            ui.memory_mut(|m| m.toggle_popup(popup));
-        }
-        egui::popup::popup_below_widget(
-            ui,
-            popup,
-            &range_key,
-            egui::PopupCloseBehavior::CloseOnClick,
-            |ui| {
+        egui::Popup::from_toggle_button_response(&range_key)
+            .id(popup)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+            .show(|ui| {
                 ui.set_min_width(TEMPO_RAIL_W);
                 for r in [8.0_f32, 16.0, 50.0] {
                     if ui
@@ -5300,8 +5296,7 @@ fn deck_tempo_rail(
                     deck_ui.wide = true;
                     deck_ui.pitch_range = 300.0;
                 }
-            },
-        );
+            });
         if deck_ui.pitch_range != prev_range || deck_ui.wide != prev_wide {
             deck_ui.pitch_percent = deck_ui
                 .pitch_percent
@@ -5798,7 +5793,7 @@ fn master_clock(
         let resp = ui
             .interact(
                 rect,
-                ui.id().with(("lighting-deck", i)),
+                ui.scope_id().with(("lighting-deck", i)),
                 egui::Sense::click(),
             )
             .status_help(if pinned == Some(i) {
@@ -5837,7 +5832,7 @@ fn master_clock(
         egui::pos2(x - 4.0, well.top()),
         egui::pos2(x + bpm_w + 4.0, well.bottom()),
     );
-    let bpm_id = ui.id().with("master-bpm");
+    let bpm_id = ui.scope_id().with("master-bpm");
     if let Some(text) = edit {
         let resp = ui.put(
             bpm_rect,
@@ -5845,9 +5840,8 @@ fn master_clock(
                 .id(bpm_id.with("edit"))
                 .font(theme::NUMERALS_MD.font_id())
                 .text_color(theme::TEXT_STRONG)
-                .frame(false)
-                .horizontal_align(egui::Align::Center)
-                .vertical_align(egui::Align::Center),
+                .frame(egui::Frame::NONE)
+                .align(egui::Align2::CENTER_CENTER),
         );
         resp.request_focus();
         let (enter, escape) = ui.input(|i| {
@@ -6145,7 +6139,7 @@ fn apply_theme(ctx: &egui::Context) {
     }
     ctx.set_visuals(visuals);
 
-    ctx.style_mut(|style| {
+    ctx.all_styles_mut(|style| {
         use egui::TextStyle;
         style.text_styles = [
             (TextStyle::Heading, theme::TRACK_TITLE.font_id()),
