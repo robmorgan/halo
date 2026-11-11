@@ -8,7 +8,8 @@
 //!
 //! Keys can also be joined into one strip with [`segmented`], and drawn
 //! in the decks' quieter skin with [`Key::quiet`]. [`latch`] is the
-//! rectangle latch beside them that fills red when on.
+//! rectangle latch beside them that fills red when on, and [`Checkbox`]
+//! a small key face that lights with a tick.
 //!
 //! The widget only draws: it allocates a click-sensing rect and returns the
 //! plain `Response`, so callers keep their own press / release / right-click
@@ -478,4 +479,248 @@ pub fn latch(ui: &mut Ui, on: &mut bool, label: &str, size: Vec2) -> Response {
         );
     }
     response
+}
+
+/// A checkbox's state. Mixed is for a box over others, some of them on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Check {
+    Off,
+    On,
+    // No box over others yet.
+    #[allow(dead_code)]
+    Mixed,
+}
+
+impl Check {
+    pub fn from_bool(on: bool) -> Self {
+        if on { Check::On } else { Check::Off }
+    }
+
+    /// What a click makes it: a mixed box turns everything on, an on box
+    /// everything off.
+    pub fn clicked(self) -> Self {
+        match self {
+            Check::On => Check::Off,
+            Check::Off | Check::Mixed => Check::On,
+        }
+    }
+
+    fn lit(self) -> bool {
+        self != Check::Off
+    }
+}
+
+/// A checkbox: an 18px `face-key` box with its label beside it, and an
+/// optional hint under the label. On or mixed, the box keeps its face
+/// under an accent wash and outline, with the tick or minus in accent.
+/// The whole row takes the click; like [`Key`] it only draws, and the
+/// caller applies [`Check::clicked`].
+pub struct Checkbox {
+    state: Check,
+    label: String,
+    hint: Option<String>,
+    enabled: bool,
+}
+
+/// The box, across and down.
+const CHECK_BOX: f32 = 18.0;
+/// Between the box and its label.
+const CHECK_GAP: f32 = 10.0;
+/// Between the label and its hint.
+const CHECK_HINT_GAP: f32 = 3.0;
+/// The tick's and the minus's line.
+const CHECK_GLYPH_W: f32 = 2.0;
+
+impl Checkbox {
+    pub fn new(state: Check, label: impl Into<String>) -> Self {
+        Self {
+            state,
+            label: label.into(),
+            hint: None,
+            enabled: true,
+        }
+    }
+
+    /// A note under the label: sentence case, an em dash for the aside.
+    #[allow(dead_code)]
+    pub fn hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+
+    /// Disabled it's dimmed, never hidden.
+    #[allow(dead_code)]
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+}
+
+impl Widget for Checkbox {
+    fn ui(self, ui: &mut Ui) -> Response {
+        if !self.enabled {
+            return ui.add_enabled(
+                false,
+                Checkbox {
+                    enabled: true,
+                    ..self
+                },
+            );
+        }
+        let ctx = ui.ctx().clone();
+        let label = self.label.to_uppercase();
+        let label_size = theme::TEXT_TOGGLE.galley(&ctx, &label, theme::TEXT).size();
+        let hint = self
+            .hint
+            .as_ref()
+            .map(|hint| theme::NOTE_TEXT.galley(&ctx, hint, theme::TEXT_MUTED));
+        let label_w = label_size.x - theme::TEXT_TOGGLE.spacing;
+        let text_w = hint.as_ref().map_or(label_w, |g| label_w.max(g.size().x));
+        // The label's first line sits on the key row's centre line; a hint
+        // adds its own line under it.
+        let line_y = theme::SIZE_KEY / 2.0;
+        let height = hint.as_ref().map_or(theme::SIZE_KEY, |g| {
+            line_y + label_size.y / 2.0 + CHECK_HINT_GAP + g.size().y + line_y - label_size.y / 2.0
+        });
+        let size = egui::vec2(CHECK_BOX + CHECK_GAP + text_w, height);
+        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        let enabled = response.enabled();
+        response.widget_info(|| {
+            WidgetInfo::selected(Role::CheckBox, enabled, self.state == Check::On, &label)
+        });
+        if !ui.is_rect_visible(rect) {
+            return response;
+        }
+
+        let held = enabled && response.is_pointer_button_down_on();
+        let hovered = enabled && response.hovered();
+        let line = rect.top() + line_y;
+        let check = Rect::from_center_size(
+            egui::pos2(rect.left() + CHECK_BOX / 2.0, line),
+            Vec2::splat(CHECK_BOX),
+        );
+        let corners = CornerRadius::same(theme::RADIUS_CONTROL);
+        let painter = ui.painter();
+        theme::paint_edge(painter, check, corners, theme::EDGE);
+        let lit = enabled && self.state.lit();
+        if !enabled {
+            painter.rect_filled(check, corners, theme::KEY_LO);
+        } else {
+            let (face, top) = if held {
+                (Face::KeyDown, Top::Shade)
+            } else if hovered {
+                (Face::KeyHover, Top::Sheen(theme::SHEEN))
+            } else {
+                (Face::Key, Top::Sheen(theme::SHEEN))
+            };
+            theme::paint_key_face(painter, check, corners, face, Color32::WHITE, top);
+            if lit {
+                painter.rect_filled(check, corners, theme::ACCENT.gamma_multiply(LIT_WASH));
+                painter.rect_stroke(
+                    check,
+                    corners,
+                    Stroke::new(LIT_OUTLINE, theme::ACCENT),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        }
+        let glyph = if enabled {
+            theme::ACCENT
+        } else {
+            theme::TEXT_DISABLED
+        };
+        let at = |x: f32, y: f32| check.min + egui::vec2(x, y);
+        match self.state {
+            Check::Off => {}
+            Check::On => {
+                let points = square_ends([at(4.5, 9.0), at(7.5, 12.0), at(13.5, 6.0)]);
+                painter.add(egui::Shape::line(
+                    points.to_vec(),
+                    Stroke::new(CHECK_GLYPH_W, glyph),
+                ));
+            }
+            // A filled bar: square ends by construction.
+            Check::Mixed => {
+                painter.rect_filled(
+                    Rect::from_center_size(check.center(), egui::vec2(8.0, CHECK_GLYPH_W)),
+                    0.0,
+                    glyph,
+                );
+            }
+        }
+
+        let label_color = if !enabled {
+            theme::TEXT_DISABLED
+        } else if lit || hovered {
+            theme::TEXT_STRONG
+        } else {
+            theme::TEXT_UNLIT
+        };
+        let text_x = check.right() + CHECK_GAP;
+        theme::paint_text(
+            painter,
+            egui::pos2(text_x, line),
+            egui::Align2::LEFT_CENTER,
+            &label,
+            theme::TEXT_TOGGLE,
+            label_color,
+        );
+        if let Some(hint) = &self.hint {
+            let color = if enabled {
+                theme::TEXT_MUTED
+            } else {
+                theme::TEXT_DISABLED
+            };
+            theme::paint_text(
+                painter,
+                egui::pos2(text_x, line + label_size.y / 2.0 + CHECK_HINT_GAP),
+                egui::Align2::LEFT_TOP,
+                hint,
+                theme::NOTE_TEXT,
+                color,
+            );
+        }
+        if response.has_focus() {
+            theme::paint_focus(painter, check);
+        }
+        response
+    }
+}
+
+/// A polyline's two ends pushed out by half its line, so they end square
+/// (egui's strokes end flat at the points).
+fn square_ends<const N: usize>(mut points: [egui::Pos2; N]) -> [egui::Pos2; N] {
+    let half = CHECK_GLYPH_W / 2.0;
+    if N >= 2 {
+        let start = (points[0] - points[1]).normalized() * half;
+        points[0] += start;
+        let end = (points[N - 1] - points[N - 2]).normalized() * half;
+        points[N - 1] += end;
+    }
+    points
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_click_turns_mixed_on_and_on_off() {
+        assert_eq!(Check::Off.clicked(), Check::On);
+        assert_eq!(Check::Mixed.clicked(), Check::On);
+        assert_eq!(Check::On.clicked(), Check::Off);
+    }
+
+    #[test]
+    fn the_ticks_ends_reach_out_half_its_line() {
+        let [start, _, end] = square_ends([
+            egui::pos2(4.5, 9.0),
+            egui::pos2(7.5, 12.0),
+            egui::pos2(13.5, 6.0),
+        ]);
+        let half = CHECK_GLYPH_W / 2.0;
+        assert!((start.distance(egui::pos2(4.5, 9.0)) - half).abs() < 1e-4);
+        assert!((end.distance(egui::pos2(13.5, 6.0)) - half).abs() < 1e-4);
+        assert!(start.x < 4.5 && end.x > 13.5);
+    }
 }

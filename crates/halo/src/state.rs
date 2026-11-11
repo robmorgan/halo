@@ -540,6 +540,10 @@ pub struct MixerShared {
     /// Whether the running stream has a phones pair (outputs 3–4). Set by
     /// the stream's setup, read by the UI.
     pub cue_output: AtomicBool,
+    /// Whether the running stream gives each deck its own pair for a
+    /// hardware mixer, bypassing Halo's mixer. Set by the stream's setup,
+    /// read by the UI.
+    pub external: AtomicBool,
     /// Audio-callback load: processing time ÷ buffer duration (EMA),
     /// published by the callback.
     pub cpu_load: AtomicF32,
@@ -556,6 +560,7 @@ impl MixerShared {
             master_meter: AtomicF32::new(0.0),
             cue_mix: AtomicF32::new(DEFAULT_CUE_MIX),
             cue_output: AtomicBool::new(false),
+            external: AtomicBool::new(false),
             cpu_load: AtomicF32::new(0.0),
         }
     }

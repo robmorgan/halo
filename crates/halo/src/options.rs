@@ -7,13 +7,14 @@ use std::net::IpAddr;
 
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, Id, Layout, Margin, PopupCloseBehavior, Rect,
-    Sense, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
+    Response, Sense, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
 };
 use halo_light::artnet::ARTNET_PORT;
 
 use crate::audio::OutputDevice;
-use crate::key::{self, Key, Lit};
+use crate::key::{self, Check, Checkbox, Key, Lit};
 use crate::midi::{self, Action, MidiMsg, MidiSettings, Profile};
+use crate::routing::{self, DeviceRouting, Pair};
 use crate::theme::{self, Face, TypeStyle};
 
 /// The values Options edits. Only these are persisted, never the lists
@@ -24,8 +25,8 @@ pub struct OptionsValues {
     pub device_name: Option<String>,
     /// Buffer size in frames; `None` lets the device choose.
     pub buffer_size: Option<u32>,
-    /// Headphone cue on outputs 3–4, on a device that has them.
-    pub cue_output: bool,
+    /// Each edited device's pairs, names and roles.
+    pub routings: Vec<DeviceRouting>,
     /// Art-Net to one node (`node_ip`) instead of broadcast.
     pub unicast: bool,
     /// The unicast node's address, kept while broadcasting.
@@ -82,6 +83,8 @@ pub struct Options {
     default_device: Option<String>,
     /// The running stream's rate, for the latency readout.
     sample_rate: Option<u32>,
+    /// New devices' defaults leave the headphone cue off.
+    cue_off: bool,
     /// The action waiting for a control to bind to.
     learning: Option<Action>,
     /// The draft profile's SHIFT is held on the draft input.
@@ -135,6 +138,7 @@ impl Options {
         devices: Vec<OutputDevice>,
         default_device: Option<String>,
         sample_rate: Option<u32>,
+        cue_off: bool,
     ) -> Self {
         Self {
             draft: saved.clone(),
@@ -143,6 +147,7 @@ impl Options {
             devices,
             default_device,
             sample_rate,
+            cue_off,
             learning: None,
             learn_shift: false,
             last: None,
@@ -207,7 +212,7 @@ impl Options {
             Category::Audio => {
                 usize::from(draft.device_name != saved.device_name)
                     + usize::from(draft.buffer_size != saved.buffer_size)
-                    + usize::from(draft.cue_output != saved.cue_output)
+                    + self.routing_changes()
             }
             Category::Lighting => {
                 usize::from(draft.unicast != saved.unicast)
@@ -511,44 +516,197 @@ impl Options {
                 readout(ui, &value);
             });
         });
-        group(ui, "HEADPHONES", |ui| {
-            let note = match self.draft_device() {
-                Some(device) if !device.can_cue() => {
-                    format!("No cue: this device has only {} outputs.", device.channels)
+        let Some(mut routing) = self.draft_routing() else {
+            return;
+        };
+        let before = routing.clone();
+        group(ui, "OUTPUTS", |ui| {
+            for pair in routing.all_pairs().collect::<Vec<_>>() {
+                // The last pair on stays on: a click doesn't turn it off.
+                let state = Check::from_bool(routing.enabled(pair));
+                let check = Checkbox::new(state, format!("Outputs {}", pair.label()));
+                let name = routing
+                    .pairs
+                    .get_mut(usize::from(pair.0))
+                    .map(|p| &mut p.name);
+                let response = check_row(ui, check, |ui| {
+                    if let Some(name) = name {
+                        sized_text_field(ui, name, CONTROL_W, Some("NAME"), routing::NAME_MAX);
+                    }
+                });
+                if response.clicked() {
+                    routing.set_enabled(pair, state.clicked() == Check::On);
                 }
-                _ => "Plays on outputs 3–4, like the Z1's phones.".to_string(),
+            }
+        });
+        group(ui, "ROUTING", |ui| {
+            let note = if routing.can_external() {
+                "External: each deck on its own pair, for a hardware mixer.".to_string()
+            } else {
+                "External needs 2 pairs; this device has 1.".to_string()
             };
-            row(ui, "HEADPHONE CUE", Some(&note), |ui| {
+            row(ui, "MIXING", Some(&note), |ui| {
                 let w = CONTROL_W / 2.0;
-                let [on, off] = key::segmented(
+                let can = routing.can_external();
+                let [internal, external] = key::segmented(
                     ui,
                     [
-                        Key::new("ON")
+                        Key::new("INTERNAL")
                             .size(vec2(w, CONTROL_H))
-                            .pressed(self.draft.cue_output),
-                        Key::new("OFF")
+                            .pressed(!routing.external)
+                            .enabled(can),
+                        Key::new("EXTERNAL")
                             .size(vec2(w, CONTROL_H))
-                            .pressed(!self.draft.cue_output),
+                            .pressed(routing.external)
+                            .enabled(can),
                     ],
                 );
-                if on.clicked() {
-                    self.draft.cue_output = true;
+                if internal.clicked() {
+                    routing.external = false;
                 }
-                if off.clicked() {
-                    self.draft.cue_output = false;
+                if external.clicked() {
+                    routing.external = true;
                 }
             });
+            let pairs: Vec<(String, Pair)> = routing
+                .enabled_pairs()
+                .map(|p| (routing.pair_label(p), p))
+                .collect();
+            let optional = |except: Option<Pair>| {
+                let mut choices = vec![("NONE".to_string(), None)];
+                choices.extend(
+                    pairs
+                        .iter()
+                        .filter(|(_, p)| Some(*p) != except)
+                        .map(|(label, p)| (label.clone(), Some(*p))),
+                );
+                choices
+            };
+            if routing.external {
+                for (label, id, note, role) in [
+                    (
+                        "DECK A",
+                        "route_deck_a",
+                        "After trim only: the mixer has the EQ and fader.",
+                        &mut routing.deck_a,
+                    ),
+                    (
+                        "DECK B",
+                        "route_deck_b",
+                        "After trim only: the mixer has the EQ and fader.",
+                        &mut routing.deck_b,
+                    ),
+                    (
+                        "AUDITION",
+                        "route_audition",
+                        "Cue that channel on the mixer to hear previews.",
+                        &mut routing.audition,
+                    ),
+                ] {
+                    row(ui, label, Some(note), |ui| {
+                        if let Some(choice) = dropdown(ui, id, &optional(None), role) {
+                            *role = choice;
+                        }
+                    });
+                }
+            } else {
+                row(
+                    ui,
+                    "MASTER",
+                    Some("The room: after the faders and MASTER."),
+                    |ui| {
+                        if let Some(choice) = dropdown(ui, "route_master", &pairs, &routing.master)
+                        {
+                            routing.set_master(choice);
+                        }
+                    },
+                );
+                let master = routing.master;
+                row(
+                    ui,
+                    "HEADPHONES",
+                    Some("Halo's cue: the CUE keys, CUE MIX and the audition player."),
+                    |ui| {
+                        if let Some(choice) =
+                            dropdown(ui, "route_phones", &optional(Some(master)), &routing.phones)
+                        {
+                            routing.phones = choice;
+                        }
+                    },
+                );
+            }
         });
+        if routing != before {
+            self.store_routing(routing);
+        }
     }
 
-    /// The draft's output device, when it's connected.
-    fn draft_device(&self) -> Option<&OutputDevice> {
-        let name = self
-            .draft
+    /// The draft's output device's name: the chosen one, or the system
+    /// default's.
+    fn draft_device_name(&self) -> Option<&String> {
+        self.draft
             .device_name
             .as_ref()
-            .or(self.default_device.as_ref())?;
-        self.devices.iter().find(|d| &d.name == name)
+            .or(self.default_device.as_ref())
+    }
+
+    /// How many outputs `device` has: from the device list, or from its
+    /// saved routing while it's unplugged.
+    fn device_channels(&self, device: &str) -> u16 {
+        self.devices
+            .iter()
+            .find(|d| d.name == device)
+            .map(|d| d.channels)
+            .or_else(|| {
+                self.saved
+                    .routings
+                    .iter()
+                    .find(|r| r.device == device)
+                    .map(|r| r.pairs.len() as u16 * 2)
+            })
+            .unwrap_or(2)
+    }
+
+    fn routing_in(&self, values: &OptionsValues, device: &str) -> DeviceRouting {
+        DeviceRouting::for_device(
+            &values.routings,
+            device,
+            self.device_channels(device),
+            self.cue_off,
+        )
+    }
+
+    /// The draft device's routing, saved or its default.
+    fn draft_routing(&self) -> Option<DeviceRouting> {
+        let device = self.draft_device_name()?;
+        Some(self.routing_in(&self.draft, device))
+    }
+
+    fn store_routing(&mut self, routing: DeviceRouting) {
+        let routings = &mut self.draft.routings;
+        match routings.iter_mut().find(|r| r.device == routing.device) {
+            Some(entry) => *entry = routing,
+            None => routings.push(routing),
+        }
+    }
+
+    /// One change per device whose routing differs from the saved one.
+    fn routing_changes(&self) -> usize {
+        let mut devices: Vec<&str> = self
+            .draft
+            .routings
+            .iter()
+            .chain(&self.saved.routings)
+            .map(|r| r.device.as_str())
+            .collect();
+        devices.sort_unstable();
+        devices.dedup();
+        devices
+            .into_iter()
+            .filter(|device| {
+                self.routing_in(&self.draft, device) != self.routing_in(&self.saved, device)
+            })
+            .count()
     }
 
     fn lighting(&mut self, ui: &mut Ui) {
@@ -896,14 +1054,39 @@ fn row(ui: &mut Ui, label: &str, note: Option<&str>, control: impl FnOnce(&mut U
             theme::TEXT_MUTED,
         );
     }
-    painter.hline(
+    row_control(ui, rect, control);
+}
+
+/// A row led by a checkbox, without a hint, in place of a label; the
+/// control in the same column as [`row`]'s.
+fn check_row(ui: &mut Ui, check: Checkbox, control: impl FnOnce(&mut Ui)) -> Response {
+    let width = ui.available_width();
+    let height = (2.0 * ROW_PAD + theme::SIZE_KEY.max(CONTROL_H)).max(ROW_MIN_H);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    let lead = Rect::from_min_size(
+        pos2(rect.left(), rect.center().y - theme::SIZE_KEY / 2.0),
+        vec2((width - LABEL_GAP - CONTROL_W).max(0.0), theme::SIZE_KEY),
+    );
+    let response = ui
+        .new_child(
+            UiBuilder::new()
+                .max_rect(lead)
+                .layout(Layout::left_to_right(Align::Center)),
+        )
+        .add(check);
+    row_control(ui, rect, control);
+    response
+}
+
+/// A row's hairline under it, and its control in the right column.
+fn row_control(ui: &mut Ui, rect: Rect, control: impl FnOnce(&mut Ui)) {
+    ui.painter().hline(
         rect.x_range(),
         rect.bottom() - 0.5,
         Stroke::new(1.0, theme::QUIET_HAIRLINE),
     );
-
     let column = Rect::from_min_size(
-        pos2(rect.right() - CONTROL_W, mid - CONTROL_H / 2.0),
+        pos2(rect.right() - CONTROL_W, rect.center().y - CONTROL_H / 2.0),
         vec2(CONTROL_W, CONTROL_H),
     );
     let mut control_ui = ui.new_child(
@@ -1077,8 +1260,9 @@ fn text_field(ui: &mut Ui, text: &mut String, enabled: bool, valid: bool) {
             } else {
                 theme::TEXT_DISABLED
             })
-            .frame(egui::Frame::NONE)
-            .margin(Margin::symmetric(FIELD_PAD as i8, 0))
+            // A custom frame's own margin pads the text; egui ignores
+            // `margin` alongside it.
+            .frame(egui::Frame::NONE.inner_margin(Margin::symmetric(FIELD_PAD as i8, 0)))
             .align(Align2::LEFT_CENTER)
             .min_size(vec2(CONTROL_W, CONTROL_H))
             .desired_width(CONTROL_W),
@@ -1096,6 +1280,28 @@ fn text_field(ui: &mut Ui, text: &mut String, enabled: bool, valid: bool) {
     }
 }
 
+/// A name field `width` across: a well with `hint` while it's empty, at
+/// most `limit` characters.
+fn sized_text_field(ui: &mut Ui, text: &mut String, width: f32, hint: Option<&str>, limit: usize) {
+    let rect = Rect::from_min_size(ui.cursor().min, vec2(width, CONTROL_H));
+    theme::paint_well(ui.painter(), rect, theme::RADIUS_CONTROL);
+    let mut edit = egui::TextEdit::singleline(text)
+        .font(theme::NUMERALS_MD.font_id())
+        .text_color(theme::TEXT_STRONG)
+        .frame(egui::Frame::NONE.inner_margin(Margin::symmetric(FIELD_PAD as i8, 0)))
+        .align(Align2::LEFT_CENTER)
+        .char_limit(limit)
+        .min_size(vec2(width, CONTROL_H))
+        .desired_width(width);
+    if let Some(hint) = hint {
+        edit = edit.hint_text(theme::NUMERALS_MD.rich(hint).color(theme::TEXT_DISABLED));
+    }
+    let resp = ui.add(edit);
+    if resp.has_focus() {
+        theme::paint_focus(ui.painter(), rect);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1104,7 +1310,7 @@ mod tests {
         OptionsValues {
             device_name: None,
             buffer_size: Some(256),
-            cue_output: true,
+            routings: Vec::new(),
             unicast: false,
             node_ip: "10.0.0.5".to_string(),
             midi: MidiSettings::default(),
@@ -1113,43 +1319,73 @@ mod tests {
 
     #[test]
     fn counts_changes_per_category() {
-        let mut options = Options::new(saved(), Vec::new(), None, Some(48_000));
+        let mut options = Options::new(saved(), Vec::new(), None, Some(48_000), false);
         assert_eq!(options.total_changes(), 0);
         options.draft.buffer_size = Some(512);
         options.draft.device_name = Some("Interface".to_string());
         assert_eq!(options.changes(Category::Audio), 2);
-        options.draft.cue_output = false;
-        assert_eq!(options.changes(Category::Audio), 3);
         // The node address only counts while it's the destination.
         options.draft.node_ip = "10.0.0.6".to_string();
         assert_eq!(options.changes(Category::Lighting), 0);
         options.draft.unicast = true;
         assert_eq!(options.changes(Category::Lighting), 2);
-        assert_eq!(options.total_changes(), 5);
+        assert_eq!(options.total_changes(), 4);
         // Back to the saved values: nothing to save.
         options.draft = saved();
         assert_eq!(options.total_changes(), 0);
     }
 
+    fn devices() -> Vec<OutputDevice> {
+        [("Speakers", 2), ("M4", 4), ("Z1", 4)]
+            .map(|(name, channels)| OutputDevice {
+                name: name.to_string(),
+                channels,
+            })
+            .to_vec()
+    }
+
     #[test]
-    fn headphone_cue_follows_the_draft_device() {
-        let devices = vec![
-            OutputDevice {
-                name: "Speakers".to_string(),
-                channels: 2,
-            },
-            OutputDevice {
-                name: "Z1".to_string(),
-                channels: 4,
-            },
-        ];
-        let mut options = Options::new(saved(), devices, Some("Speakers".to_string()), None);
-        // No device chosen: the system default's outputs count.
-        assert!(!options.draft_device().unwrap().can_cue());
-        options.draft.device_name = Some("Z1".to_string());
-        assert!(options.draft_device().unwrap().can_cue());
-        options.draft.device_name = Some("Unplugged".to_string());
-        assert_eq!(options.draft_device(), None);
+    fn routing_is_per_device_from_its_defaults() {
+        let mut options = Options::new(saved(), devices(), Some("Speakers".into()), None, false);
+        // The system default is stereo: one pair, no phones.
+        let speakers = options.draft_routing().unwrap();
+        assert_eq!((speakers.pairs.len(), speakers.phones), (1, None));
+        assert!(!speakers.can_external());
+        options.draft.device_name = Some("M4".into());
+        let mut m4 = options.draft_routing().unwrap();
+        assert_eq!(m4.phones, Some(Pair(1)));
+        // Only the device is a change: its defaults aren't.
+        assert_eq!(options.changes(Category::Audio), 1);
+        m4.external = true;
+        m4.pairs[0].name = "DJM CH 2".into();
+        options.store_routing(m4);
+        assert_eq!(options.changes(Category::Audio), 2);
+        // The Z1 keeps its own routing; the M4 its edits.
+        options.draft.device_name = Some("Z1".into());
+        assert!(!options.draft_routing().unwrap().external);
+        options.draft.device_name = Some("M4".into());
+        assert!(options.draft_routing().unwrap().external);
+        // The defaults stored back are no change.
+        options.store_routing(DeviceRouting::default_for("M4", 4, false));
+        assert_eq!(options.changes(Category::Audio), 1);
+    }
+
+    #[test]
+    fn an_unplugged_device_keeps_its_saved_routing() {
+        let mut saved = saved();
+        let mut routing = DeviceRouting::default_for("Gone", 6, false);
+        routing.pairs[2].name = "BOOTH".into();
+        saved.routings.push(routing.clone());
+        saved.device_name = Some("Gone".into());
+        let options = Options::new(saved, devices(), None, None, false);
+        assert_eq!(options.draft_routing(), Some(routing));
+    }
+
+    #[test]
+    fn a_cue_turned_off_before_routing_stays_off_for_new_devices() {
+        let mut options = Options::new(saved(), devices(), None, None, true);
+        options.draft.device_name = Some("Z1".into());
+        assert_eq!(options.draft_routing().unwrap().phones, None);
     }
 
     fn msg(port: &str, key: midi::MsgKey, value: f32) -> MidiMsg {
@@ -1165,7 +1401,7 @@ mod tests {
     fn learns_into_a_user_profile_and_counts_it() {
         use crate::midi::DeckControl;
         use crate::z1;
-        let mut options = Options::new(saved(), Vec::new(), None, None);
+        let mut options = Options::new(saved(), Vec::new(), None, None, false);
         let draft = &mut options.draft.midi;
         draft.input = Some(z1::PORT.into());
         draft.profile = Some("builtin:traktor-kontrol-z1".into());
@@ -1206,7 +1442,7 @@ mod tests {
 
     #[test]
     fn a_unicast_draft_needs_a_valid_address() {
-        let mut options = Options::new(saved(), Vec::new(), None, None);
+        let mut options = Options::new(saved(), Vec::new(), None, None, false);
         options.draft.node_ip = "not an address".to_string();
         assert!(options.node_ip_valid(), "broadcast ignores the address");
         options.draft.unicast = true;

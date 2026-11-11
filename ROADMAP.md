@@ -44,6 +44,18 @@ player goes to the cue bus alone so previews never reach the room, and CUE
 MIX blends cue and master into the phones through their own limiter. A
 stereo device has no phones: CUE is off and the audition plays in the master.
 
+Options → AUDIO routes each output device's stereo pairs, remembered per
+device: each pair can be turned off or named ("DJM CH 2"), and each role gets a
+pair. With INTERNAL mixing that's the MASTER and the HEADPHONES (or none), so an
+interface whose headphone jack follows 1–2 can take the phones there and the
+master on 3–4. With EXTERNAL mixing, for a hardware mixer like the M4 into a
+DJM-800's channels 2 and 3, it's DECK A, DECK B and the AUDITION player: each
+deck goes out after trim only, since Halo's EQ, filter, faders, cue and master
+are the mixer's job. Roles sharing a pair are summed, and every pair in use
+keeps its own limiter. The lighting can't compare Halo's faders then, so it
+stays on the playing deck until it stops or another is pinned; reading the
+mixer's faders over MIDI comes next.
+
 Session preparation, processing, restart and destruction stay off the callback.
 Source frames remain in the device-rate domain: Halo resamples on load, and
 rescales native-rate analysis for waveforms and cues. Halo's ratio-derived
