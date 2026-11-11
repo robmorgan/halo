@@ -6,8 +6,16 @@
 //! [`resolve`] is the single source of truth for "what is the rig doing
 //! right now" — every indicator (toolbar LEDs, lane-strip tints, hollow
 //! cue bars) must derive from its output so provenance stays consistent.
+//!
+//! The programmer also holds intensity and colour per fixture, console
+//! style: setting them takes the fixtures selected at the time (the whole
+//! rig when none are) away from their lanes until CLEAR. Picking a pixel
+//! effect or colour brings the bars it applies to up the same way.
+
+use std::collections::{BTreeMap, HashSet};
 
 use crate::cues::{ALL_LANES, CueSet, LANE_COUNT};
+use crate::fixture::{Fixture, FixtureKind, Rig};
 
 /// One lane's manual override state.
 #[derive(Clone)]
@@ -80,6 +88,22 @@ pub fn resolve(
             level: 0.0,
         }
     })
+}
+
+/// One fixture's intensity (0..=1) and colour (RGBW percent), merged per
+/// fixture as [`resolve`] merges per lane: what the programmer holds for
+/// it beats its lane's level and the rig's default open white.
+pub fn resolve_fixture(
+    params: &ProgrammerParams,
+    lanes: &[LaneOutput; LANE_COUNT],
+    fixture: &Fixture,
+) -> (f32, [f32; 4]) {
+    let held = params.held.get(&fixture.id).copied().unwrap_or_default();
+    let level = held
+        .dimmer
+        .map_or(lanes[fixture.kind.lane() as usize].level, |d| d / 100.0)
+        .clamp(0.0, 1.0);
+    (level, held.rgbw.unwrap_or(ColorParams::default().rgbw))
 }
 
 /// Release every latch (held FLASH keys release themselves on key-up).
@@ -348,6 +372,98 @@ pub struct ProgrammerParams {
     pub preview: bool,
     /// Snap the selected fixtures to full white for identification.
     pub highlight: bool,
+    /// What the programmer holds per fixture id, until CLEAR.
+    pub held: BTreeMap<u32, Held>,
+}
+
+/// What the programmer holds for one fixture. `None` leaves it to the
+/// fixture's lane (intensity) or the rig default (colour).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Held {
+    /// Percent, 0..=100.
+    pub dimmer: Option<f32>,
+    /// R/G/B/W percent, 0..=100.
+    pub rgbw: Option<[f32; 4]>,
+}
+
+/// The fixtures a programmer edit applies to: the selection, or the whole
+/// rig when nothing is selected.
+pub fn targets(rig: &Rig, selection: &HashSet<u32>) -> Vec<u32> {
+    rig.iter()
+        .map(|f| f.id)
+        .filter(|id| selection.is_empty() || selection.contains(id))
+        .collect()
+}
+
+/// The pixel bars a PIXELS edit applies to: the selected ones, or every
+/// bar when none is selected.
+pub fn pixel_targets(rig: &Rig, selection: &HashSet<u32>) -> Vec<u32> {
+    let bars = || {
+        rig.iter()
+            .filter(|f| f.kind == FixtureKind::PixelBar)
+            .map(|f| f.id)
+    };
+    let selected: Vec<u32> = bars().filter(|id| selection.contains(id)).collect();
+    if selected.is_empty() {
+        bars().collect()
+    } else {
+        selected
+    }
+}
+
+impl ProgrammerParams {
+    /// Bring `targets` up to full, leaving any held dimmer as it is. The
+    /// DIMMER fader's last value doesn't change.
+    pub fn bring_up(&mut self, targets: &[u32]) {
+        for &id in targets {
+            self.held.entry(id).or_default().dimmer.get_or_insert(100.0);
+        }
+    }
+
+    /// Hold `dimmer` on `targets`; the fader keeps it as its last value.
+    pub fn hold_dimmer(&mut self, targets: &[u32], dimmer: f32) {
+        self.intensity.dimmer = dimmer;
+        for &id in targets {
+            self.held.entry(id).or_default().dimmer = Some(dimmer);
+        }
+    }
+
+    /// Hold `rgbw` on `targets`; the faders keep it as their last value.
+    pub fn hold_rgbw(&mut self, targets: &[u32], rgbw: [f32; 4]) {
+        self.color.rgbw = rgbw;
+        for &id in targets {
+            self.held.entry(id).or_default().rgbw = Some(rgbw);
+        }
+    }
+
+    /// The first held value in `selection` (lowest id), or the fader's
+    /// last value.
+    fn shown<T>(&self, selection: &HashSet<u32>, value: impl Fn(&Held) -> Option<T>) -> Option<T> {
+        self.held
+            .iter()
+            .filter(|(id, _)| selection.contains(id))
+            .find_map(|(_, held)| value(held))
+    }
+
+    /// What DIMMER shows for `selection`.
+    pub fn shown_dimmer(&self, selection: &HashSet<u32>) -> f32 {
+        self.shown(selection, |h| h.dimmer)
+            .unwrap_or(self.intensity.dimmer)
+    }
+
+    /// What the colour faders show for `selection`.
+    pub fn shown_rgbw(&self, selection: &HashSet<u32>) -> [f32; 4] {
+        self.shown(selection, |h| h.rgbw).unwrap_or(self.color.rgbw)
+    }
+
+    /// Let go of every fixture: CLEAR.
+    pub fn release(&mut self) {
+        self.held.clear();
+    }
+
+    pub fn holds_any(&self) -> bool {
+        !self.held.is_empty()
+    }
 }
 
 #[cfg(test)]

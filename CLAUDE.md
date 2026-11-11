@@ -92,9 +92,11 @@ Plain threads + channels/atomics; each session has one owner:
 ### Key modules — `crates/halo-light/src`
 
 - `fixture.rs` — `Rig`, grid/selection types, `default_rig()`.
-- `fixture_library.rs` — `FixtureProfile`/`Channel`/`ChannelType`, hardcoded profile registry, patching.
+- `fixture_library.rs` — `FixtureProfile` (one or more DMX `FixtureMode`s, colour and gobo wheels)/`Channel`/
+  `ChannelType`, hardcoded profile registry, patching; a patched `Fixture` names its mode.
 - `cues.rs` — `CueSet` (runtime, non-overlapping per lane) + `CueFile` (persisted JSON, seconds).
-- `programmer.rs` — `resolve()`: **the single merge point** (programmer override > track cues > off).
+- `programmer.rs` — `resolve()`: **the single merge point** (programmer override > track cues > off), per
+  lane, with `resolve_fixture()` for what the programmer holds per fixture (dimmer, colour).
 - `output.rs` — pure `render()`: resolved lanes + params → per-universe `[u8; 512]` DMX frames.
 - `artnet.rs` — synchronous Art-Net over `std::net::UdpSocket` (broadcast/unicast, multi-destination).
 

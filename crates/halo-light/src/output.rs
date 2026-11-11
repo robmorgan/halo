@@ -6,12 +6,13 @@
 //! identical results. Frames explicitly zero dark fixtures: a rendered
 //! universe always ships all 512 channels, so "off" is sent, not held.
 //!
-//! Value semantics (v1, until Phase L2's per-fixture programming):
-//! - A fixture's intensity is its lane's resolved level × the programmer dimmer. Fixtures without a
-//!   dimmer channel fold intensity into their color channels.
-//! - Palette (RGBW), position, gobo, and strobe apply rig-wide; *effects* run across the fixture
-//!   selection (or the whole rig when nothing is selected), with Step/Wave distribution by ordinal
-//!   in that cohort.
+//! Value semantics:
+//! - A fixture's intensity is what the programmer holds for it, or else its lane's resolved level.
+//!   Fixtures without a dimmer channel fold intensity into their color channels.
+//! - Its colour is what the programmer holds for it, or else open white. A colour wheel turns to
+//!   the slot nearest that colour.
+//! - Position, gobo, and strobe apply rig-wide; *effects* run across the fixture selection (or the
+//!   whole rig when nothing is selected), with Step/Wave distribution by ordinal in that cohort.
 //! - HIGHLIGHT snaps the selection to open white. PREVIEW (blind) renders as if the programmer
 //!   params were untouched defaults.
 
@@ -19,10 +20,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::cues::LANE_COUNT;
 use crate::fixture::{FixtureKind, Rig};
-use crate::fixture_library::{ChannelType, FixtureLibrary, FixtureProfile};
+use crate::fixture_library::{ChannelType, FixtureLibrary, FixtureMode, FixtureProfile};
 use crate::programmer::{
     COLOR_PRESETS, Distribution, EffectConfig, LaneOutput, PanTiltTarget, ProgrammerParams,
-    effect_value,
+    effect_value, resolve_fixture,
 };
 
 pub const UNIVERSE_CHANNELS: usize = 512;
@@ -86,10 +87,10 @@ pub fn render(
 
     let mut universes: HashMap<u8, UniverseFrame> = HashMap::new();
     for f in rig.iter() {
-        let Some(profile) = library.get(&f.profile_id) else {
+        let Some((profile, mode)) = library.patched(f) else {
             continue;
         };
-        let footprint = profile.footprint();
+        let footprint = mode.footprint();
         let base = (f.start_address.max(1) - 1) as usize;
         if base + footprint > UNIVERSE_CHANNELS {
             continue;
@@ -100,24 +101,25 @@ pub fn render(
         let slot = &mut frame[base..base + footprint];
 
         if params.highlight && selection.contains(&f.id) {
-            render_highlight(profile, slot);
+            render_highlight(mode, slot);
             continue;
         }
 
-        let level = lanes[f.kind.lane() as usize].level.clamp(0.0, 1.0);
+        // PREVIEW's defaults hold nothing.
+        let (level, rgbw) = resolve_fixture(p, lanes, f);
         let ord = cohort.iter().position(|&id| id == f.id);
         if f.kind == FixtureKind::PixelBar {
-            render_pixel_bar(profile, slot, p, level, beat_t);
+            render_pixel_bar(mode, slot, p, level, beat_t);
         } else {
-            render_conventional(profile, slot, p, level, beat_t, ord);
+            render_conventional(profile, mode, slot, p, Look { level, rgbw }, beat_t, ord);
         }
     }
     universes
 }
 
 /// Open white at full for fixture identification.
-fn render_highlight(profile: &FixtureProfile, slot: &mut [u8]) {
-    for (i, ch) in profile.channel_layout.iter().enumerate() {
+fn render_highlight(mode: &FixtureMode, slot: &mut [u8]) {
+    for (i, ch) in mode.channel_layout.iter().enumerate() {
         slot[i] = match ch.channel_type {
             ChannelType::Dimmer
             | ChannelType::Red
@@ -132,20 +134,28 @@ fn render_highlight(profile: &FixtureProfile, slot: &mut [u8]) {
     }
 }
 
+/// One fixture's intensity (0..=1) and colour (RGBW percent).
+struct Look {
+    level: f32,
+    rgbw: [f32; 4],
+}
+
 fn render_conventional(
     profile: &FixtureProfile,
+    mode: &FixtureMode,
     slot: &mut [u8],
     p: &ProgrammerParams,
-    level: f32,
+    look: Look,
     beat_t: f64,
     ord: Option<usize>,
 ) {
-    let mut dim = level * (p.intensity.dimmer / 100.0);
+    let level = look.level;
+    let mut dim = level;
     if let Some(fx) = effect_at(&p.intensity.effect, beat_t, ord) {
         dim *= fx;
     }
 
-    let mut rgbw = p.color.rgbw.map(|v| v / 100.0);
+    let mut rgbw = look.rgbw.map(|v| v / 100.0);
     if let Some(fx) = effect_at(&p.color.effect, beat_t, ord) {
         for c in rgbw.iter_mut() {
             *c *= fx;
@@ -153,26 +163,31 @@ fn render_conventional(
     }
 
     let pos_fx = effect_at(&p.position.effect, beat_t, ord);
-    let axis = |deg: f32, driven: bool| -> u8 {
+    // 16-bit: the coarse channel takes the high byte, a fine channel
+    // the low one.
+    let axis = |deg: f32, driven: bool| -> u16 {
         let base = deg / 360.0;
-        match pos_fx {
+        let at = match pos_fx {
             // ±1/8 of travel swing around the base position.
-            Some(fx) if driven => u8_of(base + (fx - 0.5) * 0.25),
-            _ => u8_of(base),
-        }
+            Some(fx) if driven => base + (fx - 0.5) * 0.25,
+            _ => base,
+        };
+        (at.clamp(0.0, 1.0) * f32::from(u16::MAX)).round() as u16
     };
     let pan_driven = matches!(p.position.target, PanTiltTarget::Both | PanTiltTarget::Pan);
     let tilt_driven = matches!(p.position.target, PanTiltTarget::Both | PanTiltTarget::Tilt);
 
     // Fixtures without a dimmer channel carry intensity in their color
     // channels instead.
-    let color_scale = if profile.channel_offset(&ChannelType::Dimmer).is_some() {
+    let color_scale = if mode.channel_offset(&ChannelType::Dimmer).is_some() {
         1.0
     } else {
         dim
     };
 
-    for (i, ch) in profile.channel_layout.iter().enumerate() {
+    let [r, g, b, w] = rgbw;
+    let shade = [(r + w).min(1.0), (g + w).min(1.0), (b + w).min(1.0)];
+    for (i, ch) in mode.channel_layout.iter().enumerate() {
         slot[i] = match &ch.channel_type {
             ChannelType::Dimmer => u8_of(dim),
             ChannelType::Red => u8_of(rgbw[0] * color_scale),
@@ -180,10 +195,12 @@ fn render_conventional(
             ChannelType::Blue => u8_of(rgbw[2] * color_scale),
             ChannelType::White => u8_of(rgbw[3] * color_scale),
             ChannelType::Strobe => u8_of(p.intensity.strobe / 100.0),
-            ChannelType::Pan => axis(p.position.pan, pan_driven),
-            ChannelType::Tilt => axis(p.position.tilt, tilt_driven),
-            // 8 gobo slots spread across the wheel's DMX range.
-            ChannelType::Gobo => p.beam.gobo.saturating_sub(1).min(7) * 32,
+            ChannelType::Pan => (axis(p.position.pan, pan_driven) >> 8) as u8,
+            ChannelType::PanFine => axis(p.position.pan, pan_driven) as u8,
+            ChannelType::Tilt => (axis(p.position.tilt, tilt_driven) >> 8) as u8,
+            ChannelType::TiltFine => axis(p.position.tilt, tilt_driven) as u8,
+            ChannelType::Color => wheel_value(profile, shade),
+            ChannelType::Gobo => gobo_value(profile, p.beam.gobo),
             ChannelType::Other(name) => match name.as_str() {
                 // The FX lane level drives smoke output directly.
                 "Smoke" => u8_of(dim),
@@ -195,6 +212,31 @@ fn render_conventional(
             },
             _ => 0,
         };
+    }
+}
+
+/// The colour wheel slot nearest `rgb`, or 0 (no colour) without a wheel.
+fn wheel_value(profile: &FixtureProfile, rgb: [f32; 3]) -> u8 {
+    let distance =
+        |slot: [f32; 3]| -> f32 { slot.iter().zip(rgb).map(|(a, b)| (a - b) * (a - b)).sum() };
+    profile
+        .color_wheel
+        .iter()
+        .min_by(|a, b| distance(a.rgb).total_cmp(&distance(b.rgb)))
+        .map_or(0, |slot| slot.dmx)
+}
+
+/// The programmer's GOBO `n` (1-based; 0 = open): the profile's value for
+/// it, or 8 slots spread across the channel.
+fn gobo_value(profile: &FixtureProfile, gobo: u8) -> u8 {
+    match gobo.checked_sub(1) {
+        Some(i) if !profile.gobo_wheel.is_empty() => profile
+            .gobo_wheel
+            .get(usize::from(i))
+            .or(profile.gobo_wheel.last())
+            .copied()
+            .unwrap_or(0),
+        _ => gobo.saturating_sub(1).min(7) * 32,
     }
 }
 
@@ -223,13 +265,13 @@ fn hue_rgb(h: f32) -> [f32; 3] {
 }
 
 fn render_pixel_bar(
-    profile: &FixtureProfile,
+    mode: &FixtureMode,
     slot: &mut [u8],
     p: &ProgrammerParams,
     level: f32,
     beat_t: f64,
 ) {
-    let n = profile.footprint() / 3;
+    let n = mode.footprint() / 3;
     if n == 0 || level <= 0.0 {
         return; // slot is already zeroed
     }
@@ -321,8 +363,11 @@ mod tests {
         ch: &ChannelType,
     ) -> u8 {
         let f = rig.iter().find(|f| f.label == label).expect("fixture");
-        let profile = library.get(&f.profile_id).unwrap();
-        let off = profile.channel_offset(ch).expect("channel");
+        let off = library
+            .layout(f)
+            .unwrap()
+            .channel_offset(ch)
+            .expect("channel");
         frames[&f.universe][(f.start_address - 1) as usize + off]
     }
 
@@ -343,10 +388,10 @@ mod tests {
         // color channels behind them); fixtures without a dimmer — smoke,
         // pyro, pixels — are all-zero.
         for f in rig.iter() {
-            let profile = library.get(&f.profile_id).unwrap();
+            let mode = library.layout(f).unwrap();
             let base = (f.start_address - 1) as usize;
-            let slot = &frames[&f.universe][base..base + profile.footprint()];
-            match profile.channel_offset(&ChannelType::Dimmer) {
+            let slot = &frames[&f.universe][base..base + mode.footprint()];
+            match mode.channel_offset(&ChannelType::Dimmer) {
                 Some(off) => assert_eq!(slot[off], 0, "{}: dimmer open", f.label),
                 None => assert!(
                     slot.iter().all(|&v| v == 0),
@@ -531,14 +576,14 @@ mod tests {
             &HashSet::new(),
             0.25,
         );
-        let profile = library.get(&pb1.profile_id).unwrap();
+        let mode = library.layout(pb1).unwrap();
         let base = (pb1.start_address - 1) as usize;
-        let slot = &lit[&pb1.universe][base..base + profile.footprint()];
+        let slot = &lit[&pb1.universe][base..base + mode.footprint()];
         let lit_pixels = slot
             .chunks(3)
             .filter(|px| px.iter().any(|&v| v > 0))
             .count();
-        let n = profile.footprint() / 3;
+        let n = mode.footprint() / 3;
         assert!(lit_pixels > 0, "chase lights a window");
         assert!(lit_pixels < n, "chase is a window, not the whole bar");
     }
@@ -564,6 +609,240 @@ mod tests {
         assert_eq!(
             value_of(&rig, &library, &frames, "S1", &ChannelType::Tilt),
             255
+        );
+    }
+
+    use crate::fixture_library::WheelSlot;
+
+    fn id_of(rig: &Rig, label: &str) -> u32 {
+        rig.iter().find(|f| f.label == label).expect("fixture").id
+    }
+
+    fn dark(
+        rig: &Rig,
+        library: &FixtureLibrary,
+        p: &ProgrammerParams,
+    ) -> HashMap<u8, UniverseFrame> {
+        render(rig, library, &lanes(0.0, 0.0, 0.0), p, &HashSet::new(), 0.0)
+    }
+
+    /// The spot profile with a small test wheel.
+    fn with_wheels(mut library: FixtureLibrary) -> FixtureLibrary {
+        let spot = library.profiles.get_mut("shehds-led-spot-60w").unwrap();
+        let slot = |name: &str, rgb, dmx| WheelSlot {
+            name: name.into(),
+            rgb,
+            dmx,
+        };
+        spot.color_wheel = vec![
+            slot("White", [1.0, 1.0, 1.0], 0),
+            slot("Red", [1.0, 0.0, 0.0], 20),
+            slot("Blue", [0.0, 0.0, 1.0], 60),
+        ];
+        spot.gobo_wheel = vec![8, 16, 24];
+        library
+    }
+
+    #[test]
+    fn a_held_dimmer_lights_a_fixture_without_its_lane() {
+        let (mut rig, library) = setup();
+        let s1 = id_of(&rig, "S1");
+        let mut p = ProgrammerParams::default();
+        p.hold_dimmer(&[s1], 60.0);
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Dimmer),
+            u8_of(0.6)
+        );
+        // The unheld spot follows its dark lane.
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S2", &ChannelType::Dimmer),
+            0
+        );
+        // In 11CH the dimmer is channel 8.
+        for f in rig.fixtures_mut().iter_mut().filter(|f| f.id == s1) {
+            f.mode = "11CH".into();
+        }
+        let frames = dark(&rig, &library, &p);
+        let f = rig.iter().find(|f| f.id == s1).unwrap();
+        assert_eq!(
+            frames[&f.universe][(f.start_address - 1) as usize + 7],
+            u8_of(0.6)
+        );
+        // PREVIEW keeps it in the editor; CLEAR lets it go.
+        p.preview = true;
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Dimmer),
+            0
+        );
+        p.preview = false;
+        p.release();
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Dimmer),
+            0
+        );
+    }
+
+    #[test]
+    fn a_held_colour_turns_the_wheel_to_its_nearest_slot() {
+        let (rig, library) = setup();
+        let library = with_wheels(library);
+        let (s1, p1) = (id_of(&rig, "S1"), id_of(&rig, "P1"));
+        let mut p = ProgrammerParams::default();
+        p.hold_rgbw(&[s1], [100.0, 0.0, 0.0, 0.0]);
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Color),
+            20
+        );
+        // The unheld spot sits on white; the unheld PAR stays white.
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S2", &ChannelType::Color),
+            0
+        );
+        assert_eq!(
+            value_of(&rig, &library, &frames, "P1", &ChannelType::Green),
+            255
+        );
+        // Blue, and a PAR held red, on the same frame.
+        p.hold_rgbw(&[s1], [0.0, 0.0, 100.0, 0.0]);
+        p.hold_rgbw(&[p1], [100.0, 0.0, 0.0, 0.0]);
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Color),
+            60
+        );
+        assert_eq!(
+            value_of(&rig, &library, &frames, "P1", &ChannelType::Green),
+            0
+        );
+        // Without a wheel table the channel stays at 0.
+        let mut library = library;
+        let spot = library.profiles.get_mut("shehds-led-spot-60w").unwrap();
+        spot.color_wheel.clear();
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Color),
+            0
+        );
+    }
+
+    #[test]
+    fn gobos_use_the_profiles_values() {
+        let (rig, library) = setup();
+        let library = with_wheels(library);
+        let mut p = ProgrammerParams::default();
+        p.beam.gobo = 3;
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Gobo),
+            24
+        );
+        // Past the wheel: its last gobo. 0 is open.
+        p.beam.gobo = 8;
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Gobo),
+            24
+        );
+        p.beam.gobo = 0;
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "S1", &ChannelType::Gobo),
+            0
+        );
+    }
+
+    #[test]
+    fn picking_a_pixel_effect_brings_the_bars_up_without_a_lane() {
+        let (rig, library) = setup();
+        let (pb1, pb2, s1) = (id_of(&rig, "PB1"), id_of(&rig, "PB2"), id_of(&rig, "S1"));
+        // PB1's first pixel, on beat 1 with every lane dark.
+        let red = |p: &ProgrammerParams| {
+            let frames = render(
+                &rig,
+                &library,
+                &lanes(0.0, 0.0, 0.0),
+                p,
+                &HashSet::new(),
+                1.0,
+            );
+            value_of(&rig, &library, &frames, "PB1", &ChannelType::PixelRed(0))
+        };
+        // Breathe, at its peak on beat 1.
+        let mut p = ProgrammerParams::default();
+        p.pixel.effect = 5;
+        assert_eq!(red(&p), 0);
+        // Spots selected: no bar is, so every bar comes up.
+        let bars = crate::programmer::pixel_targets(&rig, &HashSet::from([s1]));
+        assert_eq!(bars.len(), rig.ids_of_kind(FixtureKind::PixelBar).count());
+        p.bring_up(&bars);
+        assert_eq!(red(&p), 255);
+        p.release();
+        assert_eq!(red(&p), 0);
+
+        // One bar selected: only it. A held dimmer stays as it was.
+        let mut p = ProgrammerParams::default();
+        p.hold_dimmer(&[pb1], 40.0);
+        p.bring_up(&crate::programmer::pixel_targets(
+            &rig,
+            &HashSet::from([pb1]),
+        ));
+        assert_eq!(p.held[&pb1].dimmer, Some(40.0));
+        assert!(!p.held.contains_key(&pb2));
+        assert_eq!(p.intensity.dimmer, 40.0);
+    }
+
+    #[test]
+    fn each_colour_preset_lands_on_the_shehds_wheel() {
+        let (rig, library) = setup();
+        let s1 = id_of(&rig, "S1");
+        let expected = [
+            ("White", 5),
+            ("Red", 15),
+            ("Orange", 25),
+            ("Yellow", 35),
+            ("Green", 45),
+            ("Cyan", 75),
+            ("Blue", 55),
+            ("Magenta", 65),
+            ("Pink", 65),
+            ("UV", 55),
+        ];
+        for ((name, preset), (want_name, want)) in COLOR_PRESETS.iter().zip(expected) {
+            assert_eq!(*name, want_name);
+            let mut p = ProgrammerParams::default();
+            p.hold_rgbw(&[s1], *preset);
+            let frames = dark(&rig, &library, &p);
+            assert_eq!(
+                value_of(&rig, &library, &frames, "S1", &ChannelType::Color),
+                want,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn eleven_channel_spots_get_16_bit_position() {
+        let (mut rig, library) = setup();
+        for f in rig.fixtures_mut().iter_mut().filter(|f| f.label == "S1") {
+            f.mode = "11CH".into();
+        }
+        let mut p = ProgrammerParams::default();
+        p.position.pan = 1.0;
+        p.position.tilt = 180.0;
+        let frames = dark(&rig, &library, &p);
+        let value = |ch| value_of(&rig, &library, &frames, "S1", ch);
+        // 1° of 360 is 182 of 65535: all in the fine byte.
+        assert_eq!(
+            (value(&ChannelType::Pan), value(&ChannelType::PanFine)),
+            (0, 182)
+        );
+        assert_eq!(
+            (value(&ChannelType::Tilt), value(&ChannelType::TiltFine)),
+            (128, 0)
         );
     }
 }

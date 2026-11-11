@@ -64,7 +64,7 @@ pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
             groups_row(ui, cx.rig, cx.selection);
             ui.add_space(theme::SPACE_8);
             theme::well(ui, theme::SPACE_8, |ui| {
-                fixture_grid(ui, cx.rig, cx.selection, cx.outputs);
+                fixture_grid(ui, cx.rig, cx.selection, cx.outputs, &cx.params.held);
             });
             ui.add_space(theme::SPACE_8);
             ui.horizontal(|ui| {
@@ -97,14 +97,21 @@ pub fn programmer_panel(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
                 let params_left = ui.cursor().left();
                 ui.vertical(|ui| {
                     ui.set_width(PARAMS_W);
+                    // Intensity and colour belong to the fixtures selected
+                    // as they're set: the whole rig when none are.
+                    let targets = programmer::targets(cx.rig, cx.selection);
+                    let selection = &*cx.selection;
                     ui.horizontal_top(|ui| match cx.params.view {
-                        ParamView::Intensity => intensity_view(ui, &mut cx.params.intensity),
-                        ParamView::Color => color_view(ui, &mut cx.params.color),
+                        ParamView::Intensity => intensity_view(ui, cx.params, &targets, selection),
+                        ParamView::Color => color_view(ui, cx.params, &targets, selection),
                         ParamView::Position => position_view(ui, &mut cx.params.position),
                         ParamView::Beam => beam_view(ui, &mut cx.params.beam),
                         // Pixel effects are pre-baked patterns; the
                         // standard effects panel doesn't apply.
-                        ParamView::PixelFx => pixel_view(ui, &mut cx.params.pixel),
+                        ParamView::PixelFx => {
+                            let bars = programmer::pixel_targets(cx.rig, selection);
+                            pixel_view(ui, cx.params, &bars);
+                        }
                     });
                 });
                 let pad = params_left + PARAMS_W + 10.0 - ui.cursor().left();
@@ -174,10 +181,11 @@ fn groups_row(ui: &mut egui::Ui, rig: &Rig, selection: &mut HashSet<u32>) {
         }
         ui.add_space(10.0);
         let n = selection.len();
+        // Where a dimmer or colour edit goes.
         let caption = if n == 0 {
-            "no selection = whole lanes".to_string()
+            "→ whole rig".to_string()
         } else {
-            format!("{n} selected")
+            format!("→ {n} selected")
         };
         ui.label(theme::NOTE_TEXT.rich(caption).color(theme::TEXT_MUTED));
     });
@@ -199,17 +207,21 @@ struct FaderCol<'a> {
     height: f32,
 }
 
-/// One labeled vertical fader with a live value readout.
-fn fader_col(ui: &mut egui::Ui, value: &mut f32, spec: FaderCol<'_>) {
+/// One labeled vertical fader with a live value readout. Returns whether
+/// it moved.
+fn fader_col(ui: &mut egui::Ui, value: &mut f32, spec: FaderCol<'_>) -> bool {
+    let mut changed = false;
     ui.vertical(|ui| {
         ui.set_width(48.0);
         ui.vertical_centered(|ui| {
-            ui.add(
-                Fader::new(value, spec.range, spec.accent)
-                    .size((FADER_W, spec.height))
-                    .notches(Notches::Even(4))
-                    .default_value(spec.default),
-            );
+            changed = ui
+                .add(
+                    Fader::new(value, spec.range, spec.accent)
+                        .size((FADER_W, spec.height))
+                        .notches(Notches::Even(4))
+                        .default_value(spec.default),
+                )
+                .changed();
             ui.label(
                 theme::NUMERALS_SM
                     .rich(format!("{value:.0}{}", spec.unit))
@@ -218,31 +230,38 @@ fn fader_col(ui: &mut egui::Ui, value: &mut f32, spec: FaderCol<'_>) {
             caption(ui, spec.label);
         });
     });
+    changed
 }
 
-fn intensity_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::IntensityParams) {
+fn intensity_view(
+    ui: &mut egui::Ui,
+    p: &mut ProgrammerParams,
+    targets: &[u32],
+    selection: &HashSet<u32>,
+) {
     let accent = crate::waveform::palette::LANE_LIGHTING;
     let height = fill_fader_height(ui);
-    for (value, label, default) in [
-        (&mut p.dimmer, "DIMMER", 100.0),
-        (&mut p.strobe, "STROBE", 0.0),
-    ] {
-        fader_col(
-            ui,
-            value,
-            FaderCol {
-                label,
-                range: 0.0..=100.0,
-                default,
-                accent,
-                unit: "%",
-                height,
-            },
-        );
+    let spec = |label, default| FaderCol {
+        label,
+        range: 0.0..=100.0,
+        default,
+        accent,
+        unit: "%",
+        height,
+    };
+    let mut dimmer = p.shown_dimmer(selection);
+    if fader_col(ui, &mut dimmer, spec("DIMMER", 100.0)) {
+        p.hold_dimmer(targets, dimmer);
     }
+    fader_col(ui, &mut p.intensity.strobe, spec("STROBE", 0.0));
 }
 
-fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
+fn color_view(
+    ui: &mut egui::Ui,
+    p: &mut ProgrammerParams,
+    targets: &[u32],
+    selection: &HashSet<u32>,
+) {
     const ACCENTS: [(usize, &str, egui::Color32); 4] = [
         (0, "R", theme::FIXTURE_R),
         (1, "G", theme::FIXTURE_G),
@@ -250,10 +269,13 @@ fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
         (3, "W", theme::FIXTURE_W),
     ];
     let height = fill_fader_height(ui);
+    let mut rgbw = p.shown_rgbw(selection);
+    let mut changed = false;
+    let mut picked = None;
     for (i, label, accent) in ACCENTS {
-        fader_col(
+        changed |= fader_col(
             ui,
-            &mut p.rgbw[i],
+            &mut rgbw[i],
             FaderCol {
                 label,
                 range: 0.0..=100.0,
@@ -267,12 +289,12 @@ fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
     ui.add_space(6.0);
     ui.vertical(|ui| {
         // Mixed-color swatch (white adds broadly to all channels).
-        let mix = |c: f32| (((c + p.rgbw[3] * 0.9) / 100.0).clamp(0.0, 1.0) * 255.0) as u8;
+        let mix = |c: f32| (((c + rgbw[3] * 0.9) / 100.0).clamp(0.0, 1.0) * 255.0) as u8;
         let (rect, _) = ui.allocate_exact_size(egui::vec2(56.0, 22.0), egui::Sense::hover());
         ui.painter().rect_filled(
             rect,
             theme::RADIUS_CONTROL,
-            egui::Color32::from_rgb(mix(p.rgbw[0]), mix(p.rgbw[1]), mix(p.rgbw[2])),
+            egui::Color32::from_rgb(mix(rgbw[0]), mix(rgbw[1]), mix(rgbw[2])),
         );
         theme::paint_edge(ui.painter(), rect, theme::RADIUS_CONTROL, theme::EDGE);
         ui.add_space(4.0);
@@ -281,9 +303,9 @@ fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
             .spacing([4.0, 4.0])
             .min_col_width(18.0)
             .show(ui, |ui| {
-                for (i, &(name, rgbw)) in COLOR_PRESETS.iter().enumerate() {
-                    if color_swatch(ui, rgbw, false).status_help(name).clicked() {
-                        p.rgbw = rgbw;
+                for (i, &(name, preset)) in COLOR_PRESETS.iter().enumerate() {
+                    if color_swatch(ui, preset, false).status_help(name).clicked() {
+                        picked = Some(preset);
                     }
                     if i % 5 == 4 {
                         ui.end_row();
@@ -291,6 +313,13 @@ fn color_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::ColorParams) {
                 }
             });
     });
+    if let Some(preset) = picked {
+        rgbw = preset;
+        changed = true;
+    }
+    if changed {
+        p.hold_rgbw(targets, rgbw);
+    }
 }
 
 /// Small clickable color swatch for a preset.
@@ -418,7 +447,11 @@ fn beam_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::BeamParams) {
     });
 }
 
-fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) {
+/// Picking an effect or colour brings `bars` up, so they show it without
+/// a lane.
+fn pixel_view(ui: &mut egui::Ui, params: &mut ProgrammerParams, bars: &[u32]) {
+    let p = &mut params.pixel;
+    let mut picked = false;
     ui.vertical(|ui| {
         caption(ui, "EFFECT");
         ui.add_space(theme::SPACE_6);
@@ -429,6 +462,7 @@ fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) 
                 for (i, name) in PIXEL_EFFECTS.iter().enumerate() {
                     if ui.selectable_label(p.effect == i, *name).clicked() {
                         p.effect = i;
+                        picked = true;
                     }
                 }
             });
@@ -447,6 +481,7 @@ fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) 
                         .clicked()
                     {
                         p.color = i;
+                        picked = true;
                     }
                     if i % 5 == 4 {
                         ui.end_row();
@@ -463,6 +498,9 @@ fn pixel_view(ui: &mut egui::Ui, p: &mut halo_light::programmer::PixelFxParams) 
                 .color(theme::TEXT_MUTED),
         );
     });
+    if picked {
+        params.bring_up(bars);
+    }
 }
 
 /// The shared per-parameter effects panel with a beat-synced preview.
@@ -624,17 +662,18 @@ fn action_column(ui: &mut egui::Ui, cx: &mut ProgrammerCtx<'_>) -> bool {
         ui.spacing_mut().item_spacing.y = theme::SPACE_8;
         // CLEAR lights amber while any lane is latched: there's something
         // live to release.
-        let armed = programmer::any_latched(cx.overrides);
+        let armed = programmer::any_latched(cx.overrides) || cx.params.holds_any();
         if ui
             .add(
                 Key::new("CLEAR")
                     .width(ACTION_COL_W)
                     .lit(armed.then_some(Lit::Accent)),
             )
-            .status_help("Release all latched lanes (Esc)")
+            .status_help("Release all latched lanes and held fixtures (Esc)")
             .clicked()
         {
             programmer::clear(cx.overrides);
+            cx.params.release();
         }
         ui.add_enabled_ui(cx.can_store, |ui| {
             if ui
@@ -738,6 +777,7 @@ pub fn fixture_grid(
     rig: &Rig,
     selection: &mut HashSet<u32>,
     outputs: &[LaneOutput; LANE_COUNT],
+    held: &std::collections::BTreeMap<u32, programmer::Held>,
 ) {
     const CELL_W: f32 = 40.0;
     const CELL_H: f32 = 28.0;
@@ -760,17 +800,23 @@ pub fn fixture_grid(
         let min =
             rect.min + egui::vec2(f.col as f32 * (CELL_W + GAP), f.row as f32 * (CELL_H + GAP));
         let cell = egui::Rect::from_min_size(min, egui::vec2(CELL_W, CELL_H));
-        let out = outputs[f.kind.lane() as usize];
+        let lane = outputs[f.kind.lane() as usize];
+        // A fixture the programmer holds shows its own level.
+        let held_dimmer = held.get(&f.id).and_then(|h| h.dimmer);
+        let (level, programmed) = match held_dimmer {
+            Some(dimmer) => (dimmer / 100.0, true),
+            None => (lane.level, lane.source == LaneSource::Programmer),
+        };
         let selected = selection.contains(&f.id);
 
-        let alpha = 0.15 + 0.85 * out.level.clamp(0.0, 1.0);
+        let alpha = 0.15 + 0.85 * level.clamp(0.0, 1.0);
         let [r, g, b] = f.kind.color();
         painter.rect_filled(
             cell,
             theme::RADIUS_CONTROL,
             egui::Color32::from_rgb(r, g, b).gamma_multiply(alpha),
         );
-        if out.source == LaneSource::Programmer {
+        if programmed {
             painter.rect_stroke(
                 cell.shrink(1.5),
                 2.0,

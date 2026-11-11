@@ -1504,6 +1504,7 @@ impl HaloApp {
                 self.prepare.selection.clear();
             } else {
                 programmer::clear(&mut self.programmer);
+                self.programmer_params.release();
             }
         }
         if self.view == View::Prepare {
@@ -1687,8 +1688,7 @@ impl HaloApp {
                                 .iter()
                                 .filter(|f| f.universe == 1)
                                 .filter_map(|f| {
-                                    fl.get(&f.profile_id)
-                                        .map(|p| f.start_address + p.footprint() as u16)
+                                    fl.layout(f).map(|m| f.start_address + m.footprint() as u16)
                                 })
                                 .max()
                                 .unwrap_or(1);
@@ -1699,6 +1699,7 @@ impl HaloApp {
                                 col: 0,
                                 row,
                                 profile_id: kind.default_profile_id().to_string(),
+                                mode: String::new(),
                                 universe: 1,
                                 start_address: addr.min(512),
                             });
@@ -1760,7 +1761,8 @@ impl HaloApp {
                         .spacing([theme::SPACE_12, theme::SPACE_6])
                         .show(ui, |ui| {
                             for h in [
-                                "FIXTURE", "KIND", "PROFILE", "UNIV", "ADDR", "COL", "ROW", "",
+                                "FIXTURE", "KIND", "PROFILE", "MODE", "UNIV", "ADDR", "COL", "ROW",
+                                "",
                             ] {
                                 ui.label(theme::CAPTION.rich(h).color(theme::TEXT_MUTED));
                             }
@@ -1806,6 +1808,30 @@ impl HaloApp {
                                                 && &f.profile_id != pid
                                             {
                                                 f.profile_id = pid.clone();
+                                                // The new profile's first mode.
+                                                f.mode.clear();
+                                                changed = true;
+                                            }
+                                        }
+                                    });
+                                // The profile's DMX modes: one for most
+                                // fixtures.
+                                let modes: Vec<String> = fl
+                                    .get(&f.profile_id)
+                                    .map(|p| p.modes.iter().map(|m| m.name.clone()).collect())
+                                    .unwrap_or_default();
+                                let current = fl
+                                    .layout(f)
+                                    .map_or_else(|| "—".to_string(), |m| m.name.clone());
+                                egui::ComboBox::from_id_salt(("patch-mode", f.id))
+                                    .selected_text(&current)
+                                    .width(72.0)
+                                    .show_ui(ui, |ui| {
+                                        for name in &modes {
+                                            if ui.selectable_label(&current == name, name).clicked()
+                                                && &current != name
+                                            {
+                                                f.mode = name.clone();
                                                 changed = true;
                                             }
                                         }
@@ -1933,7 +1959,8 @@ impl HaloApp {
 
     /// STORE: write every active programmer lane into the lighting deck's
     /// track as a cue at the current bar (1 bar for Lighting/Pixels — they
-    /// read as states — 1 beat for FX hits), then persist + sync.
+    /// read as states — 1 beat for FX hits), then persist + sync. Per-fixture
+    /// held dimmer and colour aren't cues yet, so STORE leaves them out.
     fn store_programmer(&mut self) {
         let deck = &self.decks[self.lighting_deck];
         let Some(track_id) = deck.track_id else {

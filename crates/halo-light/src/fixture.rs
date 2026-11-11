@@ -106,6 +106,10 @@ pub struct Fixture {
     pub row: u8,
     /// Key into the [`FixtureLibrary`].
     pub profile_id: String,
+    /// The profile's DMX mode it's patched in, by name; empty (a patch
+    /// from before modes) is the profile's first.
+    #[serde(default)]
+    pub mode: String,
     pub universe: u8,
     /// 1-based DMX start address.
     pub start_address: u16,
@@ -160,11 +164,11 @@ impl Rig {
         // (universe, start, end-inclusive, id) for overlap sweeping.
         let mut spans: Vec<(u8, u16, u16, u32)> = Vec::new();
         for f in &self.fixtures {
-            let Some(profile) = library.get(&f.profile_id) else {
+            let Some(mode) = library.layout(f) else {
                 bad.insert(f.id);
                 continue;
             };
-            let fp = profile.footprint() as u16;
+            let fp = mode.footprint() as u16;
             if f.start_address < 1 || u32::from(f.start_address) + u32::from(fp) - 1 > 512 {
                 bad.insert(f.id);
                 continue;
@@ -230,6 +234,7 @@ pub fn default_rig(library: &FixtureLibrary) -> Rig {
         let profile_id = kind.default_profile_id();
         let footprint = library
             .get(profile_id)
+            .and_then(|p| p.modes.first())
             .expect("default rig uses a library profile")
             .footprint() as u16;
         let (universe, start_address) = if kind == FixtureKind::PixelBar {
@@ -252,6 +257,7 @@ pub fn default_rig(library: &FixtureLibrary) -> Rig {
             col,
             row,
             profile_id: profile_id.to_string(),
+            mode: String::new(),
             universe,
             start_address,
         });
@@ -311,8 +317,7 @@ mod tests {
         // fixtures overlap on the wire.
         let mut occupied: HashSet<(u8, u16)> = HashSet::new();
         for f in rig.iter() {
-            let profile = library.get(&f.profile_id).expect("profile exists");
-            let footprint = profile.footprint() as u16;
+            let footprint = library.layout(f).expect("profile exists").footprint() as u16;
             assert!(f.start_address >= 1, "{}: addresses are 1-based", f.label);
             assert!(
                 f.start_address + footprint - 1 <= 512,
@@ -393,5 +398,50 @@ mod tests {
             assert!(!kind.group_label().is_empty());
             assert!(!kind.short().is_empty());
         }
+    }
+
+    #[test]
+    fn a_patch_from_before_modes_loads_in_the_first_mode() {
+        let library = FixtureLibrary::new();
+        let json = r#"{"id":1,"kind":"Spot","label":"S1","col":0,"row":0,
+            "profile_id":"shehds-led-spot-60w","universe":1,"start_address":1}"#;
+        let f: Fixture = serde_json::from_str(json).expect("old patch loads");
+        assert_eq!(f.mode, "");
+        assert_eq!(library.layout(&f).unwrap().name, "9CH");
+        // An unknown mode falls back the same way.
+        let f = Fixture {
+            mode: "42CH".into(),
+            ..f
+        };
+        assert_eq!(library.layout(&f).unwrap().footprint(), 9);
+        let f = Fixture {
+            mode: "11CH".into(),
+            ..f
+        };
+        assert_eq!(library.layout(&f).unwrap().footprint(), 11);
+    }
+
+    #[test]
+    fn conflicts_use_the_patched_modes_footprint() {
+        let library = FixtureLibrary::new();
+        let mut rig = default_rig(&library);
+        let spots: Vec<u32> = rig.ids_of_kind(FixtureKind::Spot).take(2).collect();
+        for (f, addr) in rig
+            .fixtures_mut()
+            .iter_mut()
+            .filter(|f| spots.contains(&f.id))
+            .zip([401, 410])
+        {
+            f.universe = 9;
+            f.start_address = addr;
+        }
+        // 9 channels from 401 end at 409: clear of 410.
+        assert!(rig.conflicts(&library).is_empty());
+        for f in rig.fixtures_mut().iter_mut().filter(|f| f.id == spots[0]) {
+            f.mode = "11CH".into();
+        }
+        // 11 from 401 run to 411, over the second spot.
+        let bad = rig.conflicts(&library);
+        assert!(spots.iter().all(|id| bad.contains(id)), "{bad:?}");
     }
 }
