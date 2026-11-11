@@ -257,13 +257,13 @@ impl Options {
         {
             self.learning = None;
         }
-        let popup_was_open = ctx.memory(|m| m.any_popup_open());
-        let screen = ctx.screen_rect().size();
+        let popup_was_open = egui::Popup::is_any_open(ctx);
+        let screen = ctx.content_rect().size();
         let size = MODAL_SIZE
             .min(screen - Vec2::splat(2.0 * MODAL_MARGIN))
             .max(Vec2::ZERO);
         let mut outcome = None;
-        let modal = egui::Modal::new(Id::new("options"))
+        let modal = egui::Modal::new(Id::unique("options"))
             .backdrop_color(theme::GROUND.gamma_multiply(BACKDROP_ALPHA))
             .frame(
                 egui::Frame::NONE
@@ -318,7 +318,7 @@ impl Options {
                 pos2(rail.left() + CATEGORY_INSET, top),
                 vec2(RAIL_W - 2.0 * CATEGORY_INSET, CATEGORY_H),
             );
-            let resp = ui.interact(row, ui.id().with(category.label()), Sense::click());
+            let resp = ui.interact(row, ui.scope_id().with(category.label()), Sense::click());
             let selected = self.category == category;
             if selected {
                 painter.rect_filled(row, theme::RADIUS_CONTROL, theme::SELECTION);
@@ -924,7 +924,7 @@ fn truncated(
 ) -> std::sync::Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::single_section(text.to_string(), style.format(color));
     job.wrap = egui::text::TextWrapping::truncate_at_width(width);
-    ctx.fonts(|f| f.layout_job(job))
+    ctx.fonts_mut(|f| f.layout_job(job))
 }
 
 /// A long list: a key showing the current value with a ▼, opening a list
@@ -936,7 +936,7 @@ fn dropdown<T: Clone + PartialEq>(
     current: &T,
 ) -> Option<T> {
     let popup_id = ui.make_persistent_id(id_salt);
-    let open = ui.memory(|m| m.is_popup_open(popup_id));
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
     let (rect, resp) = ui.allocate_exact_size(vec2(CONTROL_W, CONTROL_H), Sense::click());
     let painter = ui.painter();
     let r = theme::RADIUS_CONTROL;
@@ -996,65 +996,56 @@ fn dropdown<T: Clone + PartialEq>(
     if resp.has_focus() {
         theme::paint_focus(painter, rect);
     }
-    if resp.clicked() {
-        ui.memory_mut(|m| m.toggle_popup(popup_id));
-    }
-
     // The list: a well with an `edge` hairline, the current value washed in
     // `selection`.
     let mut picked = None;
-    ui.scope(|ui| {
-        let style = ui.style_mut();
-        style.visuals.window_fill = theme::WELL;
-        style.visuals.window_stroke = Stroke::new(1.0, theme::EDGE);
-        style.visuals.popup_shadow = egui::Shadow::NONE;
-        style.visuals.menu_corner_radius = CornerRadius::same(r);
-        style.spacing.menu_margin = Margin::same(POPUP_PAD);
-        egui::popup_below_widget(
-            ui,
-            popup_id,
-            &resp,
-            PopupCloseBehavior::CloseOnClick,
-            |ui| {
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                let width = CONTROL_W - 2.0 * POPUP_PAD as f32;
-                ui.set_width(width);
-                for (label, value) in choices {
-                    let (row, resp) =
-                        ui.allocate_exact_size(vec2(width, POPUP_ROW_H), Sense::click());
-                    let painter = ui.painter();
-                    if value == current {
-                        painter.rect_filled(row, r, theme::SELECTION);
-                    } else if resp.hovered() {
-                        theme::paint_face(painter, row, r, Face::KeyHover, Color32::WHITE);
-                    }
-                    let galley = truncated(
-                        ui.ctx(),
-                        label,
-                        theme::TEXT_TOGGLE,
-                        if value == current {
-                            theme::TEXT_STRONG
-                        } else {
-                            theme::TEXT
-                        },
-                        width - 2.0 * POPUP_ROW_PAD,
-                    );
-                    let color = galley.job.sections[0].format.color;
-                    painter.galley(
-                        pos2(
-                            row.left() + POPUP_ROW_PAD,
-                            row.center().y - galley.size().y / 2.0,
-                        ),
-                        galley,
-                        color,
-                    );
-                    if resp.clicked() {
-                        picked = Some(value.clone());
-                    }
+    egui::Popup::from_toggle_button_response(&resp)
+        .id(popup_id)
+        .close_behavior(PopupCloseBehavior::CloseOnClick)
+        .frame(
+            egui::Frame::NONE
+                .fill(theme::WELL)
+                .stroke(Stroke::new(1.0, theme::EDGE))
+                .corner_radius(CornerRadius::same(r))
+                .inner_margin(Margin::same(POPUP_PAD)),
+        )
+        .show(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            let width = CONTROL_W - 2.0 * POPUP_PAD as f32;
+            ui.set_width(width);
+            for (label, value) in choices {
+                let (row, resp) = ui.allocate_exact_size(vec2(width, POPUP_ROW_H), Sense::click());
+                let painter = ui.painter();
+                if value == current {
+                    painter.rect_filled(row, r, theme::SELECTION);
+                } else if resp.hovered() {
+                    theme::paint_face(painter, row, r, Face::KeyHover, Color32::WHITE);
                 }
-            },
-        );
-    });
+                let galley = truncated(
+                    ui.ctx(),
+                    label,
+                    theme::TEXT_TOGGLE,
+                    if value == current {
+                        theme::TEXT_STRONG
+                    } else {
+                        theme::TEXT
+                    },
+                    width - 2.0 * POPUP_ROW_PAD,
+                );
+                let color = galley.job.sections[0].format.color;
+                painter.galley(
+                    pos2(
+                        row.left() + POPUP_ROW_PAD,
+                        row.center().y - galley.size().y / 2.0,
+                    ),
+                    galley,
+                    color,
+                );
+                if resp.clicked() {
+                    picked = Some(value.clone());
+                }
+            }
+        });
     picked
 }
 
@@ -1086,11 +1077,11 @@ fn text_field(ui: &mut Ui, text: &mut String, enabled: bool, valid: bool) {
             } else {
                 theme::TEXT_DISABLED
             })
-            .frame(false)
+            .frame(egui::Frame::NONE)
             .margin(Margin::symmetric(FIELD_PAD as i8, 0))
-            .vertical_align(Align::Center)
+            .align(Align2::LEFT_CENTER)
             .min_size(vec2(CONTROL_W, CONTROL_H))
-            .desired_width(CONTROL_W - 2.0 * FIELD_PAD),
+            .desired_width(CONTROL_W),
     );
     if enabled && !valid {
         ui.painter().rect_stroke(

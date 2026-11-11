@@ -22,7 +22,7 @@ pub fn render_thumbnail(data: &[u8]) -> Option<egui::ColorImage> {
         return None;
     }
     let n = data.len() / 3;
-    let mut image = egui::ColorImage::new([n, THUMB_TEX_HEIGHT], egui::Color32::TRANSPARENT);
+    let mut image = egui::ColorImage::filled([n, THUMB_TEX_HEIGHT], egui::Color32::TRANSPARENT);
     let band_colors = [palette::BAND_LOW, palette::BAND_MID, palette::BAND_HIGH];
     for x in 0..n {
         for (band, &color) in band_colors.iter().enumerate().rev() {

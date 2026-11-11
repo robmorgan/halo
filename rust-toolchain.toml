@@ -1,0 +1,4 @@
+# Plain `cargo` here uses the same Rust as CI (egui 0.37 needs 1.95).
+# `cargo +nightly fmt` still overrides it.
+[toolchain]
+channel = "1.95.0"

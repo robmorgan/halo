@@ -21,7 +21,7 @@ persisted (see Persistence below). Logging is controlled with `RUST_LOG`.
 
 ### Toolchain
 
-- **Stable Rust** for building/testing (CI pins 1.90.0); **nightly** only for formatting.
+- **Stable Rust** for building/testing (`rust-toolchain.toml` and CI pin 1.95.0, egui 0.37's minimum); **nightly** only for formatting.
 - The `timestretch` crate is a **path dependency on a sibling clone**: `../timestretch-rs` next to this repo
   (from `crates/halo`, `path = "../../../timestretch-rs"`). CI checks out `robmorgan/timestretch-rs` to that
   location, pinned to v0.16.0. Enable `analysis` and `io`. Builds fail without it.
@@ -116,4 +116,4 @@ Plain threads + channels/atomics; each session has one owner:
 ## CI
 
 `.github/workflows/rust.yml` runs on macOS arm64 and Linux x86_64: checks out `timestretch-rs` as a sibling,
-then `cargo +nightly fmt --check`, `cargo build`, `cargo test` on stable 1.90.0.
+then `cargo +nightly fmt --check`, `cargo build`, `cargo test` on stable 1.95.0.

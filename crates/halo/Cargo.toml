@@ -12,10 +12,14 @@ crossbeam-queue = "0.3.12"
 # wgpu backend (native Metal on macOS): the default glow backend presents
 # through CGLFlushDrawable / OpenGL-on-Metal, which profiled as the single
 # biggest CPU cost of the timestretch reference app.
-eframe = { version = "0.31", default-features = false, features = [
+eframe = { version = "0.37", default-features = false, features = [
     "accesskit",
+    # Copy and paste in text fields.
+    "clipboard",
     "default_fonts",
     "persistence",
+    # Any glyph the Mac has a font for (non-Latin titles, colour emoji).
+    "system_fonts",
     "wgpu",
     # winit refuses to build on Linux at all without one of these — they're
     # part of eframe's own `default` feature set, which is otherwise off here.
@@ -25,7 +29,10 @@ eframe = { version = "0.31", default-features = false, features = [
 cpal = "0.18"
 midir = "0.11"
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "vorbis"] }
-egui_extras = { version = "0.31", default-features = false }
+egui_extras = { version = "0.37", default-features = false }
+# egui's monochrome emoji fonts, so Halo's icon glyphs (⚙ 🔍 🗄 …) keep
+# one colour instead of falling through to the system's colour emoji.
+egui = { version = "0.37", default-features = false, features = ["monochrome_emoji_fonts"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

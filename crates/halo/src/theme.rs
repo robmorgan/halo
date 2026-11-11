@@ -187,8 +187,6 @@ const JETBRAINS_MONO: &str = "JetBrainsMono-Regular";
 /// captions, and a copy with its tabular figures frozen in for numbers.
 const BARLOW_SEMIBOLD: &str = "BarlowCondensed-SemiBold";
 const BARLOW_TABULAR: &str = "BarlowCondensedTabular-SemiBold";
-/// egui's bundled icon fallbacks, kept behind Inter in every chain.
-const EMOJI_FALLBACKS: [&str; 2] = ["NotoEmoji-Regular", "emoji-icon-font"];
 
 static SEMIBOLD: LazyLock<FontFamily> = LazyLock::new(|| FontFamily::Name("semibold".into()));
 static BOLD: LazyLock<FontFamily> = LazyLock::new(|| FontFamily::Name("bold".into()));
@@ -270,7 +268,7 @@ impl TypeStyle {
         let mut job = egui::text::LayoutJob::single_section(text.to_owned(), self.format(color));
         job.wrap.max_rows = 1;
         job.break_on_newline = false;
-        ctx.fonts(|f| f.layout_job(job))
+        ctx.fonts_mut(|f| f.layout_job(job))
     }
 
     /// Width of `text` without the trailing letter-space egui adds after
@@ -340,17 +338,29 @@ pub fn truncated(
     let mut job = egui::text::LayoutJob::single_section(text.to_owned(), style.format(color));
     job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(0.0));
     job.break_on_newline = false;
-    ctx.fonts(|f| f.layout_job(job))
+    ctx.fonts_mut(|f| f.layout_job(job))
 }
 
 /// Register Inter (three weights plus the tabular copy) and JetBrains Mono,
-/// each ahead of egui's emoji fallbacks so Halo's Unicode icons still draw.
+/// each ahead of egui's icon and monochrome emoji fallbacks so Halo's
+/// Unicode icons still draw in one colour. Anything none of these cover
+/// (other scripts, say) comes from the system's fonts.
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    // egui's stock text faces are replaced outright; only the emoji
-    // fallbacks stay.
-    fonts.font_data.remove("Hack");
-    fonts.font_data.remove("Ubuntu-Light");
+    // egui's stock text faces are replaced outright; only the icon and
+    // emoji fallbacks at the end of its chains stay.
+    const STOCK_TEXT: [&str; 2] = ["Hack", "Ubuntu-Light"];
+    for name in STOCK_TEXT {
+        fonts.font_data.remove(name);
+    }
+    let fallbacks: Vec<String> = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .into_iter()
+        .flatten()
+        .filter(|name| !STOCK_TEXT.contains(&name.as_str()))
+        .cloned()
+        .collect();
     for (name, bytes) in [
         (
             INTER_REGULAR,
@@ -389,8 +399,8 @@ pub fn install_fonts(ctx: &egui::Context) {
     let chain = |first: &[&str]| -> Vec<String> {
         first
             .iter()
-            .chain(EMOJI_FALLBACKS.iter())
             .map(|s| (*s).to_owned())
+            .chain(fallbacks.iter().cloned())
             .collect()
     };
     fonts.families.clear();
@@ -497,7 +507,7 @@ fn sample_stops(stops: &[(f32, Color32)], t: f32) -> Color32 {
 struct FaceTextures(Arc<Vec<TextureHandle>>);
 
 fn faces_id() -> egui::Id {
-    egui::Id::new("halo-theme-faces")
+    egui::Id::unique("halo-theme-faces")
 }
 
 /// Build each `face-*` gradient once as a 1×32 texture.
@@ -508,10 +518,7 @@ fn install_faces(ctx: &egui::Context) {
             let pixels = (0..FACE_TEXELS)
                 .map(|i| sample_stops(face.stops(), (i as f32 + 0.5) / FACE_TEXELS as f32))
                 .collect();
-            let image = egui::ColorImage {
-                size: [1, FACE_TEXELS],
-                pixels,
-            };
+            let image = egui::ColorImage::new([1, FACE_TEXELS], pixels);
             ctx.load_texture(
                 format!("halo-face-{face:?}"),
                 image,
