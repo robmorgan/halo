@@ -275,9 +275,13 @@ from real library profiles (auto-addressed across 5 universes),
 `output::render()` flattens resolved lanes + programmer params into
 per-universe DMX frames, and a 44 Hz engine thread sends them over
 Art-Net independently of the UI (playhead read live from the deck
-atomics, so cues keep firing through UI stalls). The PATCH footer tab
-edits the rig live (profile/universe/address/grid, conflict detection,
-add/unpatch/reset) and persists it to the library DB; the settings
+atomics, so cues keep firing through UI stalls). The PATCH view edits
+the rig as a staged draft (profile/mode/universe/address/grid,
+add/unpatch/reset, APPLY/REVERT) and persists it to the library DB.
+Beside the sheet, a universe overview shows each universe's occupancy
+and the one showing as a 32×16 channel map: drag a fixture to readdress
+it or onto another universe, with overlaps hatched and NEXT FREE to
+clear them; the settings
 window picks broadcast vs unicast-to-node, also persisted. **Phase L1 is
 functionally complete** pending hardware validation; per-fixture
 pan/tilt limits in the patch sheet are a small leftover.
