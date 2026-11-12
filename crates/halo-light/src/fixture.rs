@@ -1,7 +1,11 @@
 //! Fixture rig model: the programmer's selection grid, with each grid
-//! fixture patched to a real profile at a universe + start address.
+//! fixture patched to a real profile at a universe + start address, and
+//! what the PATCH view checks it with: each universe's [`Occupancy`],
+//! [`Rig::first_free`] addresses and [`Rig::conflicts`].
 //! [`default_rig`] builds a plausible club rig from library profiles
-//! with auto-assigned addresses; a patching UI will replace it.
+//! with auto-assigned addresses.
+
+use std::collections::{BTreeMap, HashMap};
 
 use crate::cues::Lane;
 use crate::fixture_library::FixtureLibrary;
@@ -156,35 +160,228 @@ impl Rig {
         self.fixtures.iter().map(|f| f.id).max().unwrap_or(0) + 1
     }
 
-    /// Ids of fixtures whose patch is invalid: unknown profile, footprint
-    /// spilling past channel 512, or overlapping another fixture on the
-    /// same universe.
-    pub fn conflicts(&self, library: &FixtureLibrary) -> std::collections::HashSet<u32> {
-        let mut bad = std::collections::HashSet::new();
-        // (universe, start, end-inclusive, id) for overlap sweeping.
-        let mut spans: Vec<(u8, u16, u16, u32)> = Vec::new();
+    /// What's patched on each universe, channel by channel.
+    pub fn occupancy(&self, library: &FixtureLibrary) -> BTreeMap<u8, Occupancy> {
+        let mut out: BTreeMap<u8, Occupancy> = BTreeMap::new();
         for f in &self.fixtures {
-            let Some(mode) = library.layout(f) else {
-                bad.insert(f.id);
+            let occ = out.entry(f.universe).or_default();
+            if let Some(span) = f.span(library) {
+                for c in span.start..=span.end {
+                    let n = &mut occ.counts[usize::from(c) - 1];
+                    *n = n.saturating_add(1);
+                }
+            }
+        }
+        out
+    }
+
+    /// The first address on `universe` with `footprint` free channels in
+    /// a row, leaving `skip` (the fixture being moved) out; `None` when no
+    /// run is long enough.
+    pub fn first_free(
+        &self,
+        library: &FixtureLibrary,
+        universe: u8,
+        footprint: u16,
+        skip: Option<u32>,
+    ) -> Option<u16> {
+        let mut taken = [false; 512];
+        for f in &self.fixtures {
+            if f.universe != universe || Some(f.id) == skip {
+                continue;
+            }
+            if let Some(span) = f.span(library) {
+                for c in span.start..=span.end {
+                    taken[usize::from(c) - 1] = true;
+                }
+            }
+        }
+        let footprint = footprint.max(1);
+        let mut run = 0u16;
+        for (i, &t) in taken.iter().enumerate() {
+            run = if t { 0 } else { run + 1 };
+            if run >= footprint {
+                return Some(i as u16 + 2 - footprint);
+            }
+        }
+        None
+    }
+
+    /// The fixtures whose patch is invalid, and why: an unknown profile, a
+    /// footprint running past channel 512, or channels shared with another
+    /// fixture on the same universe. Every pair is compared, so an overlap
+    /// is caught however far apart the two start.
+    pub fn conflicts(&self, library: &FixtureLibrary) -> Conflicts {
+        let mut by_id: HashMap<u32, Conflict> = HashMap::new();
+        let mut spans: Vec<(&Fixture, Span)> = Vec::new();
+        for f in &self.fixtures {
+            let Some(span) = f.span(library) else {
+                by_id.entry(f.id).or_default().unknown_profile = true;
                 continue;
             };
-            let fp = mode.footprint() as u16;
-            if f.start_address < 1 || u32::from(f.start_address) + u32::from(fp) - 1 > 512 {
-                bad.insert(f.id);
-                continue;
+            let past_end = span.past_end();
+            if past_end > 0 {
+                by_id.entry(f.id).or_default().past_end = past_end;
             }
-            spans.push((f.universe, f.start_address, f.start_address + fp - 1, f.id));
+            spans.push((f, span));
         }
-        spans.sort_unstable();
-        for pair in spans.windows(2) {
-            let (u_a, _, end_a, id_a) = pair[0];
-            let (u_b, start_b, _, id_b) = pair[1];
-            if u_a == u_b && start_b <= end_a {
-                bad.insert(id_a);
-                bad.insert(id_b);
+        for (i, (a, sa)) in spans.iter().enumerate() {
+            for (b, sb) in &spans[i + 1..] {
+                if a.universe != b.universe {
+                    continue;
+                }
+                let (first, last) = (sa.start.max(sb.start), sa.end.min(sb.end));
+                if first > last {
+                    continue;
+                }
+                for (me, other) in [(a, b), (b, a)] {
+                    by_id.entry(me.id).or_default().overlaps.push(Overlap {
+                        other: other.id,
+                        first,
+                        last,
+                    });
+                }
             }
         }
-        bad
+        Conflicts { by_id }
+    }
+}
+
+/// A fixture's channels on its universe, 1-based and inclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub start: u16,
+    /// The last channel, cut at 512.
+    pub end: u16,
+    /// The patched mode's channel count, which may run past `end`.
+    pub footprint: u16,
+}
+
+impl Span {
+    /// How many channels the footprint runs past 512.
+    pub fn past_end(&self) -> u16 {
+        (u32::from(self.start) + u32::from(self.footprint))
+            .saturating_sub(513)
+            .min(u32::from(u16::MAX)) as u16
+    }
+}
+
+impl Fixture {
+    /// Where the fixture sits on its universe; `None` for a profile the
+    /// library doesn't know.
+    pub fn span(&self, library: &FixtureLibrary) -> Option<Span> {
+        let footprint = library.layout(self)?.footprint().max(1) as u16;
+        let start = self.start_address.clamp(1, 512);
+        let end = (u32::from(start) + u32::from(footprint) - 1).min(512) as u16;
+        Some(Span {
+            start,
+            end,
+            footprint,
+        })
+    }
+}
+
+/// How many fixtures patch each of a universe's 512 channels.
+#[derive(Clone)]
+pub struct Occupancy {
+    counts: [u8; 512],
+}
+
+impl Default for Occupancy {
+    fn default() -> Self {
+        Occupancy { counts: [0; 512] }
+    }
+}
+
+impl Occupancy {
+    /// Fixtures on 1-based `channel`.
+    pub fn count(&self, channel: u16) -> u8 {
+        usize::from(channel)
+            .checked_sub(1)
+            .and_then(|i| self.counts.get(i))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Channels with at least one fixture.
+    pub fn used(&self) -> u16 {
+        self.counts.iter().filter(|&&n| n > 0).count() as u16
+    }
+
+    /// Runs of channels with more than one fixture, as (first, last).
+    pub fn overlaps(&self) -> Vec<(u16, u16)> {
+        let mut runs = Vec::new();
+        let mut open: Option<u16> = None;
+        for (i, &n) in self.counts.iter().enumerate() {
+            let c = i as u16 + 1;
+            match (n > 1, open) {
+                (true, None) => open = Some(c),
+                (false, Some(first)) => {
+                    runs.push((first, c - 1));
+                    open = None;
+                }
+                _ => {}
+            }
+        }
+        if let Some(first) = open {
+            runs.push((first, 512));
+        }
+        runs
+    }
+}
+
+/// Channels one fixture shares with `other`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Overlap {
+    pub other: u32,
+    pub first: u16,
+    pub last: u16,
+}
+
+/// Why a fixture's patch is invalid.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Conflict {
+    pub unknown_profile: bool,
+    /// Channels past 512; 0 when it fits.
+    pub past_end: u16,
+    /// In rig order.
+    pub overlaps: Vec<Overlap>,
+}
+
+impl Conflict {
+    /// The channels it shares with any other fixture, first to last.
+    pub fn range(&self) -> Option<(u16, u16)> {
+        let first = self.overlaps.iter().map(|o| o.first).min()?;
+        let last = self.overlaps.iter().map(|o| o.last).max()?;
+        Some((first, last))
+    }
+}
+
+/// Every conflicting fixture, by id.
+#[derive(Debug, Clone, Default)]
+pub struct Conflicts {
+    by_id: HashMap<u32, Conflict>,
+}
+
+impl Conflicts {
+    pub fn get(&self, id: u32) -> Option<&Conflict> {
+        self.by_id.get(&id)
+    }
+
+    pub fn contains(&self, id: &u32) -> bool {
+        self.by_id.contains_key(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_id.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_id.is_empty()
+    }
+
+    pub fn ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.by_id.keys().copied()
     }
 }
 
@@ -378,7 +575,9 @@ mod tests {
             .find(|f| f.id == pb)
             .unwrap()
             .start_address = 400;
-        assert_eq!(rig.conflicts(&library), HashSet::from([pb]));
+        let bad = rig.conflicts(&library);
+        assert_eq!(bad.ids().collect::<HashSet<_>>(), HashSet::from([pb]));
+        assert_eq!(bad.get(pb).unwrap().past_end, 400 + 192 - 513);
 
         // Unknown profile: flagged.
         let mut rig = default_rig(&library);
@@ -443,5 +642,127 @@ mod tests {
         // 11 from 401 run to 411, over the second spot.
         let bad = rig.conflicts(&library);
         assert!(spots.iter().all(|id| bad.contains(id)), "{bad:?}");
+        assert_eq!(bad.get(spots[1]).unwrap().range(), Some((410, 411)));
+    }
+
+    /// A fixture of `profile` at `universe`.`addr`, for the address tests.
+    fn at(id: u32, profile: &str, universe: u8, start_address: u16) -> Fixture {
+        Fixture {
+            id,
+            kind: FixtureKind::Par,
+            label: format!("F{id}"),
+            col: id as u8,
+            row: 0,
+            profile_id: profile.into(),
+            mode: String::new(),
+            universe,
+            start_address,
+        }
+    }
+
+    // 8 channels.
+    const PAR: &str = "shehds-rgbw-par";
+    // 192 channels.
+    const BAR: &str = "clen-led-pixel-bar-64";
+
+    #[test]
+    fn occupancy_counts_each_universe_apart() {
+        let library = FixtureLibrary::new();
+        let rig = Rig::from_fixtures(vec![at(1, PAR, 1, 1), at(2, PAR, 1, 5), at(3, PAR, 2, 5)]);
+        let occ = rig.occupancy(&library);
+        assert_eq!(occ.keys().copied().collect::<Vec<_>>(), [1, 2]);
+        // 1–8 and 5–12 share 5–8.
+        assert_eq!(occ[&1].used(), 12);
+        assert_eq!(occ[&1].overlaps(), [(5, 8)]);
+        assert_eq!(
+            (occ[&1].count(4), occ[&1].count(5), occ[&1].count(13)),
+            (1, 2, 0)
+        );
+        assert_eq!(occ[&2].used(), 8);
+        assert!(occ[&2].overlaps().is_empty());
+        // Past 512, only the channels up to 512 are taken.
+        let rig = Rig::from_fixtures(vec![at(1, PAR, 1, 509), at(2, PAR, 1, 510)]);
+        let occ = rig.occupancy(&library);
+        assert_eq!(occ[&1].used(), 4);
+        assert_eq!(occ[&1].overlaps(), [(510, 512)]);
+    }
+
+    #[test]
+    fn first_free_finds_the_first_gap_long_enough() {
+        let library = FixtureLibrary::new();
+        // 1–8, a 4-channel gap, then 13–20.
+        let rig = Rig::from_fixtures(vec![at(1, PAR, 1, 1), at(2, PAR, 1, 13)]);
+        assert_eq!(rig.first_free(&library, 1, 4, None), Some(9));
+        assert_eq!(rig.first_free(&library, 1, 8, None), Some(21));
+        // Leaving out the fixture being moved frees its own channels.
+        assert_eq!(rig.first_free(&library, 1, 8, Some(1)), Some(1));
+        // Another universe is empty.
+        assert_eq!(rig.first_free(&library, 2, 8, None), Some(1));
+        // Two bars and a PAR leave 120 channels: no room for a third bar.
+        let rig = Rig::from_fixtures(vec![
+            at(1, BAR, 3, 1),
+            at(2, BAR, 3, 193),
+            at(3, PAR, 3, 385),
+        ]);
+        assert_eq!(rig.first_free(&library, 3, 192, None), None);
+        assert_eq!(rig.first_free(&library, 3, 120, None), Some(393));
+    }
+
+    #[test]
+    fn conflicts_catch_overlaps_that_are_not_neighbours() {
+        let library = FixtureLibrary::new();
+        // A bar on 1–192, a PAR at 5–12 and one at 100–107: sorted by
+        // start, the bar and the second PAR are never neighbours.
+        let rig = Rig::from_fixtures(vec![
+            at(1, BAR, 1, 1),
+            at(2, PAR, 1, 5),
+            at(3, PAR, 1, 100),
+            at(4, PAR, 1, 300),
+        ]);
+        let bad = rig.conflicts(&library);
+        assert_eq!(bad.len(), 3);
+        assert!(!bad.contains(&4));
+        let bar = bad.get(1).unwrap();
+        assert_eq!(
+            bar.overlaps,
+            [
+                Overlap {
+                    other: 2,
+                    first: 5,
+                    last: 12
+                },
+                Overlap {
+                    other: 3,
+                    first: 100,
+                    last: 107
+                },
+            ]
+        );
+        assert_eq!(bar.range(), Some((5, 107)));
+        // Each side of a pair reports the same channels.
+        assert_eq!(
+            bad.get(3).unwrap().overlaps,
+            [Overlap {
+                other: 1,
+                first: 100,
+                last: 107
+            }]
+        );
+        // Other universes don't clash.
+        let rig = Rig::from_fixtures(vec![at(1, BAR, 1, 1), at(2, PAR, 2, 5)]);
+        assert!(rig.conflicts(&library).is_empty());
+    }
+
+    #[test]
+    fn a_fixture_past_512_still_overlaps_what_it_covers() {
+        let library = FixtureLibrary::new();
+        let rig = Rig::from_fixtures(vec![at(1, PAR, 1, 508), at(2, PAR, 1, 512)]);
+        let bad = rig.conflicts(&library);
+        let a = bad.get(1).unwrap();
+        assert_eq!(a.past_end, 3);
+        let b = bad.get(2).unwrap();
+        assert_eq!(b.past_end, 7);
+        // Both reach 512, and nothing past it counts.
+        assert_eq!((a.range(), b.range()), (Some((512, 512)), Some((512, 512))));
     }
 }
