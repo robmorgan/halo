@@ -150,9 +150,11 @@ fn arc_target(t: f64) -> f32 {
 }
 
 /// SIMULATED L3 show: deterministic per `(grid, seed)`. Look events at
-/// phrase boundaries following a cool/hot palette split, an energy arc
-/// (intro → build → drop → breakdown → outro), and sparse accents.
-/// Session-only seed content for the role-lane preview.
+/// phrase boundaries following a cool/hot palette split over an energy
+/// arc (intro → build → drop → breakdown → outro), and sparse accents.
+/// Session-only seed content for the role-lane preview. The energy curve
+/// itself is left flat: it drives the rig, so it's the track's saved
+/// curve, not a seed.
 pub fn simulate_show_l3(
     marks: &GridMarks,
     total_frames: usize,
@@ -209,7 +211,6 @@ pub fn simulate_show_l3(
         let t = i as f64 / sections.len() as f64;
         let target = arc_target(t);
         let energy = (target + (rand_f32(&mut rng) - 0.5) * 0.1).clamp(0.0, 1.0);
-        show.energy.insert(frame, energy);
 
         let pool = if target < 0.6 { &COOL } else { &HOT };
         let mut look = pool[(rand_f32(&mut rng) * pool.len() as f32) as usize % pool.len()];
@@ -231,8 +232,6 @@ pub fn simulate_show_l3(
         }
         prev_energy = energy;
     }
-    // Closing breakpoint so the outro level holds visibly to the end.
-    show.energy.insert(total, arc_target(1.0));
     show
 }
 
@@ -313,15 +312,7 @@ mod tests {
                 .map(|e| (e.frame, e.look.0))
                 .collect()
         };
-        let energy = |s: &ShowPreview| -> Vec<(f64, f32)> {
-            s.energy
-                .points()
-                .iter()
-                .map(|p| (p.frame, p.value))
-                .collect()
-        };
         assert_eq!(looks(&a), looks(&b));
-        assert_eq!(energy(&a), energy(&b));
         assert_eq!(
             collect(&a.accents, ACCENT_LANE),
             collect(&b.accents, ACCENT_LANE)
@@ -341,17 +332,11 @@ mod tests {
     }
 
     #[test]
-    fn l3_energy_in_unit_range_and_strictly_increasing() {
+    fn l3_leaves_the_energy_flat() {
         let marks = test_marks();
         let show = simulate_show_l3(&marks, 256 * 22050, 44100, 42);
-        let pts = show.energy.points();
-        assert!(pts.len() >= 2);
-        for p in pts {
-            assert!((0.0..=1.0).contains(&p.value));
-        }
-        for w in pts.windows(2) {
-            assert!(w[1].frame > w[0].frame);
-        }
+        assert!(show.energy.points().is_empty());
+        assert!(!show.looks.events().is_empty());
     }
 
     #[test]
@@ -372,7 +357,6 @@ mod tests {
         // 60 s without a grid: synthetic fallback still seeds a show.
         let show = simulate_show_l3(&GridMarks::empty(), 60 * 44100, 44100, 1);
         assert!(!show.looks.events().is_empty());
-        assert!(show.energy.points().len() >= 2);
     }
 
     #[test]

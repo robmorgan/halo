@@ -6,7 +6,9 @@
 
 pub mod artnet;
 pub mod cues;
+pub mod energy;
 pub mod fixture;
 pub mod fixture_library;
+pub mod looks;
 pub mod output;
 pub mod programmer;

@@ -9,7 +9,7 @@ use halo_light::cues::LANE_COUNT;
 
 use super::zoomed::ZoomSpan;
 use super::{FrameMap, GridMarks, lane_rows, palette};
-use crate::show_preview::{ACCENT_LANE, ShowPreview};
+use crate::show_preview::{ACCENT_LANE, LookStyle, ShowPreview};
 
 /// Row heights, top to bottom: look / energy / accent.
 const ROW_H: [f32; LANE_COUNT] = [14.0, 14.0, 14.0];
@@ -39,8 +39,8 @@ pub struct ShowStripParams<'a> {
     /// false.
     pub lighting_active: bool,
     /// The live programmer is replacing rig output. In the L3 stack
-    /// (programmer replace > energy scale > look) that displaces the
-    /// look, so the look row tints and its blocks render hollow.
+    /// (programmer replace > look, all scaled by energy) that displaces
+    /// the look, so the look row tints and its blocks render hollow.
     pub programmer_override: bool,
 }
 

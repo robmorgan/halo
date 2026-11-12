@@ -92,9 +92,17 @@ Plain threads + channels/atomics; each session has one owner:
 ### Key modules — `crates/halo-light/src`
 
 - `fixture.rs` — `Rig`, grid/selection types, `default_rig()`.
-- `fixture_library.rs` — `FixtureProfile`/`Channel`/`ChannelType`, hardcoded profile registry, patching.
-- `cues.rs` — `CueSet` (runtime, non-overlapping per lane) + `CueFile` (persisted JSON, seconds).
-- `programmer.rs` — `resolve()`: **the single merge point** (programmer override > track cues > off).
+- `fixture_library.rs` — `FixtureProfile` (one or more DMX `FixtureMode`s, colour and gobo wheels)/`Channel`/
+  `ChannelType`, hardcoded profile registry, patching; a patched `Fixture` names its mode.
+- `cues.rs` — `CueSet` (runtime, non-overlapping per lane) + `CueFile` (persisted JSON, seconds, with the
+  track's energy curve).
+- `energy.rs` — `EnergyLane`, a track's NRG curve (breakpoints, flat when empty), which scales the rig.
+- `looks.rs` — `LookLane` (a deck's LOOK events) and the eight built-in looks (`LookParams`: the
+  programmer's parameter sections) each event switches the rig to.
+- `programmer.rs` — `resolve()`: **the single merge point** (programmer override > track cues > the
+  deck's look > off), per lane, all scaled by energy (the NRG curve × the live ENERGY fader), with
+  `resolve_fixture()` for what the programmer holds per fixture (dimmer, colour) and `effective()` for
+  which parameter sections come from the look and which from the programmer.
 - `output.rs` — pure `render()`: resolved lanes + params → per-universe `[u8; 512]` DMX frames.
 - `artnet.rs` — synchronous Art-Net over `std::net::UdpSocket` (broadcast/unicast, multi-destination).
 

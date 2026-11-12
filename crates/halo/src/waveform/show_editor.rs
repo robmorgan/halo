@@ -15,7 +15,7 @@ use eframe::egui;
 
 use super::zoomed::ZoomSpan;
 use super::{FrameMap, GridMarks, lane_row_at, lane_rows, overlay_plan, palette, snap_frame};
-use crate::show_preview::{ACCENT_LANE, LookId, ShowPreview, ShowSel};
+use crate::show_preview::{ACCENT_LANE, LookId, LookStyle, ShowPreview, ShowSel};
 
 /// Row heights, top to bottom: look / energy / accent. Energy is tallest
 /// for y-drag resolution; accent keeps the legacy editor height.

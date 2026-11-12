@@ -2,7 +2,8 @@
 //! `crates/fixtures`.
 //!
 //! A [`FixtureProfile`] is a pure template: the ordered channel layout a
-//! fixture presents on the wire. Runtime channel values deliberately live
+//! fixture presents on the wire, in each of its DMX modes, and what its
+//! colour and gobo wheels hold. Runtime channel values deliberately live
 //! elsewhere (the resolve/output layer) — profiles and patches only
 //! describe the rig. Profiles are hardcoded for now; loading from disk is
 //! on the backlog.
@@ -10,6 +11,8 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+
+use crate::fixture::Fixture;
 
 /// What a profile physically is, for grouping and defaulting in the
 /// patch UI. Distinct from `fixture::FixtureKind`, which is the
@@ -48,7 +51,11 @@ pub enum ChannelType {
     Uv,
     Strobe,
     Pan,
+    /// The low byte of a 16-bit pan.
+    PanFine,
     Tilt,
+    /// The low byte of a 16-bit tilt.
+    TiltFine,
     TiltSpeed,
     Beam,
     Focus,
@@ -62,28 +69,71 @@ pub enum ChannelType {
     Other(String),
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct FixtureProfile {
-    pub id: String,
-    pub fixture_type: FixtureType,
-    pub manufacturer: String,
-    pub model: String,
+/// One DMX mode of a fixture: the channels it presents, in order.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FixtureMode {
+    /// As the fixture's menu names it, e.g. "9CH".
+    pub name: String,
     pub channel_layout: Vec<Channel>,
 }
 
-impl FixtureProfile {
+impl FixtureMode {
     /// Number of consecutive DMX addresses the fixture occupies.
     pub fn footprint(&self) -> usize {
         self.channel_layout.len()
     }
 
     /// Offset of the first channel of `channel_type` within the
-    /// footprint, if the profile has one.
+    /// footprint, if the mode has one.
     pub fn channel_offset(&self, channel_type: &ChannelType) -> Option<usize> {
         self.channel_layout
             .iter()
             .position(|c| c.channel_type == *channel_type)
     }
+}
+
+/// One slot of a colour wheel: what it looks like, and the DMX value that
+/// turns the wheel to it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WheelSlot {
+    pub name: String,
+    /// 0..=1 per channel.
+    pub rgb: [f32; 3],
+    pub dmx: u8,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FixtureProfile {
+    pub id: String,
+    pub fixture_type: FixtureType,
+    pub manufacturer: String,
+    pub model: String,
+    /// At least one; the first is what a patch without a mode gets.
+    pub modes: Vec<FixtureMode>,
+    /// The colour wheel's slots, for a [`ChannelType::Color`] channel.
+    /// Empty: the channel stays at 0.
+    pub color_wheel: Vec<WheelSlot>,
+    /// Each gobo's DMX value, in the programmer's GOBO 1… order. Empty:
+    /// gobos spread evenly across the channel.
+    pub gobo_wheel: Vec<u8>,
+}
+
+impl FixtureProfile {
+    /// The mode called `name`, or the first for an empty or unknown name.
+    pub fn mode(&self, name: &str) -> Option<&FixtureMode> {
+        self.modes
+            .iter()
+            .find(|m| m.name == name)
+            .or_else(|| self.modes.first())
+    }
+}
+
+/// A profile's only mode, named after its channel count.
+fn one(channel_layout: Vec<Channel>) -> Vec<FixtureMode> {
+    vec![FixtureMode {
+        name: format!("{}CH", channel_layout.len()),
+        channel_layout,
+    }]
 }
 
 impl std::fmt::Display for FixtureProfile {
@@ -138,7 +188,7 @@ impl FixtureLibrary {
             fixture_type: FixtureType::Par,
             manufacturer: "Shehds".to_string(),
             model: "LED Flat PAR 12x3W RGBW".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Dimmer", ChannelType::Dimmer),
                 ch("Red", ChannelType::Red),
                 ch("Green", ChannelType::Green),
@@ -147,7 +197,8 @@ impl FixtureLibrary {
                 ch("Strobe", ChannelType::Strobe),
                 ch("Program", ChannelType::Other("Program".to_string())),
                 ch("Function", ChannelType::Other("Function".to_string())),
-            ],
+            ]),
+            ..Default::default()
         });
 
         add(FixtureProfile {
@@ -155,17 +206,64 @@ impl FixtureLibrary {
             fixture_type: FixtureType::MovingHead,
             manufacturer: "Shehds".to_string(),
             model: "LED Spot 60W Lighting".to_string(),
-            channel_layout: vec![
-                ch("Pan", ChannelType::Pan),
-                ch("Tilt", ChannelType::Tilt),
-                ch("Color", ChannelType::Color),
-                ch("Gobo", ChannelType::Gobo),
-                ch("Strobe", ChannelType::Strobe),
-                ch("Dimmer", ChannelType::Dimmer),
-                ch("Speed", ChannelType::Other("Speed".to_string())),
-                ch("Auto", ChannelType::Other("Auto".to_string())),
-                ch("Reset", ChannelType::Other("Reset".to_string())),
+            // 9CH first: patches from before modes load in it.
+            modes: vec![
+                FixtureMode {
+                    name: "9CH".to_string(),
+                    channel_layout: vec![
+                        ch("Pan", ChannelType::Pan),
+                        ch("Tilt", ChannelType::Tilt),
+                        ch("Color", ChannelType::Color),
+                        ch("Gobo", ChannelType::Gobo),
+                        ch("Strobe", ChannelType::Strobe),
+                        ch("Dimmer", ChannelType::Dimmer),
+                        ch("Speed", ChannelType::Other("Speed".to_string())),
+                        ch("Auto", ChannelType::Other("Auto".to_string())),
+                        ch("Reset", ChannelType::Other("Reset".to_string())),
+                    ],
+                },
+                FixtureMode {
+                    name: "11CH".to_string(),
+                    channel_layout: vec![
+                        ch("Pan", ChannelType::Pan),
+                        ch("Pan Fine", ChannelType::PanFine),
+                        ch("Tilt", ChannelType::Tilt),
+                        ch("Tilt Fine", ChannelType::TiltFine),
+                        ch("Color", ChannelType::Color),
+                        ch("Gobo", ChannelType::Gobo),
+                        ch("Strobe", ChannelType::Strobe),
+                        ch("Dimmer", ChannelType::Dimmer),
+                        // 0 is the fastest move.
+                        ch("Speed", ChannelType::Other("Speed".to_string())),
+                        // 0–48: off.
+                        ch("Auto", ChannelType::Other("Auto".to_string())),
+                        ch("Reset", ChannelType::Other("Reset".to_string())),
+                    ],
+                },
             ],
+            // From the manual's 11CH chart, at each slot's centre. The split
+            // colours (80–139) and the auto cycles are left out, so a
+            // preset always lands on a whole colour.
+            color_wheel: [
+                ("White", [1.0, 1.0, 1.0], 5),
+                ("Red", [1.0, 0.0, 0.0], 15),
+                ("Orange", [1.0, 0.5, 0.0], 25),
+                ("Lemon Yellow", [1.0, 1.0, 0.0], 35),
+                ("Green", [0.0, 1.0, 0.0], 45),
+                ("Blue", [0.0, 0.0, 1.0], 55),
+                ("Pink", [1.0, 0.4, 0.7], 65),
+                ("Sky Blue", [0.4, 0.8, 1.0], 75),
+            ]
+            .into_iter()
+            .map(|(name, rgb, dmx)| WheelSlot {
+                name: name.to_string(),
+                rgb,
+                dmx,
+            })
+            .collect(),
+            // Rose, Radial dots, Triangle, Hexagon, Swirl, Swirl, Jigsaw;
+            // 0–7 is open. The jitter versions (72–127) are left out.
+            gobo_wheel: vec![12, 20, 28, 36, 44, 52, 60],
         });
 
         add(FixtureProfile {
@@ -173,7 +271,7 @@ impl FixtureLibrary {
             fixture_type: FixtureType::Wash,
             manufacturer: "Shehds".to_string(),
             model: "LED Wash 7x18W RGBWA+UV".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Pan", ChannelType::Pan),
                 ch("Tilt", ChannelType::Tilt),
                 ch("Dimmer", ChannelType::Dimmer),
@@ -185,7 +283,8 @@ impl FixtureLibrary {
                 ch("UV", ChannelType::Uv),
                 // TODO(halo-old): possibly XY speed — check the manual.
                 ch("Function", ChannelType::Other("Function".to_string())),
-            ],
+            ]),
+            ..Default::default()
         });
 
         add(FixtureProfile {
@@ -193,7 +292,7 @@ impl FixtureLibrary {
             fixture_type: FixtureType::Pinspot,
             manufacturer: "Shehds".to_string(),
             model: "Mini LED Pinspot 10W".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Dimmer", ChannelType::Dimmer),
                 ch("Red", ChannelType::Red),
                 ch("Green", ChannelType::Green),
@@ -205,7 +304,8 @@ impl FixtureLibrary {
                 ch("Function", ChannelType::Other("Function".to_string())),
                 // Slow → fast, paired with Function.
                 ch("Speed", ChannelType::Other("FunctionSpeed".to_string())),
-            ],
+            ]),
+            ..Default::default()
         });
 
         add(FixtureProfile {
@@ -213,7 +313,7 @@ impl FixtureLibrary {
             fixture_type: FixtureType::Smoke,
             manufacturer: "DL Geyser".to_string(),
             model: "1000 LED Smoke Machine".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Smoke", ChannelType::Other("Smoke".to_string())),
                 ch("Red", ChannelType::Red),
                 ch("Green", ChannelType::Green),
@@ -224,7 +324,8 @@ impl FixtureLibrary {
                 ch("Effect", ChannelType::Other("Function".to_string())),
                 // Paired with Effect.
                 ch("Speed", ChannelType::Other("FunctionSpeed".to_string())),
-            ],
+            ]),
+            ..Default::default()
         });
 
         add(FixtureProfile {
@@ -232,7 +333,7 @@ impl FixtureLibrary {
             fixture_type: FixtureType::Beam,
             manufacturer: "Shehds".to_string(),
             model: "LED Bar Beam 8x12W".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Tilt", ChannelType::Tilt),
                 ch("Tilt Speed", ChannelType::TiltSpeed),
                 // 0-20 DMX 10ch | 21-70 transition | 71-120 gradual |
@@ -245,7 +346,8 @@ impl FixtureLibrary {
                 ch("Green", ChannelType::Green),
                 ch("Blue", ChannelType::Blue),
                 ch("White", ChannelType::White),
-            ],
+            ]),
+            ..Default::default()
         });
 
         // 6-channel mode (the 12-channel variant adds split RGB/White
@@ -257,14 +359,15 @@ impl FixtureLibrary {
             fixture_type: FixtureType::LedBar,
             manufacturer: "Hyulights".to_string(),
             model: "200W LED RGBW 4in1 48 Partition Strobe Light".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Dimmer", ChannelType::Dimmer),
                 ch("Strobe", ChannelType::Strobe),
                 ch("Red", ChannelType::Red),
                 ch("Green", ChannelType::Green),
                 ch("Blue", ChannelType::Blue),
                 ch("White", ChannelType::White),
-            ],
+            ]),
+            ..Default::default()
         });
 
         add(FixtureProfile {
@@ -272,7 +375,7 @@ impl FixtureLibrary {
             fixture_type: FixtureType::Par,
             manufacturer: "Hyulights".to_string(),
             model: "LED RGBW PAR Light".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Dimmer", ChannelType::Dimmer),
                 ch("Red", ChannelType::Red),
                 ch("Green", ChannelType::Green),
@@ -281,7 +384,8 @@ impl FixtureLibrary {
                 ch("Strobe", ChannelType::Strobe),
                 ch("Function", ChannelType::Function),
                 ch("Function Speed", ChannelType::FunctionSpeed),
-            ],
+            ]),
+            ..Default::default()
         });
 
         for (id, model, pixels) in [
@@ -294,7 +398,8 @@ impl FixtureLibrary {
                 fixture_type: FixtureType::PixelBar,
                 manufacturer: "Generic".to_string(),
                 model: model.to_string(),
-                channel_layout: pixel_bar_channels(pixels),
+                modes: one(pixel_bar_channels(pixels)),
+                ..Default::default()
             });
         }
         add(FixtureProfile {
@@ -302,7 +407,8 @@ impl FixtureLibrary {
             fixture_type: FixtureType::PixelBar,
             manufacturer: "Clen".to_string(),
             model: "LED Pixel Bar 64 Pixels RGB".to_string(),
-            channel_layout: pixel_bar_channels(64),
+            modes: one(pixel_bar_channels(64)),
+            ..Default::default()
         });
 
         // Not from halo-old: the default rig carries pyro units and needs
@@ -313,10 +419,11 @@ impl FixtureLibrary {
             fixture_type: FixtureType::Pyro,
             manufacturer: "Generic".to_string(),
             model: "DMX Pyro Igniter 2ch".to_string(),
-            channel_layout: vec![
+            modes: one(vec![
                 ch("Safety", ChannelType::Other("Safety".to_string())),
                 ch("Fire", ChannelType::Other("Fire".to_string())),
-            ],
+            ]),
+            ..Default::default()
         });
 
         FixtureLibrary { profiles }
@@ -324,6 +431,17 @@ impl FixtureLibrary {
 
     pub fn get(&self, profile_id: &str) -> Option<&FixtureProfile> {
         self.profiles.get(profile_id)
+    }
+
+    /// A patched fixture's profile and the mode it's patched in.
+    pub fn patched(&self, fixture: &Fixture) -> Option<(&FixtureProfile, &FixtureMode)> {
+        let profile = self.get(&fixture.profile_id)?;
+        Some((profile, profile.mode(&fixture.mode)?))
+    }
+
+    /// A patched fixture's mode.
+    pub fn layout(&self, fixture: &Fixture) -> Option<&FixtureMode> {
+        self.patched(fixture).map(|(_, mode)| mode)
     }
 }
 
@@ -357,18 +475,22 @@ mod tests {
         assert!(!lib.profiles.is_empty());
         for (key, profile) in &lib.profiles {
             assert_eq!(key, &profile.id, "map key must match profile id");
-            assert!(profile.footprint() > 0, "{key}: empty channel layout");
-            assert!(
-                profile.footprint() <= 512,
-                "{key}: footprint exceeds a universe"
-            );
+            assert!(!profile.modes.is_empty(), "{key}: no modes");
+            for mode in &profile.modes {
+                let name = &mode.name;
+                assert!(mode.footprint() > 0, "{key} {name}: empty channel layout");
+                assert!(
+                    mode.footprint() <= 512,
+                    "{key} {name}: footprint exceeds a universe"
+                );
+            }
         }
     }
 
     #[test]
     fn pixel_bar_layout_is_rgb_per_pixel() {
         let lib = FixtureLibrary::new();
-        let bar = lib.get("clen-led-pixel-bar-64").unwrap();
+        let bar = &lib.get("clen-led-pixel-bar-64").unwrap().modes[0];
         assert_eq!(bar.footprint(), 64 * 3);
         assert_eq!(
             bar.channel_offset(&ChannelType::PixelBlue(63)),
