@@ -237,6 +237,9 @@ fn fader_col(ui: &mut egui::Ui, value: &mut f32, spec: FaderCol<'_>) -> bool {
     changed
 }
 
+/// The SHUTTER keys' shared width, WHITE's.
+const SHUTTER_KEY_W: f32 = 48.0;
+
 fn intensity_view(
     ui: &mut egui::Ui,
     p: &mut ProgrammerParams,
@@ -268,7 +271,13 @@ fn intensity_view(
             (StrobeTarget::Rgb, "RGB"),
             (StrobeTarget::White, "WHITE"),
         ] {
-            if choice(ui, p.intensity.strobe_target == t, label)
+            // One width, so the stack reads as a column.
+            let key = Key::new(label)
+                .small()
+                .selected(p.intensity.strobe_target == t)
+                .width(SHUTTER_KEY_W);
+            if ui
+                .add(key)
                 .status_help("Strobe this shutter on fixtures with split RGB and white shutters")
                 .clicked()
             {
