@@ -79,6 +79,8 @@ Plain threads + channels/atomics; each session has one owner:
   profile is in `midi.rs`.
 - `dmx.rs` — `spawn_dmx_engine`, the 44 Hz Art-Net output thread (has an end-to-end UDP test).
 - `programmer_ui.rs` — lighting programmer surface (fixture grid, five parameter views, effect panels).
+- `patch_view.rs` — the PATCH view under its action row: the patch sheet, and the universe overview
+  (universe pads, a 32×16 channel map whose fixture blocks drag to readdress, the selection well).
 - `show.rs` — `simulate_show()`: deterministic demo cue generator, not real authored content.
 - `fader.rs` / `knob.rs` — custom egui widgets.
 - `theme.rs` — the Halo design system: tokens by role name, type styles, fonts (Inter for reading
@@ -91,7 +93,8 @@ Plain threads + channels/atomics; each session has one owner:
 
 ### Key modules — `crates/halo-light/src`
 
-- `fixture.rs` — `Rig`, grid/selection types, `default_rig()`.
+- `fixture.rs` — `Rig`, grid/selection types, `default_rig()`, and the patch checks: per-universe
+  `Occupancy`, `first_free()` addresses and `conflicts()` (every overlapping pair, with its channels).
 - `fixture_library.rs` — `FixtureProfile` (one or more DMX `FixtureMode`s, colour and gobo wheels)/`Channel`/
   `ChannelType`, hardcoded profile registry, patching; a patched `Fixture` names its mode.
 - `cues.rs` — `CueSet` (runtime, non-overlapping per lane) + `CueFile` (persisted JSON, seconds, with the

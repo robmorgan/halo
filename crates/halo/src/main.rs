@@ -14,6 +14,7 @@ mod library;
 mod midi;
 mod options;
 mod output_queue;
+mod patch_view;
 mod programmer_ui;
 mod render_worker;
 mod routing;
