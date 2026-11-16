@@ -92,6 +92,9 @@ pub fn render(
 
     let mut universes: HashMap<u8, UniverseFrame> = HashMap::new();
     for (i, f) in rig.iter().enumerate() {
+        if f.unpatched {
+            continue;
+        }
         let Some((profile, mode)) = library.patched(f) else {
             continue;
         };
@@ -849,6 +852,28 @@ mod tests {
         let frames = render(&rig, &library, &half, &p, &HashSet::from([p1]), 1.0);
         assert_eq!(
             value_of(&rig, &library, &frames, "P1", &ChannelType::Dimmer),
+            255
+        );
+    }
+
+    #[test]
+    fn an_unpatched_fixture_sends_nothing() {
+        let (mut rig, library) = setup();
+        let p1 = id_of(&rig, "P1");
+        let u1 = rig.iter().find(|f| f.id == p1).unwrap().universe;
+        for f in rig.fixtures_mut().iter_mut().filter(|f| f.id == p1) {
+            f.unpatched = true;
+        }
+        let p = ProgrammerParams {
+            highlight: true,
+            ..ProgrammerParams::default()
+        };
+        let both = HashSet::from([p1, id_of(&rig, "P2")]);
+        let frames = render(&rig, &library, &lanes(1.0, 1.0, 1.0), &p, &both, 0.0);
+        // P1's channels (77–84) stay dark; P2 beside it still lights.
+        assert!(frames[&u1][76..84].iter().all(|&v| v == 0));
+        assert_eq!(
+            value_of(&rig, &library, &frames, "P2", &ChannelType::Dimmer),
             255
         );
     }

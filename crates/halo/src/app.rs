@@ -19,7 +19,6 @@ use crate::audio::{
 };
 use crate::deck::Deck;
 use crate::decoder::decode_file;
-use crate::dmx;
 use crate::fader::{Fader, Notches};
 use crate::footer::{Footer, StatusHelp, TaskId};
 use crate::key::{self, Key, Lit};
@@ -40,6 +39,7 @@ use crate::waveform::{
     paint_show_strip, paint_zoomed, show_editor,
 };
 use crate::worker::{WorkerEvent, spawn_analysis_worker, spawn_import};
+use crate::{dmx, patch_view};
 
 const DECK_NAMES: [&str; 2] = ["A", "B"];
 /// The Prepare view's audition player, as its load task names it.
@@ -486,7 +486,7 @@ fn build_net(settings: &ArtNetSettings, rig: &Rig) -> std::sync::Arc<NetworkConf
         None => ArtNetMode::Broadcast,
     };
     let mut net = NetworkConfig::single("output", mode);
-    for f in rig.iter() {
+    for f in rig.patched() {
         net.route_universe(f.universe, 0);
     }
     std::sync::Arc::new(net)
@@ -577,6 +577,8 @@ pub struct HaloApp {
     /// keep the last-applied patch until APPLY commits this draft to the
     /// show file. `None` = sheet is clean. In-memory only.
     patch_draft: Option<Rig>,
+    /// The PATCH view's universe, selection and drag.
+    patch_view: patch_view::PatchView,
     /// Fixtures the programmer's grid has selected (empty = whole lanes).
     fixture_selection: std::collections::HashSet<u32>,
     /// Parameter-view values + effect configs (mockup state).
@@ -774,6 +776,7 @@ impl HaloApp {
             artnet,
             artnet_ip_edit,
             patch_draft: None,
+            patch_view: patch_view::PatchView::default(),
             fixture_selection: std::collections::HashSet::new(),
             programmer_params: ProgrammerParams::default(),
             flash_key: [false; LANE_COUNT],
@@ -861,6 +864,10 @@ impl HaloApp {
             } else {
                 View::Perform
             };
+        }
+        // Dev smoke-test hook: open PATCH's overview on the stage layout.
+        if std::env::var("HALO_PATCH").is_ok_and(|v| v.eq_ignore_ascii_case("layout")) {
+            app.patch_view.show_layout();
         }
         app
     }
@@ -1650,10 +1657,11 @@ impl HaloApp {
         });
     }
 
-    /// The PATCH view: console-style patch sheet, staged. Edits build a
-    /// draft; the live rig, DMX output, and programmer keep the
-    /// last-applied patch until APPLY swaps the draft in and persists it
-    /// to the show file. REVERT discards the draft.
+    /// The PATCH view, staged: the action row here, then the patch sheet
+    /// and universe overview (`patch_view`). Edits build a draft; the live
+    /// rig, DMX output, and programmer keep the last-applied patch until
+    /// APPLY swaps the draft in and persists it to the show file. REVERT
+    /// discards the draft.
     fn patch_ui(&mut self, ui: &mut egui::Ui) {
         const WARN: egui::Color32 = theme::WARN;
         let mut work = self
@@ -1671,17 +1679,7 @@ impl HaloApp {
                     .attention(TaskId::Patch, format!("{n} {noun} with patch conflicts"));
             }
         }
-        // Stable, name-sorted profile list for the combos.
-        let mut profiles: Vec<(String, String)> = self
-            .fixture_library
-            .profiles
-            .iter()
-            .map(|(id, p)| (id.clone(), p.to_string()))
-            .collect();
-        profiles.sort_by(|a, b| a.1.cmp(&b.1));
-
         let mut changed = false;
-        let mut remove: Option<u32> = None;
         let mut do_apply = false;
         let mut do_revert = false;
         {
@@ -1694,11 +1692,10 @@ impl HaloApp {
                         if ui.button(kind.group_label()).clicked() {
                             let id = rig.next_id();
                             let count = rig.iter().filter(|f| f.kind == kind).count();
-                            let row = rig.extent().1;
                             // First free address on universe 1.
                             let addr = rig
                                 .iter()
-                                .filter(|f| f.universe == 1)
+                                .filter(|f| f.universe == 1 && !f.unpatched)
                                 .filter_map(|f| {
                                     fl.layout(f).map(|m| f.start_address + m.footprint() as u16)
                                 })
@@ -1708,12 +1705,13 @@ impl HaloApp {
                                 id,
                                 kind,
                                 label: format!("{}{}", kind.short(), count + 1),
-                                col: 0,
-                                row,
+                                // Arranged automatically, in its kind's row.
+                                pos: None,
                                 profile_id: kind.default_profile_id().to_string(),
                                 mode: String::new(),
                                 universe: 1,
                                 start_address: addr.min(512),
+                                unpatched: false,
                             });
                             changed = true;
                             ui.close();
@@ -1761,133 +1759,8 @@ impl HaloApp {
             });
             ui.add_space(theme::SPACE_12);
 
-            // The patch sheet sits in a well; DMX addresses are the one
-            // place JetBrains Mono appears.
-            let sheet_h = ui.available_height() - 2.0 * theme::SPACE_8;
-            theme::well(ui, theme::SPACE_8, |ui| {
-                ui.set_min_size(egui::vec2(ui.available_width(), sheet_h));
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    egui::Grid::new("patch_sheet")
-                        .striped(true)
-                        .min_col_width(44.0)
-                        .spacing([theme::SPACE_12, theme::SPACE_6])
-                        .show(ui, |ui| {
-                            for h in [
-                                "FIXTURE", "KIND", "PROFILE", "MODE", "UNIV", "ADDR", "COL", "ROW",
-                                "",
-                            ] {
-                                ui.label(theme::CAPTION.rich(h).color(theme::TEXT_MUTED));
-                            }
-                            ui.end_row();
-                            for f in rig.fixtures_mut().iter_mut() {
-                                let bad = conflicts.contains(&f.id);
-                                if bad {
-                                    ui.label(
-                                        theme::BODY_TEXT.rich(format!("⚠ {}", f.label)).color(WARN),
-                                    );
-                                } else {
-                                    ui.label(&f.label);
-                                }
-                                egui::ComboBox::from_id_salt(("patch-kind", f.id))
-                                    .selected_text(f.kind.group_label())
-                                    .show_ui(ui, |ui| {
-                                        for kind in ALL_KINDS {
-                                            if ui
-                                                .selectable_label(
-                                                    f.kind == kind,
-                                                    kind.group_label(),
-                                                )
-                                                .clicked()
-                                                && f.kind != kind
-                                            {
-                                                f.kind = kind;
-                                                changed = true;
-                                            }
-                                        }
-                                    });
-                                let profile_text = fl
-                                    .get(&f.profile_id)
-                                    .map(|p| p.to_string())
-                                    .unwrap_or_else(|| format!("? {}", f.profile_id));
-                                egui::ComboBox::from_id_salt(("patch-profile", f.id))
-                                    .selected_text(profile_text)
-                                    .width(230.0)
-                                    .show_ui(ui, |ui| {
-                                        for (pid, name) in &profiles {
-                                            if ui
-                                                .selectable_label(&f.profile_id == pid, name)
-                                                .clicked()
-                                                && &f.profile_id != pid
-                                            {
-                                                f.profile_id = pid.clone();
-                                                // The new profile's first mode.
-                                                f.mode.clear();
-                                                changed = true;
-                                            }
-                                        }
-                                    });
-                                // The profile's DMX modes: one for most
-                                // fixtures.
-                                let modes: Vec<String> = fl
-                                    .get(&f.profile_id)
-                                    .map(|p| p.modes.iter().map(|m| m.name.clone()).collect())
-                                    .unwrap_or_default();
-                                let current = fl
-                                    .layout(f)
-                                    .map_or_else(|| "—".to_string(), |m| m.name.clone());
-                                egui::ComboBox::from_id_salt(("patch-mode", f.id))
-                                    .selected_text(&current)
-                                    .width(72.0)
-                                    .show_ui(ui, |ui| {
-                                        for name in &modes {
-                                            if ui.selectable_label(&current == name, name).clicked()
-                                                && &current != name
-                                            {
-                                                f.mode = name.clone();
-                                                changed = true;
-                                            }
-                                        }
-                                    });
-                                ui.scope(|ui| {
-                                    ui.style_mut().drag_value_text_style =
-                                        egui::TextStyle::Monospace;
-                                    changed |= ui
-                                        .add(egui::DragValue::new(&mut f.universe).range(1..=32))
-                                        .changed();
-                                });
-                                ui.scope(|ui| {
-                                    ui.style_mut().drag_value_text_style =
-                                        egui::TextStyle::Monospace;
-                                    changed |= ui
-                                        .add(
-                                            egui::DragValue::new(&mut f.start_address)
-                                                .range(1..=512),
-                                        )
-                                        .changed();
-                                });
-                                changed |= ui
-                                    .add(egui::DragValue::new(&mut f.col).range(0..=15))
-                                    .changed();
-                                changed |= ui
-                                    .add(egui::DragValue::new(&mut f.row).range(0..=15))
-                                    .changed();
-                                if ui
-                                    .add(Key::new("−").small())
-                                    .status_help("Unpatch")
-                                    .clicked()
-                                {
-                                    remove = Some(f.id);
-                                }
-                                ui.end_row();
-                            }
-                        });
-                });
-            });
-
-            if let Some(id) = remove {
-                rig.fixtures_mut().retain(|f| f.id != id);
-                changed = true;
-            }
+            // The patch sheet and the universe overview.
+            changed |= patch_view::show(ui, &mut self.patch_view, rig, fl, &conflicts);
         }
         if do_revert {
             self.patch_draft = None;
@@ -3914,29 +3787,9 @@ fn playlist_row(
 const TRACK_ROW_HEIGHT: f32 = 26.0;
 /// Thumbnail cell rect in points (drawn centered in its column, 4 wider).
 const THUMB_CELL_SIZE: egui::Vec2 = egui::vec2(92.0, 20.0);
-/// The search field's clear button: a bare × of `SEARCH_CLEAR_ICON` square,
-/// with a hit area as tall as the search row.
-const SEARCH_CLEAR_ICON: f32 = 8.0;
+/// The search field's clear button: a bare [`theme::paint_cross`], with a
+/// hit area as tall as the search row.
 const SEARCH_CLEAR_HIT: egui::Vec2 = egui::vec2(16.0, 22.0);
-
-fn paint_clear_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let half = SEARCH_CLEAR_ICON / 2.0;
-    let stroke = egui::Stroke::new(1.5, color);
-    painter.line_segment(
-        [
-            center + egui::vec2(-half, -half),
-            center + egui::vec2(half, half),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            center + egui::vec2(-half, half),
-            center + egui::vec2(half, -half),
-        ],
-        stroke,
-    );
-}
 
 /// The library zoom fader: 120×22, a 20×6 cap, a centre notch.
 const LIBRARY_ZOOM_SIZE: egui::Vec2 = egui::vec2(120.0, 22.0);
@@ -3996,7 +3849,7 @@ fn track_table(
         } else {
             theme::TEXT_MUTED
         };
-        paint_clear_icon(ui.painter(), rect.center(), color);
+        theme::paint_cross(ui.painter(), rect.center(), theme::CROSS, color);
         let resp = if filtered {
             resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         } else {
@@ -6219,7 +6072,7 @@ fn look_swatch(ui: &mut egui::Ui, color: egui::Color32, armed: bool) -> egui::Re
     resp
 }
 
-fn apply_theme(ctx: &egui::Context) {
+pub(crate) fn apply_theme(ctx: &egui::Context) {
     // Pin to dark regardless of the OS appearance setting; set_visuals only
     // styles the active theme, so following the system would fall back to
     // egui's stock light visuals.

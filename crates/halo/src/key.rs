@@ -392,17 +392,27 @@ impl Widget for Key {
 /// neighbours. Each key keeps its own states (rest, hover, held, lit,
 /// pressed, disabled) and its own `Response`, in order.
 pub fn segmented<const N: usize>(ui: &mut Ui, keys: [Key; N]) -> [Response; N] {
+    segmented_vec(ui, keys.into())
+        .try_into()
+        .unwrap_or_else(|_| unreachable!("one response per key"))
+}
+
+/// [`segmented`] for a strip whose length is only known at run time (the
+/// PATCH view's universe pads).
+pub fn segmented_vec(ui: &mut Ui, keys: Vec<Key>) -> Vec<Response> {
+    let n = keys.len();
     let strip = |ui: &mut Ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        let mut i = 0;
-        keys.map(|mut key| {
-            key.joint = Some(Joint {
-                first: i == 0,
-                last: i + 1 == N,
-            });
-            i += 1;
-            ui.add(key)
-        })
+        keys.into_iter()
+            .enumerate()
+            .map(|(i, mut key)| {
+                key.joint = Some(Joint {
+                    first: i == 0,
+                    last: i + 1 == n,
+                });
+                ui.add(key)
+            })
+            .collect::<Vec<_>>()
     };
     // Always a row: in a row already, keep its alignment; otherwise
     // start one.

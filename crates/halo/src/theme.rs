@@ -187,6 +187,14 @@ const JETBRAINS_MONO: &str = "JetBrainsMono-Regular";
 /// captions, and a copy with its tabular figures frozen in for numbers.
 const BARLOW_SEMIBOLD: &str = "BarlowCondensed-SemiBold";
 const BARLOW_TABULAR: &str = "BarlowCondensedTabular-SemiBold";
+const HALO_ICONS: &str = "HaloIcons";
+
+/// Halo's own icon glyphs, in `HaloIcons.ttf` (built by
+/// `scripts/make-icon-font.py`), drawn in any text style.
+/// The PATCH overview's channel map.
+pub const ICON_MAP: char = '\u{F0000}';
+/// The PATCH overview's stage layout.
+pub const ICON_LAYOUT: char = '\u{F0001}';
 
 static SEMIBOLD: LazyLock<FontFamily> = LazyLock::new(|| FontFamily::Name("semibold".into()));
 static BOLD: LazyLock<FontFamily> = LazyLock::new(|| FontFamily::Name("bold".into()));
@@ -390,15 +398,22 @@ pub fn install_fonts(ctx: &egui::Context) {
             BARLOW_TABULAR,
             &include_bytes!("../assets/fonts/BarlowCondensedTabular-SemiBold.ttf")[..],
         ),
+        (
+            HALO_ICONS,
+            &include_bytes!("../assets/fonts/HaloIcons.ttf")[..],
+        ),
     ] {
         fonts.font_data.insert(
             name.to_owned(),
             Arc::new(egui::FontData::from_static(bytes)),
         );
     }
+    // Halo's icons come before the emoji fallbacks, which map the
+    // Private Use Area too.
     let chain = |first: &[&str]| -> Vec<String> {
         first
             .iter()
+            .chain(&[HALO_ICONS])
             .map(|s| (*s).to_owned())
             .chain(fallbacks.iter().cloned())
             .collect()
@@ -681,6 +696,23 @@ pub fn paint_well_edged(painter: &Painter, rect: Rect, radius: u8) {
     painter.rect_filled(rect, radius, WELL);
     paint_edge(painter, rect, radius, EDGE);
 }
+
+/// The × glyph, `size` square: [`CROSS`] to clear (the library search),
+/// [`CROSS_MINI`] to remove (a patch sheet row).
+pub fn paint_cross(painter: &Painter, center: Pos2, size: f32, color: Color32) {
+    let half = size / 2.0;
+    let stroke = Stroke::new(if size < CROSS { 1.25 } else { 1.5 }, color);
+    for (from, to) in [
+        (egui::vec2(-half, -half), egui::vec2(half, half)),
+        (egui::vec2(-half, half), egui::vec2(half, -half)),
+    ] {
+        painter.line_segment([center + from, center + to], stroke);
+    }
+}
+
+/// The × glyph's sizes.
+pub const CROSS: f32 = 8.0;
+pub const CROSS_MINI: f32 = 4.0;
 
 /// Keyboard focus: a 1px `accent` ring just outside a control, clear of a
 /// lit key's outline inside it.
