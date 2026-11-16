@@ -51,6 +51,10 @@ hidapi = { version = "2.6", default-features = false }
 
 [dev-dependencies]
 allocation-counter = "0.8.1"
+# UI tests driven through AccessKit. `wgpu` renders frames (only when a test
+# asks for one), `video` records a test as an MP4 with
+# `KITTEST_RECORD=1` (or `=open` to show it), which needs `ffmpeg` on PATH.
+egui_kittest = { version = "0.37", features = ["wgpu", "video"] }
 
 # `cargo install cargo-bundle && cargo bundle --release` builds Halo.app.
 [package.metadata.bundle]

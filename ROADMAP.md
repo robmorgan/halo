@@ -276,8 +276,11 @@ from real library profiles (auto-addressed across 5 universes),
 per-universe DMX frames, and a 44 Hz engine thread sends them over
 Art-Net independently of the UI (playhead read live from the deck
 atomics, so cues keep firing through UI stalls). The PATCH view edits
-the rig as a staged draft (profile/mode/universe/address/grid,
+the rig as a staged draft (profile/mode/universe/address,
 add/unpatch/reset, APPLY/REVERT) and persists it to the library DB.
+The programmer's fixture grid mirrors an 8×8 stage that arranges
+itself by kind, kinds sharing a row where they fit; PATCH's LAYOUT view places fixtures on it by
+hand when the grid should match the physical rig.
 Beside the sheet, a universe overview shows each universe's occupancy
 and the one showing as a 32×16 channel map: drag a fixture to readdress
 it or onto another universe, with overlaps hatched and NEXT FREE to

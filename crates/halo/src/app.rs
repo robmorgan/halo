@@ -486,7 +486,7 @@ fn build_net(settings: &ArtNetSettings, rig: &Rig) -> std::sync::Arc<NetworkConf
         None => ArtNetMode::Broadcast,
     };
     let mut net = NetworkConfig::single("output", mode);
-    for f in rig.iter() {
+    for f in rig.patched() {
         net.route_universe(f.universe, 0);
     }
     std::sync::Arc::new(net)
@@ -864,6 +864,10 @@ impl HaloApp {
             } else {
                 View::Perform
             };
+        }
+        // Dev smoke-test hook: open PATCH's overview on the stage layout.
+        if std::env::var("HALO_PATCH").is_ok_and(|v| v.eq_ignore_ascii_case("layout")) {
+            app.patch_view.show_layout();
         }
         app
     }
@@ -1688,11 +1692,10 @@ impl HaloApp {
                         if ui.button(kind.group_label()).clicked() {
                             let id = rig.next_id();
                             let count = rig.iter().filter(|f| f.kind == kind).count();
-                            let row = rig.extent().1;
                             // First free address on universe 1.
                             let addr = rig
                                 .iter()
-                                .filter(|f| f.universe == 1)
+                                .filter(|f| f.universe == 1 && !f.unpatched)
                                 .filter_map(|f| {
                                     fl.layout(f).map(|m| f.start_address + m.footprint() as u16)
                                 })
@@ -1702,12 +1705,13 @@ impl HaloApp {
                                 id,
                                 kind,
                                 label: format!("{}{}", kind.short(), count + 1),
-                                col: 0,
-                                row,
+                                // Arranged automatically, in its kind's row.
+                                pos: None,
                                 profile_id: kind.default_profile_id().to_string(),
                                 mode: String::new(),
                                 universe: 1,
                                 start_address: addr.min(512),
+                                unpatched: false,
                             });
                             changed = true;
                             ui.close();
@@ -3783,29 +3787,9 @@ fn playlist_row(
 const TRACK_ROW_HEIGHT: f32 = 26.0;
 /// Thumbnail cell rect in points (drawn centered in its column, 4 wider).
 const THUMB_CELL_SIZE: egui::Vec2 = egui::vec2(92.0, 20.0);
-/// The search field's clear button: a bare × of `SEARCH_CLEAR_ICON` square,
-/// with a hit area as tall as the search row.
-const SEARCH_CLEAR_ICON: f32 = 8.0;
+/// The search field's clear button: a bare [`theme::paint_cross`], with a
+/// hit area as tall as the search row.
 const SEARCH_CLEAR_HIT: egui::Vec2 = egui::vec2(16.0, 22.0);
-
-fn paint_clear_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let half = SEARCH_CLEAR_ICON / 2.0;
-    let stroke = egui::Stroke::new(1.5, color);
-    painter.line_segment(
-        [
-            center + egui::vec2(-half, -half),
-            center + egui::vec2(half, half),
-        ],
-        stroke,
-    );
-    painter.line_segment(
-        [
-            center + egui::vec2(-half, half),
-            center + egui::vec2(half, -half),
-        ],
-        stroke,
-    );
-}
 
 /// The library zoom fader: 120×22, a 20×6 cap, a centre notch.
 const LIBRARY_ZOOM_SIZE: egui::Vec2 = egui::vec2(120.0, 22.0);
@@ -3865,7 +3849,7 @@ fn track_table(
         } else {
             theme::TEXT_MUTED
         };
-        paint_clear_icon(ui.painter(), rect.center(), color);
+        theme::paint_cross(ui.painter(), rect.center(), theme::CROSS, color);
         let resp = if filtered {
             resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         } else {
@@ -6088,7 +6072,7 @@ fn look_swatch(ui: &mut egui::Ui, color: egui::Color32, armed: bool) -> egui::Re
     resp
 }
 
-fn apply_theme(ctx: &egui::Context) {
+pub(crate) fn apply_theme(ctx: &egui::Context) {
     // Pin to dark regardless of the OS appearance setting; set_visuals only
     // styles the active theme, so following the system would fall back to
     // egui's stock light visuals.

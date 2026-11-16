@@ -6,7 +6,14 @@
 //! the selected fixture. Fixtures on the map are keys spanning their
 //! footprint, wrapping across rows: drag one to change its start address
 //! a channel at a time, or onto a pad to move it to that universe.
-//! Overlapping channels are hatched in `warn`.
+//! Overlapping channels are hatched in `warn`. Clearing a fixture's ADDR
+//! (or UNPATCH) unpatches it: its row greys with a `latch` red line, and
+//! it stays on the programmer's grid, remembering its address, but is off
+//! the map and sends nothing.
+//!
+//! A switch above the overview flips it to LAYOUT ([`layout`]): the
+//! 8 × 8 stage the programmer's fixture grid mirrors, where dragging a
+//! fixture places it by hand.
 //!
 //! Every edit goes to the draft rig the caller passes; APPLY and REVERT
 //! stay with the action row in `app.rs`. The address logic is
@@ -26,15 +33,21 @@ use crate::footer::StatusHelp;
 use crate::key::{self, Key};
 use crate::theme::{self, Face, Top};
 
+mod layout;
+
 /// The map: 32 channels a row, 16 rows.
 const COLS: u16 = 32;
 const ROWS: u16 = 16;
+/// A run this many cells wide holds a block's name and range.
+const LABEL_MIN_CELLS: u16 = 6;
 /// Room left of the map for each row's first address.
 const GUTTER: f32 = 38.0;
 /// A universe pad, at most.
 const PAD_W: f32 = 104.0;
 /// The selection well's height.
 const WELL_H: f32 = 44.0;
+/// The least room the well's PROFILE is shown in.
+const WELL_PROFILE_MIN_W: f32 = 64.0;
 /// A sheet row's height.
 const ROW_H: f32 = 28.0;
 /// A selected, dragged or conflicting block's edge, and its wash.
@@ -44,6 +57,8 @@ const EDGE_STRONG: f32 = 1.5;
 const PROFILE_GAP: f32 = 6.0;
 const PROFILE_MIN_ROOM: f32 = 28.0;
 const WASH: f32 = 0.08;
+/// The map's accessible name.
+const MAP_LABEL: &str = "Channel map";
 
 /// What the PATCH view remembers between frames, for the session.
 pub struct PatchView {
@@ -53,6 +68,24 @@ pub struct PatchView {
     drag: Option<Drag>,
     /// Scroll the sheet to this fixture's row next frame.
     scroll_to: Option<u32>,
+    /// The ADDR field being typed in: its fixture and text.
+    addr_edit: Option<(u32, String)>,
+    /// The selected fixture's row in the sheet last frame, to follow it
+    /// when an edit re-sorts it.
+    sheet_row: Option<(u32, usize)>,
+    /// What the overview shows.
+    overview: Overview,
+    /// A fixture being placed on the stage.
+    stage_drag: Option<layout::StageDrag>,
+}
+
+/// The overview's two views.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Overview {
+    /// The channel map, a universe at a time.
+    Map,
+    /// The stage layout.
+    Layout,
 }
 
 impl Default for PatchView {
@@ -62,6 +95,10 @@ impl Default for PatchView {
             selected: None,
             drag: None,
             scroll_to: None,
+            addr_edit: None,
+            sheet_row: None,
+            overview: Overview::Map,
+            stage_drag: None,
         }
     }
 }
@@ -77,6 +114,11 @@ struct Drag {
 }
 
 impl PatchView {
+    /// Open the overview on the stage layout.
+    pub fn show_layout(&mut self) {
+        self.overview = Overview::Layout;
+    }
+
     /// Select `f` and show its universe.
     fn select(&mut self, f: &Fixture) {
         self.selected = Some(f.id);
@@ -126,7 +168,6 @@ const COL_MODE: f32 = 76.0;
 const COL_CH: f32 = 28.0;
 const COL_UNIV: f32 = 36.0;
 const COL_ADDR: f32 = 44.0;
-const COL_GRID: f32 = 30.0;
 const COL_REMOVE: f32 = 24.0;
 const COL_GAP: f32 = 8.0;
 const SHEET_PAD: f32 = 8.0;
@@ -138,9 +179,8 @@ const SHEET_FIXED_W: f32 = COL_FIXTURE
     + COL_CH
     + COL_UNIV
     + COL_ADDR
-    + 2.0 * COL_GRID
     + COL_REMOVE
-    + 9.0 * COL_GAP
+    + 7.0 * COL_GAP
     + 2.0 * SHEET_PAD;
 const SHEET_MIN_W: f32 = SHEET_FIXED_W + PROFILE_MIN_W;
 const OVERVIEW_MIN_W: f32 = 420.0;
@@ -171,8 +211,6 @@ fn sheet_ui(
         COL_CH,
         COL_UNIV,
         COL_ADDR,
-        COL_GRID,
-        COL_GRID,
         COL_REMOVE,
     ];
 
@@ -185,7 +223,7 @@ fn sheet_ui(
     );
     let mut x = header.left() + SHEET_PAD;
     for (h, w) in [
-        "FIXTURE", "KIND", "PROFILE", "MODE", "CH", "UNIV", "ADDR", "COL", "ROW", "",
+        "FIXTURE", "KIND", "PROFILE", "MODE", "CH", "UNIV", "ADDR", "",
     ]
     .iter()
     .zip(widths)
@@ -208,6 +246,22 @@ fn sheet_ui(
 
     let body = Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max);
     let names = labels(rig);
+    let order = sheet_order(rig);
+    // An edit that re-sorted the selected fixture: keep it in view.
+    let row_now = view.selected.and_then(|id| {
+        let fixtures = rig.iter().collect::<Vec<_>>();
+        order
+            .iter()
+            .position(|&i| fixtures[i].id == id)
+            .map(|p| (id, p))
+    });
+    if let (Some((id, p)), Some((was_id, was))) = (row_now, view.sheet_row)
+        && id == was_id
+        && p != was
+    {
+        view.scroll_to = Some(id);
+    }
+    view.sheet_row = row_now;
     let mut changed = false;
     let mut remove = None;
     let mut select = None;
@@ -216,7 +270,9 @@ fn sheet_ui(
             .auto_shrink(false)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
-                for (i, f) in rig.fixtures_mut().iter_mut().enumerate() {
+                let fixtures = rig.fixtures_mut();
+                for (i, &at) in order.iter().enumerate() {
+                    let f = &mut fixtures[at];
                     let (row, _) =
                         ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
                     let selected = view.selected == Some(f.id);
@@ -233,13 +289,17 @@ fn sheet_ui(
                     let touched = ui
                         .scope_builder(
                             UiBuilder::new()
+                                // Its editors' ids follow the fixture, not
+                                // the row, so a re-sort mid-edit can't hand
+                                // a drag or focus to another fixture.
+                                .id_salt(("patch-row", f.id))
                                 .max_rect(cells)
                                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
                             |ui| {
                                 ui.spacing_mut().item_spacing.x = COL_GAP;
                                 // Number fields take their column's width,
                                 // under egui's 40 minimum.
-                                ui.spacing_mut().interact_size.x = COL_GRID;
+                                ui.spacing_mut().interact_size.x = COL_UNIV;
                                 sheet_row(
                                     ui,
                                     f,
@@ -249,6 +309,7 @@ fn sheet_ui(
                                     conflicts.get(f.id),
                                     &names,
                                     selected,
+                                    &mut view.addr_edit,
                                     &mut changed,
                                     &mut remove,
                                 )
@@ -273,22 +334,36 @@ fn sheet_ui(
     changed
 }
 
+/// The sheet's rows: indices into the rig, by universe then start
+/// address (an unpatched fixture's remembered one), ties in rig order.
+fn sheet_order(rig: &Rig) -> Vec<usize> {
+    let fixtures: Vec<&Fixture> = rig.iter().collect();
+    let mut order: Vec<usize> = (0..fixtures.len()).collect();
+    order.sort_by_key(|&i| (fixtures[i].universe, fixtures[i].start_address));
+    order
+}
+
 /// One fixture's row of editors. Returns whether any was used, which
 /// selects the fixture.
 #[allow(clippy::too_many_arguments)]
 fn sheet_row(
     ui: &mut Ui,
     f: &mut Fixture,
-    widths: &[f32; 10],
+    widths: &[f32; 8],
     library: &FixtureLibrary,
     profiles: &[(&String, String)],
     conflict: Option<&Conflict>,
     names: &Labels,
     selected: bool,
+    addr_edit: &mut Option<(u32, String)>,
     changed: &mut bool,
     remove: &mut Option<u32>,
 ) -> bool {
     let h = theme::SIZE_KEY_SMALL;
+    // Unpatched, the whole row greys, but its editors still work.
+    if f.unpatched {
+        ui.multiply_opacity(UNPATCHED_OPACITY);
+    }
     let mut touched = false;
     let mut note = |r: &Response| touched |= r.clicked() || r.changed() || r.drag_started();
 
@@ -302,12 +377,16 @@ fn sheet_row(
         theme::TEXT
     };
     let painter = ui.painter();
-    let [r, g, b] = f.kind.color();
-    painter.rect_filled(
-        Rect::from_center_size(pos2(rect.left() + 1.0, rect.center().y), vec2(2.0, 14.0)),
-        0.0,
-        Color32::from_rgb(r, g, b),
-    );
+    // The kind's tick; unpatched, a red line at full strength instead.
+    let tick = Rect::from_center_size(pos2(rect.left() + 1.0, rect.center().y), vec2(2.0, 14.0));
+    if f.unpatched {
+        let mut full = painter.clone();
+        full.set_opacity(1.0);
+        full.rect_filled(tick, 0.0, theme::LATCH);
+    } else {
+        let [r, g, b] = f.kind.color();
+        painter.rect_filled(tick, 0.0, Color32::from_rgb(r, g, b));
+    }
     let text = if conflict.is_some() {
         format!("⚠ {}", f.label)
     } else {
@@ -321,6 +400,7 @@ fn sheet_row(
     );
     let help = match conflict {
         Some(c) => conflict_text(f, c, names),
+        None if f.unpatched => format!("{} is unpatched — type an ADDR to patch it", f.label),
         None => format!("Show {} in the universe overview", f.label),
     };
     note(&label.status_help(help));
@@ -344,7 +424,7 @@ fn sheet_row(
                 }
             })
     });
-    note(&r.response);
+    note(&r.response.accessible_name(format!("{} kind", f.label)));
 
     // PROFILE
     let profile_text = library
@@ -369,7 +449,7 @@ fn sheet_row(
                 }
             })
     });
-    note(&r.response);
+    note(&r.response.accessible_name(format!("{} profile", f.label)));
 
     // MODE: the profile's DMX modes, one for most fixtures.
     let modes: Vec<String> = library
@@ -393,7 +473,7 @@ fn sheet_row(
                 }
             })
     });
-    note(&r.response);
+    note(&r.response.accessible_name(format!("{} mode", f.label)));
 
     // CH: the footprint, read-only.
     let (rect, _) = ui.allocate_exact_size(vec2(widths[4], h), Sense::hover());
@@ -407,42 +487,127 @@ fn sheet_row(
         theme::TEXT_MUTED,
     );
 
-    // UNIV, ADDR: DMX numbers, the one place JetBrains Mono appears.
+    // UNIV: a DMX number, the one place JetBrains Mono appears.
     ui.scope(|ui| {
         ui.style_mut().drag_value_text_style = egui::TextStyle::Monospace;
-        let r = ui.add_sized(
-            [widths[5], h],
-            egui::DragValue::new(&mut f.universe).range(1..=32),
-        );
-        *changed |= r.changed();
-        note(&r);
-        if conflict.is_some() {
-            ui.visuals_mut().override_text_color = Some(theme::WARN);
-        }
-        let r = ui.add_sized(
-            [widths[6], h],
-            egui::DragValue::new(&mut f.start_address).range(1..=512),
-        );
+        let r = ui
+            .add_sized(
+                [widths[5], h],
+                egui::DragValue::new(&mut f.universe).range(1..=32),
+            )
+            .accessible_name(format!("{} universe", f.label));
         *changed |= r.changed();
         note(&r);
     });
 
-    // COL, ROW on the programmer's grid.
-    for (v, w) in [(&mut f.col, widths[7]), (&mut f.row, widths[8])] {
-        let r = ui.add_sized([w, h], egui::DragValue::new(v).range(0..=15));
-        *changed |= r.changed();
-        note(&r);
-    }
+    // ADDR: typed, so clearing it can unpatch the fixture.
+    let r = addr_field(ui, f, widths[6], conflict.is_some(), addr_edit, changed);
+    note(&r);
 
-    if ui
-        .add(Key::new("−").small().width(widths[9]))
-        .status_help("Unpatch")
+    // Remove: the × glyph, so it doesn't read as a decrement beside the
+    // number fields.
+    let r = ui
+        .add(Key::new("").small().width(widths[7]))
+        .accessible_name(format!("Remove {}", f.label));
+    let color = if r.hovered() {
+        theme::TEXT_STRONG
+    } else {
+        theme::TEXT
+    };
+    theme::paint_cross(ui.painter(), r.rect.center(), theme::CROSS_MINI, color);
+    if r.status_help(format!("Remove {} from the rig", f.label))
         .clicked()
     {
         *remove = Some(f.id);
     }
     touched
 }
+
+/// A fixture's start address as a text field. Typing a number and
+/// pressing Enter (or leaving the field) patches it there; leaving it
+/// empty unpatches it, keeping the old address for PATCH. While typing,
+/// the text lives in `edit`.
+fn addr_field(
+    ui: &mut Ui,
+    f: &mut Fixture,
+    w: f32,
+    bad: bool,
+    edit: &mut Option<(u32, String)>,
+    changed: &mut bool,
+) -> Response {
+    let mut text = match edit {
+        Some((id, text)) if *id == f.id => text.clone(),
+        _ if f.unpatched => String::new(),
+        _ => f.start_address.to_string(),
+    };
+    let (rect, _) = ui.allocate_exact_size(vec2(w, theme::SIZE_KEY_SMALL), Sense::hover());
+    // The face goes under the text once the field's state is known.
+    let face = ui.painter().add(Shape::Noop);
+    let r = ui
+        .put(
+            rect,
+            egui::TextEdit::singleline(&mut text)
+                .font(egui::TextStyle::Monospace)
+                .text_color(if bad { theme::WARN } else { theme::TEXT })
+                .frame(egui::Frame::NONE)
+                .align(Align2::CENTER_CENTER)
+                .char_limit(3)
+                .desired_width(w),
+        )
+        .accessible_name(format!("{} address", f.label));
+    let visuals = ui.style().interact(&r);
+    ui.painter().set(
+        face,
+        egui::epaint::RectShape::new(
+            rect,
+            visuals.corner_radius,
+            visuals.weak_bg_fill,
+            visuals.bg_stroke,
+            StrokeKind::Inside,
+        ),
+    );
+    text.retain(|c| c.is_ascii_digit());
+    if r.lost_focus() {
+        *edit = None;
+        // Esc leaves it as it was.
+        if !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            *changed |= commit_addr(f, &text);
+        }
+    } else if r.has_focus() {
+        *edit = Some((f.id, text));
+    }
+    let help = if f.unpatched {
+        format!(
+            "Type a start address to patch {} (it was {}.{:03})",
+            f.label, f.universe, f.start_address
+        )
+    } else {
+        format!("{}'s start address — clear it to unpatch {0}", f.label)
+    };
+    r.status_help(help)
+}
+
+/// What an ADDR field's text does to its fixture: empty unpatches it,
+/// keeping its address; a number patches it there, clamped to 1–512;
+/// anything else changes nothing. Returns whether it changed.
+fn commit_addr(f: &mut Fixture, text: &str) -> bool {
+    if text.trim().is_empty() {
+        let changed = !f.unpatched;
+        f.unpatched = true;
+        return changed;
+    }
+    let Ok(a) = text.trim().parse::<u16>() else {
+        return false;
+    };
+    let a = a.clamp(1, 512);
+    let changed = f.unpatched || a != f.start_address;
+    f.start_address = a;
+    f.unpatched = false;
+    changed
+}
+
+/// How much an unpatched fixture's row shows through.
+const UNPATCHED_OPACITY: f32 = 0.4;
 
 /// A column's cell, exactly `w` wide: its own box, so a combo's text
 /// truncates to the column instead of widening it.
@@ -504,20 +669,29 @@ fn overview_ui(
     let rect = ui.max_rect();
     let occupancy = rig.occupancy(library);
     let universes: BTreeSet<u8> = rig
-        .iter()
+        .patched()
         .map(|f| f.universe)
         .chain([view.universe])
         .collect();
     let spans: Vec<(u32, u8, Option<Span>)> = rig
-        .iter()
+        .patched()
         .map(|f| (f.id, f.universe, f.span(library)))
         .collect();
 
-    // Pads.
-    let pads_rect = Rect::from_min_size(rect.min, vec2(rect.width(), theme::SIZE_PAD));
-    let pad_w = (rect.width() / universes.len() as f32).min(PAD_W);
+    // The view switch, then on the map its universe pads.
+    let top = Rect::from_min_size(rect.min, vec2(rect.width(), theme::SIZE_PAD));
+    let switch = ui
+        .scope_builder(UiBuilder::new().max_rect(top), |ui| {
+            overview_switch(ui, view)
+        })
+        .inner;
+    let pads_rect = Rect::from_min_max(pos2(switch.right() + theme::SPACE_12, top.top()), top.max);
+    let pad_w = (pads_rect.width() / universes.len() as f32).min(PAD_W);
     let mut pads: Vec<(u8, Rect)> = Vec::new();
     ui.scope_builder(UiBuilder::new().max_rect(pads_rect), |ui| {
+        if view.overview != Overview::Map {
+            return;
+        }
         let keys = universes
             .iter()
             .map(|&u| {
@@ -544,6 +718,7 @@ fn overview_ui(
                 view.selected,
                 conflicts,
             );
+            let r = r.accessible_name(format!("Universe {u}"));
             pads.push((u, r.rect));
             let help = format!(
                 "Universe {u} — {used} of 512 channels patched{}",
@@ -556,16 +731,57 @@ fn overview_ui(
     });
 
     let well_rect = Rect::from_min_max(pos2(rect.left(), rect.bottom() - WELL_H), rect.max);
-    let map_well = Rect::from_min_max(
-        pos2(rect.left(), pads_rect.bottom() + theme::SPACE_8),
+    let middle = Rect::from_min_max(
+        pos2(rect.left(), top.bottom() + theme::SPACE_8),
         pos2(rect.right(), well_rect.top() - theme::SPACE_8),
     );
-    let changed = map_ui(
-        ui, map_well, view, rig, library, conflicts, &occupancy, &pads,
-    );
+    let changed = match view.overview {
+        Overview::Map => map_ui(ui, middle, view, rig, library, conflicts, &occupancy, &pads),
+        Overview::Layout => layout::stage_ui(ui, middle, view, rig, conflicts),
+    };
     let changed = changed | selection_ui(ui, well_rect, view, rig, library, conflicts);
     ui.advance_cursor_after_rect(rect);
     changed
+}
+
+/// MAP | LAYOUT, a key each with its icon, the one showing pressed in.
+/// Returns the strip's rect.
+fn overview_switch(ui: &mut Ui, view: &mut PatchView) -> Rect {
+    let views = [
+        (
+            Overview::Map,
+            theme::ICON_MAP,
+            "MAP",
+            "Map",
+            "Channel map — drag fixtures to change their addresses",
+        ),
+        (
+            Overview::Layout,
+            theme::ICON_LAYOUT,
+            "LAYOUT",
+            "Layout",
+            "Stage layout — optional; drag fixtures to mirror the physical rig",
+        ),
+    ];
+    let ctx = ui.ctx().clone();
+    let keys = views.map(|(o, icon, word, ..)| {
+        let label = format!("{icon}  {word}");
+        let w = theme::KEY_LABEL.width(&ctx, &label) + 2.0 * theme::SPACE_12;
+        Key::new(label)
+            .size(vec2(w, theme::SIZE_PAD))
+            .pressed(view.overview == o)
+    });
+    let responses = key::segmented(ui, keys);
+    let rect = responses[0].rect.union(responses[1].rect);
+    for ((o, _, _, name, help), r) in views.into_iter().zip(responses) {
+        if r.accessible_name(name).status_help(help).clicked() && view.overview != o {
+            view.overview = o;
+            // A drag in the view left behind ends where it is.
+            view.drag = None;
+            view.stage_drag = None;
+        }
+    }
+    rect
 }
 
 /// The text, count and occupancy strip over a universe pad's key.
@@ -658,6 +874,21 @@ fn segments(start: u16, end: u16) -> Vec<Seg> {
         c += c1 - c0 + 1;
     }
     out
+}
+
+/// The run a block's tick and labels go on: its first, where it's
+/// addressed, unless that's too short for them and a later run is
+/// longer, then the longest (the first of those).
+fn label_run(segs: &[Seg]) -> usize {
+    let widest = (0..segs.len())
+        .max_by_key(|&i| (segs[i].cells(), std::cmp::Reverse(i)))
+        .unwrap_or(0);
+    let room = LABEL_MIN_CELLS.min(segs.get(widest).map_or(0, |s| s.cells()));
+    if segs.first().is_some_and(|s| s.cells() >= room) {
+        0
+    } else {
+        widest
+    }
 }
 
 /// How a block's run joins the runs above and below: no gap where they
@@ -838,7 +1069,7 @@ fn map_ui(
     // The fixtures showing, the dragged one last so it draws on top.
     let drag = view.drag;
     let mut shown: Vec<(&Fixture, Span)> = rig
-        .iter()
+        .patched()
         .filter(|f| f.universe == universe)
         .filter_map(|f| f.span(library).map(|s| (f, s)))
         .collect();
@@ -847,6 +1078,7 @@ fn map_ui(
     // Interaction: one sense over the whole map.
     let id = ui.scope_id().with("patch-map");
     let response = ui.interact(grid.rect, id, Sense::click_and_drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Grid, true, MAP_LABEL));
     let hit = |pos: Pos2| {
         let ch = grid.channel_at(pos);
         // The topmost block, the selected one first where they overlap.
@@ -901,9 +1133,7 @@ fn map_ui(
         let dragging = drag.is_some_and(|d| d.id == f.id);
         let hover = hovered.is_some_and(|(id, _)| id == f.id);
         let segs = segments(span.start, span.end);
-        let widest = (0..segs.len())
-            .max_by_key(|&i| (segs[i].cells(), std::cmp::Reverse(i)))
-            .unwrap_or(0);
+        let labelled = label_run(&segs);
         let (edge, width) = if dragging || selected {
             (theme::ACCENT, EDGE_STRONG)
         } else if bad {
@@ -939,7 +1169,7 @@ fn map_ui(
                 painter.rect_filled(r, theme::RADIUS_CONTROL, theme::WARN.gamma_multiply(WASH));
             }
             block_edges(&painter, r, j, Stroke::new(width, edge));
-            if i == widest {
+            if i == labelled {
                 let [cr, cg, cb] = f.kind.color();
                 let inset = width;
                 painter.rect_filled(
@@ -1171,6 +1401,7 @@ fn selection_ui(
         || "—".to_string(),
         |s| format!("{u}.{:03} – {u}.{:03}", s.start, s.end, u = f.universe),
     );
+    let unpatched = f.unpatched;
     let profile = library
         .get(&f.profile_id)
         .map_or_else(|| format!("? {}", f.profile_id), |p| p.to_string());
@@ -1192,7 +1423,7 @@ fn selection_ui(
     let (id, label, universe, addr) = (f.id, f.label.clone(), f.universe, f.start_address);
     let max = 513u16.saturating_sub(footprint).max(1);
 
-    let mut moved = None;
+    let mut edit = None;
     ui.scope_builder(
         UiBuilder::new()
             .max_rect(inner)
@@ -1202,7 +1433,8 @@ fn selection_ui(
             let field = |ui: &mut Ui, caption: &str, color: Color32, value: egui::RichText| {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
-                    ui.label(theme::CAPTION.rich(caption).color(color));
+                    // Elided, never wrapped a letter to a line.
+                    ui.add(egui::Label::new(theme::CAPTION.rich(caption).color(color)).truncate());
                     ui.add(egui::Label::new(value).truncate())
                 })
                 .response
@@ -1222,12 +1454,22 @@ fn selection_ui(
                 theme::NUMERALS_MD.rich(&label).color(theme::TEXT_STRONG),
             );
             divider(ui);
-            field(
-                ui,
-                "ADDRESS",
-                theme::TEXT_MUTED,
-                theme::MONO_TEXT.rich(&range).color(theme::TEXT_STRONG),
-            );
+            if unpatched {
+                field(
+                    ui,
+                    "ADDRESS",
+                    theme::TEXT_MUTED,
+                    theme::KEY_LABEL.rich("UNPATCHED").color(theme::TEXT_MUTED),
+                )
+                .status_help(format!("Remembered: {range}"));
+            } else {
+                field(
+                    ui,
+                    "ADDRESS",
+                    theme::TEXT_MUTED,
+                    theme::MONO_TEXT.rich(&range).color(theme::TEXT_STRONG),
+                );
+            }
             divider(ui);
             field(
                 ui,
@@ -1242,9 +1484,10 @@ fn selection_ui(
             // between.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_8;
+                let verb = if unpatched { "Patch it at" } else { "Move to" };
                 let next_help = match free {
                     Some(a) => format!(
-                        "Move to {universe}.{a:03} — the first free run of {footprint} channels"
+                        "{verb} {universe}.{a:03} — the first free run of {footprint} channels"
                     ),
                     None => format!("No free run of {footprint} channels on universe {universe}"),
                 };
@@ -1252,12 +1495,13 @@ fn selection_ui(
                     .add(
                         Key::new("NEXT FREE")
                             .small()
-                            .enabled(free.is_some_and(|a| a != addr)),
+                            .enabled(free.is_some_and(|a| unpatched || a != addr)),
                     )
                     .status_help(next_help)
                     .clicked()
+                    && let Some(a) = free
                 {
-                    moved = free;
+                    edit = Some(Edit::PatchAt(a));
                 }
                 // Its own left-to-right box, so − stays left of +.
                 let [down, up] = ui
@@ -1268,18 +1512,41 @@ fn selection_ui(
                             key::segmented(
                                 ui,
                                 [
-                                    Key::new("−").small().width(26.0).enabled(addr > 1),
-                                    Key::new("+").small().width(26.0).enabled(addr < max),
+                                    Key::new("−")
+                                        .small()
+                                        .width(26.0)
+                                        .enabled(!unpatched && addr > 1),
+                                    Key::new("+")
+                                        .small()
+                                        .width(26.0)
+                                        .enabled(!unpatched && addr < max),
                                 ],
                             )
                         },
                     )
                     .inner;
                 if down.status_help("Move one channel down").clicked() {
-                    moved = Some(addr - 1);
+                    edit = Some(Edit::PatchAt(addr - 1));
                 }
                 if up.status_help("Move one channel up").clicked() {
-                    moved = Some(addr + 1);
+                    edit = Some(Edit::PatchAt(addr + 1));
+                }
+                let (key, patch_help) = if unpatched {
+                    ("PATCH", format!("Patch {label} on {range}, where it was"))
+                } else {
+                    (
+                        "UNPATCH",
+                        format!(
+                            "Unpatch {label}: no DMX, keeping its address and its place on the grid"
+                        ),
+                    )
+                };
+                if ui
+                    .add(Key::new(key).small())
+                    .status_help(patch_help)
+                    .clicked()
+                {
+                    edit = Some(Edit::Unpatched(!unpatched));
                 }
                 if let Some((caption, text)) = &problem {
                     let r = field(
@@ -1292,24 +1559,40 @@ fn selection_ui(
                         r.status_help(help.clone());
                     }
                 }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    field(
-                        ui,
-                        "PROFILE",
-                        theme::TEXT_MUTED,
-                        theme::BODY_TEXT.rich(&profile).color(theme::TEXT),
-                    );
-                });
+                // Too narrow (beside a conflict, say), it's left out: the
+                // sheet row shows it too.
+                if ui.available_width() >= WELL_PROFILE_MIN_W {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        field(
+                            ui,
+                            "PROFILE",
+                            theme::TEXT_MUTED,
+                            theme::BODY_TEXT.rich(&profile).color(theme::TEXT),
+                        );
+                    });
+                }
             });
         },
     );
-    if let Some(a) = moved
-        && let Some(f) = rig.fixtures_mut().iter_mut().find(|f| f.id == id)
-    {
-        f.start_address = a.clamp(1, max);
-        return true;
+    let Some(edit) = edit else { return false };
+    let Some(f) = rig.fixtures_mut().iter_mut().find(|f| f.id == id) else {
+        return false;
+    };
+    match edit {
+        Edit::PatchAt(a) => {
+            f.start_address = a.clamp(1, max);
+            f.unpatched = false;
+        }
+        Edit::Unpatched(off) => f.unpatched = off,
     }
-    false
+    true
+}
+
+/// What the selection well does to its fixture.
+enum Edit {
+    /// Patch it (if it isn't) at this start address.
+    PatchAt(u16),
+    Unpatched(bool),
 }
 
 #[cfg(test)]
@@ -1359,6 +1642,49 @@ mod tests {
     }
 
     #[test]
+    fn a_block_is_labelled_on_its_first_run_when_it_fits() {
+        // A 192-channel bar from 130: 31 cells, five full rows, then 1.
+        assert_eq!(label_run(&segments(130, 321)), 0);
+        // From 1: six full rows.
+        assert_eq!(label_run(&segments(1, 192)), 0);
+        // 8 from 30: 3 cells, then 5 below, the roomier.
+        assert_eq!(label_run(&segments(30, 37)), 1);
+        // 8 from 27: 6 cells, enough, then 2.
+        assert_eq!(label_run(&segments(27, 34)), 0);
+        // Within a row, and a single channel.
+        assert_eq!(label_run(&segments(89, 96)), 0);
+        assert_eq!(label_run(&segments(151, 151)), 0);
+    }
+
+    #[test]
+    fn the_sheet_sorts_by_universe_then_address() {
+        let library = FixtureLibrary::new();
+        let mut rig = halo_light::fixture::default_rig(&library);
+        // Out of order: PB1 onto universe 1 at 162, P1 (77) past ST2.
+        for f in rig.fixtures_mut() {
+            match f.label.as_str() {
+                "PB1" => (f.universe, f.start_address) = (1, 162),
+                "P1" => f.start_address = 140,
+                _ => {}
+            }
+        }
+        let all: Vec<&Fixture> = rig.iter().collect();
+        let sorted: Vec<(u8, u16)> = sheet_order(&rig)
+            .into_iter()
+            .map(|i| (all[i].universe, all[i].start_address))
+            .collect();
+        assert!(sorted.is_sorted());
+        assert_eq!(sorted.len(), all.len());
+        let labels: Vec<&str> = sheet_order(&rig)
+            .into_iter()
+            .map(|i| all[i].label.as_str())
+            .collect();
+        let at = |l: &str| labels.iter().position(|x| *x == l).unwrap();
+        assert!(at("ST2") < at("P1") && at("P1") < at("PB1"));
+        assert!(at("PB1") < at("PB2"), "universe 1 before 2");
+    }
+
+    #[test]
     fn runs_join_where_they_touch_and_open_where_covered() {
         let segs = segments(1, 192);
         let j = join(segs[1], Some(segs[0]), Some(segs[2]));
@@ -1377,6 +1703,33 @@ mod tests {
     }
 
     #[test]
+    fn clearing_addr_unpatches_and_a_number_patches() {
+        let library = FixtureLibrary::new();
+        let mut f = halo_light::fixture::default_rig(&library)
+            .iter()
+            .find(|f| f.label == "P3")
+            .unwrap()
+            .clone();
+        assert_eq!(f.start_address, 93);
+        // Cleared: unpatched, the address kept for PATCH.
+        assert!(commit_addr(&mut f, ""));
+        assert!(f.unpatched);
+        assert_eq!(f.start_address, 93);
+        assert!(!commit_addr(&mut f, " "), "already unpatched");
+        // A number patches it there; past 512 clamps.
+        assert!(commit_addr(&mut f, "120"));
+        assert_eq!((f.unpatched, f.start_address), (false, 120));
+        assert!(!commit_addr(&mut f, "120"));
+        assert!(commit_addr(&mut f, "999"));
+        assert_eq!(f.start_address, 512);
+        assert!(commit_addr(&mut f, "0"));
+        assert_eq!(f.start_address, 1);
+        // Garbage changes nothing.
+        assert!(!commit_addr(&mut f, "x"));
+        assert_eq!((f.unpatched, f.start_address), (false, 1));
+    }
+
+    #[test]
     fn the_map_reads_channels_row_by_row() {
         let grid = Grid {
             rect: Rect::from_min_size(Pos2::ZERO, vec2(320.0, 160.0)),
@@ -1387,5 +1740,298 @@ mod tests {
         assert_eq!(grid.channel_at(pos2(319.0, 159.0)), 512);
         // Off the map clamps to its edge.
         assert_eq!(grid.channel_at(pos2(-40.0, 500.0)), 481);
+    }
+
+    // ---- The view in a kittest harness ----
+    //
+    // `KITTEST_RECORD=open cargo test -p halo patch_view` records each
+    // of these and shows the video when it finishes.
+
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::{NodeT as _, Queryable as _};
+
+    /// What the harness's ui draws from: the view, a draft rig and the
+    /// library, as `app.rs` passes them.
+    struct Patch {
+        view: PatchView,
+        rig: Rig,
+        library: FixtureLibrary,
+    }
+
+    impl Patch {
+        fn fixture(&self, label: &str) -> &Fixture {
+            self.rig.iter().find(|f| f.label == label).unwrap()
+        }
+    }
+
+    /// The PATCH view on the default rig, themed as the app is.
+    fn harness() -> Harness<'static, Patch> {
+        let library = FixtureLibrary::new();
+        let rig = halo_light::fixture::default_rig(&library);
+        Harness::builder()
+            .with_size(vec2(1400.0, 720.0))
+            .with_context_setup(crate::app::apply_theme)
+            .build_ui_state(
+                |ui, p: &mut Patch| {
+                    let conflicts = p.rig.conflicts(&p.library);
+                    show(ui, &mut p.view, &mut p.rig, &p.library, &conflicts);
+                },
+                Patch {
+                    view: PatchView::default(),
+                    rig,
+                    library,
+                },
+            )
+    }
+
+    /// The centre of channel `ch`'s cell on the map.
+    fn channel_pos(harness: &Harness<'_, Patch>, ch: u16) -> Pos2 {
+        let grid = Grid {
+            rect: harness.get_by_label(MAP_LABEL).rect(),
+        };
+        let c = grid.cell();
+        let i = ch - 1;
+        grid.rect.min
+            + vec2(
+                (f32::from(i % COLS) + 0.5) * c.x,
+                (f32::from(i / COLS) + 0.5) * c.y,
+            )
+    }
+
+    /// Press at `from` and move to `to` over a few frames, still held.
+    fn press_and_move(harness: &mut Harness<'_, Patch>, from: Pos2, to: Pos2) {
+        harness.hover_at(from);
+        harness.run();
+        harness.drag_at(from);
+        harness.run();
+        for i in 1..=12 {
+            harness.hover_at(from.lerp(to, i as f32 / 12.0));
+            harness.run();
+        }
+    }
+
+    /// Move from `from` to `to` over a few frames, the button still held.
+    fn press_and_move_held(harness: &mut Harness<'_, Patch>, from: Pos2, to: Pos2) {
+        for i in 1..=12 {
+            harness.hover_at(from.lerp(to, i as f32 / 12.0));
+            harness.run();
+        }
+    }
+
+    #[test]
+    fn dragging_a_block_readdresses_its_fixture() {
+        let mut harness = harness();
+        let before = harness.state().rig.clone();
+        let p3 = harness.state().fixture("P3").clone();
+        assert_eq!((p3.universe, p3.start_address), (1, 93));
+
+        // Grab P3 by its first channel and drop it on 161, a free row.
+        let from = channel_pos(&harness, 93);
+        let to = channel_pos(&harness, 161);
+        press_and_move(&mut harness, from, to);
+        let p = harness.state();
+        assert!(p.view.drag.is_some_and(|d| d.id == p3.id));
+        assert_eq!(p.fixture("P3").start_address, 161, "moves while held");
+        harness.drop_at(to);
+        harness.run();
+
+        let p = harness.state();
+        let moved = p.fixture("P3");
+        assert_eq!((moved.universe, moved.start_address), (1, 161));
+        assert!(p.view.drag.is_none());
+        assert_eq!(p.view.selected, Some(p3.id));
+        assert!(p.rig.conflicts(&p.library).is_empty());
+        // Its sheet row follows it, from between P2 and P4 to after PY2
+        // (153).
+        let y = |label: &str| {
+            harness
+                .get_by_label(&format!("{label} address"))
+                .rect()
+                .top()
+        };
+        assert!(y("P3") > y("PY2"), "re-sorted below PY2");
+        assert!(y("P2") < y("P4"));
+        // Nothing else moved.
+        for (f, was) in p.rig.iter().zip(before.iter()) {
+            if f.id != p3.id {
+                assert_eq!(
+                    (f.universe, f.start_address),
+                    (was.universe, was.start_address)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn escape_mid_drag_puts_the_fixture_back() {
+        let mut harness = harness();
+        let from = channel_pos(&harness, 93);
+        let to = channel_pos(&harness, 200);
+        press_and_move(&mut harness, from, to);
+        assert_ne!(harness.state().fixture("P3").start_address, 93);
+
+        harness.key_press(egui::Key::Escape);
+        harness.run();
+        harness.drop_at(to);
+        harness.run();
+
+        let p = harness.state();
+        assert_eq!(p.fixture("P3").start_address, 93);
+        assert!(p.view.drag.is_none());
+    }
+
+    // ---- LAYOUT ----
+
+    /// The harness, on LAYOUT.
+    fn layout_harness() -> Harness<'static, Patch> {
+        let mut harness = harness();
+        harness.get_by_label("Layout").click();
+        harness.run();
+        harness
+    }
+
+    /// The centre of `cell` on the stage.
+    fn cell_pos(harness: &Harness<'_, Patch>, col: u8, row: u8) -> Pos2 {
+        let stage = harness.get_by_label(layout::STAGE_LABEL).rect();
+        let (w, h) = (
+            stage.width() / f32::from(halo_light::fixture::STAGE_COLS),
+            stage.height() / f32::from(halo_light::fixture::STAGE_ROWS),
+        );
+        stage.min + vec2((f32::from(col) + 0.5) * w, (f32::from(row) + 0.5) * h)
+    }
+
+    fn cell(col: u8, row: u8) -> Option<halo_light::fixture::Cell> {
+        Some(halo_light::fixture::Cell::new(col, row))
+    }
+
+    #[test]
+    fn the_switch_shows_the_stage_in_place_of_the_map() {
+        let mut harness = harness();
+        assert!(harness.query_by_label("Universe 1").is_some());
+        assert!(harness.query_by_label(layout::STAGE_LABEL).is_none());
+        harness.get_by_label("Layout").click();
+        harness.run();
+        assert!(harness.query_by_label("Universe 1").is_none(), "no pads");
+        assert!(harness.query_by_label(MAP_LABEL).is_none());
+        harness.get_by_label(layout::STAGE_LABEL);
+        harness.get_by_label("Arranged automatically");
+        harness.get_by_label("Map").click();
+        harness.run();
+        harness.get_by_label("Universe 1");
+    }
+
+    #[test]
+    fn dragging_a_fixture_places_it_by_hand() {
+        let mut harness = layout_harness();
+        // S1 is arranged top left; drop it bottom left.
+        let from = cell_pos(&harness, 0, 0);
+        let to = cell_pos(&harness, 0, 7);
+        press_and_move(&mut harness, from, to);
+        harness.drop_at(to);
+        harness.run();
+        let p = harness.state();
+        let s1 = p.fixture("S1");
+        assert_eq!(s1.pos, cell(0, 7));
+        assert_eq!(p.view.selected, Some(s1.id), "selected, as on the map");
+        assert_eq!(p.rig.placed(), 1);
+        // The other spots keep their cells.
+        assert_eq!(p.fixture("S2").pos, None);
+        harness.get_by_label("1 fixture placed by hand");
+    }
+
+    #[test]
+    fn dropping_on_a_fixture_swaps_the_two() {
+        let mut harness = layout_harness();
+        // S1 (0, 0) onto S2 (1, 0).
+        let from = cell_pos(&harness, 0, 0);
+        let to = cell_pos(&harness, 1, 0);
+        press_and_move(&mut harness, from, to);
+        harness.drop_at(to);
+        harness.run();
+        let p = harness.state();
+        assert_eq!(p.fixture("S1").pos, cell(1, 0));
+        assert_eq!(p.fixture("S2").pos, cell(0, 0));
+    }
+
+    #[test]
+    fn passing_over_a_fixture_leaves_it_where_it_was() {
+        let mut harness = layout_harness();
+        // S1 across S2 (1, 0) and on to an empty cell.
+        let from = cell_pos(&harness, 0, 0);
+        let over = cell_pos(&harness, 1, 0);
+        press_and_move(&mut harness, from, over);
+        assert_eq!(harness.state().fixture("S2").pos, cell(0, 0), "making room");
+        let to = cell_pos(&harness, 3, 7);
+        press_and_move_held(&mut harness, over, to);
+        harness.drop_at(to);
+        harness.run();
+        let p = harness.state();
+        assert_eq!(p.fixture("S1").pos, cell(3, 7));
+        assert_eq!(p.fixture("S2").pos, None, "back, still automatic");
+        assert_eq!(p.rig.placed(), 1);
+    }
+
+    #[test]
+    fn escape_mid_drag_puts_both_back() {
+        let mut harness = layout_harness();
+        let from = cell_pos(&harness, 0, 0);
+        let to = cell_pos(&harness, 1, 0);
+        press_and_move(&mut harness, from, to);
+        harness.key_press(egui::Key::Escape);
+        harness.run();
+        harness.drop_at(to);
+        harness.run();
+        let p = harness.state();
+        assert_eq!((p.fixture("S1").pos, p.fixture("S2").pos), (None, None));
+        assert!(p.view.stage_drag.is_none());
+    }
+
+    #[test]
+    fn arrow_keys_nudge_the_focused_fixture() {
+        let mut harness = layout_harness();
+        // P1 sits at (0, 1), P2 at (1, 1); (0, 2) is free.
+        let p1 = cell_pos(&harness, 0, 1);
+        harness.hover_at(p1);
+        harness.run();
+        harness.drag_at(p1);
+        harness.run();
+        harness.drop_at(p1);
+        harness.run();
+        harness.key_press(egui::Key::ArrowDown);
+        harness.run();
+        assert_eq!(harness.state().fixture("P1").pos, cell(0, 2));
+        // Left at the edge stays put; up and right lands on P2, swapping.
+        harness.key_press(egui::Key::ArrowLeft);
+        harness.run();
+        assert_eq!(harness.state().fixture("P1").pos, cell(0, 2));
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+        harness.key_press(egui::Key::ArrowRight);
+        harness.run();
+        let p = harness.state();
+        assert_eq!(p.fixture("P1").pos, cell(1, 1));
+        assert_eq!(p.fixture("P2").pos, cell(0, 1));
+        assert_eq!(p.view.selected, Some(p.fixture("P1").id));
+    }
+
+    #[test]
+    fn auto_arrange_clears_every_hand_placed_cell() {
+        let mut harness = layout_harness();
+        let disabled = |h: &Harness<'_, Patch>| {
+            h.get_by_label("AUTO ARRANGE")
+                .accesskit_node()
+                .is_disabled()
+        };
+        assert!(disabled(&harness), "nothing placed yet");
+        harness.state_mut().rig.fixtures_mut()[0].pos = cell(7, 7);
+        harness.state_mut().rig.fixtures_mut()[3].pos = cell(6, 7);
+        harness.run();
+        harness.get_by_label("2 fixtures placed by hand");
+        assert!(!disabled(&harness));
+        harness.get_by_label("AUTO ARRANGE").click();
+        harness.run();
+        assert_eq!(harness.state().rig.placed(), 0);
+        harness.get_by_label("Arranged automatically");
+        assert!(disabled(&harness));
     }
 }

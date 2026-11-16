@@ -827,9 +827,14 @@ pub fn fixture_grid(
     let painting = response.drag_started() || response.dragged();
     let mut background_click = clicked;
 
+    let cells = halo_light::fixture::layout(rig);
     for f in rig.iter() {
-        let min =
-            rect.min + egui::vec2(f.col as f32 * (CELL_W + GAP), f.row as f32 * (CELL_H + GAP));
+        let Some(at) = cells.get(&f.id) else { continue };
+        let min = rect.min
+            + egui::vec2(
+                f32::from(at.col) * (CELL_W + GAP),
+                f32::from(at.row) * (CELL_H + GAP),
+            );
         let cell = egui::Rect::from_min_size(min, egui::vec2(CELL_W, CELL_H));
         let lane = outputs[f.kind.lane() as usize];
         // A fixture the programmer holds shows its own level.
@@ -842,12 +847,29 @@ pub fn fixture_grid(
 
         let alpha = 0.15 + 0.85 * level.clamp(0.0, 1.0);
         let [r, g, b] = f.kind.color();
-        painter.rect_filled(
-            cell,
-            theme::RADIUS_CONTROL,
-            egui::Color32::from_rgb(r, g, b).gamma_multiply(alpha),
-        );
-        if programmed {
+        if f.unpatched {
+            // Selectable, but not on the wire: an empty dashed cell.
+            let c = cell.shrink(0.5);
+            painter.extend(egui::Shape::dashed_line(
+                &[
+                    c.left_top(),
+                    c.right_top(),
+                    c.right_bottom(),
+                    c.left_bottom(),
+                    c.left_top(),
+                ],
+                egui::Stroke::new(1.0, theme::TEXT_DISABLED),
+                3.0,
+                3.0,
+            ));
+        } else {
+            painter.rect_filled(
+                cell,
+                theme::RADIUS_CONTROL,
+                egui::Color32::from_rgb(r, g, b).gamma_multiply(alpha),
+            );
+        }
+        if programmed && !f.unpatched {
             painter.rect_stroke(
                 cell.shrink(1.5),
                 2.0,
@@ -871,7 +893,9 @@ pub fn fixture_grid(
             egui::Align2::CENTER_CENTER,
             &f.label,
             theme::PAD_NUMBER.sized(10.0),
-            if bright {
+            if f.unpatched {
+                theme::TEXT_DISABLED
+            } else if bright {
                 theme::WELL
             } else {
                 theme::TEXT_STRONG

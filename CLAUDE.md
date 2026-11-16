@@ -79,22 +79,28 @@ Plain threads + channels/atomics; each session has one owner:
   profile is in `midi.rs`.
 - `dmx.rs` — `spawn_dmx_engine`, the 44 Hz Art-Net output thread (has an end-to-end UDP test).
 - `programmer_ui.rs` — lighting programmer surface (fixture grid, five parameter views, effect panels).
-- `patch_view.rs` — the PATCH view under its action row: the patch sheet, and the universe overview
-  (universe pads, a 32×16 channel map whose fixture blocks drag to readdress, the selection well).
+- `patch_view.rs` — the PATCH view under its action row: the patch sheet (sorted by universe, then
+  address), and the overview, switched MAP | LAYOUT: the universe pads and a 32×16 channel map whose
+  fixture blocks drag to readdress, or `patch_view/layout.rs`, the 8×8 stage the programmer's grid
+  mirrors (drag a fixture to place it by hand, drop on another to swap, AUTO ARRANGE). The selection
+  well sits under both. Clearing a fixture's ADDR, or UNPATCH, unpatches it.
 - `show.rs` — `simulate_show()`: deterministic demo cue generator, not real authored content.
 - `fader.rs` / `knob.rs` — custom egui widgets.
 - `theme.rs` — the Halo design system: tokens by role name, type styles, fonts (Inter for reading
   text, Barlow Condensed + a tabular copy for labels and numbers, JetBrains Mono for DMX addresses),
   `face-*` textures and raised / lit / well / LED / panel paint helpers, and `tray` / `tray_divider`
-  for rows of keys sunk in a well. Use its tokens; don't hand-mix colours.
+  for rows of keys sunk in a well. Use its tokens; don't hand-mix colours. Icons no font has are
+  glyphs in `assets/fonts/HaloIcons.ttf` (`ICON_*`, U+F0000 on), built by `scripts/make-icon-font.py`.
 - `key.rs` — the `Key` widget every performance-surface button is built from (lit faces, LEDs, pressed,
   the decks' `quiet` skin), `segmented` strips of keys joined into one (the LOOP row, hot cues, the view
   switcher), and `latch`, the rectangle latch that fills red when on (A.CUE, Q).
 
 ### Key modules — `crates/halo-light/src`
 
-- `fixture.rs` — `Rig`, grid/selection types, `default_rig()`, and the patch checks: per-universe
+- `fixture.rs` — `Rig`, grid/selection types, `default_rig()`, `layout()` (each fixture's cell on
+  the 8×8 stage: its hand-placed `pos`, else by kind, kinds sharing a centred row where they fit), and the patch checks: per-universe
   `Occupancy`, `first_free()` addresses and `conflicts()` (every overlapping pair, with its channels).
+  An `unpatched` fixture keeps its address and grid cell but is left out of those and of `render()`.
 - `fixture_library.rs` — `FixtureProfile` (one or more DMX `FixtureMode`s, colour and gobo wheels)/`Channel`/
   `ChannelType`, hardcoded profile registry, patching; a patched `Fixture` names its mode.
 - `cues.rs` — `CueSet` (runtime, non-overlapping per lane) + `CueFile` (persisted JSON, seconds, with the
