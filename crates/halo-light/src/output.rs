@@ -211,6 +211,12 @@ fn render_conventional(
         dim
     };
 
+    // A split shutter strobes only where the programmer aims it; a single
+    // one strobes for either.
+    let strobe = u8_of(p.intensity.strobe / 100.0);
+    let target = p.intensity.strobe_target;
+    let split = mode.channel_offset(&ChannelType::WhiteStrobe).is_some();
+
     let [r, g, b, w] = rgbw;
     let shade = [(r + w).min(1.0), (g + w).min(1.0), (b + w).min(1.0)];
     for (i, ch) in mode.channel_layout.iter().enumerate() {
@@ -220,7 +226,8 @@ fn render_conventional(
             ChannelType::Green => u8_of(rgbw[1] * color_scale),
             ChannelType::Blue => u8_of(rgbw[2] * color_scale),
             ChannelType::White => u8_of(rgbw[3] * color_scale),
-            ChannelType::Strobe => u8_of(p.intensity.strobe / 100.0),
+            ChannelType::Strobe if !split || target.rgb() => strobe,
+            ChannelType::WhiteStrobe if target.white() => strobe,
             ChannelType::Pan => (axis(p.position.pan, pan_driven) >> 8) as u8,
             ChannelType::PanFine => axis(p.position.pan, pan_driven) as u8,
             ChannelType::Tilt => (axis(p.position.tilt, tilt_driven) >> 8) as u8,
@@ -1007,5 +1014,42 @@ mod tests {
             (value(&ChannelType::Tilt), value(&ChannelType::TiltFine)),
             (128, 0)
         );
+    }
+
+    #[test]
+    fn split_shutters_strobe_where_the_programmer_aims() {
+        use crate::programmer::StrobeTarget;
+
+        let (mut rig, library) = setup();
+        for f in rig.fixtures_mut().iter_mut().filter(|f| f.label == "ST1") {
+            f.mode = "12CH".into();
+        }
+        let mut p = ProgrammerParams::default();
+        p.intensity.strobe = 50.0;
+        let shutters = |p: &ProgrammerParams| {
+            let frames = dark(&rig, &library, p);
+            let value = |ch| value_of(&rig, &library, &frames, "ST1", ch);
+            (
+                value(&ChannelType::Strobe),
+                value(&ChannelType::WhiteStrobe),
+            )
+        };
+        let on = u8_of(0.5);
+        assert_eq!(shutters(&p), (on, on));
+        p.intensity.strobe_target = StrobeTarget::White;
+        assert_eq!(shutters(&p), (0, on));
+        p.intensity.strobe_target = StrobeTarget::Rgb;
+        assert_eq!(shutters(&p), (on, 0));
+        // The 6CH strobe has one shutter: it strobes for either.
+        p.intensity.strobe_target = StrobeTarget::White;
+        let frames = dark(&rig, &library, &p);
+        assert_eq!(
+            value_of(&rig, &library, &frames, "ST2", &ChannelType::Strobe),
+            on
+        );
+        // The effect channels stay at 0, which plays CH9–12 as sent.
+        let st1 = rig.iter().find(|f| f.label == "ST1").unwrap();
+        let at = |ch: usize| frames[&st1.universe][(st1.start_address - 1) as usize + ch - 1];
+        assert_eq!((at(3), at(7)), (0, 0));
     }
 }
