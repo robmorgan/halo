@@ -203,6 +203,7 @@ pub struct Owned {
 #[derive(Clone, PartialEq)]
 pub struct Sections {
     strobe: f32,
+    strobe_target: StrobeTarget,
     intensity_fx: EffectConfig,
     color_fx: EffectConfig,
     position: PositionParams,
@@ -214,6 +215,7 @@ impl Sections {
     pub fn of(p: &ProgrammerParams) -> Self {
         Self {
             strobe: p.intensity.strobe,
+            strobe_target: p.intensity.strobe_target,
             intensity_fx: p.intensity.effect.clone(),
             color_fx: p.color.effect.clone(),
             position: p.position.clone(),
@@ -226,8 +228,9 @@ impl Sections {
 impl Owned {
     /// Take every section that changed between two snapshots.
     pub fn mark(&mut self, before: &Sections, after: &Sections) {
-        self.intensity |=
-            before.strobe != after.strobe || before.intensity_fx != after.intensity_fx;
+        self.intensity |= before.strobe != after.strobe
+            || before.strobe_target != after.strobe_target
+            || before.intensity_fx != after.intensity_fx;
         self.color |= before.color_fx != after.color_fx;
         self.position |= before.position != after.position;
         self.beam |= before.beam != after.beam;
@@ -383,7 +386,29 @@ pub struct IntensityParams {
     /// Percent, 0..=100.
     pub dimmer: f32,
     pub strobe: f32,
+    /// Which shutter strobes, on fixtures whose RGB and white strobe apart.
+    pub strobe_target: StrobeTarget,
     pub effect: EffectConfig,
+}
+
+/// The shutters a strobe drives. A fixture with one shutter strobes it
+/// whatever this says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StrobeTarget {
+    #[default]
+    Both,
+    Rgb,
+    White,
+}
+
+impl StrobeTarget {
+    pub fn rgb(self) -> bool {
+        self != Self::White
+    }
+
+    pub fn white(self) -> bool {
+        self != Self::Rgb
+    }
 }
 
 impl Default for IntensityParams {
@@ -391,6 +416,7 @@ impl Default for IntensityParams {
         Self {
             dimmer: 100.0,
             strobe: 0.0,
+            strobe_target: StrobeTarget::default(),
             effect: EffectConfig::default(),
         }
     }

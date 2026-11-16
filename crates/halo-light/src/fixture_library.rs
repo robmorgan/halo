@@ -50,6 +50,9 @@ pub enum ChannelType {
     Amber,
     Uv,
     Strobe,
+    /// The white shutter of a fixture whose RGB and white strobe apart;
+    /// [`ChannelType::Strobe`] is then the RGB one.
+    WhiteStrobe,
     Pan,
     /// The low byte of a 16-bit pan.
     PanFine,
@@ -350,23 +353,65 @@ impl FixtureLibrary {
             ..Default::default()
         });
 
-        // 6-channel mode (the 12-channel variant adds split RGB/White
-        // shutter + FX banks; add it as a second profile when needed —
-        // see https://personalities.avolites.com "LED RGBW 4in1 48
-        // Partition Strobe Light").
+        // Modes from the manual's DMX chart. The 144CH and 154CH modes
+        // light the 48 cells one by one; they wait for a pixel engine that
+        // can drive them.
         add(FixtureProfile {
             id: "hyulights-led-rgbw-4in1-48-partition-strobe".to_string(),
             fixture_type: FixtureType::LedBar,
             manufacturer: "Hyulights".to_string(),
             model: "200W LED RGBW 4in1 48 Partition Strobe Light".to_string(),
-            modes: one(vec![
-                ch("Dimmer", ChannelType::Dimmer),
-                ch("Strobe", ChannelType::Strobe),
-                ch("Red", ChannelType::Red),
-                ch("Green", ChannelType::Green),
-                ch("Blue", ChannelType::Blue),
-                ch("White", ChannelType::White),
-            ]),
+            // 6CH first: patches from before modes load in it.
+            modes: vec![
+                FixtureMode {
+                    name: "6CH".to_string(),
+                    channel_layout: vec![
+                        ch("Dimmer", ChannelType::Dimmer),
+                        ch("Strobe", ChannelType::Strobe),
+                        ch("Red", ChannelType::Red),
+                        ch("Green", ChannelType::Green),
+                        ch("Blue", ChannelType::Blue),
+                        ch("White", ChannelType::White),
+                    ],
+                },
+                FixtureMode {
+                    name: "4CH".to_string(),
+                    channel_layout: vec![
+                        ch("Red", ChannelType::Red),
+                        ch("Green", ChannelType::Green),
+                        ch("Blue", ChannelType::Blue),
+                        ch("White", ChannelType::White),
+                    ],
+                },
+                FixtureMode {
+                    name: "12CH".to_string(),
+                    channel_layout: vec![
+                        ch("Dimmer", ChannelType::Dimmer),
+                        // 0–4: open.
+                        ch("RGB Strobe", ChannelType::Strobe),
+                        // 0–5: RGB from CH9–11 | 6–229 static colour,
+                        // breathing, jump, gradient, pulse, autoruns 1–88 |
+                        // 230–255 sound 1–6.
+                        ch("RGB Effect", ChannelType::Function),
+                        ch("RGB Effect Speed", ChannelType::FunctionSpeed),
+                        // In 32s: default, red, green, blue, yellow,
+                        // purple, cyan, white.
+                        ch(
+                            "Effect Color",
+                            ChannelType::Other("Effect Color".to_string()),
+                        ),
+                        // 0–4: open.
+                        ch("White Strobe", ChannelType::WhiteStrobe),
+                        // 0–5: white from CH12 | 6–255 white effects 1–42.
+                        ch("White Effect", ChannelType::Function),
+                        ch("White Effect Speed", ChannelType::FunctionSpeed),
+                        ch("Red", ChannelType::Red),
+                        ch("Green", ChannelType::Green),
+                        ch("Blue", ChannelType::Blue),
+                        ch("White", ChannelType::White),
+                    ],
+                },
+            ],
             ..Default::default()
         });
 

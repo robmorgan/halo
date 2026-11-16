@@ -90,6 +90,7 @@ impl Spec {
                     dimmer: self.dimmer,
                     strobe: self.strobe,
                     effect: self.intensity_fx.unwrap_or_else(|| off.clone()),
+                    ..IntensityParams::default()
                 },
                 color: ColorParams {
                     rgbw: self.rgbw,

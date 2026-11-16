@@ -14,7 +14,7 @@ use halo_light::fixture::{ALL_KINDS, FixtureKind, Rig};
 use halo_light::programmer::{
     self, ALL_INTERVALS, ALL_VIEWS, ALL_WAVEFORMS, COLOR_PRESETS, Distribution, EffectConfig,
     LaneOutput, LaneSource, PIXEL_EFFECTS, PanTiltTarget, ParamView, Programmer, ProgrammerParams,
-    effect_value,
+    StrobeTarget, effect_value,
 };
 
 use crate::fader::{Fader, Notches};
@@ -258,6 +258,24 @@ fn intensity_view(
         p.hold_dimmer(targets, dimmer);
     }
     fader_col(ui, &mut p.intensity.strobe, spec("STROBE", 0.0));
+
+    // Which shutter strobes, on fixtures whose RGB and white strobe apart.
+    ui.vertical(|ui| {
+        caption(ui, "SHUTTER");
+        ui.add_space(theme::SPACE_6);
+        for (t, label) in [
+            (StrobeTarget::Both, "BOTH"),
+            (StrobeTarget::Rgb, "RGB"),
+            (StrobeTarget::White, "WHITE"),
+        ] {
+            if choice(ui, p.intensity.strobe_target == t, label)
+                .status_help("Strobe this shutter on fixtures with split RGB and white shutters")
+                .clicked()
+            {
+                p.intensity.strobe_target = t;
+            }
+        }
+    });
 }
 
 fn color_view(
